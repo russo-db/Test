@@ -1,0 +1,16 @@
+# Security (NEVER UPLOAD THIS)
+.env
+
+# Database (keep player data local)
+*.db
+monster_database.db
+
+# Python environments
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Editors
+.idea/
+.vscode/

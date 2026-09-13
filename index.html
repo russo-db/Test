@@ -1,0 +1,2517 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Monster Gram</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@tonconnect/ui@2.4.4/dist/tonconnect-ui.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ---------- Cartoon HUD ----------
+           Everything is a sticker: solid fill, thick ink outline, a hard bottom
+           edge for depth, and a soft highlight along the top. Nothing is glass. */
+        :root {
+            --bg-base: #241552;
+            --bg-deep: #170c38;
+            --ink: #120826;
+            --panel: #35216e;
+            --panel-hi: #452b8c;
+            --panel-soft: #2c1b5e;
+            --text-main: #ffffff;
+            --text-muted: #b9a8e8;
+            --accent-slime: #a3e635;
+            --accent-violet: #a855f7;
+            --accent-cyan: #22d3ee;
+            --accent-emerald: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-coin: #3a9ef5;
+            --accent-token: #a78bfa;
+            --accent-rose: #fb7185;
+            --edge: 4px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Nunito', 'Trebuchet MS', system-ui, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background: radial-gradient(120% 80% at 50% 0%, #3b2280 0%, var(--bg-base) 45%, var(--bg-deep) 100%);
+            color: var(--text-main);
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            font-weight: 700;
+        }
+
+        /* Big soft blobs drifting behind everything */
+        .ambient-orb { position: absolute; border-radius: 50%; filter: blur(60px); z-index: 0; opacity: 0.5; animation: floatOrb 15s infinite alternate ease-in-out; pointer-events: none; }
+        .orb-1 { top: -12%; left: -14%; width: 320px; height: 320px; background: #7c3aed; }
+        .orb-2 { bottom: 6%; right: -16%; width: 300px; height: 300px; background: #0ea5e9; animation-delay: -5s; }
+        .orb-3 { top: 40%; left: 26%; width: 240px; height: 240px; background: rgba(163, 230, 53, 0.5); animation-delay: -10s; }
+
+        @keyframes floatOrb {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(30px, 50px) scale(1.1); }
+            100% { transform: translate(-30px, 20px) scale(0.9); }
+        }
+
+        /* The one sticker recipe every panel uses */
+        .glass-panel {
+            background: var(--panel);
+            border: 3px solid var(--ink);
+            border-radius: 22px;
+            box-shadow: 0 var(--edge) 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, 0.13);
+        }
+
+        svg { width: 100%; height: 100%; }
+        .icon-sm { width: 18px; height: 18px; }
+        .icon-md { width: 22px; height: 22px; }
+        .icon-lg { width: 28px; height: 28px; }
+
+        #main-wrapper { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%; width: 100%; }
+
+        /* ---------- Top bar ---------- */
+        .top-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 6px 16px; gap: 10px; }
+        .brand-title { font-size: 13px; font-weight: 900; letter-spacing: 0.4px; line-height: 1.1; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; text-transform: uppercase; text-shadow: 0 2px 0 var(--ink); }
+        .balance-bar { display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .top-balance-badge {
+            background: var(--panel-hi); border: 3px solid var(--ink); border-radius: 16px;
+            padding: 6px 11px; display: flex; align-items: center; gap: 6px;
+            font-weight: 900; font-size: 14px;
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.15);
+        }
+        .top-balance-badge .coin-icon { width: 17px; height: 17px; }
+        .token-badge { background: #4c2b8f; }
+
+        .coin-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
+        .coin-brand { width: 26px; height: 26px; filter: drop-shadow(0 2px 0 var(--ink)); }
+        .coin-md { width: 30px; height: 30px; }
+        .coin-lg { width: 40px; height: 40px; }
+
+        /* ---------- Content ---------- */
+        .content { flex: 1; padding: 12px 16px 20px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: none; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
+        .content.active { display: block; animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+
+        h1 { font-size: 27px; font-weight: 900; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 3px 0 var(--ink), 0 6px 10px rgba(0, 0, 0, 0.35); }
+        p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 18px; font-size: 14px; font-weight: 700; }
+
+        /* ---------- Farm stats ---------- */
+        .stats-panel { display: flex; align-items: stretch; padding: 13px 8px; margin: 8px 0 14px 0; }
+        .stat-cell { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+        .stat-label { font-size: 11px; font-weight: 900; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; }
+        .stat-value { font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 5px; white-space: nowrap; text-shadow: 0 2px 0 rgba(18, 8, 38, 0.6); }
+        .stat-coin { width: 18px; height: 18px; object-fit: contain; }
+        .stat-divider { width: 3px; background: var(--ink); border-radius: 3px; margin: 2px 4px; opacity: 0.5; }
+
+        /* ---------- Farm ---------- */
+        .farm-area { display: flex; flex-direction: column; align-items: center; position: relative; }
+
+        .hero-balances { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }
+        .hero-balance {
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            padding: 11px 8px; border-radius: 18px; min-width: 0;
+            background: linear-gradient(180deg, #1e6fd0, #1657a8);
+            border: 3px solid var(--ink);
+            box-shadow: 0 var(--edge) 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, 0.22);
+        }
+        .hero-balance.token { background: linear-gradient(180deg, #8b5cf6, #6d33d6); }
+        .hero-balance img { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
+        .hero-balance .hb-value { font-size: 14px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -0.4px; white-space: nowrap; text-shadow: 0 2px 0 rgba(18, 8, 38, 0.55); }
+
+        .monster-stage { cursor: pointer; position: relative; width: 150px; height: 150px; margin-top: 6px; display: flex; align-items: center; justify-content: center; }
+        .monster-stage::after {
+            content: ''; position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+            width: 92px; height: 17px; border-radius: 50%; background: rgba(10, 4, 24, 0.55); filter: blur(7px);
+        }
+        .monster-glow { position: absolute; width: 118px; height: 118px; border-radius: 50%; filter: blur(34px); opacity: 0.55; transition: background 0.4s ease; }
+        .monster-sprite { position: relative; width: 100%; height: 100%; object-fit: contain; z-index: 2; filter: drop-shadow(0 8px 10px rgba(10, 4, 24, 0.5)); pointer-events: none; transition: transform 0.08s ease; }
+        .monster-stage:active .monster-sprite { transform: scale(0.93); }
+        .monster-name-tag { font-size: 20px; font-weight: 900; margin-top: 2px; text-shadow: 0 3px 0 var(--ink); }
+        .monster-sub-tag { font-size: 13px; color: var(--text-muted); font-weight: 800; margin-top: 3px; }
+
+        /* ---------- Slot grid ---------- */
+        .slot-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; width: 100%; margin-top: 18px; }
+        .slot-cell {
+            position: relative; aspect-ratio: 1; border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--panel-soft); border: 3px solid var(--ink);
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1);
+            transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease;
+        }
+        .slot-cell img { width: 84%; height: 84%; object-fit: contain; pointer-events: none; }
+        .slot-cell.selected { border-color: var(--slot-tint); box-shadow: 0 3px 0 var(--ink), 0 0 16px var(--slot-tint), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
+        .slot-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+        .slot-index { position: absolute; top: 3px; left: 6px; font-size: 9px; font-weight: 900; color: var(--text-muted); }
+        .slot-cell.empty { background: rgba(18, 8, 38, 0.35); border-style: dashed; border-color: rgba(185, 168, 232, 0.35); box-shadow: none; }
+        .slot-plus { font-size: 24px; font-weight: 900; color: rgba(185, 168, 232, 0.5); }
+        .slot-cell.locked { background: rgba(18, 8, 38, 0.5); border-color: rgba(185, 168, 232, 0.2); box-shadow: none; }
+        .slot-lock { width: 40%; height: 40%; color: rgba(185, 168, 232, 0.4); }
+        .lock-hero { width: 62px; height: 62px; color: var(--accent-amber); display: block; margin: 0 auto 12px auto; filter: drop-shadow(0 3px 0 var(--ink)); }
+        .slot-progress { position: absolute; left: 7px; right: 7px; bottom: 5px; height: 5px; border-radius: 4px; background: rgba(10, 4, 24, 0.6); border: 1.5px solid var(--ink); overflow: hidden; }
+        .slot-progress i { display: block; height: 100%; }
+
+        /* Mined coins */
+        .particle-stream { position: fixed; width: 26px; height: 26px; pointer-events: none; z-index: 450; object-fit: contain; filter: drop-shadow(0 2px 0 var(--ink)); }
+
+        /* ---------- Buttons ---------- */
+        .btn-primary {
+            background: linear-gradient(180deg, #b06bff, #7c3aed);
+            border: 3px solid var(--ink); color: white;
+            padding: 15px 24px; border-radius: 22px;
+            font-size: 16px; font-weight: 900; width: 100%; cursor: pointer;
+            box-shadow: 0 6px 0 #4c1d95, 0 9px 12px rgba(10, 4, 24, 0.4), inset 0 3px 0 rgba(255, 255, 255, 0.25);
+            text-transform: uppercase; letter-spacing: 0.4px;
+            text-shadow: 0 2px 0 rgba(18, 8, 38, 0.5);
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            display: flex; align-items: center; justify-content: center; gap: 9px;
+        }
+        .btn-primary:active { transform: translateY(5px); box-shadow: 0 1px 0 #4c1d95, inset 0 3px 0 rgba(255, 255, 255, 0.2); }
+        .btn-primary:disabled { filter: grayscale(0.6) brightness(0.7); box-shadow: 0 6px 0 #3b1f6b, inset 0 3px 0 rgba(255, 255, 255, 0.12); }
+
+        .btn-action {
+            background: var(--panel-hi); border: 3px solid var(--ink); color: white;
+            padding: 9px 15px; border-radius: 14px; font-weight: 900; font-size: 14px; cursor: pointer;
+            display: flex; align-items: center; gap: 6px; white-space: nowrap;
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.15);
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        .btn-action:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+        .btn-action:disabled { filter: grayscale(0.5) brightness(0.75); }
+        .btn-buy { background: linear-gradient(180deg, #b6f04a, #7cb518); color: #1d2b06; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); box-shadow: 0 3px 0 #3f6b0a, inset 0 2px 0 rgba(255, 255, 255, 0.4); }
+        .btn-buy:active { box-shadow: 0 0 0 #3f6b0a; }
+        .btn-locked { background: var(--panel-soft); color: var(--text-muted); }
+
+        /* ---------- Cards ---------- */
+        .card { padding: 14px; margin-bottom: 13px; display: flex; justify-content: space-between; align-items: center; gap: 13px; }
+        .card-info { flex: 1; min-width: 0; }
+        .card-info h3 { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
+        .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
+
+        .monster-card { display: flex; flex-direction: column; gap: 11px; padding: 13px; margin-bottom: 13px; }
+        .monster-card-top { display: flex; align-items: center; gap: 13px; }
+        .monster-portrait { flex: 0 0 auto; width: 82px; height: 82px; border-radius: 18px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+        .monster-portrait img { width: 90%; height: 90%; object-fit: contain; }
+        .monster-portrait.locked img { filter: brightness(0) saturate(0) invert(9%); opacity: 0.85; }
+        .monster-portrait.locked::after { content: '?'; position: absolute; font-size: 30px; font-weight: 900; color: rgba(185, 168, 232, 0.55); }
+        .copies-badge { position: absolute; right: 3px; bottom: 3px; background: var(--ink); border-radius: 9px; font-size: 11px; font-weight: 900; padding: 2px 7px; color: var(--accent-slime); }
+        .rarity-tag { display: inline-block; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 9px; border-radius: 9px; margin-bottom: 5px; background: rgba(18, 8, 38, 0.5); }
+        .monster-body { flex: 1; min-width: 0; }
+        .monster-body h3 { font-size: 16px; font-weight: 900; margin-bottom: 3px; text-shadow: 0 2px 0 var(--ink); }
+        .monster-stat { font-size: 13px; font-weight: 800; color: var(--accent-emerald); }
+        .monster-desc { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; font-weight: 700; }
+        .monster-actions { display: flex; }
+        .monster-actions .btn-action { width: 100%; justify-content: center; padding: 12px 16px; }
+
+        .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
+        .tier-heading b { color: var(--text-muted); font-size: 12px; }
+
+        /* ---------- MNSTR ---------- */
+        .balance-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 13px; }
+        .balance-card { padding: 15px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; transition: transform 0.1s ease, box-shadow 0.1s ease; }
+        .balance-card img { width: 40px; height: 40px; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 3px 0 var(--ink)); }
+        .balance-card .balance-label { font-size: 11px; font-weight: 900; letter-spacing: 0.8px; color: var(--text-muted); }
+        .balance-card b { font-size: 22px; font-weight: 900; text-shadow: 0 2px 0 var(--ink); }
+        .balance-card .balance-rate { font-size: 12px; font-weight: 800; color: var(--accent-emerald); }
+        .balance-card.token { cursor: pointer; }
+        .balance-card.token .balance-label, .balance-card.token .balance-rate { color: var(--accent-token); }
+        .balance-card.token:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, 0.13); }
+        .balance-hint { font-size: 10px; font-weight: 800; color: var(--text-muted); margin-top: 3px; }
+
+        .token-box { max-height: 84vh; overflow-y: auto; }
+        .token-hero { width: 76px; height: 76px; object-fit: contain; display: block; margin: 0 auto 10px auto; filter: drop-shadow(0 4px 0 var(--ink)); }
+        .token-box h2 { text-align: center; margin-bottom: 14px; }
+        .token-table { width: 100%; border-collapse: collapse; }
+        .token-table td { padding: 10px 0; vertical-align: top; font-size: 13px; line-height: 1.4; border-top: 2px solid rgba(18, 8, 38, 0.5); font-weight: 700; }
+        .token-table tr:first-child td { border-top: none; }
+        .token-table td:first-child { width: 40%; padding-right: 12px; font-weight: 900; color: var(--accent-token); }
+        .token-table td:last-child { color: var(--text-muted); }
+        .token-table td b { color: var(--text-main); font-weight: 900; }
+        .token-note { font-size: 12px; color: var(--text-muted); font-weight: 700; margin-top: 12px; font-style: italic; text-align: center; }
+
+        /* ---------- Monster info card ---------- */
+        .stat-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 13px; border-radius: 14px; background: rgba(18, 8, 38, 0.42); border: 2px solid var(--ink); margin-bottom: 8px; }
+        .stat-row span { font-size: 13px; font-weight: 800; color: var(--text-muted); }
+        .stat-row b { font-size: 16px; font-weight: 900; }
+        .slot-modal-sub { font-size: 13px; color: var(--text-muted); font-weight: 800; margin-bottom: 14px; }
+        .modal-progress { height: 12px; border-radius: 8px; background: rgba(10, 4, 24, 0.6); border: 2px solid var(--ink); overflow: hidden; margin: 14px 0 8px 0; }
+        .modal-progress i { display: block; height: 100%; transition: width 0.3s ease; }
+
+        /* ---------- Monster shop ---------- */
+        .roll-open { margin-top: 18px; }
+        .roll-box { max-width: 360px; text-align: left; max-height: 82vh; overflow-y: auto; overflow-x: hidden; }
+        .roll-box h2 { text-align: center; }
+        .roll-box > div > p { text-align: center; }
+        .roll-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 3px 0 6px 0; margin-top: 14px; }
+        .roll-tab {
+            flex: 0 0 auto; padding: 7px 11px; border-radius: 13px; font-size: 12px; font-weight: 900;
+            cursor: pointer; white-space: nowrap; font-family: inherit;
+            background: var(--panel-soft); border: 3px solid var(--ink); color: var(--text-muted);
+            box-shadow: 0 3px 0 var(--ink);
+            transition: transform 0.1s ease, box-shadow 0.1s ease, color 0.2s;
+        }
+        .roll-tab:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+        .roll-tab.active { color: var(--ink); background: var(--tier-tint); text-shadow: none; box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.35); }
+        .roll-head { display: flex; justify-content: space-between; font-size: 11px; font-weight: 900; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin: 12px 2px 8px 2px; }
+        .roll-row { display: flex; align-items: center; gap: 11px; padding: 8px; border-radius: 16px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1); margin-bottom: 8px; }
+        .roll-row img { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
+        .roll-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .roll-name b { font-size: 14px; font-weight: 900; }
+        .roll-name span { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+        .roll-numbers { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+        .roll-num { display: flex; align-items: center; gap: 5px; }
+        .roll-num b { font-size: 15px; font-weight: 900; color: var(--accent-coin); }
+        .roll-num.token b { color: var(--accent-token); }
+        .roll-num img { width: 15px; height: 15px; object-fit: contain; }
+        .roll-chance { font-size: 12px; font-weight: 800; color: var(--text-muted); }
+        .roll-close { width: 100%; justify-content: center; margin-top: 10px; }
+        .roll-prize { width: 145px; height: 145px; object-fit: contain; margin: 6px auto; display: block; filter: drop-shadow(0 8px 10px rgba(10, 4, 24, 0.55)); }
+        #rollResult { text-align: center; }
+        #rollResult h2 { font-size: 25px; text-shadow: 0 3px 0 var(--ink); }
+        .roll-prize-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+
+        /* ---------- Modals ---------- */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(12, 6, 28, 0.78); z-index: 500; display: none; align-items: center; justify-content: center; padding: 22px; overflow: hidden; }
+        .modal-backdrop.open { display: flex; animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .modal-box { max-width: 340px; width: 100%; padding: 22px; text-align: center; border-radius: 26px; overflow-x: hidden; }
+        .modal-box h2 { font-size: 22px; font-weight: 900; margin-bottom: 8px; text-shadow: 0 3px 0 var(--ink); }
+        .modal-box p { color: var(--text-muted); font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+        .modal-amount { font-size: 33px; font-weight: 900; color: var(--accent-coin); margin: 12px 0 18px 0; text-shadow: 0 3px 0 var(--ink); display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+        /* ---------- Toast ---------- */
+        #toast { position: fixed; left: 50%; transform: translateX(-50%) translateY(-14px); top: 62px; z-index: 900; padding: 11px 18px; border-radius: 18px; background: var(--panel-hi); border: 3px solid var(--ink); box-shadow: 0 var(--edge) 0 var(--ink); font-weight: 900; font-size: 14px; opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none; max-width: 88%; text-align: center; }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ---------- Profile ---------- */
+        .avatar-container { display: flex; flex-direction: column; align-items: center; margin: 8px 0 22px 0; }
+        .avatar { width: 88px; height: 88px; border-radius: 50%; background: linear-gradient(180deg, #b06bff, #6d33d6); display: flex; justify-content: center; align-items: center; font-size: 34px; font-weight: 900; border: 4px solid var(--ink); box-shadow: 0 5px 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, 0.25); margin-bottom: 14px; text-shadow: 0 2px 0 rgba(18, 8, 38, 0.5); }
+        .profile-name { font-size: 23px; font-weight: 900; text-shadow: 0 3px 0 var(--ink); }
+
+        /* ---------- Navbar ---------- */
+        .navbar { background: var(--panel); border-top: 4px solid var(--ink); display: flex; justify-content: space-between; padding: 10px 10px; position: fixed; bottom: 0; width: 100%; z-index: 100; padding-bottom: calc(10px + env(safe-area-inset-bottom)); box-shadow: 0 -6px 18px rgba(10, 4, 24, 0.45); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-muted); font-size: 10px; font-weight: 900; cursor: pointer; gap: 5px; flex: 1; padding: 7px 2px 5px 2px; border-radius: 16px; border: 3px solid transparent; transition: color 0.2s ease, transform 0.15s ease, background 0.2s ease; }
+        .nav-item.active { color: #1d2b06; background: linear-gradient(180deg, #b6f04a, #7cb518); border-color: var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.4); transform: translateY(-4px); }
+        .nav-icon { width: 23px; height: 23px; color: currentColor; }
+
+        /* ---------- Boot ---------- */
+        #boot { position: fixed; inset: 0; z-index: 800; background: radial-gradient(120% 80% at 50% 0%, #3b2280 0%, var(--bg-base) 45%, var(--bg-deep) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+        #boot .spinner { width: 46px; height: 46px; border-radius: 50%; border: 5px solid var(--ink); border-top-color: var(--accent-slime); animation: spin 0.9s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #boot p { color: var(--text-muted); font-weight: 800; font-size: 14px; text-align: center; padding: 0 30px; }
+        /* ===== ВАРИАНТ E — ПОД КЛЮЧЕВОЙ АРТ: сланцевая сцена, золото, толстые контуры ===== */
+        :root {
+            --ink: #191e27;
+            --bg-base: #39414e;
+            --panel: #3b4453;
+            --panel-hi: #4a5566;
+            --panel-soft: #2c333f;
+            --cream: #f1ede2;
+            --gold: #f7b500;
+            --gold-lt: #ffd23f;
+            --gold-dk: #a35f00;
+            --text-main: #ffffff;
+            --text-muted: #a9b4c4;
+            --accent-coin: #38a8f0;
+            --accent-token: #a78bfa;
+            --accent-emerald: #4ade80;
+            --edge: 6px;
+        }
+
+        /* Сцена: дымка сверху, тёмный низ, разбросанные точки и искры */
+        body {
+            color: var(--text-main);
+            font-weight: 800;
+            background:
+                radial-gradient(circle, rgba(25,30,39,0.55) 2.4px, transparent 3px) -14px 8px / 96px 96px,
+                radial-gradient(circle, rgba(25,30,39,0.4) 1.8px, transparent 2.4px) 40px 52px / 128px 128px,
+                radial-gradient(circle, rgba(255,164,60,0.5) 1.4px, transparent 2px) 70px 30px / 210px 260px,
+                radial-gradient(ellipse 120% 60% at 50% 6%, rgba(241,237,226,0.16) 0%, transparent 62%),
+                linear-gradient(180deg, #4a5464 0%, #39414e 38%, #262c36 74%, #171b22 100%);
+        }
+        #boot { background: linear-gradient(180deg, #4a5464, #171b22); }
+        .ambient-orb { opacity: 0.22; }
+        .orb-1 { background: #f7b500; } .orb-2 { background: #38a8f0; } .orb-3 { background: rgba(74,222,128,0.5); }
+
+        /* Обводка текста как у логотипа — четыре смещения плюс нижний край */
+        .brand-title, h1, .monster-name-tag, .profile-name, .modal-box h2, #rollResult h2 {
+            text-shadow:
+                -2px -2px 0 var(--ink), 2px -2px 0 var(--ink),
+                -2px  2px 0 var(--ink), 2px  2px 0 var(--ink),
+                 0 5px 0 var(--ink), 0 8px 12px rgba(0,0,0,0.45);
+        }
+        .brand-title { color: var(--gold); font-size: 14px; letter-spacing: 0.6px; }
+        h1 { color: #fff; letter-spacing: 1px; }
+        .tier-heading { text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
+
+        .glass-panel {
+            background: var(--panel);
+            border: 4px solid var(--ink);
+            border-radius: 22px;
+            box-shadow: 0 var(--edge) 0 var(--ink), 0 10px 16px rgba(0,0,0,0.35), inset 0 4px 0 rgba(255,255,255,0.13);
+        }
+        .top-balance-badge {
+            background: var(--panel-hi); border: 4px solid var(--ink); border-radius: 18px;
+            box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.18);
+        }
+        .token-badge { background: #55486e; }
+
+        /* Свет за монстром, как дымка на арте */
+        .monster-stage::before {
+            content: ''; position: absolute; width: 210px; height: 210px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(241,237,226,0.16) 0%, transparent 68%);
+        }
+        .monster-sprite { filter: drop-shadow(0 10px 12px rgba(10,12,16,0.6)); }
+        .monster-stage::after { background: rgba(10,12,16,0.6); }
+
+        .hero-balance {
+            background: linear-gradient(180deg, #4d5color, #2c333f);
+            background: linear-gradient(180deg, #4a5566, #2c333f);
+            border: 4px solid var(--ink); border-radius: 20px;
+            box-shadow: 0 5px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.16);
+        }
+        .hero-balance.token { background: linear-gradient(180deg, #5b4b78, #382c4d); }
+        .hero-balance .hb-value { text-shadow: 0 2px 0 rgba(25,30,39,0.8); }
+        .stat-divider { background: var(--ink); opacity: 1; width: 4px; }
+        .stat-value { text-shadow: 0 2px 0 rgba(25,30,39,0.8); }
+
+        /* Кнопки — как золотые буквы GRAM */
+        .btn-primary {
+            background: linear-gradient(180deg, var(--gold-lt) 0%, var(--gold) 46%, #e08c00 100%);
+            border: 4px solid var(--ink); border-radius: 24px; color: #fff;
+            box-shadow: 0 7px 0 var(--gold-dk), 0 11px 15px rgba(0,0,0,0.42), inset 0 4px 0 rgba(255,255,255,0.5);
+            text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink);
+        }
+        .btn-primary:active { transform: translateY(6px); box-shadow: 0 1px 0 var(--gold-dk), inset 0 4px 0 rgba(255,255,255,0.45); }
+        .btn-primary:disabled { filter: grayscale(0.65) brightness(0.72); }
+        .btn-action { background: var(--panel-hi); border: 4px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.16); }
+        .btn-action:active { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+        .btn-buy { background: linear-gradient(180deg, var(--gold-lt), #e08c00); color: #fff; box-shadow: 0 4px 0 var(--gold-dk), inset 0 3px 0 rgba(255,255,255,0.45); text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
+        .btn-buy:active { box-shadow: 0 0 0 var(--gold-dk); }
+        .btn-locked { background: var(--panel-soft); color: var(--text-muted); }
+
+        .slot-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
+        .slot-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 18px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
+        .slot-cell.empty { background: rgba(25,30,39,0.35); border-style: dashed; border-color: rgba(169,180,196,0.4); box-shadow: none; }
+        .slot-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
+        .slot-progress { border-color: var(--ink); border-width: 2px; background: rgba(10,12,16,0.7); }
+
+        .monster-portrait { background: var(--panel-soft); border: 4px solid var(--ink); }
+        .copies-badge { background: var(--gold); color: var(--ink); }
+        .rarity-tag { background: rgba(25,30,39,0.55); }
+
+        .navbar { background: #2c333f; border-top: 5px solid var(--ink); }
+        .nav-item { color: var(--text-muted); }
+        .nav-item.active {
+            color: #fff; background: linear-gradient(180deg, var(--gold-lt), #e08c00);
+            border-color: var(--ink); box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.45);
+            text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink);
+        }
+
+        .roll-row, .stat-row { background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255,255,255,0.1); }
+        .roll-tab { background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); color: var(--text-muted); }
+        .roll-tab.active { color: var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255,255,255,0.4); }
+        .modal-backdrop { background: rgba(12,15,20,0.8); }
+        .modal-progress { border-color: var(--ink); background: rgba(10,12,16,0.7); }
+        .avatar { background: linear-gradient(180deg, var(--gold-lt), #e08c00); border: 5px solid var(--ink); box-shadow: 0 6px 0 var(--ink), inset 0 4px 0 rgba(255,255,255,0.45); }
+        #toast { background: var(--panel-hi); border: 4px solid var(--ink); box-shadow: 0 5px 0 var(--ink); }
+        .token-table td { border-top-color: rgba(255,255,255,0.14); }
+        .lock-hero { color: var(--gold); }
+        .brand-stack { display: flex; flex-direction: column; line-height: 1.02; }
+        .brand-stack b { font-style: normal; font-weight: 900; font-size: 14px; color: #fff; letter-spacing: 0.9px; }
+        .brand-stack i { font-style: normal; font-weight: 900; font-size: 15px; color: var(--gold); letter-spacing: 1.6px; }
+
+        /* ---------- Шапка и навбар как отдельные слои поверх сцены ---------- */
+        .top-header {
+            position: relative; z-index: 20;
+            padding: 12px 16px 13px 16px;
+            background: linear-gradient(180deg, #4a5462 0%, #333c49 55%, #2a323d 100%);
+            border-bottom: 4px solid var(--ink);
+            border-radius: 0 0 24px 24px;
+            box-shadow:
+                0 6px 0 rgba(12, 15, 20, 0.35),
+                0 12px 22px rgba(0, 0, 0, 0.4),
+                inset 0 3px 0 rgba(255, 255, 255, 0.14);
+        }
+        /* тёплая нить у нижней кромки — перекликается с искрами на арте */
+        .top-header::after {
+            content: ''; position: absolute; left: 12%; right: 12%; bottom: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--gold-lt) 45%, var(--gold) 55%, transparent);
+            opacity: 0.9; pointer-events: none;
+            box-shadow: 0 0 10px rgba(247, 181, 0, 0.7);
+        }
+
+        .navbar {
+            padding: 11px 12px;
+            padding-bottom: calc(11px + env(safe-area-inset-bottom));
+            background: linear-gradient(180deg, #414b59 0%, #2d3541 45%, #222933 100%);
+            border-top: 4px solid var(--ink);
+            border-radius: 26px 26px 0 0;
+            box-shadow:
+                0 -7px 0 rgba(12, 15, 20, 0.3),
+                0 -14px 26px rgba(0, 0, 0, 0.5),
+                inset 0 3px 0 rgba(255, 255, 255, 0.14);
+        }
+        .navbar::before {
+            content: ''; position: absolute; left: 16%; right: 16%; top: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--gold-lt) 45%, var(--gold) 55%, transparent);
+            opacity: 0.85; pointer-events: none;
+            box-shadow: 0 0 10px rgba(247, 181, 0, 0.6);
+        }
+        /* поднимаем активную вкладку над кромкой панели */
+        .nav-item.active { transform: translateY(-5px); }
+        /* на 10px полная обводка съедает буквы — оставляем только нижний край */
+        .nav-item.active { text-shadow: 0 2px 0 rgba(25, 30, 39, 0.55); }
+        .brand-stack b, .brand-stack i { text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink), 0 3px 0 var(--ink); }
+        .brand-title { text-shadow: none; }
+
+        /* ---------- Ежедневный вход ---------- */
+        .daily-card { cursor: pointer; }
+        .daily-card .card-top { display: flex; align-items: center; gap: 10px; }
+        .daily-card .daily-icon { flex: 0 0 auto; width: 34px; height: 34px; color: var(--gold); }
+        .daily-streak { font-size: 12px; font-weight: 800; color: var(--text-muted); margin-top: 5px; }
+
+        .daily-box { max-width: 360px; max-height: 84vh; display: flex; flex-direction: column; overflow: hidden; }
+        .daily-scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; margin: 0 -6px; padding: 0 6px 6px 6px; }
+        .daily-sub { font-size: 13px; font-weight: 800; color: var(--text-muted); margin-bottom: 4px; }
+        .daily-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 14px 0 0 0; }
+        .daily-grid.special { grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 9px; }
+        .daily-cell {
+            position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+            padding: 6px 3px 6px 3px; border-radius: 14px; min-width: 0;
+            background: var(--panel-soft); border: 3px solid var(--ink);
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1);
+        }
+        .daily-cell .d-num { font-size: 8.5px; font-weight: 900; letter-spacing: 0.2px; color: var(--text-muted); text-transform: uppercase; white-space: nowrap; }
+        .daily-cell img { width: 21px; height: 21px; object-fit: contain; }
+        .daily-cell .d-amount { font-size: 10px; font-weight: 900; color: var(--accent-token); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .daily-cell.gram .d-amount { color: var(--accent-coin); }
+        .daily-cell.monster .d-amount { color: var(--gold); }
+        .daily-grid.special .daily-cell { padding: 10px 6px; gap: 4px; }
+        .daily-grid.special .daily-cell img { width: 42px; height: 42px; }
+        .daily-grid.special .daily-cell .d-amount { font-size: 13px; }
+        .daily-cell.done { opacity: 0.55; }
+        .daily-cell.done::after {
+            content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; font-weight: 900; color: var(--accent-emerald);
+            text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink);
+            background: rgba(10, 12, 16, 0.45); border-radius: 11px;
+        }
+        .daily-cell.today {
+            background: linear-gradient(180deg, #6b5a25, #3f4757);
+            border-color: var(--gold);
+            box-shadow: 0 3px 0 var(--ink), 0 0 16px rgba(247, 181, 0, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.2);
+            animation: dailyPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes dailyPulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        /* Кнопка забора всегда на виду — список на 30 дней длинный */
+        .daily-actions { flex: 0 0 auto; margin: 0 -8px; padding: 14px 8px 0 8px; border-top: 3px solid rgba(25, 30, 39, 0.55); }
+        .daily-claim { width: 100%; justify-content: center; }
+        .daily-close { width: 100%; justify-content: center; margin-top: 9px; }
+
+        /* ---------- Кошелёк TON ---------- */
+        .wallet-connect { width: 100%; justify-content: center; margin-top: 4px; }
+        .wallet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 11px; }
+        .wallet-actions .btn-action { width: 100%; justify-content: center; padding: 13px 10px; font-size: 14px; }
+        .wallet-note { text-align: center; font-size: 12px; font-weight: 800; color: var(--text-muted); margin-top: 11px; }
+        .wallet-op { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border-radius: 15px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1); margin-bottom: 8px; }
+        .wallet-op .op-kind { font-size: 13px; font-weight: 900; }
+        .wallet-op .op-date { font-size: 11px; font-weight: 800; color: var(--text-muted); margin-top: 2px; }
+        .wallet-op .op-amount { font-size: 15px; font-weight: 900; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .wallet-op .op-amount img { width: 15px; height: 15px; object-fit: contain; }
+        .wallet-op.deposit .op-amount { color: var(--accent-emerald); }
+        .wallet-op.withdraw .op-amount { color: var(--accent-coin); }
+
+        .pay-box { max-width: 350px; text-align: left; max-height: 86vh; overflow-y: auto; }
+        .pay-box h2, .pay-box > p { text-align: center; }
+        .pay-label { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); margin: 14px 2px 6px 2px; }
+        .pay-input {
+            width: 100%; padding: 13px 14px; border-radius: 16px; font-size: 16px; font-weight: 900;
+            color: var(--text-main); background: rgba(10, 12, 16, 0.55);
+            border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.08);
+            font-family: inherit; -webkit-user-select: text; user-select: text;
+        }
+        .pay-input:focus { outline: none; border-color: var(--gold); }
+        .pay-input.address { font-size: 13px; letter-spacing: 0.2px; }
+        .pay-chips { display: flex; gap: 7px; margin-top: 9px; }
+        .pay-chips button {
+            flex: 1; padding: 8px 4px; border-radius: 13px; font-size: 13px; font-weight: 900; font-family: inherit;
+            color: var(--text-muted); background: var(--panel-soft); border: 3px solid var(--ink);
+            box-shadow: 0 3px 0 var(--ink); cursor: pointer;
+        }
+        .pay-chips button:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+        .pay-copy {
+            display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 15px;
+            background: rgba(10, 12, 16, 0.55); border: 3px solid var(--ink); cursor: pointer;
+        }
+        .pay-copy span { flex: 1; min-width: 0; font-size: 12px; font-weight: 800; word-break: break-all; line-height: 1.35; }
+        .pay-copy .icon-md { flex: 0 0 auto; color: var(--gold); }
+        .pay-memo span { font-size: 15px; font-weight: 900; color: var(--gold); letter-spacing: 0.5px; }
+        .pay-warning { font-size: 12px; font-weight: 800; color: var(--accent-rose, #fb7185); margin-top: 10px; line-height: 1.4; }
+        .pay-actions { margin-top: 16px; }
+        .pay-actions .btn-primary, .pay-actions .btn-action { width: 100%; justify-content: center; }
+        .pay-actions .btn-action { margin-top: 9px; }
+        .pay-status { font-size: 12px; font-weight: 800; color: var(--text-muted); text-align: center; margin-top: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+
+    <div id="main-wrapper">
+        <!-- TOP HEADER -->
+        <div class="top-header">
+            <div class="brand-title">
+                <img class="coin-icon coin-brand" src="assets/coin.png" alt="">
+                <span class="brand-stack"><b>MONSTER</b><i>GRAM</i></span>
+            </div>
+            <div class="balance-bar">
+                <div class="top-balance-badge" id="topRightCounter">
+                    <img class="coin-icon" src="assets/coin.png" alt="">
+                    <span id="topRightCoins">0</span>
+                </div>
+                <div class="top-balance-badge token-badge" id="topRightToken">
+                    <img class="coin-icon" src="assets/mnstr.png" alt="">
+                    <span id="topRightMnstr">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- FARM TAB -->
+        <div id="farm" class="content active">
+            <div class="stats-panel glass-panel" id="farmStats">
+                <div class="stat-cell">
+                    <span class="stat-label">Доход</span>
+                    <span class="stat-value">
+                        <img class="stat-coin" src="assets/coin.png" alt="">
+                        <span><span id="statIncome">0</span>/сек</span>
+                    </span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-cell">
+                    <span class="stat-label">Доход</span>
+                    <span class="stat-value">
+                        <img class="stat-coin" src="assets/mnstr.png" alt="">
+                        <span><span id="statTokenIncome">0</span>/сек</span>
+                    </span>
+                </div>
+            </div>
+
+            <div class="farm-area">
+                <div class="hero-balances">
+                    <div class="hero-balance" id="heroGram">
+                        <img src="assets/coin.png" alt="">
+                        <span class="hb-value" id="coinsDisplay">0.0000000</span>
+                    </div>
+                    <div class="hero-balance token" id="heroMnstr">
+                        <img src="assets/mnstr.png" alt="">
+                        <span class="hb-value" id="mnstrChipValue">0.0000000</span>
+                    </div>
+                </div>
+
+                <div class="monster-stage" id="monsterStage" onclick="openSlotModal(state.activeSlot)">
+                    <div class="monster-glow" id="monsterGlow"></div>
+                    <img class="monster-sprite" id="monsterSprite" alt="">
+                </div>
+                <div class="monster-name-tag" id="activeMonsterName">—</div>
+                <div class="monster-sub-tag" id="activeMonsterSub">—</div>
+
+                <button class="btn-primary roll-open" id="rollOpenBtn" onclick="openRoll()">
+                    <img class="coin-icon" src="assets/coin.png" alt="">
+                    Купить монстра от <span id="rollOpenPrice">1</span>
+                </button>
+
+                <div class="slot-grid" id="slotGrid"></div>
+            </div>
+        </div>
+
+        <!-- COLLECTION TAB -->
+        <div id="collection" class="content">
+            <h1>Коллекция</h1>
+            <p class="subtitle">Все существа игры — собери каждого</p>
+
+            <div id="collectionList"></div>
+        </div>
+
+        <!-- MISSIONS TAB -->
+        <div id="missions" class="content">
+            <h1>Задания</h1>
+            <p class="subtitle">Ежедневный вход и разовые награды</p>
+            <div id="missionList"></div>
+        </div>
+
+        <!-- FRIENDS TAB -->
+        <div id="friends" class="content">
+            <h1>Друзья</h1>
+            <p class="subtitle">Зови друзей — расти быстрее</p>
+
+            <div class="card glass-panel" style="flex-direction: column; gap: 16px;">
+                <div class="card-info" style="text-align: center;">
+                    <h3 style="font-size: 20px;">Пригласи друга</h3>
+                    <p style="font-size: 14px; margin-top: 6px;" id="referralTerms">Получи бонус за каждого друга</p>
+                </div>
+                <button class="btn-primary" onclick="shareReferral()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg></div>
+                    Поделиться ссылкой
+                </button>
+                <button class="btn-action" style="width: 100%; justify-content: center;" onclick="copyReferral()">Скопировать ссылку</button>
+            </div>
+
+            <div class="card glass-panel" id="invitedByCard" style="display: none;">
+                <div class="card-info">
+                    <p>Тебя пригласил</p>
+                    <h3 id="invitedByName" style="font-size: 20px; margin-top: 5px;">—</h3>
+                </div>
+                <div class="icon-lg" style="color: var(--gold);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle><path d="m17 11 2 2 4-4"></path></svg></div>
+            </div>
+
+            <div class="card glass-panel">
+                <div class="card-info">
+                    <p>Приглашено друзей</p>
+                    <h3 id="referralCount" style="font-size: 24px; margin-top: 5px;">0</h3>
+                </div>
+                <div class="icon-lg" style="color: var(--accent-cyan);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+            </div>
+
+            <div class="tier-heading"><span>Награды за друзей</span></div>
+            <div id="friendMissionList"></div>
+        </div>
+
+        <!-- PROFILE TAB -->
+        <div id="profile" class="content">
+            <div class="avatar-container">
+                <div class="avatar" id="profileAvatar">U</div>
+                <h2 class="profile-name" id="profileUsername">@username</h2>
+            </div>
+
+            <div class="balance-cards">
+                <div class="balance-card glass-panel">
+                    <img src="assets/coin.png" alt="">
+                    <span class="balance-label">GRAM</span>
+                    <b id="profileGram">0</b>
+                    <span class="balance-rate" id="profileGramRate">0/сутки</span>
+                </div>
+                <div class="balance-card glass-panel token" onclick="openTokenInfo()">
+                    <img src="assets/mnstr.png" alt="">
+                    <span class="balance-label">MNSTR</span>
+                    <b id="profileMnstr">0</b>
+                    <span class="balance-rate" id="profileMnstrRate">0/сутки</span>
+                    <span class="balance-hint">Нажми — что это</span>
+                </div>
+            </div>
+
+            <div class="tier-heading"><span>Кошелёк TON</span></div>
+
+            <div class="card glass-panel">
+                <div class="card-info">
+                    <p id="walletState">Кошелёк не подключён</p>
+                    <h3 id="walletAddress" style="font-size: 18px; margin-top: 5px;">—</h3>
+                </div>
+                <div class="icon-lg" style="color: var(--accent-coin);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21 3 8h18l-9 13Z"></path><path d="M3 8h18"></path><path d="M12 21V8"></path></svg></div>
+            </div>
+
+            <button class="btn-primary wallet-connect" id="walletBtn" onclick="toggleWallet()">
+                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="3"></rect><path d="M16 12h3"></path><path d="M2 10h20"></path></svg></div>
+                <span id="walletBtnText">Подключить кошелёк</span>
+            </button>
+
+            <div class="wallet-actions">
+                <button class="btn-action" onclick="openDeposit()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg></div>
+                    Пополнить
+                </button>
+                <button class="btn-action" onclick="openWithdraw()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></div>
+                    Вывести
+                </button>
+            </div>
+
+            <p class="wallet-note" id="walletNote">1 GRAM = 1 TON • минимум 1 GRAM</p>
+
+            <div class="tier-heading" id="walletOpsHead" style="display: none;"><span>Последние операции</span></div>
+            <div id="walletOps"></div>
+        </div>
+
+        <!-- BOTTOM NAVIGATION -->
+        <div class="navbar">
+            <div class="nav-item active" onclick="switchTab('farm', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-6a8 8 0 0 1 16 0v6Z"></path><path d="M9 11h.01"></path><path d="M15 11h.01"></path><path d="M6 6 4 3"></path><path d="m18 6 2-3"></path></svg></div>
+                <span>Ферма</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('collection', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg></div>
+                <span>Коллекция</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('missions', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
+                <span>Задания</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('friends', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+                <span>Друзья</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('profile', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+                <span>Профиль</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOCKED SLOT MODAL -->
+    <div class="modal-backdrop" id="slotBuyModal" onclick="if (event.target === this) closeSlotBuy()">
+        <div class="modal-box glass-panel" id="slotBuyBody"></div>
+    </div>
+
+    <!-- $MNSTR EXPLAINER MODAL -->
+    <div class="modal-backdrop" id="depositModal" onclick="if (event.target === this) closeDeposit()">
+        <div class="modal-box glass-panel pay-box" id="depositBody"></div>
+    </div>
+
+    <div class="modal-backdrop" id="withdrawModal" onclick="if (event.target === this) closeWithdraw()">
+        <div class="modal-box glass-panel pay-box" id="withdrawBody"></div>
+    </div>
+
+    <div class="modal-backdrop" id="dailyModal" onclick="if (event.target === this) closeDaily()">
+        <div class="modal-box glass-panel daily-box" id="dailyBody"></div>
+    </div>
+
+    <div class="modal-backdrop" id="tokenModal" onclick="if (event.target === this) closeTokenInfo()">
+        <div class="modal-box glass-panel token-box">
+            <img class="token-hero" src="assets/mnstr.png" alt="">
+            <h2>Что такое $MNSTR</h2>
+            <table class="token-table">
+                <tr><td>Что это</td><td>Токен игры. Монстры фармят его <b>параллельно</b> с GRAM — из того же слота, не замедляя доход.</td></tr>
+                <tr><td>Сколько дают</td><td>От 100 до 230 MNSTR за полный цикл монстра — 42 дня. Точное число указано в магазине.</td></tr>
+                <tr><td>Сейчас</td><td>Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
+                <tr><td>После листинга</td><td>Накопленный $MNSTR станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
+            </table>
+            <p class="token-note">Курс и дата листинга не определены. Копи заранее.</p>
+            <button class="btn-primary" style="margin-top:18px" onclick="closeTokenInfo()">Понятно</button>
+        </div>
+    </div>
+
+    <!-- MONSTER INFO MODAL -->
+    <div class="modal-backdrop" id="slotModal" onclick="if (event.target === this) closeSlotModal()">
+        <div class="modal-box glass-panel" id="slotModalBody"></div>
+    </div>
+
+    <!-- MONSTER SHOP MODAL -->
+    <div class="modal-backdrop" id="rollModal" onclick="if (event.target === this) closeRoll()">
+        <div class="modal-box glass-panel roll-box">
+            <div id="rollBody">
+                <h2>Купить монстра</h2>
+                <p>Выпадает случайный. Доход — сколько монстр принесёт за <span id="rollHours">42 дня</span>, после чего слот освободится.</p>
+                <div class="roll-tabs" id="rollTabs"></div>
+                <div class="roll-head"><span>Существо</span><span>Доход / шанс</span></div>
+                <div id="rollTable"></div>
+                <button class="btn-primary" id="rollBuyBtn" style="margin-top:18px" onclick="buyRandomMonster()">Купить</button>
+                <button class="btn-action roll-close" onclick="closeRoll()">Закрыть</button>
+            </div>
+            <div id="rollResult" style="display:none"></div>
+        </div>
+    </div>
+
+    <!-- OFFLINE INCOME MODAL -->
+    <div class="modal-backdrop" id="offlineModal">
+        <div class="modal-box glass-panel">
+            <h2>Монстры не спали 🐲</h2>
+            <p>Пока тебя не было, ферма продолжала майнить.</p>
+            <div class="modal-amount">
+                <img class="coin-icon coin-md" src="assets/coin.png" alt="">
+                <span id="offlineAmount">+0</span>
+            </div>
+            <button class="btn-primary" onclick="closeOfflineModal()">Забрать</button>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="boot">
+        <div class="spinner"></div>
+        <p>Monster Gram загружается…</p>
+    </div>
+
+    <script>
+        // Outside Telegram (e.g. a browser tab) the SDK is missing - fall back to a no-op stub.
+        const noop = () => {};
+        const tg = (window.Telegram && window.Telegram.WebApp) || {
+            expand: noop, ready: noop, initDataUnsafe: {},
+            openLink: url => window.open(url, '_blank'),
+            openTelegramLink: url => window.open(url, '_blank'),
+            HapticFeedback: { impactOccurred: noop, notificationOccurred: noop, selectionChanged: noop }
+        };
+        tg.expand();
+        tg.ready();
+
+        const haptic = {
+            impact(style) { try { tg.HapticFeedback.impactOccurred(style); } catch (e) {} },
+            notify(type) { try { tg.HapticFeedback.notificationOccurred(type); } catch (e) {} },
+            select() { try { tg.HapticFeedback.selectionChanged(); } catch (e) {} }
+        };
+
+        const FRAME_MS = 70;
+
+        function frameCount(sprite) {
+            const monster = CONFIG.monsters.find(m => m.sprite === sprite);
+            return (monster && monster.frames) || 20;
+        }
+
+        let CONFIG = null;
+        let MONSTERS = {};
+
+        // Player state (kept in sync with the backend)
+        const state = {
+            userId: 0,
+            coins: 0,
+            totalEarned: 0,
+            mnstr: 0,
+            farm: [],            // one monster id per occupied slot
+            activeSlot: 0,       // which slot is shown on stage
+            missions: [],        // забранные задания, источник истины — сервер
+            slots: 3,
+            referrals: 0,
+            referralsQualified: 0,
+            invitedBy: '',
+            dailyClaimed: 0,     // сколько дней подряд уже забрано
+            dailyLast: 0,        // номер суток последнего забора
+            wallet: '',          // адрес кошелька игрока
+            operations: [],      // последние пополнения и выводы
+            ops: 0               // версия баланса на сервере
+        };
+
+        let botUsername = '';
+        let offlineOnly = false; // true when the backend is unreachable
+        let stageAnimator = null;
+
+        /* ---------- helpers ---------- */
+
+        function framePath(sprite, index) {
+            return `assets/monsters/${sprite}/Idle/Idle_${String(index).padStart(2, '0')}.png`;
+        }
+
+        // The hero rows show the raw number so the player can watch it tick.
+        function fmtPrecise(value) {
+            const [int, frac] = Math.max(0, value).toFixed(7).split('.');
+            return Number(int).toLocaleString('ru-RU') + '.' + frac;
+        }
+
+        function fmtToken(value) {
+            if (value >= 1000) return fmt(value);
+            if (value >= 100) return value.toFixed(1);
+            return value.toFixed(value >= 10 ? 2 : 3);
+        }
+
+        // GRAM totals are small fractions now, so keep two decimals rather than rounding 1.05 to 1.
+        function plural(n, one, few, many) {
+            const tens = n % 100, units = n % 10;
+            if (units === 1 && tens !== 11) return one;
+            if (units >= 2 && units <= 4 && (tens < 10 || tens >= 20)) return few;
+            return many;
+        }
+
+        function fmtGram(value) {
+            if (value >= 1000) return fmt(value);
+            return value.toFixed(2);
+        }
+
+        function fmt(value) {
+            if (value < 1) return value.toFixed(value < 0.1 ? 3 : 2);
+            if (value < 1000) return value < 10 ? value.toFixed(1) : String(Math.floor(value));
+            const units = ['K', 'M', 'B', 'T', 'Qa', 'Qi'];
+            let unit = -1;
+            let v = value;
+            while (v >= 1000 && unit < units.length - 1) { v /= 1000; unit++; }
+            return v.toFixed(v < 10 ? 2 : 1) + units[unit];
+        }
+
+        function toast(message) {
+            const el = document.getElementById('toast');
+            el.innerText = message;
+            el.classList.add('show');
+            clearTimeout(el._timer);
+            el._timer = setTimeout(() => el.classList.remove('show'), 2200);
+        }
+
+        /* ---------- sprite animation ---------- */
+
+        const spriteCache = new Map();
+
+        function preloadSprite(sprite) {
+            if (spriteCache.has(sprite)) return spriteCache.get(sprite);
+            const promise = Promise.all(
+                Array.from({ length: frameCount(sprite) }, (_, i) => new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = img.onerror = () => resolve();
+                    img.src = framePath(sprite, i);
+                }))
+            );
+            spriteCache.set(sprite, promise);
+            return promise;
+        }
+
+        class SpriteAnimator {
+            constructor(imgEl) {
+                this.el = imgEl;
+                this.timer = null;
+                this.sprite = null;
+            }
+
+            play(sprite) {
+                if (this.sprite === sprite) return;
+                this.sprite = sprite;
+                this.stop();
+                this.el.src = framePath(sprite, 0);
+                preloadSprite(sprite).then(() => {
+                    if (this.sprite !== sprite) return;
+                    const total = frameCount(sprite);
+                    let frame = 0;
+                    this.timer = setInterval(() => {
+                        frame = (frame + 1) % total;
+                        this.el.src = framePath(sprite, frame);
+                    }, FRAME_MS);
+                });
+            }
+
+            stop() {
+                if (this.timer) { clearInterval(this.timer); this.timer = null; }
+            }
+        }
+
+        /* ---------- game math (mirrors main.py) ---------- */
+
+        function copiesOwned(monsterId) {
+            return state.farm.filter(slot => slot.id === monsterId).length;
+        }
+
+        // A monster hands over its whole payout across payout_hours, then it is spent.
+        function monsterRate(monsterId) {
+            const monster = MONSTERS[monsterId];
+            return monster ? monster.payout / (CONFIG.roll.payout_hours * 3600) : 0;
+        }
+
+        function mnstrRate(monsterId) {
+            const monster = MONSTERS[monsterId];
+            return monster ? (monster.mnstr || 0) / (CONFIG.roll.payout_hours * 3600) : 0;
+        }
+
+        function mnstrPerSecond() {
+            return state.farm.reduce(
+                (sum, slot) => sum + (remainingPayout(slot) > 0 ? mnstrRate(slot.id) : 0), 0);
+        }
+
+        function remainingPayout(slot) {
+            return slot ? Math.max(0, MONSTERS[slot.id].payout - slot.mined) : 0;
+        }
+
+        function activeSlotEntry() {
+            return state.farm[state.activeSlot];
+        }
+
+        function activeMonsterId() {
+            const slot = activeSlotEntry();
+            return slot && slot.id;
+        }
+
+        function usedSlots() {
+            return state.farm.length;
+        }
+
+        function freeSlots() {
+            return state.slots - usedSlots();
+        }
+
+        function slotCost() {
+            const { base_cost: base, growth, start } = CONFIG.slots;
+            return base * Math.pow(growth, state.slots - start);
+        }
+
+        function slotsMaxed() {
+            return state.slots >= CONFIG.slots.max;
+        }
+
+        // The only source of coins: what the collected monsters mine per second.
+        function incomePerSecond() {
+            return state.farm.reduce(
+                (sum, slot) => sum + (remainingPayout(slot) > 0 ? monsterRate(slot.id) : 0), 0);
+        }
+
+        // Mines for `seconds`, never paying a monster past its payout.
+        // Returns what was earned plus the monsters that finished.
+        function runFarm(seconds) {
+            let earned = 0;
+            let mnstr = 0;
+            const finished = [];
+            for (const slot of state.farm) {
+                const monster = MONSTERS[slot.id];
+                const gain = Math.min(monsterRate(slot.id) * seconds, remainingPayout(slot));
+                if (gain > 0) {
+                    slot.mined += gain;
+                    earned += gain;
+                    mnstr += gain / monster.payout * (monster.mnstr || 0);
+                }
+                if (remainingPayout(slot) <= 0) finished.push(slot.id);
+            }
+            if (finished.length) {
+                state.farm = state.farm.filter(slot => remainingPayout(slot) > 0);
+                if (state.activeSlot >= state.farm.length) state.activeSlot = 0;
+            }
+            state.mnstr += mnstr;
+            return { earned, mnstr, finished };
+        }
+
+        function rollDays() {
+            const days = Math.round(CONFIG.roll.payout_hours / 24);
+            return `${days} ${plural(days, 'день', 'дня', 'дней')}`;
+        }
+
+        function tierById(id) {
+            return CONFIG.tiers.find(t => t.id === id) || CONFIG.tiers[0];
+        }
+
+        function rollMonster(tierId) {
+            const pool = tierById(tierId).monsters;
+            const total = pool.reduce((sum, m) => sum + m.chance, 0);
+            let roll = Math.random() * total;
+            for (const monster of pool) {
+                roll -= monster.chance;
+                if (roll < 0) return MONSTERS[monster.id];
+            }
+            return MONSTERS[pool[pool.length - 1].id];
+        }
+
+        function earn(amount) {
+            state.coins += amount;
+            state.totalEarned += amount;
+        }
+
+        /* ---------- rendering ---------- */
+
+        function activeColor() {
+            const monster = MONSTERS[activeMonsterId()];
+            return monster ? monster.color : '#3a9ef5';
+        }
+
+        function renderHeader() {
+            const income = incomePerSecond();
+            document.getElementById('coinsDisplay').innerText = fmtPrecise(state.coins);
+            document.getElementById('mnstrChipValue').innerText = fmtPrecise(state.mnstr);
+            document.getElementById('profileMnstr').innerText = fmtToken(state.mnstr);
+            document.getElementById('profileMnstrRate').innerText = fmtToken(mnstrPerSecond() * 86400) + '/сутки';
+            document.getElementById('profileGram').innerText = fmtToken(state.coins);
+            document.getElementById('profileGramRate').innerText = fmtToken(incomePerSecond() * 86400) + '/сутки';
+            document.getElementById('topRightCoins').innerText = fmtToken(state.coins);
+            document.getElementById('topRightMnstr').innerText = fmtToken(state.mnstr);
+            document.getElementById('statIncome').innerText = fmtPrecise(income);
+            document.getElementById('statTokenIncome').innerText = fmtPrecise(mnstrPerSecond());
+
+            const rollBtn = document.getElementById('rollOpenBtn');
+            rollBtn.disabled = false;
+            document.getElementById('rollOpenPrice').innerText =
+                fmtGram(Math.min(...CONFIG.tiers.map(t => t.price)));
+
+            const invitedCard = document.getElementById('invitedByCard');
+            invitedCard.style.display = state.invitedBy ? 'flex' : 'none';
+            if (state.invitedBy) document.getElementById('invitedByName').innerText = state.invitedBy;
+
+            document.getElementById('referralCount').innerText = state.referrals;
+        }
+
+        function renderActiveMonster() {
+            const stage = document.getElementById('monsterStage');
+            const monster = MONSTERS[activeMonsterId()];
+
+            if (!monster) {
+                stage.style.display = 'none';
+                document.getElementById('activeMonsterName').innerText = 'Ферма пустая';
+                document.getElementById('activeMonsterSub').innerText = 'Купи монстра, чтобы занять слот';
+                return;
+            }
+
+            stage.style.display = 'flex';
+            const slot = activeSlotEntry();
+            document.getElementById('activeMonsterName').innerText = monster.name;
+            document.getElementById('activeMonsterSub').innerText =
+                `Слот ${state.activeSlot + 1} • отдал ${fmtPrecise(slot.mined)} из ${fmtGram(monster.payout)}`;
+            document.getElementById('monsterGlow').style.background = monster.color;
+            stageAnimator.play(monster.sprite);
+        }
+
+        let slotGridSignature = '';
+
+        // Only the progress bars move between mining ticks - rebuilding the whole
+        // grid there reloaded every sprite and made the slots flicker.
+        function updateSlotProgress() {
+            const bars = document.querySelectorAll('#slotGrid .slot-progress i');
+            state.farm.forEach((slot, i) => {
+                const bar = bars[i];
+                if (!bar) return;
+                bar.style.width = Math.min(100, (slot.mined / MONSTERS[slot.id].payout) * 100) + '%';
+            });
+        }
+
+        function renderSlotGrid() {
+            const grid = document.getElementById('slotGrid');
+            const signature = [state.slots, state.activeSlot, state.farm.map(s => s.id).join(',')].join('|');
+            if (signature === slotGridSignature) {
+                updateSlotProgress();
+                return;
+            }
+            slotGridSignature = signature;
+            grid.innerHTML = '';
+
+            // Show the open slots plus the single next locked one, so the grid
+            // grows a lock at a time instead of listing every slot up front.
+            const visible = Math.min(state.slots + 1, CONFIG.slots.max);
+
+            for (let i = 0; i < visible; i++) {
+                const slot = state.farm[i];
+                const cell = document.createElement('div');
+
+                if (slot) {
+                    const monster = MONSTERS[slot.id];
+                    const progress = Math.min(100, (slot.mined / monster.payout) * 100);
+                    cell.className = 'slot-cell glass-panel' + (i === state.activeSlot ? ' selected' : '');
+                    cell.style.setProperty('--slot-tint', monster.color);
+                    cell.innerHTML = `<span class="slot-index">${i + 1}</span>
+                                      <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                                      <span class="slot-progress"><i style="width:${progress}%; background:${monster.color}"></i></span>`;
+                    cell.onclick = () => { selectSlot(i); openSlotModal(i); };
+                } else if (i < state.slots) {
+                    cell.className = 'slot-cell empty';
+                    cell.innerHTML = `<span class="slot-index">${i + 1}</span><span class="slot-plus">+</span>`;
+                    cell.onclick = () => openRoll();
+                } else {
+                    cell.className = 'slot-cell locked';
+                    cell.innerHTML = `<span class="slot-index">${i + 1}</span>
+                                      <svg class="slot-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>`;
+                    cell.onclick = () => openSlotBuy();
+                }
+
+                grid.appendChild(cell);
+            }
+        }
+
+        function renderCollection() {
+            const list = document.getElementById('collectionList');
+            list.innerHTML = '';
+
+            CONFIG.tiers.forEach(tier => {
+                const heading = document.createElement('div');
+                heading.className = 'tier-heading';
+                heading.innerHTML = `<span style="color:${tier.color}">${tier.name}</span>
+                                     <b>${tier.monsters.filter(m => copiesOwned(m.id) > 0).length} / ${tier.monsters.length}</b>`;
+                list.appendChild(heading);
+                tier.monsters.forEach(entry => renderCollectionCard(MONSTERS[entry.id], tier, list));
+            });
+        }
+
+        function renderCollectionCard(monster, tier, list) {
+            const copies = copiesOwned(monster.id);
+            const owned = copies > 0;
+            const card = document.createElement('div');
+            card.className = 'monster-card glass-panel';
+            card.innerHTML = `
+                <div class="monster-card-top">
+                    <div class="monster-portrait ${owned ? '' : 'locked'}">
+                        <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                        ${owned ? `<div class="copies-badge">×${copies}</div>` : ''}
+                    </div>
+                    <div class="monster-body">
+                        <span class="rarity-tag" style="color:${tier.color}">${tier.name}</span>
+                        <h3>${monster.name}</h3>
+                        <div class="monster-stat">${fmtGram(monster.payout)} GRAM + ${monster.mnstr} MNSTR • шанс ${monster.chance}%</div>
+                        <div class="monster-desc">${monster.desc}</div>
+                    </div>
+                </div>
+            `;
+            list.appendChild(card);
+        }
+
+        let shopTier = 'common';
+
+        function renderRollTabs() {
+            const tabs = document.getElementById('rollTabs');
+            tabs.innerHTML = '';
+            CONFIG.tiers.forEach(tier => {
+                const tab = document.createElement('button');
+                tab.className = 'roll-tab' + (tier.id === shopTier ? ' active' : '');
+                tab.style.setProperty('--tier-tint', tier.color);
+                tab.innerText = tier.name;
+                tab.onclick = () => { shopTier = tier.id; renderRollTable(); updateRollButton(); haptic.select(); };
+                tabs.appendChild(tab);
+            });
+        }
+
+        function renderRollTable() {
+            renderRollTabs();
+            const tier = tierById(shopTier);
+            const list = document.getElementById('rollTable');
+            list.innerHTML = '';
+
+            tier.monsters.forEach(entry => {
+                const monster = MONSTERS[entry.id];
+                const row = document.createElement('div');
+                row.className = 'roll-row';
+                row.innerHTML = `
+                    <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    <div class="roll-name">
+                        <b>${monster.name}</b>
+                        <span style="color:${tier.color}">${tier.name}</span>
+                    </div>
+                    <div class="roll-numbers">
+                        <span class="roll-num"><b>${fmtGram(monster.payout)}</b><img src="assets/coin.png" alt=""></span>
+                        <span class="roll-num token"><b>${monster.mnstr}</b><img src="assets/mnstr.png" alt=""></span>
+                        <span class="roll-chance">${monster.chance}%</span>
+                    </div>
+                `;
+                list.appendChild(row);
+            });
+
+            document.getElementById('rollHours').innerText = rollDays();
+        }
+
+        function openRoll() {
+            haptic.impact('light');
+            renderRollTable();
+            document.getElementById('rollResult').style.display = 'none';
+            document.getElementById('rollBody').style.display = 'block';
+            updateRollButton();
+            document.getElementById('rollModal').classList.add('open');
+        }
+
+        function closeRoll() {
+            document.getElementById('rollModal').classList.remove('open');
+        }
+
+        function updateRollButton() {
+            const btn = document.getElementById('rollBuyBtn');
+            const price = tierById(shopTier).price;
+            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
+            if (freeSlots() <= 0) {
+                btn.disabled = true;
+                btn.innerHTML = 'Нет свободных слотов';
+            } else if (state.coins < price) {
+                btn.disabled = true;
+                btn.innerHTML = `Нужно ${fmtGram(price)} ${coin}`;
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = `Купить за ${fmtGram(price)} ${coin}`;
+            }
+        }
+
+        function buyRandomMonster() {
+            const tier = tierById(shopTier);
+            const price = tier.price;
+            if (freeSlots() <= 0 || state.coins < price) return;
+
+            state.coins -= price;
+            const monster = rollMonster(tier.id);
+            state.farm.push({ id: monster.id, mined: 0 });
+            state.activeSlot = state.farm.length - 1;
+
+            haptic.notify('success');
+            spawnBurst(14);
+
+            document.getElementById('rollBody').style.display = 'none';
+            const result = document.getElementById('rollResult');
+            result.style.display = 'block';
+            result.innerHTML = `
+                <p>Тебе выпал</p>
+                <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                <h2 style="color:${monster.color}">${monster.name}</h2>
+                <p class="slot-modal-sub" style="color:${tier.color}">${tier.name}</p>
+                <p class="roll-prize-line">Принесёт
+                    <span class="roll-num"><b style="color:var(--accent-coin)">${fmtGram(monster.payout)}</b><img src="assets/coin.png" alt=""></span>
+                    <span class="roll-num"><b style="color:#a78bfa">${monster.mnstr}</b><img src="assets/mnstr.png" alt=""></span>
+                    за ${rollDays()} · слот ${state.farm.length}</p>
+                <button class="btn-primary" style="margin-top:20px" onclick="closeRoll()">Отлично</button>
+            `;
+
+            renderAll();
+            saveNow();
+        }
+
+        /* ---------- ежедневный вход ---------- */
+
+        // Сутки считаем по UTC — так же, как сервер, поэтому день не «плывёт».
+        function dayIndex() {
+            return Math.floor(Date.now() / 86400000);
+        }
+
+        function dailyReward(day) {
+            const special = CONFIG.daily.special.find(item => Number(item.day) === day);
+            if (special) {
+                return {
+                    gram: Number(special.gram) || 0,
+                    mnstr: Number(special.mnstr) || 0,
+                    monster: special.monster || null
+                };
+            }
+            return { gram: 0, mnstr: day * CONFIG.daily.mnstr_step, monster: null };
+        }
+
+        // Серию продолжает только вчерашний вход, пропуск обнуляет её.
+        function dailyStatus() {
+            const today = dayIndex();
+            const last = state.dailyLast || 0;
+            const ready = last !== today;
+            let claimed = state.dailyClaimed || 0;
+            if (last !== today && last !== today - 1) claimed = 0;
+            if (claimed >= CONFIG.daily.days && ready) claimed = 0;
+            return {
+                days: CONFIG.daily.days,
+                claimed,
+                day: ready ? Math.min(claimed + 1, CONFIG.daily.days) : claimed,
+                ready
+            };
+        }
+
+        function applyDaily(daily) {
+            if (!daily) return;
+            state.dailyClaimed = Number(daily.claimed) || 0;
+            state.dailyLast = Number(daily.last) || 0;
+        }
+
+        function dailyIcon(reward) {
+            if (reward.monster) {
+                const monster = MONSTERS[reward.monster];
+                if (monster) return framePath(monster.sprite, 0);
+            }
+            return reward.gram ? 'assets/coin.png' : 'assets/mnstr.png';
+        }
+
+        function dailyLabel(reward) {
+            if (reward.monster) return (MONSTERS[reward.monster] || {}).name || 'Монстр';
+            return reward.gram ? fmtGram(reward.gram) : String(reward.mnstr);
+        }
+
+        function dailyKind(reward) {
+            if (reward.monster) return 'monster';
+            return reward.gram ? 'gram' : 'token';
+        }
+
+        const CALENDAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="3"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="m9 16 2 2 4-4"></path></svg>`;
+
+        function renderDailyCard(list) {
+            const status = dailyStatus();
+            // Забрал сегодня — показываем, что ждёт завтра.
+            const preview = status.ready
+                ? status.day
+                : Math.min(status.claimed + 1, CONFIG.daily.days);
+            const reward = dailyReward(preview);
+
+            const card = document.createElement('div');
+            card.className = 'card glass-panel mission-card daily-card';
+            card.innerHTML = `
+                <div class="card-info">
+                    <div class="card-top">
+                        <div class="daily-icon">${CALENDAR_ICON}</div>
+                        <div style="min-width:0">
+                            <h3>Ежедневный вход</h3>
+                            <div class="mission-reward">
+                                <span class="roll-num ${dailyKind(reward) === 'gram' ? '' : 'token'}">
+                                    <b>${status.ready ? '' : 'завтра: '}${dailyLabel(reward)}</b>
+                                    <img src="${dailyIcon(reward)}" alt="">
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="daily-streak">День ${Math.max(status.day, 1)} из ${status.days} • серия ${status.claimed} ${plural(status.claimed, 'день', 'дня', 'дней')}</div>
+                </div>
+                <button class="btn-action ${status.ready ? 'btn-buy' : ''}">${status.ready ? 'Забрать' : 'Открыть'}</button>
+            `;
+            card.onclick = openDaily;
+            list.prepend(card);
+        }
+
+        function openDaily() {
+            haptic.impact('light');
+            renderDaily();
+            document.getElementById('dailyModal').classList.add('open');
+        }
+
+        function closeDaily() {
+            document.getElementById('dailyModal').classList.remove('open');
+        }
+
+        function dailyCell(day, status) {
+            const reward = dailyReward(day);
+            const classes = ['daily-cell', dailyKind(reward)];
+            if (day <= status.claimed) classes.push('done');
+            else if (status.ready && day === status.day) classes.push('today');
+            return `
+                <div class="${classes.join(' ')}">
+                    <span class="d-num">День ${day}</span>
+                    <img src="${dailyIcon(reward)}" alt="">
+                    <span class="d-amount">${dailyLabel(reward)}</span>
+                </div>`;
+        }
+
+        function renderDaily() {
+            const status = dailyStatus();
+            const days = Array.from({ length: status.days }, (_, i) => i + 1);
+            const specialDays = new Set(CONFIG.daily.special.map(item => Number(item.day)));
+            const plain = days.filter(day => !specialDays.has(day));
+            const special = days.filter(day => specialDays.has(day));
+            const reward = dailyReward(status.day);
+
+            document.getElementById('dailyBody').innerHTML = `
+                <h2>Ежедневный вход</h2>
+                <p class="daily-sub">${status.ready
+                    ? `Сегодня доступен день ${status.day} из ${status.days}`
+                    : `Награда за день ${status.claimed} забрана`}</p>
+                <p class="daily-sub">Серия: ${status.claimed} ${plural(status.claimed, 'день', 'дня', 'дней')} подряд</p>
+                <div class="daily-scroll">
+                    <div class="daily-grid">${plain.map(day => dailyCell(day, status)).join('')}</div>
+                    ${special.length ? `<div class="daily-grid special">${special.map(day => dailyCell(day, status)).join('')}</div>` : ''}
+                </div>
+                <div class="daily-actions">
+                    <button class="btn-primary daily-claim" id="dailyClaimBtn" ${status.ready ? '' : 'disabled'}>
+                        ${status.ready
+                            ? `Забрать ${dailyLabel(reward)} <img class="coin-icon" src="${dailyIcon(reward)}" alt="">`
+                            : 'Приходи завтра'}
+                    </button>
+                    <button class="btn-action daily-close" onclick="closeDaily()">Закрыть</button>
+                </div>
+            `;
+            if (status.ready) {
+                document.getElementById('dailyClaimBtn').onclick = claimDaily;
+            }
+        }
+
+        function finishDaily(reward, day) {
+            haptic.notify('success');
+            const suffix = reward.monster ? '' : (reward.gram ? ' GRAM' : ' MNSTR');
+            toast(`День ${day}: +${dailyLabel(reward)}${suffix}`);
+            spawnBurst(12);
+            renderAll();
+            renderDaily();
+        }
+
+        // Без бэкенда (статический хостинг) серию ведёт сам клиент.
+        function claimDailyLocal(day) {
+            const reward = dailyReward(day);
+            if (reward.monster) {
+                if (usedSlots() >= state.slots) {
+                    if (state.slots >= CONFIG.slots.max) {
+                        toast('Все слоты заняты — освободи один');
+                        return;
+                    }
+                    state.slots += 1;
+                }
+                state.farm.push({ id: reward.monster, mined: 0 });
+            }
+            if (reward.gram) earn(reward.gram);
+            if (reward.mnstr) state.mnstr += reward.mnstr;
+
+            state.dailyClaimed = day;
+            state.dailyLast = dayIndex();
+            saveNow();
+            finishDaily(reward, day);
+        }
+
+        async function claimDaily() {
+            const status = dailyStatus();
+            if (!status.ready) { toast('Сегодня награда уже забрана'); return; }
+
+            if (offlineOnly || !state.userId) {
+                claimDailyLocal(status.day);
+                return;
+            }
+
+            try {
+                const response = await fetch('api/daily/claim', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Награда пока недоступна');
+                    haptic.notify('warning');
+                    return;
+                }
+
+                state.coins = data.coins;
+                state.mnstr = data.mnstr;
+                state.totalEarned = data.total_earned;
+                state.farm = readFarm(data.monsters);
+                state.slots = data.slots || state.slots;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                applyDaily(data.daily);
+                finishDaily(data.reward, data.day);
+            } catch (error) {
+                toast('Сервер недоступен');
+            }
+        }
+
+        function missionReady(mission) {
+            if (mission.type === 'referrals') return state.referralsQualified >= mission.need;
+            return true;   // подписку на канал проверяет сервер
+        }
+
+        function missionTitle(mission) {
+            if (mission.type !== 'referrals') return mission.title;
+            const need = mission.need;
+            const q = CONFIG.referral.qualify_mnstr;
+            return need === 1
+                ? `Пригласить друга, который заработает ${q} MNSTR`
+                : `Пригласить ${need} ${plural(need, 'друга', 'друзей', 'друзей')}, которые заработают ${q} MNSTR`;
+        }
+
+        function renderMissionCard(mission, list) {
+            const done = state.missions.includes(mission.id);
+            const ready = missionReady(mission);
+            const card = document.createElement('div');
+            card.className = 'card glass-panel mission-card';
+
+            const progress = mission.type === 'referrals'
+                ? `<div class="mission-progress">${Math.min(state.referralsQualified, mission.need)} / ${mission.need} друзей</div>`
+                : '';
+
+            let label = 'Забрать';
+            let style = 'btn-buy';
+            if (done) { label = 'Готово'; style = ''; }
+            else if (!ready) { label = 'Не готово'; style = 'btn-locked'; }
+
+            card.innerHTML = `
+                <div class="card-info">
+                    <h3>${missionTitle(mission)}</h3>
+                    <div class="mission-reward">
+                        <span class="roll-num"><b>${fmtGram(mission.gram)}</b><img src="assets/coin.png" alt=""></span>
+                        ${mission.mnstr ? `<span class="roll-num token"><b>${mission.mnstr}</b><img src="assets/mnstr.png" alt=""></span>` : ''}
+                    </div>
+                    ${progress}
+                </div>
+                <button class="btn-action ${style}" ${done ? 'disabled' : ''} data-mission="${mission.id}">${label}</button>
+            `;
+            list.appendChild(card);
+        }
+
+        function fillMissionList(list, missions) {
+            list.innerHTML = '';
+            missions.forEach(mission => renderMissionCard(mission, list));
+            list.querySelectorAll('[data-mission]').forEach(btn => {
+                btn.onclick = () => claimMission(btn.dataset.mission);
+            });
+        }
+
+        // Задания про друзей живут на вкладке «Друзья», остальные — в «Заданиях».
+        function renderMissions() {
+            const list = document.getElementById('missionList');
+            fillMissionList(list, CONFIG.missions.filter(m => m.type !== 'referrals'));
+            renderDailyCard(list);   // ежедневный вход — первой карточкой
+            fillMissionList(
+                document.getElementById('friendMissionList'),
+                CONFIG.missions.filter(m => m.type === 'referrals'));
+        }
+
+        function renderAll() {
+            renderHeader();
+            renderActiveMonster();
+            renderSlotGrid();
+            renderCollection();
+            renderMissions();
+            updateRollButton();
+        }
+
+        /* ---------- mined coins flying to the balance ---------- */
+
+        function spawnParticle(isToken = false) {
+            const stage = document.getElementById('monsterStage');
+            const target = document.getElementById(isToken ? 'heroMnstr' : 'heroGram');
+
+            const stageRect = stage.getBoundingClientRect();
+            const startX = stageRect.left + stageRect.width / 2 + (Math.random() - 0.5) * 70;
+            const startY = stageRect.top + stageRect.height / 2 + (Math.random() - 0.5) * 70;
+            const targetRect = target.getBoundingClientRect();
+            const endX = targetRect.left + targetRect.width / 2;
+            const endY = targetRect.top + targetRect.height / 2;
+
+            const particle = document.createElement('img');
+            particle.className = 'particle-stream';
+            particle.src = isToken ? 'assets/mnstr.png' : 'assets/coin.png';
+            particle.style.left = `${startX}px`;
+            particle.style.top = `${startY}px`;
+            document.body.appendChild(particle);
+
+            // Rise straight up first, then slide into the balance badge.
+            const animation = particle.animate([
+                { transform: 'translate(-50%, -50%) scale(1)', opacity: 1, offset: 0 },
+                { transform: `translate(-50%, ${(endY - startY) * 0.65 - 50}px) scale(0.85)`, opacity: 1, offset: 0.55 },
+                { transform: `translate(${endX - startX}px, ${endY - startY}px) scale(0.35)`, opacity: 0, offset: 1 }
+            ], { duration: 620 + Math.random() * 220, easing: 'cubic-bezier(0.35, 0.9, 0.4, 1)' });
+
+            animation.onfinish = () => particle.remove();
+        }
+
+        // Mining produces both currencies at the same instant, so both fly at once.
+        function spawnMinedPair() {
+            spawnParticle(false);
+            if (mnstrPerSecond() > 0) spawnParticle(true);
+        }
+
+        function spawnBurst(count) {
+            let spawned = 0;
+            const timer = setInterval(() => {
+                spawnParticle();
+                if (++spawned >= count) clearInterval(timer);
+            }, 30);
+        }
+
+        /* ---------- actions ---------- */
+
+        function selectSlot(index) {
+            if (!state.farm[index]) return;
+            haptic.select();
+            state.activeSlot = index;
+            renderActiveMonster();
+            renderSlotGrid();
+            scheduleSave();
+        }
+
+        let modalSlot = 0;
+
+        function openSlotModal(index) {
+            if (!state.farm[index]) return;
+            modalSlot = index;
+            haptic.impact('light');
+            renderSlotModal();
+            document.getElementById('slotModal').classList.add('open');
+        }
+
+        function closeSlotModal() {
+            document.getElementById('slotModal').classList.remove('open');
+        }
+
+        function renderSlotModal() {
+            const slot = state.farm[modalSlot];
+            if (!slot) { closeSlotModal(); return; }
+
+            const monster = MONSTERS[slot.id];
+            const tier = tierById(monster.tier);
+            const left = remainingPayout(slot);
+            const progress = Math.min(100, (slot.mined / monster.payout) * 100);
+
+            document.getElementById('slotModalBody').innerHTML = `
+                <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                <h2 style="color:${monster.color}">${monster.name}</h2>
+                <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • слот ${modalSlot + 1}</p>
+
+                <div class="stat-row"><span>Доход в секунду</span><b>${fmtPrecise(monsterRate(slot.id))}</b></div>
+                <div class="stat-row"><span>$MNSTR в сутки</span><b style="color:#a78bfa">${fmtToken(mnstrRate(slot.id) * 86400)}</b></div>
+                <div class="stat-row"><span>Отдано</span><b>${fmtPrecise(slot.mined)}</b></div>
+                <div class="stat-row"><span>Осталось</span><b style="color:var(--accent-coin)">${fmtPrecise(left)}</b></div>
+
+                <div class="modal-progress"><i style="width:${progress}%; background:${monster.color}"></i></div>
+                <p class="slot-modal-sub">Отработал на ${progress.toFixed(2)}% из ${fmtGram(monster.payout)} GRAM</p>
+
+                <button class="btn-primary" style="margin-top:18px" onclick="closeSlotModal()">Закрыть</button>
+            `;
+        }
+
+        function openSlotBuy() {
+            haptic.impact('light');
+            renderSlotBuy();
+            document.getElementById('slotBuyModal').classList.add('open');
+        }
+
+        function closeSlotBuy() {
+            document.getElementById('slotBuyModal').classList.remove('open');
+        }
+
+        function renderSlotBuy() {
+            const maxed = slotsMaxed();
+            const cost = slotCost();
+            const affordable = state.coins >= cost;
+
+            document.getElementById('slotBuyBody').innerHTML = `
+                <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                <h2>${maxed ? 'Все слоты открыты' : `Слот ${state.slots + 1} заперт`}</h2>
+                <p>${maxed
+                    ? `Больше ${CONFIG.slots.max} слотов на ферме не бывает.`
+                    : 'Открой его, чтобы поселить ещё одного монстра.'}</p>
+
+                ${maxed ? '' : `
+                <div class="stat-row"><span>Цена</span><b style="color:var(--accent-coin)">${fmtGram(cost)} GRAM</b></div>
+                <div class="stat-row"><span>Открыто слотов</span><b>${state.slots} / ${CONFIG.slots.max}</b></div>`}
+
+                ${maxed ? '' : `
+                <button class="btn-primary" style="margin-top:18px" ${affordable ? '' : 'disabled'} onclick="buySlot()">
+                    ${affordable ? `Купить за ${fmtGram(cost)}` : `Нужно ${fmtGram(cost)} GRAM`}
+                </button>`}
+                <button class="btn-action roll-close" onclick="closeSlotBuy()">Закрыть</button>
+            `;
+        }
+
+        function openTokenInfo() {
+            haptic.impact('light');
+            document.getElementById('tokenModal').classList.add('open');
+        }
+
+        function closeTokenInfo() {
+            document.getElementById('tokenModal').classList.remove('open');
+        }
+
+        function buySlot() {
+            if (slotsMaxed()) return;
+            const cost = slotCost();
+            if (state.coins < cost) return;
+
+            state.coins -= cost;
+            state.slots += 1;
+
+            haptic.notify('success');
+            toast(`Слот ${state.slots} открыт`);
+            renderAll();
+            renderSlotBuy();
+            saveNow();
+        }
+
+        async function claimMission(missionId) {
+            const mission = CONFIG.missions.find(m => m.id === missionId);
+            if (!mission || state.missions.includes(missionId)) return;
+
+            // Ссылку открываем всегда — иначе подписаться негде.
+            if (mission.url) {
+                try { tg.openTelegramLink(mission.url); } catch (e) {
+                    try { tg.openLink(mission.url); } catch (e2) {}
+                }
+            }
+
+            if (offlineOnly) {
+                toast('Награды за задания выдаёт сервер');
+                return;
+            }
+
+            try {
+                const response = await fetch('api/mission/claim', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, mission_id: missionId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Условие ещё не выполнено');
+                    haptic.notify('warning');
+                    return;
+                }
+
+                state.coins = data.coins;
+                state.mnstr = data.mnstr;
+                state.totalEarned = data.total_earned;
+                state.missions = data.missions;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+
+                haptic.notify('success');
+                toast(`Награда получена: ${fmtGram(mission.gram)} GRAM`);
+                spawnBurst(12);
+                renderAll();
+            } catch (error) {
+                toast('Сервер недоступен');
+            }
+        }
+
+        function referralHint() {
+            if (!state.userId) return 'Открой игру через Telegram — там появится ссылка';
+            return 'Ссылка появится, когда запустится бот';
+        }
+
+        function referralLink() {
+            const bot = (botUsername || '').replace(/^@/, '').trim();
+            if (!bot || !state.userId) return '';
+            return `https://t.me/${bot}?start=${state.userId}`;
+        }
+
+        function shareReferral() {
+            const link = referralLink();
+            if (!link) { toast(referralHint()); return; }
+            const text = 'Заводи свою банду монстров в Monster Gram — они майнят монеты даже офлайн!';
+            try {
+                tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+            } catch (e) {
+                copyReferral();
+            }
+        }
+
+        function copyReferral() {
+            const link = referralLink();
+            if (!link) { toast(referralHint()); return; }
+            navigator.clipboard?.writeText(link)
+                .then(() => toast('Ссылка скопирована'))
+                .catch(() => toast(link));
+        }
+
+        function switchTab(tabId, element) {
+            haptic.select();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            element.classList.add('active');
+
+            if (tabId === 'collection') renderCollection();
+            if (tabId === 'missions' || tabId === 'friends') renderMissions();
+        }
+
+        function closeOfflineModal() {
+            haptic.impact('light');
+            document.getElementById('offlineModal').classList.remove('open');
+            spawnBurst(18);
+        }
+
+        /* ---------- кошелёк TON ---------- */
+
+        let TON_CFG = { enabled: false, wallet: '', memo: '', rate: 1, min_deposit: 1, min_withdraw: 1 };
+        let tonUI = null;          // TonConnectUI, если SDK загрузился
+        let tonAddress = '';       // адрес подключённого кошелька
+        let depositTimer = null;
+
+        // CRC-16/XMODEM — контрольная сумма в конце адреса TON.
+        function crc16(data) {
+            let crc = 0;
+            for (const byte of data) {
+                crc ^= byte << 8;
+                for (let bit = 0; bit < 8; bit++) {
+                    crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+                }
+            }
+            return crc;
+        }
+
+        // Кошелёк отдаёт сырой вид (0:hex), а игроку привычен UQ… — переводим.
+        function friendlyAddress(raw, testnet) {
+            const parts = String(raw || '').split(':');
+            if (parts.length !== 2 || parts[1].length !== 64) return String(raw || '');
+            const bytes = new Uint8Array(36);
+            bytes[0] = testnet ? 0x51 | 0x80 : 0x51;          // не bounceable
+            bytes[1] = Number(parts[0]) === -1 ? 0xff : 0x00;
+            for (let i = 0; i < 32; i++) bytes[2 + i] = parseInt(parts[1].substr(i * 2, 2), 16);
+            const crc = crc16(bytes.subarray(0, 34));
+            bytes[34] = crc >> 8;
+            bytes[35] = crc & 0xff;
+            return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
+        }
+
+        function shortAddress(address) {
+            return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-6)}` : address;
+        }
+
+        // Ячейка с текстовым комментарием (опкод 0) в виде BOC — это и есть мемо перевода.
+        function commentPayload(text) {
+            const body = new TextEncoder().encode(text);
+            const cell = new Uint8Array(4 + body.length);     // 32 нулевых бита + текст
+            cell.set(body, 4);
+            const boc = new Uint8Array(13 + cell.length);
+            boc.set([0xb5, 0xee, 0x9c, 0x72, 0x01, 0x01, 0x01, 0x01, 0x00,
+                     cell.length + 2, 0x00, 0x00, cell.length * 2]);
+            boc.set(cell, 13);
+            return btoa(String.fromCharCode(...boc));
+        }
+
+        function initTonConnect() {
+            if (typeof TON_CONNECT_UI === 'undefined') return;   // SDK не загрузился
+            try {
+                tonUI = new TON_CONNECT_UI.TonConnectUI({
+                    manifestUrl: new URL('tonconnect-manifest.json', location.href).href
+                });
+            } catch (error) {
+                tonUI = null;
+                return;
+            }
+
+            const remember = account => {
+                tonAddress = account ? friendlyAddress(account.address, account.chain === '-3') : '';
+                renderWallet();
+            };
+
+            tonUI.onStatusChange(wallet => {
+                remember(wallet && wallet.account);
+                if (tonAddress) {
+                    saveWallet(tonAddress);
+                    toast('Кошелёк подключён');
+                }
+            });
+            Promise.resolve(tonUI.connectionRestored)
+                .then(() => remember(tonUI.account))
+                .catch(() => {});
+        }
+
+        function walletAddress() {
+            return tonAddress || state.wallet || '';
+        }
+
+        async function saveWallet(address) {
+            state.wallet = address;
+            if (offlineOnly || !state.userId) return;
+            try {
+                await fetch('api/wallet', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, address })
+                });
+            } catch (error) {}
+        }
+
+        async function toggleWallet() {
+            if (!tonUI) { toast('TON Connect не загрузился — обнови страницу'); return; }
+            haptic.impact('light');
+            try {
+                if (tonAddress) {
+                    await tonUI.disconnect();
+                    tonAddress = '';
+                    await saveWallet('');
+                    renderWallet();
+                    toast('Кошелёк отключён');
+                } else {
+                    await tonUI.openModal();
+                }
+            } catch (error) {
+                toast('Не удалось открыть TON Connect');
+            }
+        }
+
+        function opDate(ts) {
+            if (!ts) return '';
+            return new Date(ts * 1000).toLocaleString('ru-RU', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function renderWallet() {
+            // Подключён — это про текущую сессию TON Connect; сохранённый адрес
+            // остаётся между запусками и нужен только для выплат.
+            const address = walletAddress();
+            document.getElementById('walletState').innerText = tonAddress
+                ? 'Кошелёк подключён'
+                : (address ? 'Адрес для выплат' : 'Кошелёк не подключён');
+            document.getElementById('walletAddress').innerText = address ? shortAddress(address) : '—';
+            document.getElementById('walletBtnText').innerText =
+                tonAddress ? 'Отключить кошелёк' : 'Подключить кошелёк';
+            document.getElementById('walletBtn').disabled = !tonUI || !TON_CFG.enabled;
+
+            const note = document.getElementById('walletNote');
+            if (!TON_CFG.enabled) {
+                note.innerText = 'Пополнение и вывод работают на сервере проекта';
+            } else if (!tonUI) {
+                note.innerText = 'TON Connect не загрузился — переведи вручную по адресу и мемо';
+            } else {
+                note.innerText = `1 GRAM = ${(1 / TON_CFG.rate).toFixed(TON_CFG.rate >= 1 ? 0 : 2)} TON `
+                    + `• минимум ${fmtGram(TON_CFG.min_deposit)} GRAM`;
+            }
+            document.querySelectorAll('.wallet-actions .btn-action')
+                .forEach(btn => { btn.disabled = !TON_CFG.enabled; });
+
+            const list = document.getElementById('walletOps');
+            const operations = state.operations || [];
+            document.getElementById('walletOpsHead').style.display = operations.length ? 'flex' : 'none';
+            list.innerHTML = operations.map(op => {
+                const deposit = op.kind === 'deposit';
+                const status = deposit ? 'Зачислено' : (op.status === 'sent' ? 'Отправлено' : 'В обработке');
+                return `
+                    <div class="wallet-op ${deposit ? 'deposit' : 'withdraw'}">
+                        <div>
+                            <div class="op-kind">${deposit ? 'Пополнение' : 'Вывод'} • ${status}</div>
+                            <div class="op-date">${opDate(op.ts)}</div>
+                        </div>
+                        <div class="op-amount">${deposit ? '+' : '−'}${fmtGram(op.amount)}<img src="assets/coin.png" alt=""></div>
+                    </div>`;
+            }).join('');
+        }
+
+        function copyText(text, message) {
+            navigator.clipboard?.writeText(text)
+                .then(() => toast(message || 'Скопировано'))
+                .catch(() => toast(text));
+            haptic.impact('light');
+        }
+
+        const COPY_ICON = `<div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></div>`;
+
+        function tonAmount(gram) {
+            return Number((gram / TON_CFG.rate).toFixed(9));
+        }
+
+        function openDeposit() {
+            if (!TON_CFG.enabled) { toast('Пополнение пока недоступно'); return; }
+            haptic.impact('light');
+            renderDeposit();
+            document.getElementById('depositModal').classList.add('open');
+            // Пополнение приходит по мемо, поэтому просто ждём и проверяем сами.
+            clearInterval(depositTimer);
+            depositTimer = setInterval(() => checkDeposit(true), 20000);
+        }
+
+        function closeDeposit() {
+            clearInterval(depositTimer);
+            depositTimer = null;
+            document.getElementById('depositModal').classList.remove('open');
+        }
+
+        function renderDeposit() {
+            const min = TON_CFG.min_deposit;
+            const current = document.getElementById('depositAmount');
+            const value = current ? current.value : fmtGram(min);
+
+            document.getElementById('depositBody').innerHTML = `
+                <h2>Пополнение</h2>
+                <p>1 GRAM = ${tonAmount(1)} TON</p>
+
+                <div class="pay-label">Сумма, GRAM</div>
+                <input class="pay-input" id="depositAmount" type="number" inputmode="decimal"
+                       min="${min}" step="0.01" value="${value}" oninput="updateDepositAmount()">
+                <div class="pay-chips">
+                    ${[min, min * 5, min * 10].map(sum =>
+                        `<button onclick="setDeposit(${sum})">${fmtGram(sum)}</button>`).join('')}
+                </div>
+
+                <div class="pay-label">Адрес проекта</div>
+                <div class="pay-copy" onclick="copyText('${TON_CFG.wallet}', 'Адрес скопирован')">
+                    <span>${TON_CFG.wallet}</span>${COPY_ICON}
+                </div>
+
+                <div class="pay-label">Комментарий к переводу (мемо)</div>
+                <div class="pay-copy pay-memo" onclick="copyText('${TON_CFG.memo}', 'Мемо скопировано')">
+                    <span>${TON_CFG.memo}</span>${COPY_ICON}
+                </div>
+                <p class="pay-warning">Перевод без этого комментария сервер не свяжет с твоим аккаунтом.</p>
+
+                <div class="pay-actions">
+                    ${tonAddress
+                        ? `<button class="btn-primary" onclick="payFromWallet()">Отправить <span id="depositTon">${tonAmount(Number(value) || min)}</span> TON</button>`
+                        : `<button class="btn-primary" onclick="toggleWallet()">Подключить кошелёк</button>`}
+                    <button class="btn-action" onclick="checkDeposit(false)">Я перевёл — проверить</button>
+                    <button class="btn-action" onclick="closeDeposit()">Закрыть</button>
+                </div>
+                <p class="pay-status">Пополнение зачисляется автоматически по мемо, обычно за минуту.</p>
+            `;
+        }
+
+        function setDeposit(amount) {
+            const input = document.getElementById('depositAmount');
+            if (input) { input.value = fmtGram(amount); updateDepositAmount(); }
+        }
+
+        function updateDepositAmount() {
+            const input = document.getElementById('depositAmount');
+            const label = document.getElementById('depositTon');
+            if (input && label) label.innerText = tonAmount(Number(input.value) || 0);
+        }
+
+        async function payFromWallet() {
+            const input = document.getElementById('depositAmount');
+            const gram = Number(input && input.value) || 0;
+            if (gram < TON_CFG.min_deposit) {
+                toast(`Минимум для пополнения — ${fmtGram(TON_CFG.min_deposit)} GRAM`);
+                return;
+            }
+            if (!tonUI || !tonAddress) { toast('Сначала подключи кошелёк'); return; }
+
+            try {
+                await tonUI.sendTransaction({
+                    validUntil: Math.floor(Date.now() / 1000) + 600,
+                    messages: [{
+                        address: TON_CFG.wallet,
+                        amount: String(Math.round(tonAmount(gram) * 1e9)),
+                        payload: commentPayload(TON_CFG.memo)
+                    }]
+                });
+                toast('Перевод отправлен — ждём подтверждения сети');
+                haptic.notify('success');
+                setTimeout(() => checkDeposit(true), 8000);
+            } catch (error) {
+                toast('Перевод отменён');
+            }
+        }
+
+        async function checkDeposit(silent) {
+            if (offlineOnly || !state.userId) { toast('Пополнение работает только в Telegram'); return; }
+            try {
+                const response = await fetch('api/ton/check', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (!silent) toast(data.detail || 'Проверить не удалось');
+                    return;
+                }
+                if (data.ops !== state.ops) {
+                    const before = state.coins;
+                    await syncFromServer();
+                    renderWallet();
+                    if (state.coins > before) {
+                        toast(`Пополнение зачислено: +${fmtGram(state.coins - before)} GRAM`);
+                        haptic.notify('success');
+                        spawnBurst(14);
+                    }
+                    return;
+                }
+                if (!silent) toast('Перевод пока не виден — попробуй через минуту');
+            } catch (error) {
+                if (!silent) toast('Сервер недоступен');
+            }
+        }
+
+        function openWithdraw() {
+            if (!TON_CFG.enabled) { toast('Вывод пока недоступен'); return; }
+            haptic.impact('light');
+            renderWithdraw();
+            document.getElementById('withdrawModal').classList.add('open');
+        }
+
+        function closeWithdraw() {
+            document.getElementById('withdrawModal').classList.remove('open');
+        }
+
+        function renderWithdraw() {
+            const min = TON_CFG.min_withdraw;
+            document.getElementById('withdrawBody').innerHTML = `
+                <h2>Вывод</h2>
+                <p>Доступно ${fmtGram(state.coins)} GRAM</p>
+
+                <div class="pay-label">Сумма, GRAM</div>
+                <input class="pay-input" id="withdrawAmount" type="number" inputmode="decimal"
+                       min="${min}" step="0.01" value="${fmtGram(Math.max(min, 0))}">
+                <div class="pay-chips">
+                    <button onclick="setWithdraw(${min})">${fmtGram(min)}</button>
+                    <button onclick="setWithdraw(${state.coins / 2})">Половина</button>
+                    <button onclick="setWithdraw(${state.coins})">Всё</button>
+                </div>
+
+                <div class="pay-label">Адрес TON</div>
+                <input class="pay-input address" id="withdrawAddress" type="text"
+                       placeholder="UQ…" value="${walletAddress()}">
+
+                <p class="pay-warning">Минимум ${fmtGram(min)} GRAM. Выплату отправляет владелец проекта после проверки заявки.</p>
+
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="submitWithdraw()">Вывести</button>
+                    <button class="btn-action" onclick="closeWithdraw()">Закрыть</button>
+                </div>
+            `;
+        }
+
+        function setWithdraw(amount) {
+            const input = document.getElementById('withdrawAmount');
+            if (input) input.value = fmtGram(Math.max(0, amount));
+        }
+
+        async function submitWithdraw() {
+            if (offlineOnly || !state.userId) { toast('Вывод работает только в Telegram'); return; }
+            const amount = Number(document.getElementById('withdrawAmount').value) || 0;
+            const address = (document.getElementById('withdrawAddress').value || '').trim();
+
+            if (amount < TON_CFG.min_withdraw) {
+                toast(`Минимум для вывода — ${fmtGram(TON_CFG.min_withdraw)} GRAM`);
+                return;
+            }
+            if (amount > state.coins) { toast('Недостаточно GRAM на балансе'); return; }
+            if (!address) { toast('Укажи адрес кошелька'); return; }
+
+            try {
+                const response = await fetch('api/ton/withdraw', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, address, amount })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Заявку не приняли');
+                    haptic.notify('warning');
+                    return;
+                }
+                state.wallet = address;
+                await syncFromServer();
+                renderWallet();
+                closeWithdraw();
+                toast(`Заявка на ${fmtGram(amount)} GRAM принята`);
+                haptic.notify('success');
+            } catch (error) {
+                toast('Сервер недоступен');
+            }
+        }
+
+        /* ---------- persistence ---------- */
+
+        let saveTimer = null;
+
+        function scheduleSave() {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(saveNow, 1500);
+        }
+
+        function saveLocally() {
+            try {
+                localStorage.setItem('monsterFarm', JSON.stringify({ ...state, lastSeen: Date.now() }));
+            } catch (e) {}
+        }
+
+        // Telegram подписывает эти данные — сервер по ним узнаёт настоящего игрока.
+        function apiHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': (tg && tg.initData) || ''
+            };
+        }
+
+        function saveNow() {
+            if (offlineOnly || !state.userId) {
+                saveLocally();
+                return;
+            }
+            const payload = {
+                user_id: state.userId,
+                coins: state.coins,
+                total_earned: state.totalEarned,
+                mnstr: state.mnstr,
+                monsters: state.farm,
+                active_slot: state.activeSlot,
+                missions: state.missions,
+                slots: state.slots,
+                ops: state.ops
+            };
+            fetch('api/save', {
+                method: 'POST',
+                headers: apiHeaders(),
+                body: JSON.stringify(payload),
+                keepalive: true
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // Сервер что-то начислил, пока клиент считал сам, — перечитываем.
+                    if (data.status === 'stale') return syncFromServer();
+                    if (typeof data.ops === 'number') state.ops = data.ops;
+                })
+                .catch(() => {});
+        }
+
+        async function syncFromServer() {
+            const response = await fetch(`api/load/${state.userId}`, { headers: apiHeaders() });
+            if (!response.ok) throw new Error('load failed');
+            const data = await response.json();
+
+            state.coins = data.coins;
+            state.totalEarned = data.total_earned;
+            state.mnstr = data.mnstr || 0;
+            state.farm = readFarm(data.monsters);
+            if (!state.farm.length) state.farm = [{ id: CONFIG.monsters[0].id, mined: 0 }];
+            state.activeSlot = data.active_slot || 0;
+            state.missions = data.missions || [];
+            state.slots = data.slots || CONFIG.slots.start;
+            state.referrals = data.referrals || 0;
+            state.referralsQualified = data.referrals_qualified || 0;
+            state.invitedBy = data.invited_by || '';
+            state.wallet = data.wallet || '';
+            state.operations = data.operations || [];
+            state.ops = data.ops || 0;
+            if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
+            applyDaily(data.daily);
+            botUsername = data.bot_username || botUsername;
+
+            renderAll();
+            renderWallet();
+            return data.offline_earned || 0;
+        }
+
+        // Farms saved before slots were separated stored { monsterId: copies };
+        // expand those back into one entry per slot.
+        function readFarm(raw) {
+            let entries = raw;
+            if (raw && !Array.isArray(raw) && typeof raw === 'object') {
+                entries = Object.entries(raw)
+                    .flatMap(([id, copies]) => Array(Math.max(0, Math.floor(copies) || 0)).fill(id));
+            }
+            if (!Array.isArray(entries)) return [];
+
+            return entries.reduce((farm, entry) => {
+                const slot = typeof entry === 'string' ? { id: entry, mined: 0 } : entry;
+                if (!slot || !MONSTERS[slot.id]) return farm;
+                const payout = MONSTERS[slot.id].payout;
+                const mined = Math.min(Math.max(Number(slot.mined) || 0, 0), payout);
+                if (mined < payout) farm.push({ id: slot.id, mined });
+                return farm;
+            }, []);
+        }
+
+        // Without a backend the client has to pay out offline mining itself.
+        function loadFromLocalStorage() {
+            let raw = null;
+            try { raw = localStorage.getItem('monsterFarm'); } catch (e) { return 0; }
+            if (!raw) return 0;
+
+            let saved;
+            try {
+                saved = JSON.parse(raw);
+            } catch (e) {
+                try { localStorage.removeItem('monsterFarm'); } catch (e2) {}
+                return 0;
+            }
+
+            const lastSeen = saved.lastSeen;
+            delete saved.lastSeen;
+            Object.assign(state, saved);
+
+            if (typeof state.slots !== 'number') state.slots = CONFIG.slots.start;
+            state.mnstr = Number(state.mnstr) || 0;
+            state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
+            delete state.monsters;
+            if (!state.farm.length) state.farm = [{ id: CONFIG.monsters[0].id, mined: 0 }];
+            if (!(state.activeSlot >= 0 && state.activeSlot < state.farm.length)) state.activeSlot = 0;
+            // Never leave a farm holding more monsters than it has slots for.
+            state.slots = Math.min(CONFIG.slots.max, Math.max(state.slots, usedSlots()));
+
+            if (!lastSeen) return 0;
+            const elapsed = Math.min(Math.max((Date.now() - lastSeen) / 1000, 0), CONFIG.offline.max_seconds);
+            const { earned } = runFarm(elapsed * CONFIG.offline.efficiency);
+            if (earned > 0) earn(earned);
+            return earned;
+        }
+
+        /* ---------- boot ---------- */
+
+        function initProfile() {
+            const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+            if (!user) return;
+            state.userId = user.id;
+            const name = user.username || user.first_name || 'monster';
+            document.getElementById('profileUsername').innerText = `@${name}`;
+            document.getElementById('profileAvatar').innerText = name.charAt(0).toUpperCase();
+        }
+
+        function startLoops() {
+            // One tick a second: the balance moves and the mined coins fly out together.
+            setInterval(() => {
+                const { earned, finished } = runFarm(1);
+                if (earned > 0) {
+                    earn(earned);
+                    renderHeader();
+                }
+                if (finished.length) {
+                    const names = finished.map(id => MONSTERS[id].name).join(', ');
+                    toast(`${names} отработал и освободил слот`);
+                    haptic.notify('warning');
+                    renderActiveMonster();
+                    renderSlotGrid();
+                    saveNow();
+                } else if (earned > 0) {
+                    updateSlotProgress();
+                    if (document.getElementById('slotModal').classList.contains('open')) {
+                        renderSlotModal();
+                    }
+                    if (document.getElementById('farm').classList.contains('active')) {
+                        spawnMinedPair();
+                    }
+                }
+            }, 1000);
+
+            setInterval(saveNow, 10000);
+            window.addEventListener('pagehide', saveNow);
+            document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+        }
+
+        function bootFail(message) {
+            document.getElementById('boot').innerHTML =
+                `<p><b>Не удалось запустить игру</b><br><br>${message}<br><br>Обнови страницу.</p>`;
+        }
+
+        // The config lives in a separate file, so a browser can hold a stale copy of it
+        // next to a fresh index.html. Bust the cache and fill in anything it is missing.
+        async function loadConfig() {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            try {
+                const response = await fetch(`game_config.json?v=${Date.now()}`, {
+                    cache: 'no-store',
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`game_config.json: HTTP ${response.status}`);
+                return normalizeConfig(await response.json());
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        function normalizeConfig(raw) {
+            const cfg = raw || {};
+            if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
+                throw new Error('в game_config.json нет тиров');
+            }
+            // Every screen but the shop works off one flat list.
+            cfg.monsters = cfg.tiers.flatMap(tier =>
+                (tier.monsters || []).map(monster => Object.assign({
+                    tier: tier.id,
+                    rarity: tier.name,
+                    frames: 20
+                }, monster)));
+            if (!cfg.monsters.length) throw new Error('в game_config.json нет монстров');
+            cfg.slots = Object.assign({ start: 3, max: 24, base_cost: 1200, growth: 1.28 }, cfg.slots);
+            cfg.roll = Object.assign({ payout_hours: 1008 }, cfg.roll);
+            cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
+            cfg.offline = Object.assign({ max_seconds: 28800, efficiency: 1 }, cfg.offline);
+            cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
+            cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
+            cfg.daily = Object.assign({ days: 30, mnstr_step: 10, special: [] }, cfg.daily);
+            cfg.daily.days = Number(cfg.daily.days) || 30;
+            cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 10;
+            if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
+            return cfg;
+        }
+
+        async function boot() {
+            try {
+                CONFIG = await loadConfig();
+            } catch (error) {
+                bootFail(error.message || 'не удалось загрузить настройки игры');
+                return;
+            }
+
+            MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
+            document.getElementById('referralTerms').innerText =
+                `Друг засчитывается, когда намайнит ${CONFIG.referral.qualify_mnstr} MNSTR`;
+
+            stageAnimator = new SpriteAnimator(document.getElementById('monsterSprite'));
+            initProfile();
+            initTonConnect();
+
+            // Default farm: one free starter monster in the first slot.
+            state.farm = [{ id: CONFIG.monsters[0].id, mined: 0 }];
+            state.activeSlot = 0;
+            state.slots = CONFIG.slots.start;
+
+            let offlineEarned = 0;
+            if (state.userId) {
+                try {
+                    offlineEarned = await syncFromServer();
+                } catch (error) {
+                    // No backend (e.g. hosted as static files) - fall back to this device.
+                    offlineOnly = true;
+                    offlineEarned = loadFromLocalStorage();
+                }
+            } else {
+                // Opened outside Telegram - play locally so the app is still testable.
+                offlineOnly = true;
+                offlineEarned = loadFromLocalStorage();
+            }
+
+            renderAll();
+            renderWallet();
+            startLoops();
+
+            document.getElementById('boot').style.display = 'none';
+
+            if (offlineEarned > 1) {
+                document.getElementById('offlineAmount').innerText = `+${fmt(offlineEarned)}`;
+                document.getElementById('offlineModal').classList.add('open');
+                haptic.notify('success');
+            }
+        }
+
+        boot().catch(error => bootFail(error.message || String(error)));
+    </script>
+</body>
+</html>
