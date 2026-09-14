@@ -199,13 +199,12 @@
         .card-info h3 { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
 
-        /* ---------- Яйца: мердж-поле ---------- */
+        /* ---------- Яйца: доска собранных яиц ---------- */
         .egg-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; max-width: 260px; margin-left: auto; margin-right: auto; }
         .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
         .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
-        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
         .egg-cell.locked { flex-direction: column; gap: 4px; background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; }
-        .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
+        .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 26px; }
         .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
         .egg-cell.hatch-ready { animation: hatchGlow 1.1s ease-in-out infinite; }
         .egg-cell.hatch-ready .egg-shape { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 14px rgba(247, 181, 0, 0.6); }
@@ -408,7 +407,6 @@
         .slot-progress { border-color: var(--ink); border-width: 2px; background: rgba(10,12,16,0.7); }
 
         .egg-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
-        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 16px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
         .egg-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
 
         .navbar { background: #2c333f; border-top: 5px solid var(--ink); }
@@ -678,12 +676,12 @@
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
             <h1>Яйца</h1>
-            <p class="subtitle">Соединяй одинаковые яйца, а готовое яйцо тапни, чтобы вскрыть</p>
+            <p class="subtitle">Каждое яйцо тапни, чтобы вскрыть — выпадет Meat или новый орёл</p>
 
             <div class="egg-board" id="eggBoard"></div>
-            <button class="btn-action egg-auto" id="eggAutoBtn" onclick="autoMergeEggs()">
-                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg></div>
-                Автомердж
+            <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
+                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C7 2 4 9 4 14a8 8 0 0 0 16 0C20 9 17 2 12 2Z"></path></svg></div>
+                Вскрыть все
             </button>
         </div>
 
@@ -928,7 +926,7 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, иначе уровень яйца
+            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, 1 = собранное яйцо
             eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..9)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
@@ -1225,20 +1223,7 @@
             }
         }
 
-        /* ---------- яйца: мердж-поле 5×5 ---------- */
-
-        let eggSelected = -1;
-
-        // Уровней столько же, сколько тиров редкости — просто для наглядной шкалы
-        // прогресса; сам орёл при вылуплении всегда обычной редкости.
-        function eggMaxLevel() {
-            return CONFIG.tiers.length;
-        }
-
-        function eggColor(level) {
-            const tier = CONFIG.tiers[level - 1];
-            return tier ? tier.color : '#94a3b8';
-        }
+        /* ---------- яйца: доска собранных яиц ---------- */
 
         function boardUnlockCost(index) {
             const cfg = CONFIG.eggs;
@@ -1248,19 +1233,17 @@
         function renderEggBoard() {
             const board = document.getElementById('eggBoard');
             const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
-            const maxLevel = eggMaxLevel();
-            board.innerHTML = state.eggBoard.map((level, i) => {
+            const eggFill = tierById('common').color;
+            board.innerHTML = state.eggBoard.map((has, i) => {
                 if (i >= state.eggBoardUnlocked) {
                     return `<div class="egg-cell locked" data-i="${i}">
                         <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         <span class="nest-cost">${fmtGram(boardUnlockCost(i))} ${coin}</span>
                     </div>`;
                 }
-                if (!level) return `<div class="egg-cell" data-i="${i}"></div>`;
-                const sel = i === eggSelected ? ' selected' : '';
-                const ready = level >= maxLevel ? ' hatch-ready' : '';
-                return `<div class="egg-cell${sel}${ready}" data-i="${i}">
-                    <div class="egg-shape" style="background:${eggColor(level)}">${level}</div>
+                if (!has) return `<div class="egg-cell" data-i="${i}"></div>`;
+                return `<div class="egg-cell hatch-ready" data-i="${i}">
+                    <div class="egg-shape" style="background:${eggFill}">🥚</div>
                 </div>`;
             }).join('');
             board.querySelectorAll('.egg-cell').forEach(cell => {
@@ -1268,6 +1251,7 @@
             });
         }
 
+        // Каждое яйцо на доске уже готово — тап сразу его вскрывает.
         function onEggCellClick(i) {
             if (i >= state.eggBoardUnlocked) {
                 if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
@@ -1282,51 +1266,15 @@
                 return;
             }
 
-            const board = state.eggBoard;
-            if (board[i] >= eggMaxLevel()) { eggSelected = -1; openEgg(i); return; }
-
-            if (eggSelected === -1) {
-                if (board[i]) { eggSelected = i; renderEggBoard(); }
-                return;
-            }
-            if (eggSelected === i) { eggSelected = -1; renderEggBoard(); return; }
-
-            const from = eggSelected;
-            eggSelected = -1;
-
-            if (!board[i]) {
-                board[i] = board[from];
-                board[from] = 0;
-                renderEggBoard();
-                saveNow();
-                return;
-            }
-            if (board[i] === board[from]) {
-                mergeEggsAt(from, i);
-                renderEggBoard();
-                saveNow();
-                return;
-            }
-            // другой уровень — просто переключаем выбор на него
-            eggSelected = i;
-            renderEggBoard();
+            if (state.eggBoard[i]) openEgg(i);
         }
 
         function canHatch() {
             return usedSlots() < state.slots || state.slots < CONFIG.slots.max;
         }
 
-        // Сливает яйцо из `from` в `into` (оба уже проверены как один уровень,
-        // ниже максимального). На максимальном уровне яйцо больше не сливается —
-        // его открывают тапом через openEgg().
-        function mergeEggsAt(from, into) {
-            const board = state.eggBoard;
-            board[from] = 0;
-            board[into] += 1;
-        }
-
-        // Вскрывает готовое яйцо максимального уровня: выпадает либо Meat,
-        // либо орёл самой обычной редкости. Орла некуда селить — яйцо не трогаем.
+        // Вскрывает яйцо: выпадает либо Meat, либо орёл самой обычной редкости.
+        // Орла некуда селить — яйцо не трогаем, шанс не сгорает.
         function openEgg(i) {
             const cfg = CONFIG.eggs;
             const isMeat = Math.random() < (cfg.hatch_meat_chance ?? 0.5);
@@ -1353,29 +1301,45 @@
             saveNow();
         }
 
-        // Одним нажатием сливает все возможные пары на поле, каскадом.
-        // Яйца максимального уровня не участвуют — их открывают тапом.
-        function autoMergeEggs() {
+        // Одним нажатием вскрывает все яйца на доске.
+        function openAllEggs() {
             const board = state.eggBoard;
-            let merged = false;
-            for (let guard = 0; guard < 200; guard++) {
-                let found = false;
-                for (let level = 1; level < eggMaxLevel(); level++) {
-                    const idx = [];
-                    for (let i = 0; i < board.length; i++) if (board[i] === level) idx.push(i);
-                    if (idx.length >= 2) {
-                        mergeEggsAt(idx[0], idx[1]);
-                        found = true;
-                        merged = true;
-                        break;
-                    }
+            const cfg = CONFIG.eggs;
+            let meatTotal = 0;
+            let eagleCount = 0;
+            let opened = 0;
+            let blocked = false;
+
+            for (let i = 0; i < board.length; i++) {
+                if (!board[i]) continue;
+                const isMeat = Math.random() < (cfg.hatch_meat_chance ?? 0.5);
+                if (!isMeat && !canHatch()) { blocked = true; continue; }
+                board[i] = 0;
+                opened++;
+                if (isMeat) {
+                    meatTotal += Number(cfg.hatch_meat_amount) || 0;
+                } else {
+                    eagleCount++;
+                    addFarmSlot(rollMonster('common').id);
                 }
-                if (!found) break;
             }
-            eggSelected = -1;
-            renderEggBoard();
-            if (merged) { saveNow(); haptic.impact('light'); }
-            else toast('Нечего объединять');
+
+            if (!opened) {
+                if (blocked) { toast('На ферме нет места — освободи слот'); haptic.notify('warning'); }
+                else toast('Нечего вскрывать');
+                renderEggBoard();
+                return;
+            }
+
+            if (meatTotal) state.mnstr += meatTotal;
+            const parts = [];
+            if (meatTotal) parts.push(`${fmtToken(meatTotal)} Meat`);
+            if (eagleCount) parts.push(`${eagleCount} ${plural(eagleCount, 'орёл', 'орла', 'орлов')}`);
+            toast(`Вскрыто ${opened} — выпало: ${parts.join(' и ')}`);
+            haptic.notify('success');
+            spawnBurst(Math.min(20, opened * 4));
+            renderAll();
+            saveNow();
         }
 
         // Собирает яйцо с готового слота фермы и кладёт его на поле.
