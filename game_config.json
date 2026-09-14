@@ -248,5 +248,9 @@
     "egg_interval_hours": 24,
     "hatch_meat_chance": 0.5,
     "hatch_meat_amount": 50
+  },
+  "fusion": {
+    "feed_base_cost": 20,
+    "feed_growth": 2
   }
 }

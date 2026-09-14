@@ -161,11 +161,13 @@ def next_egg_timestamp() -> int:
 
 
 def read_farm(raw) -> List[dict]:
-    """The farm is one slot per eagle: {"id": ..., "next_egg_at": unix seconds}.
+    """The farm is one slot per eagle: {"id", "next_egg_at", "fed"}.
 
     Each occupied slot lays one egg every EGG_INTERVAL_SECONDS - eagles never
-    expire. Farms saved in older shapes - {id: copies}, a flat list of ids, or
-    the previous {"id", "mined"} payout slots - are converted into fresh slots.
+    expire. `fed` marks an eagle fed with Meat, ready to fuse with a matching
+    fed eagle into the next rarity (client-side, like the rest of the economy).
+    Farms saved in older shapes - {id: copies}, a flat list of ids, or the
+    previous {"id", "mined"} payout slots - are converted into fresh slots.
     """
     try:
         data = json.loads(raw or "[]") if isinstance(raw, str) else raw
@@ -190,7 +192,7 @@ def read_farm(raw) -> List[dict]:
             next_egg_at = int(entry["next_egg_at"])
         except (KeyError, TypeError, ValueError):
             next_egg_at = next_egg_timestamp()
-        farm.append({"id": monster_id, "next_egg_at": next_egg_at})
+        farm.append({"id": monster_id, "next_egg_at": next_egg_at, "fed": bool(entry.get("fed"))})
     return farm
 
 
@@ -418,7 +420,7 @@ class FarmState(BaseModel):
     coins: float
     total_earned: float
     mnstr: float = 0.0
-    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at"}
+    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "fed"}
     active_slot: int = 0
     missions: list = []
     slots: int = START_SLOTS
