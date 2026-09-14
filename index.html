@@ -831,7 +831,7 @@
     <div class="modal-backdrop" id="wheelModal" onclick="if (event.target === this) closeWheel()">
         <div class="modal-box glass-panel wheel-box">
             <h2>Колесо фортуны</h2>
-            <p class="wheel-sub" id="wheelSub">Раз в сутки — бесплатно, потом — за GRAM</p>
+            <p class="wheel-sub" id="wheelSub">Крути сколько угодно — совсем бесплатно</p>
             <div class="wheel-stage">
                 <div class="wheel-pointer"></div>
                 <div class="wheel-dial" id="wheelDial"></div>
@@ -944,7 +944,6 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            wheelLast: 0,        // номер суток последнего бесплатного спина
             eggBoard: Array(25).fill(0),   // 5×5, 0 = пусто, иначе уровень яйца
             eggNests: 1,                   // сколько гнёзд открыто (1..7)
             eggNestCooldown: Array(7).fill(0), // когда каждое гнездо снова готово (мс)
@@ -1766,11 +1765,6 @@
         let wheelDeg = 0;
         let wheelSpinning = false;
 
-        // Как и с ежедневным входом: доступность бесплатного спина считаем по суткам UTC.
-        function wheelStatus() {
-            return { ready: (state.wheelLast || 0) !== dayIndex() };
-        }
-
         function wheelIcon(seg) {
             if (seg.monster) return framePath(MONSTERS[seg.monster].sprite, 0);
             return seg.gram ? 'assets/coin.png' : 'assets/mnstr.png';
@@ -1807,28 +1801,13 @@
 
         function updateWheelButton() {
             const btn = document.getElementById('wheelSpinBtn');
-            const sub = document.getElementById('wheelSub');
             if (!btn) return;
-            const status = wheelStatus();
-            const cost = CONFIG.wheel.spin_cost_gram;
-            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
             if (wheelSpinning) {
                 btn.disabled = true;
                 btn.innerHTML = 'Крутится…';
-            } else if (status.ready) {
+            } else {
                 btn.disabled = false;
                 btn.innerHTML = 'Крутить бесплатно';
-            } else if (state.coins >= cost) {
-                btn.disabled = false;
-                btn.innerHTML = `Крутить за ${fmtGram(cost)} ${coin}`;
-            } else {
-                btn.disabled = true;
-                btn.innerHTML = `Нужно ${fmtGram(cost)} ${coin}`;
-            }
-            if (sub) {
-                sub.innerText = status.ready
-                    ? 'Сегодняшний бесплатный спин ждёт тебя'
-                    : `Бесплатный спин завтра — сейчас за ${fmtGram(cost)} GRAM`;
             }
         }
 
@@ -1887,11 +1866,8 @@
             return segments.length - 1;
         }
 
-        // Без бэкенда (статический хостинг) колесо крутит и списывает сам клиент.
-        function spinWheelLocal(paid) {
-            const cost = CONFIG.wheel.spin_cost_gram;
-            if (paid && state.coins < cost) { toast('Не хватает GRAM'); return; }
-
+        // Без бэкенда (статический хостинг) колесо крутит сам клиент — бесплатно.
+        function spinWheelLocal() {
             const index = pickWheelIndexLocal();
             const seg = CONFIG.wheel.segments[index];
             const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0, monster: seg.monster || null };
@@ -1902,27 +1878,21 @@
                 return;
             }
 
-            if (paid) state.coins -= cost;
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
             if (reward.monster) {
                 if (usedSlots() >= state.slots) state.slots += 1;
                 state.farm.push({ id: reward.monster, mined: 0 });
             }
-            if (!paid) state.wheelLast = dayIndex();
             saveNow();
             finishWheelSpin(index, reward);
         }
 
         async function spinWheel() {
             if (wheelSpinning) return;
-            const status = wheelStatus();
-            const paid = !status.ready;
-            const cost = CONFIG.wheel.spin_cost_gram;
-            if (paid && state.coins < cost) { toast('Не хватает GRAM'); return; }
 
             if (offlineOnly || !state.userId) {
-                spinWheelLocal(paid);
+                spinWheelLocal();
                 return;
             }
 
@@ -1932,7 +1902,7 @@
                 const response = await fetch('api/wheel/spin', {
                     method: 'POST',
                     headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, paid })
+                    body: JSON.stringify({ user_id: state.userId })
                 });
                 const data = await response.json();
                 if (!response.ok) {
@@ -1946,7 +1916,6 @@
                 state.coins = data.coins;
                 state.mnstr = data.mnstr;
                 state.totalEarned = data.total_earned;
-                state.wheelLast = Number(data.wheel_last) || 0;
                 if (data.monsters) state.farm = readFarm(data.monsters);
                 if (data.slots) state.slots = data.slots;
                 if (typeof data.ops === 'number') state.ops = data.ops;
@@ -2723,7 +2692,6 @@
             state.ops = data.ops || 0;
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
-            state.wheelLast = Number(data.wheel_last) || 0;
             state.eggBoard = Array.isArray(data.eggs_board) && data.eggs_board.length === 25
                 ? data.eggs_board : Array(25).fill(0);
             state.eggNests = Number(data.eggs_nests) || 1;
@@ -2887,7 +2855,7 @@
             cfg.daily.days = Number(cfg.daily.days) || 30;
             cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 10;
             if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
-            cfg.wheel = Object.assign({ spin_cost_gram: 0, segments: [] }, cfg.wheel);
+            cfg.wheel = Object.assign({ segments: [] }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
                 { nest_cooldown_seconds: 8, unlock_base_cost: 0.5, unlock_growth: 1.6 },

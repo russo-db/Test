@@ -3,7 +3,7 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, wheel_last, eggs_board, eggs_nests, wallet, ops
+    daily_day, daily_last, eggs_board, eggs_nests, wallet, ops
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON)
 и заявки на вывод (withdrawals).
@@ -17,7 +17,7 @@ from typing import Optional
 FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
-    "daily_day", "daily_last", "wheel_last", "eggs_board", "eggs_nests", "wallet", "ops",
+    "daily_day", "daily_last", "eggs_board", "eggs_nests", "wallet", "ops",
 )
 JSON_FIELDS = ("monsters", "missions", "eggs_board")
 
@@ -53,7 +53,6 @@ class SqliteStore:
                 last_seen      INTEGER DEFAULT 0,
                 daily_day      INTEGER DEFAULT 0,
                 daily_last     INTEGER DEFAULT 0,
-                wheel_last     INTEGER DEFAULT 0,
                 eggs_board     TEXT    DEFAULT '[]',
                 eggs_nests     INTEGER DEFAULT 1,
                 wallet         TEXT    DEFAULT '',
@@ -94,7 +93,6 @@ class SqliteStore:
             ("name", "TEXT DEFAULT ''"),
             ("daily_day", "INTEGER DEFAULT 0"),
             ("daily_last", "INTEGER DEFAULT 0"),
-            ("wheel_last", "INTEGER DEFAULT 0"),
             ("eggs_board", "TEXT DEFAULT '[]'"),
             ("eggs_nests", "INTEGER DEFAULT 1"),
             ("wallet", "TEXT DEFAULT ''"),
@@ -240,40 +238,23 @@ class SqliteStore:
             conn.close()
 
 
-    async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
-                          gram: float, mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
-        """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
-        False — не хватило GRAM (платный) или бесплатный спин уже использован."""
+    async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
+                          monster: Optional[str] = None, extra_slot: bool = False):
+        """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
         conn = self._connect()
         cur = conn.cursor()
         try:
-            cur.execute("BEGIN IMMEDIATE")
-            row = cur.execute(
-                "SELECT coins, wheel_last, monsters FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
-            if not row:
-                conn.rollback()
-                return False
-            if paid:
-                if float(row["coins"]) < cost:
-                    conn.rollback()
-                    return False
-                fields = ["coins = coins - ? + ?", "total_earned = total_earned + ?",
-                          "mnstr = mnstr + ?", "ops = ops + 1"]
-                values = [cost, gram, gram, mnstr]
-            else:
-                if int(row["wheel_last"] or 0) == today:
-                    conn.rollback()
-                    return False
-                fields = ["wheel_last = ?", "coins = coins + ?",
-                          "total_earned = total_earned + ?", "mnstr = mnstr + ?",
-                          "ops = ops + 1"]
-                values = [today, gram, gram, mnstr]
+            fields = ["coins = coins + ?", "total_earned = total_earned + ?",
+                      "mnstr = mnstr + ?", "ops = ops + 1"]
+            values = [gram, gram, mnstr]
 
             if monster:
+                cur.execute("BEGIN IMMEDIATE")
+                row = cur.execute(
+                    "SELECT monsters FROM users WHERE user_id = ?", (user_id,)
+                ).fetchone()
                 try:
-                    farm = json.loads(row["monsters"] or "[]")
+                    farm = json.loads(row["monsters"] or "[]") if row else []
                 except (TypeError, ValueError):
                     farm = []
                 farm.append({"id": monster, "mined": 0.0})
@@ -285,7 +266,6 @@ class SqliteStore:
             values.append(user_id)
             cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", tuple(values))
             conn.commit()
-            return True
         finally:
             conn.close()
 
@@ -423,27 +403,17 @@ class MongoStore:
         return result.modified_count > 0
 
 
-    async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
-                          gram: float, mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
-        """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
-        Условие в фильтре делает операцию атомарной — гонка не даст двойной приз."""
-        inc = {"total_earned": gram, "mnstr": mnstr, "ops": 1}
-        inc["coins"] = (gram - cost) if paid else gram
+    async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
+                          monster: Optional[str] = None, extra_slot: bool = False):
+        """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
+        inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
         if extra_slot:
             inc["slots"] = 1
         changes = {"$inc": inc}
         if monster:
             changes["$push"] = {"monsters": {"id": monster, "mined": 0.0}}
 
-        if paid:
-            query = {"_id": user_id, "coins": {"$gte": cost}}
-        else:
-            query = {"_id": user_id, "wheel_last": {"$ne": today}}
-            changes["$set"] = {"wheel_last": today}
-
-        result = await self.users.update_one(query, changes)
-        return result.modified_count > 0
+        await self.users.update_one({"_id": user_id}, changes)
 
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
         """Хэш транзакции — это _id, поэтому одно пополнение зачислится только раз."""

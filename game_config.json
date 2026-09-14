@@ -205,7 +205,6 @@
     "memo_prefix": "MG"
   },
   "wheel": {
-    "spin_cost_gram": 0.3,
     "segments": [
       {
         "gram": 0.01,

@@ -48,7 +48,6 @@ DAILY_SPECIAL = {int(item["day"]): item for item in DAILY.get("special", [])}
 
 WHEEL = CONFIG.get("wheel") or {}
 WHEEL_SEGMENTS = WHEEL.get("segments") or []
-WHEEL_SPIN_COST = float(WHEEL.get("spin_cost_gram", 0))
 
 TON = CONFIG.get("ton") or {}
 TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
@@ -322,7 +321,6 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "last_seen": int(time.time()),
             "daily_day": 0,
             "daily_last": 0,
-            "wheel_last": 0,
             "eggs_board": [0] * 25,
             "eggs_nests": 1,
             "wallet": "",
@@ -488,7 +486,6 @@ class DailyClaim(BaseModel):
 
 class WheelSpin(BaseModel):
     user_id: int
-    paid: bool = False
 
 
 class DepositCheck(BaseModel):
@@ -564,7 +561,6 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "referrals_qualified": await store.count_referrals(user_id, QUALIFY_MNSTR),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
-        "wheel_last": int(row.get("wheel_last") or 0),
         "eggs_board": row.get("eggs_board") or [0] * 25,
         "eggs_nests": int(row.get("eggs_nests") or 1),
         "wallet": row.get("wallet") or "",
@@ -713,22 +709,13 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
 
 @app.post("/api/wheel/spin")
 async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = Header(None)):
-    """Крутит колесо фортуны. Бесплатный спин — раз в сутки, иначе — за GRAM.
+    """Крутит колесо фортуны — бесплатно и без ограничений по частоте.
     Сектор выбирает сервер, чтобы клиент не мог подделать результат."""
     if not WHEEL_SEGMENTS:
         raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
     row = await fetch_user(user_id)
-
-    today = day_index()
-    cost = 0.0
-    if request.paid:
-        cost = WHEEL_SPIN_COST
-        if float(row.get("coins") or 0.0) < cost:
-            raise HTTPException(status_code=400, detail="Недостаточно GRAM")
-    elif int(row.get("wheel_last") or 0) == today:
-        raise HTTPException(status_code=409, detail="Бесплатный спин уже использован сегодня")
 
     reward = wheel_pick()
 
@@ -744,13 +731,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
                 raise HTTPException(status_code=400, detail="Все слоты заняты — освободи один")
             extra_slot = True
 
-    granted = await store.claim_wheel(
-        user_id, today, request.paid, cost, reward["gram"], reward["mnstr"],
-        reward["monster"], extra_slot,
-    )
-    if not granted:
-        detail = "Недостаточно GRAM" if request.paid else "Бесплатный спин уже использован сегодня"
-        raise HTTPException(status_code=409, detail=detail)
+    await store.claim_wheel(user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot)
 
     fresh = await store.get(user_id)
     return {
@@ -762,7 +743,6 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "total_earned": float(fresh.get("total_earned") or 0.0),
         "monsters": read_farm(fresh["monsters"]),
         "slots": int(fresh.get("slots") or START_SLOTS),
-        "wheel_last": int(fresh.get("wheel_last") or 0),
         "ops": int(fresh.get("ops") or 0),
     }
 
