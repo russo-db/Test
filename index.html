@@ -128,7 +128,13 @@
         }
         .monster-glow { position: absolute; width: 118px; height: 118px; border-radius: 50%; filter: blur(34px); opacity: 0.55; transition: background 0.4s ease; }
         .monster-sprite { position: relative; width: 100%; height: 100%; object-fit: contain; z-index: 2; filter: drop-shadow(0 8px 10px rgba(10, 4, 24, 0.5)); pointer-events: none; transition: transform 0.08s ease; }
-        .monster-stage:active .monster-sprite { transform: scale(0.93); }
+        .monster-stage { transition: transform 0.08s ease; }
+        .monster-stage:active { transform: scale(0.96); }
+        #monsterSprite { animation: eagleBob 2.6s ease-in-out infinite; transform-origin: 50% 85%; }
+        @keyframes eagleBob {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-5px) rotate(-1.5deg); }
+        }
         .monster-name-tag { font-size: 20px; font-weight: 900; margin-top: 2px; text-shadow: 0 3px 0 var(--ink); }
         .monster-sub-tag { font-size: 13px; color: var(--text-muted); font-weight: 800; margin-top: 3px; }
 
@@ -856,8 +862,7 @@
         const FRAME_MS = 70;
 
         function frameCount(sprite) {
-            const monster = CONFIG.monsters.find(m => m.sprite === sprite);
-            return (monster && monster.frames) || 20;
+            return 1;
         }
 
         let CONFIG = null;
@@ -890,7 +895,7 @@
         /* ---------- helpers ---------- */
 
         function framePath(sprite, index) {
-            return `assets/monsters/${sprite}/Idle/Idle_${String(index).padStart(2, '0')}.png`;
+            return `assets/eagles/${sprite}.svg`;
         }
 
         // The hero rows show the raw number so the player can watch it tick.
@@ -968,6 +973,7 @@
                 preloadSprite(sprite).then(() => {
                     if (this.sprite !== sprite) return;
                     const total = frameCount(sprite);
+                    if (total <= 1) return;
                     let frame = 0;
                     this.timer = setInterval(() => {
                         frame = (frame + 1) % total;
