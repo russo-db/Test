@@ -235,38 +235,12 @@
         .modal-progress { height: 12px; border-radius: 8px; background: rgba(10, 4, 24, 0.6); border: 2px solid var(--ink); overflow: hidden; margin: 14px 0 8px 0; }
         .modal-progress i { display: block; height: 100%; transition: width 0.3s ease; }
 
-        /* ---------- Monster shop ---------- */
-        .roll-open { margin-top: 18px; }
-        .roll-box { max-width: 360px; text-align: left; max-height: 82vh; overflow-y: auto; overflow-x: hidden; }
-        .roll-box h2 { text-align: center; }
-        .roll-box > div > p { text-align: center; }
-        .roll-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 3px 0 6px 0; margin-top: 14px; }
-        .roll-tab {
-            flex: 0 0 auto; padding: 7px 11px; border-radius: 13px; font-size: 12px; font-weight: 900;
-            cursor: pointer; white-space: nowrap; font-family: inherit;
-            background: var(--panel-soft); border: 3px solid var(--ink); color: var(--text-muted);
-            box-shadow: 0 3px 0 var(--ink);
-            transition: transform 0.1s ease, box-shadow 0.1s ease, color 0.2s;
-        }
-        .roll-tab:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
-        .roll-tab.active { color: var(--ink); background: var(--tier-tint); text-shadow: none; box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.35); }
-        .roll-head { display: flex; justify-content: space-between; font-size: 11px; font-weight: 900; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin: 12px 2px 8px 2px; }
-        .roll-row { display: flex; align-items: center; gap: 11px; padding: 8px; border-radius: 16px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1); margin-bottom: 8px; }
-        .roll-row img { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
-        .roll-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-        .roll-name b { font-size: 14px; font-weight: 900; }
-        .roll-name span { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
-        .roll-numbers { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+        .roll-close { width: 100%; justify-content: center; margin-top: 10px; }
+        .roll-prize { width: 145px; height: 145px; object-fit: contain; margin: 6px auto; display: block; filter: drop-shadow(0 8px 10px rgba(10, 4, 24, 0.55)); }
         .roll-num { display: flex; align-items: center; gap: 5px; }
         .roll-num b { font-size: 15px; font-weight: 900; color: var(--accent-coin); }
         .roll-num.token b { color: var(--accent-token); }
         .roll-num img { width: 15px; height: 15px; object-fit: contain; }
-        .roll-chance { font-size: 12px; font-weight: 800; color: var(--text-muted); }
-        .roll-close { width: 100%; justify-content: center; margin-top: 10px; }
-        .roll-prize { width: 145px; height: 145px; object-fit: contain; margin: 6px auto; display: block; filter: drop-shadow(0 8px 10px rgba(10, 4, 24, 0.55)); }
-        #rollResult { text-align: center; }
-        #rollResult h2 { font-size: 25px; text-shadow: 0 3px 0 var(--ink); }
-        .roll-prize-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
 
         /* ---------- Modals ---------- */
         .modal-backdrop { position: fixed; inset: 0; background: rgba(12, 6, 28, 0.78); z-index: 500; display: none; align-items: center; justify-content: center; padding: 22px; overflow: hidden; }
@@ -332,7 +306,7 @@
         .orb-1 { background: #f7b500; } .orb-2 { background: #38a8f0; } .orb-3 { background: rgba(74,222,128,0.5); }
 
         /* Обводка текста как у логотипа — четыре смещения плюс нижний край */
-        .brand-title, h1, .monster-name-tag, .profile-name, .modal-box h2, #rollResult h2 {
+        .brand-title, h1, .monster-name-tag, .profile-name, .modal-box h2 {
             text-shadow:
                 -2px -2px 0 var(--ink), 2px -2px 0 var(--ink),
                 -2px  2px 0 var(--ink), 2px  2px 0 var(--ink),
@@ -397,9 +371,7 @@
             text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink);
         }
 
-        .roll-row, .stat-row { background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255,255,255,0.1); }
-        .roll-tab { background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); color: var(--text-muted); }
-        .roll-tab.active { color: var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255,255,255,0.4); }
+        .stat-row { background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255,255,255,0.1); }
         .modal-backdrop { background: rgba(12,15,20,0.8); }
         .modal-progress { border-color: var(--ink); background: rgba(10,12,16,0.7); }
         .avatar { background: linear-gradient(180deg, var(--gold-lt), #e08c00); border: 5px solid var(--ink); box-shadow: 0 6px 0 var(--ink), inset 0 4px 0 rgba(255,255,255,0.45); }
@@ -628,11 +600,6 @@
                 <div class="monster-name-tag" id="activeMonsterName">—</div>
                 <div class="monster-sub-tag" id="activeMonsterSub">—</div>
 
-                <button class="btn-primary roll-open" id="rollOpenBtn" onclick="openRoll()">
-                    <img class="coin-icon" src="assets/coin.png" alt="">
-                    Купить орла от <span id="rollOpenPrice">1</span>
-                </button>
-
                 <button class="btn-action wheel-open" id="wheelOpenBtn" onclick="openWheel()">
                     <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 3v3M12 18v3M21 12h-3M6 12H3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7 5.6 5.6"></path></svg></div>
                     Колесо фортуны
@@ -829,23 +796,6 @@
         <div class="modal-box glass-panel" id="slotModalBody"></div>
     </div>
 
-    <!-- MONSTER SHOP MODAL -->
-    <div class="modal-backdrop" id="rollModal" onclick="if (event.target === this) closeRoll()">
-        <div class="modal-box glass-panel roll-box">
-            <div id="rollBody">
-                <h2>Купить орла</h2>
-                <p>Выпадает случайный орёл выбранной редкости. Раз в сутки он приносит яйцо на ферму.</p>
-                <div class="roll-tabs" id="rollTabs"></div>
-                <div class="roll-head"><span>Существо</span><span>Шанс</span></div>
-                <div id="rollTable"></div>
-                <button class="btn-primary" id="rollBuyBtn" style="margin-top:18px" onclick="buyRandomMonster()">Купить</button>
-                <button class="btn-action roll-close" onclick="closeRoll()">Закрыть</button>
-            </div>
-            <div id="rollResult" style="display:none"></div>
-        </div>
-    </div>
-
-
     <div id="toast"></div>
 
     <div id="boot">
@@ -1036,10 +986,6 @@
             return state.farm.length;
         }
 
-        function freeSlots() {
-            return state.slots - usedSlots();
-        }
-
         function slotCost() {
             const { base_cost: base, growth, start } = CONFIG.slots;
             return base * Math.pow(growth, state.slots - start);
@@ -1093,11 +1039,6 @@
             document.getElementById('topRightMnstr').innerText = fmtToken(state.mnstr);
             document.getElementById('statIncome').innerText = usedSlots();
             document.getElementById('statTokenIncome').innerText = readyEggSlots();
-
-            const rollBtn = document.getElementById('rollOpenBtn');
-            rollBtn.disabled = false;
-            document.getElementById('rollOpenPrice').innerText =
-                fmtGram(Math.min(...CONFIG.tiers.map(t => t.price)));
 
             const invitedCard = document.getElementById('invitedByCard');
             invitedCard.style.display = state.invitedBy ? 'flex' : 'none';
@@ -1172,7 +1113,7 @@
                 } else if (i < state.slots) {
                     cell.className = 'slot-cell empty';
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span><span class="slot-plus">+</span>`;
-                    cell.onclick = () => openRoll();
+                    cell.onclick = () => toast('Вскрой яйцо, чтобы поселить сюда орла');
                 } else {
                     cell.className = 'slot-cell locked';
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span>
@@ -1331,103 +1272,6 @@
 
         function renderEggs() {
             renderEggBoard();
-        }
-
-        let shopTier = 'common';
-
-        function renderRollTabs() {
-            const tabs = document.getElementById('rollTabs');
-            tabs.innerHTML = '';
-            CONFIG.tiers.forEach(tier => {
-                const tab = document.createElement('button');
-                tab.className = 'roll-tab' + (tier.id === shopTier ? ' active' : '');
-                tab.style.setProperty('--tier-tint', tier.color);
-                tab.innerText = tier.name;
-                tab.onclick = () => { shopTier = tier.id; renderRollTable(); updateRollButton(); haptic.select(); };
-                tabs.appendChild(tab);
-            });
-        }
-
-        function renderRollTable() {
-            renderRollTabs();
-            const tier = tierById(shopTier);
-            const list = document.getElementById('rollTable');
-            list.innerHTML = '';
-
-            tier.monsters.forEach(entry => {
-                const monster = MONSTERS[entry.id];
-                const row = document.createElement('div');
-                row.className = 'roll-row';
-                row.innerHTML = `
-                    <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                    <div class="roll-name">
-                        <b>${monster.name}</b>
-                        <span style="color:${tier.color}">${tier.name}</span>
-                    </div>
-                    <div class="roll-numbers">
-                        <span class="roll-chance">${monster.chance}%</span>
-                    </div>
-                `;
-                list.appendChild(row);
-            });
-        }
-
-        function openRoll() {
-            haptic.impact('light');
-            renderRollTable();
-            document.getElementById('rollResult').style.display = 'none';
-            document.getElementById('rollBody').style.display = 'block';
-            updateRollButton();
-            document.getElementById('rollModal').classList.add('open');
-        }
-
-        function closeRoll() {
-            document.getElementById('rollModal').classList.remove('open');
-        }
-
-        function updateRollButton() {
-            const btn = document.getElementById('rollBuyBtn');
-            const price = tierById(shopTier).price;
-            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
-            if (freeSlots() <= 0) {
-                btn.disabled = true;
-                btn.innerHTML = 'Нет свободных слотов';
-            } else if (state.coins < price) {
-                btn.disabled = true;
-                btn.innerHTML = `Нужно ${fmtGram(price)} ${coin}`;
-            } else {
-                btn.disabled = false;
-                btn.innerHTML = `Купить за ${fmtGram(price)} ${coin}`;
-            }
-        }
-
-        function buyRandomMonster() {
-            const tier = tierById(shopTier);
-            const price = tier.price;
-            if (freeSlots() <= 0 || state.coins < price) return;
-
-            state.coins -= price;
-            const monster = rollMonster(tier.id);
-            state.farm.push({ id: monster.id, nextEggAt: nowSeconds() + eggIntervalSeconds() });
-            state.activeSlot = state.farm.length - 1;
-
-            haptic.notify('success');
-            spawnBurst(14);
-
-            document.getElementById('rollBody').style.display = 'none';
-            const result = document.getElementById('rollResult');
-            result.style.display = 'block';
-            result.innerHTML = `
-                <p>Тебе выпал</p>
-                <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                <h2 style="color:${monster.color}">${monster.name}</h2>
-                <p class="slot-modal-sub" style="color:${tier.color}">${tier.name}</p>
-                <p class="roll-prize-line">Поселился в слоте ${state.farm.length} — первое яйцо будет через 24 часа</p>
-                <button class="btn-primary" style="margin-top:20px" onclick="closeRoll()">Отлично</button>
-            `;
-
-            renderAll();
-            saveNow();
         }
 
         /* ---------- ежедневный вход ---------- */
@@ -1874,7 +1718,6 @@
             renderSlotGrid();
             renderEggs();
             renderMissions();
-            updateRollButton();
             updateWheelButton();
         }
 
@@ -2677,7 +2520,7 @@
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
                 throw new Error('в game_config.json нет тиров');
             }
-            // Every screen but the shop works off one flat list.
+            // Every screen works off one flat list rather than the tiered shape.
             cfg.monsters = cfg.tiers.flatMap(tier =>
                 (tier.monsters || []).map(monster => Object.assign({
                     tier: tier.id,
