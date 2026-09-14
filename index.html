@@ -197,20 +197,20 @@
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
 
         /* ---------- Яйца: мердж-поле ---------- */
-        .egg-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
+        .egg-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; max-width: 260px; margin-left: auto; margin-right: auto; }
         .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
         .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
         .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
+        .egg-cell.locked { flex-direction: column; gap: 4px; background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; }
         .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
         .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
         .egg-nests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
         .nest-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, filter 0.2s ease; }
         .nest-cell:active { transform: translateY(2px); }
         .nest-cell.cooldown { filter: brightness(0.55); cursor: default; }
-        .nest-cell.locked { background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; cursor: pointer; }
-        .nest-cell .nest-lock { width: 30%; height: 30%; color: rgba(169, 180, 196, 0.45); }
-        .nest-cell .nest-cost { font-size: 10px; font-weight: 900; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
-        .nest-cell .nest-cost img { width: 11px; height: 11px; object-fit: contain; }
+        .nest-lock { width: 30%; height: 30%; color: rgba(169, 180, 196, 0.45); }
+        .nest-cost { font-size: 10px; font-weight: 900; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
+        .nest-cost img { width: 11px; height: 11px; object-fit: contain; }
         .nest-egg { width: 58%; height: 66%; font-size: 12px; }
 
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
@@ -407,8 +407,8 @@
 
         .egg-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
         .egg-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 16px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
+        .egg-cell.locked, .nest-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
         .nest-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
-        .nest-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
 
         .navbar { background: #2c333f; border-top: 5px solid var(--ink); }
         .nav-item { color: var(--text-muted); }
@@ -944,9 +944,9 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            eggBoard: Array(25).fill(0),   // 5×5, 0 = пусто, иначе уровень яйца
-            eggNests: 1,                   // сколько гнёзд открыто (1..7)
-            eggNestCooldown: Array(7).fill(0), // когда каждое гнездо снова готово (мс)
+            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, иначе уровень яйца
+            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..9)
+            eggNestCooldown: Array(8).fill(0), // когда каждое гнездо снова готово (мс)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0               // версия баланса на сервере
@@ -1276,9 +1276,21 @@
             return tier ? tier.color : '#94a3b8';
         }
 
+        function boardUnlockCost(index) {
+            const cfg = CONFIG.eggs;
+            return cfg.unlock_base_cost * Math.pow(cfg.unlock_growth, index - 1);
+        }
+
         function renderEggBoard() {
             const board = document.getElementById('eggBoard');
+            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
             board.innerHTML = state.eggBoard.map((level, i) => {
+                if (i >= state.eggBoardUnlocked) {
+                    return `<div class="egg-cell locked" data-i="${i}">
+                        <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <span class="nest-cost">${fmtGram(boardUnlockCost(i))} ${coin}</span>
+                    </div>`;
+                }
                 if (!level) return `<div class="egg-cell" data-i="${i}"></div>`;
                 const sel = i === eggSelected ? ' selected' : '';
                 return `<div class="egg-cell${sel}" data-i="${i}">
@@ -1291,6 +1303,19 @@
         }
 
         function onEggCellClick(i) {
+            if (i >= state.eggBoardUnlocked) {
+                if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
+                const cost = boardUnlockCost(i);
+                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
+                state.coins -= cost;
+                state.eggBoardUnlocked += 1;
+                haptic.notify('success');
+                renderEggBoard();
+                renderHeader();
+                saveNow();
+                return;
+            }
+
             const board = state.eggBoard;
             if (eggSelected === -1) {
                 if (board[i]) { eggSelected = i; renderEggBoard(); }
@@ -1382,28 +1407,15 @@
             else if (!stuck.size) toast('Нечего объединять');
         }
 
-        function nestUnlockCost(index) {
-            const cfg = CONFIG.eggs;
-            return cfg.unlock_base_cost * Math.pow(cfg.unlock_growth, index - 1);
-        }
-
         function renderEggNests() {
             const wrap = document.getElementById('eggNests');
             const now = Date.now();
-            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
             const cells = [];
-            for (let i = 0; i < 7; i++) {
-                if (i >= state.eggNests) {
-                    cells.push(`<div class="nest-cell locked" data-nest="${i}">
-                        <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        <span class="nest-cost">${fmtGram(nestUnlockCost(i))} ${coin}</span>
-                    </div>`);
-                } else {
-                    const ready = (state.eggNestCooldown[i] || 0) <= now;
-                    cells.push(`<div class="nest-cell${ready ? '' : ' cooldown'}" data-nest="${i}">
-                        <div class="egg-shape nest-egg" style="background:${eggColor(1)}">1</div>
-                    </div>`);
-                }
+            for (let i = 0; i < state.eggNestCooldown.length; i++) {
+                const ready = (state.eggNestCooldown[i] || 0) <= now;
+                cells.push(`<div class="nest-cell${ready ? '' : ' cooldown'}" data-nest="${i}">
+                    <div class="egg-shape nest-egg" style="background:${eggColor(1)}">1</div>
+                </div>`);
             }
             wrap.innerHTML = cells.join('');
             wrap.querySelectorAll('.nest-cell').forEach(cell => {
@@ -1412,20 +1424,11 @@
         }
 
         function onNestClick(i) {
-            if (i >= state.eggNests) {
-                if (i !== state.eggNests) return; // разблокировка строго по порядку
-                const cost = nestUnlockCost(i);
-                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
-                state.coins -= cost;
-                state.eggNests += 1;
-                haptic.notify('success');
-                renderEggNests();
-                renderHeader();
-                saveNow();
-                return;
-            }
             if ((state.eggNestCooldown[i] || 0) > Date.now()) return;
-            const empty = state.eggBoard.indexOf(0);
+            let empty = -1;
+            for (let j = 0; j < state.eggBoardUnlocked; j++) {
+                if (!state.eggBoard[j]) { empty = j; break; }
+            }
             if (empty === -1) { toast('Доска заполнена'); return; }
             state.eggBoard[empty] = 1;
             state.eggNestCooldown[i] = Date.now() + CONFIG.eggs.nest_cooldown_seconds * 1000;
@@ -2653,7 +2656,7 @@
                 missions: state.missions,
                 slots: state.slots,
                 eggs_board: state.eggBoard,
-                eggs_nests: state.eggNests,
+                eggs_board_unlocked: state.eggBoardUnlocked,
                 ops: state.ops
             };
             fetch('api/save', {
@@ -2692,11 +2695,11 @@
             state.ops = data.ops || 0;
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
-            state.eggBoard = Array.isArray(data.eggs_board) && data.eggs_board.length === 25
-                ? data.eggs_board : Array(25).fill(0);
-            state.eggNests = Number(data.eggs_nests) || 1;
-            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 7) {
-                state.eggNestCooldown = Array(7).fill(0);
+            state.eggBoard = Array.isArray(data.eggs_board) && data.eggs_board.length === 9
+                ? data.eggs_board : Array(9).fill(0);
+            state.eggBoardUnlocked = Number(data.eggs_board_unlocked) || 1;
+            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 8) {
+                state.eggNestCooldown = Array(8).fill(0);
             }
             botUsername = data.bot_username || botUsername;
 
@@ -2752,10 +2755,10 @@
             // Never leave a farm holding more monsters than it has slots for.
             state.slots = Math.min(CONFIG.slots.max, Math.max(state.slots, usedSlots()));
 
-            if (!Array.isArray(state.eggBoard) || state.eggBoard.length !== 25) state.eggBoard = Array(25).fill(0);
-            if (typeof state.eggNests !== 'number') state.eggNests = 1;
-            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 7) {
-                state.eggNestCooldown = Array(7).fill(0);
+            if (!Array.isArray(state.eggBoard) || state.eggBoard.length !== 9) state.eggBoard = Array(9).fill(0);
+            if (typeof state.eggBoardUnlocked !== 'number') state.eggBoardUnlocked = 1;
+            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 8) {
+                state.eggNestCooldown = Array(8).fill(0);
             }
 
             if (!lastSeen) return 0;

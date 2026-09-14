@@ -321,8 +321,8 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "last_seen": int(time.time()),
             "daily_day": 0,
             "daily_last": 0,
-            "eggs_board": [0] * 25,
-            "eggs_nests": 1,
+            "eggs_board": [0] * 9,
+            "eggs_board_unlocked": 1,
             "wallet": "",
             "ops": 0,
         }
@@ -471,7 +471,7 @@ class FarmState(BaseModel):
     missions: list = []
     slots: int = START_SLOTS
     eggs_board: List[int] = []
-    eggs_nests: int = 1
+    eggs_board_unlocked: int = 1
     ops: int = -1              # версия баланса, полученная при последней загрузке
 
 
@@ -561,8 +561,8 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "referrals_qualified": await store.count_referrals(user_id, QUALIFY_MNSTR),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
-        "eggs_board": row.get("eggs_board") or [0] * 25,
-        "eggs_nests": int(row.get("eggs_nests") or 1),
+        "eggs_board": row.get("eggs_board") or [0] * 9,
+        "eggs_board_unlocked": int(row.get("eggs_board_unlocked") or 1),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
         "ton": ton_info(user_id),
@@ -586,9 +586,9 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
     if state.ops >= 0 and state.ops != server_ops:
         return {"status": "stale", "ops": server_ops}
 
-    eggs_board = list(state.eggs_board or [])[:25]
-    eggs_board += [0] * (25 - len(eggs_board))
-    eggs_nests = max(1, min(7, int(state.eggs_nests or 1)))
+    eggs_board = list(state.eggs_board or [])[:9]
+    eggs_board += [0] * (9 - len(eggs_board))
+    eggs_board_unlocked = max(1, min(9, int(state.eggs_board_unlocked or 1)))
 
     await store.update(
         user_id,
@@ -600,7 +600,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "active_slot": state.active_slot,
             "slots": state.slots,
             "eggs_board": eggs_board,
-            "eggs_nests": eggs_nests,
+            "eggs_board_unlocked": eggs_board_unlocked,
             "last_seen": int(time.time()),
         },
     )

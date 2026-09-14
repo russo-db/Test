@@ -3,7 +3,7 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, eggs_board, eggs_nests, wallet, ops
+    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON)
 и заявки на вывод (withdrawals).
@@ -17,7 +17,7 @@ from typing import Optional
 FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
-    "daily_day", "daily_last", "eggs_board", "eggs_nests", "wallet", "ops",
+    "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "wallet", "ops",
 )
 JSON_FIELDS = ("monsters", "missions", "eggs_board")
 
@@ -54,7 +54,7 @@ class SqliteStore:
                 daily_day      INTEGER DEFAULT 0,
                 daily_last     INTEGER DEFAULT 0,
                 eggs_board     TEXT    DEFAULT '[]',
-                eggs_nests     INTEGER DEFAULT 1,
+                eggs_board_unlocked INTEGER DEFAULT 1,
                 wallet         TEXT    DEFAULT '',
                 ops            INTEGER DEFAULT 0
             )
@@ -94,7 +94,7 @@ class SqliteStore:
             ("daily_day", "INTEGER DEFAULT 0"),
             ("daily_last", "INTEGER DEFAULT 0"),
             ("eggs_board", "TEXT DEFAULT '[]'"),
-            ("eggs_nests", "INTEGER DEFAULT 1"),
+            ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
         ):
