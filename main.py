@@ -39,8 +39,9 @@ QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
 MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
 STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
 START_SLOTS = CONFIG["slots"]["start"]
-PAYOUT_SECONDS = CONFIG["roll"]["payout_hours"] * 3600
 MAX_SLOTS = CONFIG["slots"]["max"]
+EGGS_CFG = CONFIG.get("eggs") or {}
+EGG_INTERVAL_SECONDS = int(float(EGGS_CFG.get("egg_interval_hours", 24)) * 3600)
 DAILY = CONFIG.get("daily") or {}
 DAILY_DAYS = int(DAILY.get("days", 30))
 DAILY_STEP = float(DAILY.get("mnstr_step", 10))
@@ -155,17 +156,16 @@ async def notify_referrer(referrer: int, friend_name: str):
 
 
 # --- GAME MATH (mirrored by the client in index.html) ---
-def monster_rate(monster_id: str) -> float:
-    """Coins per second, so a monster hands over its whole payout in payout_hours."""
-    monster = MONSTERS.get(monster_id)
-    return monster["payout"] / PAYOUT_SECONDS if monster else 0.0
+def next_egg_timestamp() -> int:
+    return int(time.time()) + EGG_INTERVAL_SECONDS
 
 
 def read_farm(raw) -> List[dict]:
-    """The farm is one slot per monster: {"id": ..., "mined": coins paid out so far}.
+    """The farm is one slot per eagle: {"id": ..., "next_egg_at": unix seconds}.
 
-    Farms saved in older shapes - {id: copies}, or a flat list of ids - are
-    converted into fresh slots.
+    Each occupied slot lays one egg every EGG_INTERVAL_SECONDS - eagles never
+    expire. Farms saved in older shapes - {id: copies}, a flat list of ids, or
+    the previous {"id", "mined"} payout slots - are converted into fresh slots.
     """
     try:
         data = json.loads(raw or "[]") if isinstance(raw, str) else raw
@@ -180,66 +180,18 @@ def read_farm(raw) -> List[dict]:
     farm = []
     for entry in data:
         if isinstance(entry, str):
-            entry = {"id": entry, "mined": 0.0}
+            entry = {"id": entry}
         if not isinstance(entry, dict):
             continue
         monster_id = entry.get("id")
         if monster_id not in MONSTERS:
             continue
-        payout = MONSTERS[monster_id]["payout"]
         try:
-            mined = min(max(float(entry.get("mined") or 0.0), 0.0), payout)
-        except (TypeError, ValueError):
-            mined = 0.0
-        if mined < payout:
-            farm.append({"id": monster_id, "mined": mined})
+            next_egg_at = int(entry["next_egg_at"])
+        except (KeyError, TypeError, ValueError):
+            next_egg_at = next_egg_timestamp()
+        farm.append({"id": monster_id, "next_egg_at": next_egg_at})
     return farm
-
-
-def remaining_payout(slot: dict) -> float:
-    return max(0.0, MONSTERS[slot["id"]]["payout"] - slot["mined"])
-
-
-def total_income(farm: List[dict]) -> float:
-    """Only slots that still owe coins are mining."""
-    return sum(monster_rate(slot["id"]) for slot in farm if remaining_payout(slot) > 0)
-
-
-def run_farm(farm: List[dict], seconds: float):
-    """Mines for `seconds`, never paying a monster beyond its payout.
-
-    Returns (coins, mnstr). Meat is farmed in parallel over the same
-    lifetime, so it accrues in step with the coin payout.
-    """
-    coins = 0.0
-    mnstr = 0.0
-    for slot in farm:
-        monster = MONSTERS[slot["id"]]
-        gain = min(monster_rate(slot["id"]) * seconds, remaining_payout(slot))
-        if gain > 0:
-            slot["mined"] += gain
-            coins += gain
-            mnstr += gain / monster["payout"] * monster.get("mnstr", 0.0)
-    return coins, mnstr
-
-
-def offline_reward(row):
-    """Mines what the farm earned while the player was away.
-
-    Returns (coins, mnstr, farm); the farm comes back with its slots advanced
-    and monsters that finished their payout removed.
-    """
-    farm = read_farm(row["monsters"])
-    last_seen = int(row["last_seen"] or 0)
-    if not last_seen:
-        return 0.0, 0.0, farm
-
-    elapsed = min(max(int(time.time()) - last_seen, 0), CONFIG["offline"]["max_seconds"])
-    if elapsed <= 0:
-        return 0.0, 0.0, farm
-
-    coins, mnstr = run_farm(farm, elapsed * CONFIG["offline"]["efficiency"])
-    return coins, mnstr, [slot for slot in farm if remaining_payout(slot) > 0]
 
 
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
@@ -312,7 +264,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "coins": 0.0,
             "total_earned": 0.0,
             "mnstr": 0.0,
-            "monsters": [{"id": STARTER_MONSTER, "mined": 0.0}],
+            "monsters": [{"id": STARTER_MONSTER, "next_egg_at": next_egg_timestamp()}],
             "active_slot": 0,
             "missions": [],
             "slots": START_SLOTS,
@@ -466,7 +418,7 @@ class FarmState(BaseModel):
     coins: float
     total_earned: float
     mnstr: float = 0.0
-    monsters: List[dict]       # one slot per monster: {"id", "mined"}
+    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at"}
     active_slot: int = 0
     missions: list = []
     slots: int = START_SLOTS
@@ -521,7 +473,7 @@ async def serve_config():
 
 @app.get("/api/load/{user_id}")
 async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Loads the farm and pays out everything the monsters earned offline."""
+    """Loads the farm - eagles stay put and just tick towards their next egg."""
     user_id = authenticate(x_telegram_init_data, user_id)
 
     context = signed_context(x_telegram_init_data)
@@ -531,28 +483,15 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         await ensure_user(user_id, name=context["name"])
 
     row = await fetch_user(user_id)
-    earned_offline, mnstr_offline, farm = offline_reward(row)
+    farm = read_farm(row["monsters"])
 
-    coins = float(row.get("coins") or 0.0) + earned_offline
-    total_earned = float(row.get("total_earned") or 0.0) + earned_offline
-    mnstr = float(row.get("mnstr") or 0.0) + mnstr_offline
-
-    await store.update(
-        user_id,
-        {
-            "coins": coins,
-            "total_earned": total_earned,
-            "mnstr": mnstr,
-            "monsters": farm,
-            "last_seen": int(time.time()),
-        },
-    )
+    await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
 
     return {
         "user_id": user_id,
-        "coins": coins,
-        "total_earned": total_earned,
-        "mnstr": mnstr,
+        "coins": float(row.get("coins") or 0.0),
+        "total_earned": float(row.get("total_earned") or 0.0),
+        "mnstr": float(row.get("mnstr") or 0.0),
         "monsters": farm,
         "active_slot": int(row.get("active_slot") or 0),
         "missions": row.get("missions") or [],
@@ -567,8 +506,6 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "ops": int(row.get("ops") or 0),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
-        "offline_earned": earned_offline,
-        "offline_mnstr": mnstr_offline,
         "bot_username": BOT_USERNAME,
     }
 
@@ -687,7 +624,7 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
 
     granted = await store.claim_daily(
         user_id, today, day, reward["gram"], reward["mnstr"],
-        reward["monster"], extra_slot,
+        reward["monster"], extra_slot, next_egg_timestamp(),
     )
     if not granted:
         raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
@@ -731,7 +668,10 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
                 raise HTTPException(status_code=400, detail="Все слоты заняты — освободи один")
             extra_slot = True
 
-    await store.claim_wheel(user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot)
+    await store.claim_wheel(
+        user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot,
+        next_egg_timestamp(),
+    )
 
     fresh = await store.get(user_id)
     return {
@@ -874,15 +814,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_new:
         text = (
             f"🐲 С возвращением, {name}!\n\n"
-            "Пока тебя не было, орлы не сидели без дела — забери намайненное."
+            "Твои орлы несли яйца, пока тебя не было — загляни на ферму."
         )
     elif invited_by:
         text = (
             f"🤝 <b>{invited_by}</b> позвал тебя в <b>Eagle Gram</b>!\n\n"
             f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} Meat, "
             "друг получит за тебя награду.\n\n"
-            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Он добывает "
-            "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
+            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
+            "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови своих друзей — за них тоже платят.\n\n"
             "Ферма ждёт 👇"
@@ -890,8 +830,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = (
             "🐲 Добро пожаловать в <b>Eagle Gram</b>!\n\n"
-            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Он добывает "
-            "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
+            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
+            "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови друзей — за каждого дают награду.\n\n"
             "Ферма ждёт 👇"

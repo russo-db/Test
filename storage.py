@@ -200,7 +200,7 @@ class SqliteStore:
 
     async def claim_daily(self, user_id: int, today: int, day: int, gram: float,
                           mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
+                          extra_slot: bool = False, next_egg_at: Optional[int] = None) -> bool:
         """Отмечает сегодняшний вход и выдаёт награду. False — если уже забрано сегодня."""
         conn = self._connect()
         cur = conn.cursor()
@@ -222,7 +222,7 @@ class SqliteStore:
                     farm = json.loads(row["monsters"] or "[]")
                 except (TypeError, ValueError):
                     farm = []
-                farm.append({"id": monster, "mined": 0.0})
+                farm.append({"id": monster, "next_egg_at": next_egg_at})
                 fields.append("monsters = ?")
                 values.append(json.dumps(farm))
             if extra_slot:
@@ -239,7 +239,8 @@ class SqliteStore:
 
 
     async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
-                          monster: Optional[str] = None, extra_slot: bool = False):
+                          monster: Optional[str] = None, extra_slot: bool = False,
+                          next_egg_at: Optional[int] = None):
         """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
         conn = self._connect()
         cur = conn.cursor()
@@ -257,7 +258,7 @@ class SqliteStore:
                     farm = json.loads(row["monsters"] or "[]") if row else []
                 except (TypeError, ValueError):
                     farm = []
-                farm.append({"id": monster, "mined": 0.0})
+                farm.append({"id": monster, "next_egg_at": next_egg_at})
                 fields.append("monsters = ?")
                 values.append(json.dumps(farm))
             if extra_slot:
@@ -387,7 +388,7 @@ class MongoStore:
 
     async def claim_daily(self, user_id: int, today: int, day: int, gram: float,
                           mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
+                          extra_slot: bool = False, next_egg_at: Optional[int] = None) -> bool:
         """Условие daily_last != today делает выдачу однократной: два одновременных
         запроса не начислят награду дважды."""
         inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
@@ -395,7 +396,7 @@ class MongoStore:
             inc["slots"] = 1
         changes = {"$set": {"daily_last": today, "daily_day": day}, "$inc": inc}
         if monster:
-            changes["$push"] = {"monsters": {"id": monster, "mined": 0.0}}
+            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": next_egg_at}}
 
         result = await self.users.update_one(
             {"_id": user_id, "daily_last": {"$ne": today}}, changes
@@ -404,14 +405,15 @@ class MongoStore:
 
 
     async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
-                          monster: Optional[str] = None, extra_slot: bool = False):
+                          monster: Optional[str] = None, extra_slot: bool = False,
+                          next_egg_at: Optional[int] = None):
         """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
         inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
         if extra_slot:
             inc["slots"] = 1
         changes = {"$inc": inc}
         if monster:
-            changes["$push"] = {"monsters": {"id": monster, "mined": 0.0}}
+            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": next_egg_at}}
 
         await self.users.update_one({"_id": user_id}, changes)
 
