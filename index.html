@@ -365,7 +365,7 @@
         }
         .token-badge { background: #55486e; }
 
-        /* Свет за монстром, как дымка на арте */
+        /* Свет за орлом, как дымка на арте */
         .monster-stage::before {
             content: ''; position: absolute; width: 210px; height: 210px; border-radius: 50%;
             background: radial-gradient(circle, rgba(241,237,226,0.16) 0%, transparent 68%);
@@ -662,7 +662,7 @@
 
                 <button class="btn-primary roll-open" id="rollOpenBtn" onclick="openRoll()">
                     <img class="coin-icon" src="assets/coin.png" alt="">
-                    Купить монстра от <span id="rollOpenPrice">1</span>
+                    Купить орла от <span id="rollOpenPrice">1</span>
                 </button>
 
                 <button class="btn-action wheel-open" id="wheelOpenBtn" onclick="openWheel()">
@@ -851,8 +851,8 @@
             <img class="token-hero" src="assets/mnstr.png" alt="">
             <h2>Что такое $Meat</h2>
             <table class="token-table">
-                <tr><td>Что это</td><td>Токен игры. Монстры фармят его <b>параллельно</b> с GRAM — из того же слота, не замедляя доход.</td></tr>
-                <tr><td>Сколько дают</td><td>От 100 до 230 Meat за полный цикл монстра — 42 дня. Точное число указано в магазине.</td></tr>
+                <tr><td>Что это</td><td>Токен игры. Орлы фармят его <b>параллельно</b> с GRAM — из того же слота, не замедляя доход.</td></tr>
+                <tr><td>Сколько дают</td><td>От 100 до 230 Meat за полный цикл орла — 42 дня. Точное число указано в магазине.</td></tr>
                 <tr><td>Сейчас</td><td>Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
                 <tr><td>После листинга</td><td>Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
             </table>
@@ -870,8 +870,8 @@
     <div class="modal-backdrop" id="rollModal" onclick="if (event.target === this) closeRoll()">
         <div class="modal-box glass-panel roll-box">
             <div id="rollBody">
-                <h2>Купить монстра</h2>
-                <p>Выпадает случайный. Доход — сколько монстр принесёт за <span id="rollHours">42 дня</span>, после чего слот освободится.</p>
+                <h2>Купить орла</h2>
+                <p>Выпадает случайный. Доход — сколько орёл принесёт за <span id="rollHours">42 дня</span>, после чего слот освободится.</p>
                 <div class="roll-tabs" id="rollTabs"></div>
                 <div class="roll-head"><span>Существо</span><span>Доход / шанс</span></div>
                 <div id="rollTable"></div>
@@ -885,7 +885,7 @@
     <!-- OFFLINE INCOME MODAL -->
     <div class="modal-backdrop" id="offlineModal">
         <div class="modal-box glass-panel">
-            <h2>Монстры не спали 🐲</h2>
+            <h2>Орлы не спали 🐲</h2>
             <p>Пока тебя не было, ферма продолжала майнить.</p>
             <div class="modal-amount">
                 <img class="coin-icon coin-md" src="assets/coin.png" alt="">
@@ -1193,7 +1193,7 @@
             if (!monster) {
                 stage.style.display = 'none';
                 document.getElementById('activeMonsterName').innerText = 'Ферма пустая';
-                document.getElementById('activeMonsterSub').innerText = 'Купи монстра, чтобы занять слот';
+                document.getElementById('activeMonsterSub').innerText = 'Купи орла, чтобы занять слот';
                 return;
             }
 
@@ -1597,7 +1597,7 @@
         }
 
         function dailyLabel(reward) {
-            if (reward.monster) return (MONSTERS[reward.monster] || {}).name || 'Монстр';
+            if (reward.monster) return (MONSTERS[reward.monster] || {}).name || 'Орёл';
             return reward.gram ? fmtGram(reward.gram) : String(reward.mnstr);
         }
 
@@ -2116,7 +2116,7 @@
                 <h2>${maxed ? 'Все слоты открыты' : `Слот ${state.slots + 1} заперт`}</h2>
                 <p>${maxed
                     ? `Больше ${CONFIG.slots.max} слотов на ферме не бывает.`
-                    : 'Открой его, чтобы поселить ещё одного монстра.'}</p>
+                    : 'Открой его, чтобы поселить ещё одного орла.'}</p>
 
                 ${maxed ? '' : `
                 <div class="stat-row"><span>Цена</span><b style="color:var(--accent-coin)">${fmtGram(cost)} GRAM</b></div>
@@ -2212,7 +2212,7 @@
         function shareReferral() {
             const link = referralLink();
             if (!link) { toast(referralHint()); return; }
-            const text = 'Заводи свою банду монстров в Monster Gram — они майнят монеты даже офлайн!';
+            const text = 'Заводи свою банду орлов в Monster Gram — они майнят монеты даже офлайн!';
             try {
                 tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
             } catch (e) {
@@ -2847,7 +2847,7 @@
                     rarity: tier.name,
                     frames: 20
                 }, monster)));
-            if (!cfg.monsters.length) throw new Error('в game_config.json нет монстров');
+            if (!cfg.monsters.length) throw new Error('в game_config.json нет орлов');
             cfg.slots = Object.assign({ start: 3, max: 24, base_cost: 1200, growth: 1.28 }, cfg.slots);
             cfg.roll = Object.assign({ payout_hours: 1008 }, cfg.roll);
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });

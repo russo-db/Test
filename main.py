@@ -674,11 +674,11 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
     day = daily_state(row)["day"]
     reward = daily_reward(day)
 
-    # Монстра некуда селить — открываем под него слот, чтобы награда не пропала.
+    # Орла некуда селить — открываем под него слот, чтобы награда не пропала.
     extra_slot = False
     if reward["monster"]:
         if reward["monster"] not in MONSTERS:
-            raise HTTPException(status_code=500, detail="Монстр награды не найден")
+            raise HTTPException(status_code=500, detail="Орёл награды не найден")
         slots = int(row.get("slots") or START_SLOTS)
         if len(read_farm(row["monsters"])) >= slots:
             if slots >= MAX_SLOTS:
@@ -874,14 +874,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_new:
         text = (
             f"🐲 С возвращением, {name}!\n\n"
-            "Пока тебя не было, монстры не сидели без дела — забери намайненное."
+            "Пока тебя не было, орлы не сидели без дела — забери намайненное."
         )
     elif invited_by:
         text = (
             f"🤝 <b>{invited_by}</b> позвал тебя в <b>Monster Gram</b>!\n\n"
             f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} Meat, "
             "друг получит за тебя награду.\n\n"
-            f"🥚 Тебе уже выдан первый монстр — <b>{starter}</b>. Он добывает "
+            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Он добывает "
             "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови своих друзей — за них тоже платят.\n\n"
@@ -890,7 +890,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = (
             "🐲 Добро пожаловать в <b>Monster Gram</b>!\n\n"
-            f"🥚 Тебе уже выдан первый монстр — <b>{starter}</b>. Он добывает "
+            f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Он добывает "
             "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови друзей — за каждого дают награду.\n\n"
