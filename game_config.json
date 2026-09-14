@@ -208,44 +208,57 @@
     "spin_cost_gram": 0.3,
     "segments": [
       {
-        "gram": 0.02,
+        "gram": 0.01,
         "mnstr": 0,
-        "weight": 24
+        "weight": 22
       },
       {
         "gram": 0,
-        "mnstr": 40,
-        "weight": 24
+        "mnstr": 5,
+        "weight": 22
       },
       {
         "gram": 0.05,
         "mnstr": 0,
-        "weight": 18
+        "weight": 16
       },
       {
         "gram": 0,
-        "mnstr": 100,
-        "weight": 18
+        "mnstr": 10,
+        "weight": 16
       },
       {
         "gram": 0.1,
         "mnstr": 0,
-        "weight": 12
+        "weight": 10
       },
       {
         "gram": 0,
-        "mnstr": 220,
-        "weight": 12
+        "mnstr": 20,
+        "weight": 10
       },
       {
-        "gram": 0.3,
+        "gram": 0,
         "mnstr": 0,
-        "weight": 6
+        "monster": "common",
+        "weight": 5
+      },
+      {
+        "gram": 1,
+        "mnstr": 0,
+        "weight": 3
       },
       {
         "gram": 0,
-        "mnstr": 500,
-        "weight": 6
+        "mnstr": 0,
+        "monster": "uncommon",
+        "weight": 3
+      },
+      {
+        "gram": 0,
+        "mnstr": 0,
+        "monster": "rare",
+        "weight": 1
       }
     ]
   },

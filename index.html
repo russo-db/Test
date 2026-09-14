@@ -581,6 +581,7 @@
             text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink);
         }
         .wheel-seg img { width: 16px; height: 16px; object-fit: contain; }
+        .wheel-seg-monster img { width: 30px; height: 30px; filter: drop-shadow(0 2px 0 var(--ink)); }
         .wheel-pointer {
             position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
             width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent;
@@ -1771,11 +1772,18 @@
         }
 
         function wheelIcon(seg) {
+            if (seg.monster) return framePath(MONSTERS[seg.monster].sprite, 0);
             return seg.gram ? 'assets/coin.png' : 'assets/mnstr.png';
         }
 
         function wheelLabel(seg) {
+            if (seg.monster) return tierById(seg.monster).name;
             return seg.gram ? fmtGram(seg.gram) : String(seg.mnstr);
+        }
+
+        function wheelSegColor(seg, i) {
+            if (seg.monster) return tierById(seg.monster).color;
+            return WHEEL_COLORS[i % WHEEL_COLORS.length];
         }
 
         function renderWheelDial() {
@@ -1784,13 +1792,14 @@
             if (!segments.length) return;
             const per = 360 / segments.length;
             dial.style.background = `conic-gradient(${segments.map((seg, i) =>
-                `${WHEEL_COLORS[i % WHEEL_COLORS.length]} ${i * per}deg ${(i + 1) * per}deg`
+                `${wheelSegColor(seg, i)} ${i * per}deg ${(i + 1) * per}deg`
             ).join(', ')})`;
             dial.innerHTML = segments.map((seg, i) => {
                 const mid = i * per + per / 2;
-                return `<div class="wheel-seg" style="transform:rotate(${mid}deg)">
+                const cls = seg.monster ? 'wheel-seg wheel-seg-monster' : 'wheel-seg';
+                return `<div class="${cls}" style="transform:rotate(${mid}deg)">
                     <span style="transform:rotate(${-mid}deg)">
-                        <img src="${wheelIcon(seg)}" alt="">${wheelLabel(seg)}
+                        <img src="${wheelIcon(seg)}" alt="">${seg.monster ? '' : wheelLabel(seg)}
                     </span>
                 </div>`;
             }).join('');
@@ -1857,9 +1866,11 @@
             setTimeout(() => {
                 wheelSpinning = false;
                 haptic.notify('success');
-                const label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} Meat`;
+                let label;
+                if (reward.monster) label = MONSTERS[reward.monster].name;
+                else label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} Meat`;
                 toast(`Колесо фортуны: ${label}`);
-                spawnBurst(10);
+                spawnBurst(reward.monster ? 14 : 10);
                 renderAll();
                 updateWheelButton();
             }, 4200);
@@ -1879,15 +1890,25 @@
         // Без бэкенда (статический хостинг) колесо крутит и списывает сам клиент.
         function spinWheelLocal(paid) {
             const cost = CONFIG.wheel.spin_cost_gram;
-            if (paid) {
-                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
-                state.coins -= cost;
-            }
+            if (paid && state.coins < cost) { toast('Не хватает GRAM'); return; }
+
             const index = pickWheelIndexLocal();
             const seg = CONFIG.wheel.segments[index];
-            const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0 };
+            const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0, monster: seg.monster || null };
+
+            if (reward.monster && !canHatch()) {
+                toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');
+                haptic.notify('warning');
+                return;
+            }
+
+            if (paid) state.coins -= cost;
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
+            if (reward.monster) {
+                if (usedSlots() >= state.slots) state.slots += 1;
+                state.farm.push({ id: reward.monster, mined: 0 });
+            }
             if (!paid) state.wheelLast = dayIndex();
             saveNow();
             finishWheelSpin(index, reward);
@@ -1926,6 +1947,8 @@
                 state.mnstr = data.mnstr;
                 state.totalEarned = data.total_earned;
                 state.wheelLast = Number(data.wheel_last) || 0;
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (data.slots) state.slots = data.slots;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 finishWheelSpin(data.segment, data.reward);
             } catch (error) {

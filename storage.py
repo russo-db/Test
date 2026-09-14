@@ -241,7 +241,8 @@ class SqliteStore:
 
 
     async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
-                          gram: float, mnstr: float) -> bool:
+                          gram: float, mnstr: float, monster: Optional[str] = None,
+                          extra_slot: bool = False) -> bool:
         """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
         False — не хватило GRAM (платный) или бесплатный спин уже использован."""
         conn = self._connect()
@@ -249,7 +250,7 @@ class SqliteStore:
         try:
             cur.execute("BEGIN IMMEDIATE")
             row = cur.execute(
-                "SELECT coins, wheel_last FROM users WHERE user_id = ?", (user_id,)
+                "SELECT coins, wheel_last, monsters FROM users WHERE user_id = ?", (user_id,)
             ).fetchone()
             if not row:
                 conn.rollback()
@@ -258,25 +259,31 @@ class SqliteStore:
                 if float(row["coins"]) < cost:
                     conn.rollback()
                     return False
-                cur.execute(
-                    """UPDATE users
-                          SET coins = coins - ? + ?, total_earned = total_earned + ?,
-                              mnstr = mnstr + ?, ops = ops + 1
-                        WHERE user_id = ?""",
-                    (cost, gram, gram, mnstr, user_id),
-                )
+                fields = ["coins = coins - ? + ?", "total_earned = total_earned + ?",
+                          "mnstr = mnstr + ?", "ops = ops + 1"]
+                values = [cost, gram, gram, mnstr]
             else:
                 if int(row["wheel_last"] or 0) == today:
                     conn.rollback()
                     return False
-                cur.execute(
-                    """UPDATE users
-                          SET wheel_last = ?, coins = coins + ?,
-                              total_earned = total_earned + ?, mnstr = mnstr + ?,
-                              ops = ops + 1
-                        WHERE user_id = ?""",
-                    (today, gram, gram, mnstr, user_id),
-                )
+                fields = ["wheel_last = ?", "coins = coins + ?",
+                          "total_earned = total_earned + ?", "mnstr = mnstr + ?",
+                          "ops = ops + 1"]
+                values = [today, gram, gram, mnstr]
+
+            if monster:
+                try:
+                    farm = json.loads(row["monsters"] or "[]")
+                except (TypeError, ValueError):
+                    farm = []
+                farm.append({"id": monster, "mined": 0.0})
+                fields.append("monsters = ?")
+                values.append(json.dumps(farm))
+            if extra_slot:
+                fields.append("slots = slots + 1")
+
+            values.append(user_id)
+            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", tuple(values))
             conn.commit()
             return True
         finally:
@@ -417,20 +424,25 @@ class MongoStore:
 
 
     async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
-                          gram: float, mnstr: float) -> bool:
+                          gram: float, mnstr: float, monster: Optional[str] = None,
+                          extra_slot: bool = False) -> bool:
         """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
         Условие в фильтре делает операцию атомарной — гонка не даст двойной приз."""
+        inc = {"total_earned": gram, "mnstr": mnstr, "ops": 1}
+        inc["coins"] = (gram - cost) if paid else gram
+        if extra_slot:
+            inc["slots"] = 1
+        changes = {"$inc": inc}
+        if monster:
+            changes["$push"] = {"monsters": {"id": monster, "mined": 0.0}}
+
         if paid:
-            result = await self.users.update_one(
-                {"_id": user_id, "coins": {"$gte": cost}},
-                {"$inc": {"coins": gram - cost, "total_earned": gram, "mnstr": mnstr, "ops": 1}},
-            )
+            query = {"_id": user_id, "coins": {"$gte": cost}}
         else:
-            result = await self.users.update_one(
-                {"_id": user_id, "wheel_last": {"$ne": today}},
-                {"$set": {"wheel_last": today},
-                 "$inc": {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}},
-            )
+            query = {"_id": user_id, "wheel_last": {"$ne": today}}
+            changes["$set"] = {"wheel_last": today}
+
+        result = await self.users.update_one(query, changes)
         return result.modified_count > 0
 
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:

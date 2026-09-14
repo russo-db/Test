@@ -280,6 +280,16 @@ def daily_state(row: dict) -> dict:
 
 
 # --- КОЛЕСО ФОРТУНЫ ---
+def _wheel_reward(index: int) -> dict:
+    seg = WHEEL_SEGMENTS[index]
+    return {
+        "index": index,
+        "gram": float(seg.get("gram") or 0),
+        "mnstr": float(seg.get("mnstr") or 0),
+        "monster": seg.get("monster"),
+    }
+
+
 def wheel_pick() -> dict:
     """Взвешенный случайный сектор. Индекс нужен клиенту, чтобы анимация
     останавливалась ровно на секторе, который выбрал сервер."""
@@ -289,9 +299,8 @@ def wheel_pick() -> dict:
     for index, seg in enumerate(WHEEL_SEGMENTS):
         upto += float(seg.get("weight", 1))
         if roll <= upto:
-            return {"index": index, "gram": float(seg.get("gram") or 0), "mnstr": float(seg.get("mnstr") or 0)}
-    last = WHEEL_SEGMENTS[-1]
-    return {"index": len(WHEEL_SEGMENTS) - 1, "gram": float(last.get("gram") or 0), "mnstr": float(last.get("mnstr") or 0)}
+            return _wheel_reward(index)
+    return _wheel_reward(len(WHEEL_SEGMENTS) - 1)
 
 
 async def ensure_user(user_id: int, referred_by: Optional[int] = None,
@@ -722,8 +731,22 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         raise HTTPException(status_code=409, detail="Бесплатный спин уже использован сегодня")
 
     reward = wheel_pick()
+
+    # Приз-орёл: сажаем в свободный слот, а если ферма заполнена — открываем
+    # ещё один (как и в ежедневном входе), чтобы приз не пропал зря.
+    extra_slot = False
+    if reward["monster"]:
+        if reward["monster"] not in MONSTERS:
+            raise HTTPException(status_code=500, detail="Орёл приза не найден")
+        slots = int(row.get("slots") or START_SLOTS)
+        if len(read_farm(row["monsters"])) >= slots:
+            if slots >= MAX_SLOTS:
+                raise HTTPException(status_code=400, detail="Все слоты заняты — освободи один")
+            extra_slot = True
+
     granted = await store.claim_wheel(
-        user_id, today, request.paid, cost, reward["gram"], reward["mnstr"]
+        user_id, today, request.paid, cost, reward["gram"], reward["mnstr"],
+        reward["monster"], extra_slot,
     )
     if not granted:
         detail = "Недостаточно GRAM" if request.paid else "Бесплатный спин уже использован сегодня"
@@ -733,10 +756,12 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
     return {
         "status": "success",
         "segment": reward["index"],
-        "reward": {"gram": reward["gram"], "mnstr": reward["mnstr"]},
+        "reward": {"gram": reward["gram"], "mnstr": reward["mnstr"], "monster": reward["monster"]},
         "coins": float(fresh.get("coins") or 0.0),
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
+        "monsters": read_farm(fresh["monsters"]),
+        "slots": int(fresh.get("slots") or START_SLOTS),
         "wheel_last": int(fresh.get("wheel_last") or 0),
         "ops": int(fresh.get("ops") or 0),
     }
