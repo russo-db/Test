@@ -456,7 +456,7 @@ class WithdrawRequest(BaseModel):
 
 
 # --- FASTAPI SETUP ---
-app = FastAPI(title="Eagle Gram")
+app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
 
 
@@ -693,7 +693,7 @@ async def tonconnect_manifest():
     base = (WEB_APP_URL or "").rstrip("/")
     return {
         "url": base,
-        "name": "Eagle Gram",
+        "name": "SkyLords GRAMM",
         "iconUrl": f"{base}/assets/coin.png",
     }
 
@@ -818,7 +818,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif invited_by:
         text = (
-            f"🤝 <b>{invited_by}</b> позвал тебя в <b>Eagle Gram</b>!\n\n"
+            f"🤝 <b>{invited_by}</b> позвал тебя в <b>SkyLords GRAMM</b>!\n\n"
             f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} Meat, "
             "друг получит за тебя награду.\n\n"
             f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
@@ -829,7 +829,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         text = (
-            "🐲 Добро пожаловать в <b>Eagle Gram</b>!\n\n"
+            "🐲 Добро пожаловать в <b>SkyLords GRAMM</b>!\n\n"
             f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
             "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
@@ -837,7 +837,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ферма ждёт 👇"
         )
 
-    keyboard = [[InlineKeyboardButton("💎 Открыть Eagle Gram", web_app=WebAppInfo(url=WEB_APP_URL))]]
+    keyboard = [[InlineKeyboardButton("💎 Открыть SkyLords GRAMM", web_app=WebAppInfo(url=WEB_APP_URL))]]
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),

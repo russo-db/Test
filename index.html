@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Eagle Gram</title>
+    <title>SkyLords GRAMM</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.4.4/dist/tonconnect-ui.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
@@ -558,7 +558,7 @@
         <div class="top-header">
             <div class="brand-title">
                 <img class="coin-icon coin-brand" src="assets/coin.png" alt="">
-                <span class="brand-stack"><b>EAGLE</b><i>GRAM</i></span>
+                <span class="brand-stack"><b>SKYLORDS</b><i>GRAMM</i></span>
             </div>
             <div class="balance-bar">
                 <div class="top-balance-badge" id="topRightCounter">
@@ -800,7 +800,7 @@
 
     <div id="boot">
         <div class="spinner"></div>
-        <p>Eagle Gram загружается…</p>
+        <p>SkyLords GRAMM загружается…</p>
     </div>
 
     <script>
@@ -1924,7 +1924,7 @@
         function shareReferral() {
             const link = referralLink();
             if (!link) { toast(referralHint()); return; }
-            const text = 'Заводи свою банду орлов в Eagle Gram — они майнят монеты даже офлайн!';
+            const text = 'Заводи свою банду орлов в SkyLords GRAMM!';
             try {
                 tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
             } catch (e) {
