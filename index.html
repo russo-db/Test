@@ -302,6 +302,7 @@
         .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-muted); font-size: 10px; font-weight: 900; cursor: pointer; gap: 5px; flex: 1; padding: 7px 2px 5px 2px; border-radius: 16px; border: 3px solid transparent; transition: color 0.2s ease, transform 0.15s ease, background 0.2s ease; }
         .nav-item.active { color: #1d2b06; background: linear-gradient(180deg, #b6f04a, #7cb518); border-color: var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.4); transform: translateY(-4px); }
         .nav-icon { width: 23px; height: 23px; color: currentColor; }
+        .nav-icon-emoji { width: auto; height: auto; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 
         /* ---------- Boot ---------- */
         #boot { position: fixed; inset: 0; z-index: 800; background: radial-gradient(120% 80% at 50% 0%, #3b2280 0%, var(--bg-base) 45%, var(--bg-deep) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
@@ -793,7 +794,7 @@
                 <span>Яйца</span>
             </div>
             <div class="nav-item" onclick="switchTab('missions', this)">
-                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"></path><path d="M16 8 2 22"></path><path d="M17.5 15H9"></path></svg></div>
+                <div class="nav-icon nav-icon-emoji">🦅</div>
                 <span>Орлы</span>
             </div>
             <div class="nav-item" onclick="switchTab('friends', this)">
