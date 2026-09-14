@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Monster Gram</title>
+    <title>Eagle Gram</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.4.4/dist/tonconnect-ui.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
@@ -899,7 +899,7 @@
 
     <div id="boot">
         <div class="spinner"></div>
-        <p>Monster Gram загружается…</p>
+        <p>Eagle Gram загружается…</p>
     </div>
 
     <script>
@@ -2212,7 +2212,7 @@
         function shareReferral() {
             const link = referralLink();
             if (!link) { toast(referralHint()); return; }
-            const text = 'Заводи свою банду орлов в Monster Gram — они майнят монеты даже офлайн!';
+            const text = 'Заводи свою банду орлов в Eagle Gram — они майнят монеты даже офлайн!';
             try {
                 tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
             } catch (e) {
