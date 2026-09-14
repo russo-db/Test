@@ -213,7 +213,7 @@
       },
       {
         "gram": 0,
-        "mnstr": 5,
+        "mnstr": 1,
         "weight": 22
       },
       {
@@ -223,7 +223,7 @@
       },
       {
         "gram": 0,
-        "mnstr": 10,
+        "mnstr": 5,
         "weight": 16
       },
       {
@@ -233,17 +233,17 @@
       },
       {
         "gram": 0,
-        "mnstr": 20,
+        "mnstr": 10,
         "weight": 10
       },
       {
         "gram": 0,
         "mnstr": 0,
         "monster": "common",
-        "weight": 5
+        "weight": 0.0002
       },
       {
-        "gram": 1,
+        "gram": 0.5,
         "mnstr": 0,
         "weight": 3
       },
@@ -251,13 +251,13 @@
         "gram": 0,
         "mnstr": 0,
         "monster": "uncommon",
-        "weight": 3
+        "weight": 0.0002
       },
       {
         "gram": 0,
         "mnstr": 0,
         "monster": "rare",
-        "weight": 1
+        "weight": 0.0002
       }
     ]
   },
