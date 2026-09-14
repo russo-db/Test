@@ -417,5 +417,10 @@
       { "gram": 0.3, "mnstr": 0, "weight": 6 },
       { "gram": 0, "mnstr": 500, "weight": 6 }
     ]
+  },
+  "eggs": {
+    "nest_cooldown_seconds": 8,
+    "unlock_base_cost": 0.5,
+    "unlock_growth": 1.6
   }
 }

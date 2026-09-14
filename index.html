@@ -196,20 +196,22 @@
         .card-info h3 { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
 
-        .monster-card { display: flex; flex-direction: column; gap: 11px; padding: 13px; margin-bottom: 13px; }
-        .monster-card-top { display: flex; align-items: center; gap: 13px; }
-        .monster-portrait { flex: 0 0 auto; width: 82px; height: 82px; border-radius: 18px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-        .monster-portrait img { width: 90%; height: 90%; object-fit: contain; }
-        .monster-portrait.locked img { filter: brightness(0) saturate(0) invert(9%); opacity: 0.85; }
-        .monster-portrait.locked::after { content: '?'; position: absolute; font-size: 30px; font-weight: 900; color: rgba(185, 168, 232, 0.55); }
-        .copies-badge { position: absolute; right: 3px; bottom: 3px; background: var(--ink); border-radius: 9px; font-size: 11px; font-weight: 900; padding: 2px 7px; color: var(--accent-slime); }
-        .rarity-tag { display: inline-block; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 9px; border-radius: 9px; margin-bottom: 5px; background: rgba(18, 8, 38, 0.5); }
-        .monster-body { flex: 1; min-width: 0; }
-        .monster-body h3 { font-size: 16px; font-weight: 900; margin-bottom: 3px; text-shadow: 0 2px 0 var(--ink); }
-        .monster-stat { font-size: 13px; font-weight: 800; color: var(--accent-emerald); }
-        .monster-desc { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; font-weight: 700; }
-        .monster-actions { display: flex; }
-        .monster-actions .btn-action { width: 100%; justify-content: center; padding: 12px 16px; }
+        /* ---------- Яйца: мердж-поле ---------- */
+        .egg-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
+        .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
+        .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
+        .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
+        .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
+        .egg-nests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .nest-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, filter 0.2s ease; }
+        .nest-cell:active { transform: translateY(2px); }
+        .nest-cell.cooldown { filter: brightness(0.55); cursor: default; }
+        .nest-cell.locked { background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; cursor: pointer; }
+        .nest-cell .nest-lock { width: 30%; height: 30%; color: rgba(169, 180, 196, 0.45); }
+        .nest-cell .nest-cost { font-size: 10px; font-weight: 900; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
+        .nest-cell .nest-cost img { width: 11px; height: 11px; object-fit: contain; }
+        .nest-egg { width: 58%; height: 66%; font-size: 12px; }
 
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
@@ -403,9 +405,10 @@
         .slot-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
         .slot-progress { border-color: var(--ink); border-width: 2px; background: rgba(10,12,16,0.7); }
 
-        .monster-portrait { background: var(--panel-soft); border: 4px solid var(--ink); }
-        .copies-badge { background: var(--gold); color: var(--ink); }
-        .rarity-tag { background: rgba(25,30,39,0.55); }
+        .egg-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
+        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 16px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
+        .nest-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
+        .nest-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
 
         .navbar { background: #2c333f; border-top: 5px solid var(--ink); }
         .nav-item { color: var(--text-muted); }
@@ -673,9 +676,16 @@
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
             <h1>Яйца</h1>
-            <p class="subtitle">Каждое яйцо скрывает своего орла — собери все виды</p>
+            <p class="subtitle">Соединяй одинаковые яйца — на последнем уровне вылупится орёл</p>
 
-            <div id="collectionList"></div>
+            <div class="egg-board" id="eggBoard"></div>
+            <button class="btn-action egg-auto" id="eggAutoBtn" onclick="autoMergeEggs()">
+                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg></div>
+                Автомердж
+            </button>
+
+            <div class="tier-heading"><span>Гнёзда</span></div>
+            <div class="egg-nests" id="eggNests"></div>
         </div>
 
         <!-- MISSIONS TAB -->
@@ -934,6 +944,9 @@
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
             wheelLast: 0,        // номер суток последнего бесплатного спина
+            eggBoard: Array(25).fill(0),   // 5×5, 0 = пусто, иначе уровень яйца
+            eggNests: 1,                   // сколько гнёзд открыто (1..7)
+            eggNestCooldown: Array(7).fill(0), // когда каждое гнездо снова готово (мс)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0               // версия баланса на сервере
@@ -1039,10 +1052,6 @@
         }
 
         /* ---------- game math (mirrors main.py) ---------- */
-
-        function copiesOwned(monsterId) {
-            return state.farm.filter(slot => slot.id === monsterId).length;
-        }
 
         // A monster hands over its whole payout across payout_hours, then it is spent.
         function monsterRate(monsterId) {
@@ -1252,40 +1261,183 @@
             }
         }
 
-        function renderCollection() {
-            const list = document.getElementById('collectionList');
-            list.innerHTML = '';
+        /* ---------- яйца: мердж-поле 5×5 ---------- */
 
-            CONFIG.tiers.forEach(tier => {
-                const heading = document.createElement('div');
-                heading.className = 'tier-heading';
-                heading.innerHTML = `<span style="color:${tier.color}">${tier.name}</span>
-                                     <b>${tier.monsters.filter(m => copiesOwned(m.id) > 0).length} / ${tier.monsters.length}</b>`;
-                list.appendChild(heading);
-                tier.monsters.forEach(entry => renderCollectionCard(MONSTERS[entry.id], tier, list));
+        let eggSelected = -1;
+
+        // Уровней столько же, сколько тиров редкости — просто для наглядной шкалы
+        // прогресса; сам орёл при вылуплении всегда обычной редкости.
+        function eggMaxLevel() {
+            return CONFIG.tiers.length;
+        }
+
+        function eggColor(level) {
+            const tier = CONFIG.tiers[level - 1];
+            return tier ? tier.color : '#94a3b8';
+        }
+
+        function renderEggBoard() {
+            const board = document.getElementById('eggBoard');
+            board.innerHTML = state.eggBoard.map((level, i) => {
+                if (!level) return `<div class="egg-cell" data-i="${i}"></div>`;
+                const sel = i === eggSelected ? ' selected' : '';
+                return `<div class="egg-cell${sel}" data-i="${i}">
+                    <div class="egg-shape" style="background:${eggColor(level)}">${level}</div>
+                </div>`;
+            }).join('');
+            board.querySelectorAll('.egg-cell').forEach(cell => {
+                cell.onclick = () => onEggCellClick(Number(cell.dataset.i));
             });
         }
 
-        function renderCollectionCard(monster, tier, list) {
-            const copies = copiesOwned(monster.id);
-            const owned = copies > 0;
-            const card = document.createElement('div');
-            card.className = 'monster-card glass-panel';
-            card.innerHTML = `
-                <div class="monster-card-top">
-                    <div class="monster-portrait ${owned ? '' : 'locked'}">
-                        <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                        ${owned ? `<div class="copies-badge">×${copies}</div>` : ''}
-                    </div>
-                    <div class="monster-body">
-                        <span class="rarity-tag" style="color:${tier.color}">${tier.name}</span>
-                        <h3>${monster.name}</h3>
-                        <div class="monster-stat">${fmtGram(monster.payout)} GRAM + ${monster.mnstr} Meat • шанс ${monster.chance}%</div>
-                        <div class="monster-desc">${monster.desc}</div>
-                    </div>
-                </div>
-            `;
-            list.appendChild(card);
+        function onEggCellClick(i) {
+            const board = state.eggBoard;
+            if (eggSelected === -1) {
+                if (board[i]) { eggSelected = i; renderEggBoard(); }
+                return;
+            }
+            if (eggSelected === i) { eggSelected = -1; renderEggBoard(); return; }
+
+            const from = eggSelected;
+            eggSelected = -1;
+
+            if (!board[i]) {
+                board[i] = board[from];
+                board[from] = 0;
+                renderEggBoard();
+                saveNow();
+                return;
+            }
+            if (board[i] === board[from]) {
+                if (mergeEggsAt(from, i)) saveNow();
+                renderEggBoard();
+                return;
+            }
+            // другой уровень — просто переключаем выбор на него
+            eggSelected = i;
+            renderEggBoard();
+        }
+
+        function canHatch() {
+            return usedSlots() < state.slots || state.slots < CONFIG.slots.max;
+        }
+
+        // Сливает яйцо из `from` в `into` (оба уже проверены как один уровень).
+        // На последнем уровне слияние вылупляет орла обычной редкости — но только
+        // если для него найдётся место, иначе яйца остаются нетронутыми.
+        function mergeEggsAt(from, into) {
+            const board = state.eggBoard;
+            const level = board[into];
+            if (level >= eggMaxLevel()) {
+                if (!canHatch()) {
+                    toast('На ферме нет места — освободи слот');
+                    haptic.notify('warning');
+                    return false;
+                }
+                board[from] = 0;
+                board[into] = 0;
+                hatchEgg();
+                return true;
+            }
+            board[from] = 0;
+            board[into] = level + 1;
+            return true;
+        }
+
+        function hatchEgg() {
+            const monster = rollMonster('common');
+            if (usedSlots() >= state.slots) state.slots += 1;
+            state.farm.push({ id: monster.id, mined: 0 });
+            toast(`Вылупился ${monster.name}!`);
+            haptic.notify('success');
+            spawnBurst(14);
+            renderAll();
+        }
+
+        // Одним нажатием сливает все возможные пары на поле, каскадом.
+        function autoMergeEggs() {
+            const board = state.eggBoard;
+            let merged = false;
+            const stuck = new Set(); // уровни, слияние которых сейчас отклонено (нет слота)
+            for (let guard = 0; guard < 200; guard++) {
+                let found = false;
+                for (let level = 1; level <= eggMaxLevel() && !found; level++) {
+                    if (stuck.has(level)) continue;
+                    const idx = [];
+                    for (let i = 0; i < board.length; i++) if (board[i] === level) idx.push(i);
+                    if (idx.length >= 2) {
+                        if (mergeEggsAt(idx[0], idx[1])) {
+                            found = true;
+                            merged = true;
+                        } else {
+                            stuck.add(level);
+                        }
+                    }
+                }
+                if (!found) break;
+            }
+            eggSelected = -1;
+            renderEggBoard();
+            if (merged) { saveNow(); haptic.impact('light'); }
+            else if (!stuck.size) toast('Нечего объединять');
+        }
+
+        function nestUnlockCost(index) {
+            const cfg = CONFIG.eggs;
+            return cfg.unlock_base_cost * Math.pow(cfg.unlock_growth, index - 1);
+        }
+
+        function renderEggNests() {
+            const wrap = document.getElementById('eggNests');
+            const now = Date.now();
+            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
+            const cells = [];
+            for (let i = 0; i < 7; i++) {
+                if (i >= state.eggNests) {
+                    cells.push(`<div class="nest-cell locked" data-nest="${i}">
+                        <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <span class="nest-cost">${fmtGram(nestUnlockCost(i))} ${coin}</span>
+                    </div>`);
+                } else {
+                    const ready = (state.eggNestCooldown[i] || 0) <= now;
+                    cells.push(`<div class="nest-cell${ready ? '' : ' cooldown'}" data-nest="${i}">
+                        <div class="egg-shape nest-egg" style="background:${eggColor(1)}">1</div>
+                    </div>`);
+                }
+            }
+            wrap.innerHTML = cells.join('');
+            wrap.querySelectorAll('.nest-cell').forEach(cell => {
+                cell.onclick = () => onNestClick(Number(cell.dataset.nest));
+            });
+        }
+
+        function onNestClick(i) {
+            if (i >= state.eggNests) {
+                if (i !== state.eggNests) return; // разблокировка строго по порядку
+                const cost = nestUnlockCost(i);
+                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
+                state.coins -= cost;
+                state.eggNests += 1;
+                haptic.notify('success');
+                renderEggNests();
+                renderHeader();
+                saveNow();
+                return;
+            }
+            if ((state.eggNestCooldown[i] || 0) > Date.now()) return;
+            const empty = state.eggBoard.indexOf(0);
+            if (empty === -1) { toast('Доска заполнена'); return; }
+            state.eggBoard[empty] = 1;
+            state.eggNestCooldown[i] = Date.now() + CONFIG.eggs.nest_cooldown_seconds * 1000;
+            haptic.impact('light');
+            renderEggBoard();
+            renderEggNests();
+            saveNow();
+        }
+
+        function renderEggs() {
+            renderEggBoard();
+            renderEggNests();
         }
 
         let shopTier = 'common';
@@ -1848,7 +2000,7 @@
             renderHeader();
             renderActiveMonster();
             renderSlotGrid();
-            renderCollection();
+            renderEggs();
             renderMissions();
             updateRollButton();
             updateWheelButton();
@@ -2088,7 +2240,7 @@
             document.getElementById(tabId).classList.add('active');
             element.classList.add('active');
 
-            if (tabId === 'collection') renderCollection();
+            if (tabId === 'collection') renderEggs();
             if (tabId === 'missions' || tabId === 'friends') renderMissions();
         }
 
@@ -2508,6 +2660,8 @@
                 active_slot: state.activeSlot,
                 missions: state.missions,
                 slots: state.slots,
+                eggs_board: state.eggBoard,
+                eggs_nests: state.eggNests,
                 ops: state.ops
             };
             fetch('api/save', {
@@ -2547,6 +2701,12 @@
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
             state.wheelLast = Number(data.wheel_last) || 0;
+            state.eggBoard = Array.isArray(data.eggs_board) && data.eggs_board.length === 25
+                ? data.eggs_board : Array(25).fill(0);
+            state.eggNests = Number(data.eggs_nests) || 1;
+            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 7) {
+                state.eggNestCooldown = Array(7).fill(0);
+            }
             botUsername = data.bot_username || botUsername;
 
             renderAll();
@@ -2601,6 +2761,12 @@
             // Never leave a farm holding more monsters than it has slots for.
             state.slots = Math.min(CONFIG.slots.max, Math.max(state.slots, usedSlots()));
 
+            if (!Array.isArray(state.eggBoard) || state.eggBoard.length !== 25) state.eggBoard = Array(25).fill(0);
+            if (typeof state.eggNests !== 'number') state.eggNests = 1;
+            if (!Array.isArray(state.eggNestCooldown) || state.eggNestCooldown.length !== 7) {
+                state.eggNestCooldown = Array(7).fill(0);
+            }
+
             if (!lastSeen) return 0;
             const elapsed = Math.min(Math.max((Date.now() - lastSeen) / 1000, 0), CONFIG.offline.max_seconds);
             const { earned } = runFarm(elapsed * CONFIG.offline.efficiency);
@@ -2642,6 +2808,9 @@
                     if (document.getElementById('farm').classList.contains('active')) {
                         spawnMinedPair();
                     }
+                }
+                if (document.getElementById('collection').classList.contains('active')) {
+                    renderEggNests();
                 }
             }, 1000);
 
@@ -2697,6 +2866,10 @@
             if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
             cfg.wheel = Object.assign({ spin_cost_gram: 0, segments: [] }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
+            cfg.eggs = Object.assign(
+                { nest_cooldown_seconds: 8, unlock_base_cost: 0.5, unlock_growth: 1.6 },
+                cfg.eggs
+            );
             return cfg;
         }
 
