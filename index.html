@@ -214,7 +214,7 @@
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
 
-        /* ---------- MNSTR ---------- */
+        /* ---------- Meat ---------- */
         .balance-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 13px; }
         .balance-card { padding: 15px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; transition: transform 0.1s ease, box-shadow 0.1s ease; }
         .balance-card img { width: 40px; height: 40px; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 3px 0 var(--ink)); }
@@ -738,7 +738,7 @@
                 </div>
                 <div class="balance-card glass-panel token" onclick="openTokenInfo()">
                     <img src="assets/mnstr.png" alt="">
-                    <span class="balance-label">MNSTR</span>
+                    <span class="balance-label">Meat</span>
                     <b id="profileMnstr">0</b>
                     <span class="balance-rate" id="profileMnstrRate">0/сутки</span>
                     <span class="balance-hint">Нажми — что это</span>
@@ -807,7 +807,7 @@
         <div class="modal-box glass-panel" id="slotBuyBody"></div>
     </div>
 
-    <!-- $MNSTR EXPLAINER MODAL -->
+    <!-- $Meat EXPLAINER MODAL -->
     <div class="modal-backdrop" id="depositModal" onclick="if (event.target === this) closeDeposit()">
         <div class="modal-box glass-panel pay-box" id="depositBody"></div>
     </div>
@@ -838,12 +838,12 @@
     <div class="modal-backdrop" id="tokenModal" onclick="if (event.target === this) closeTokenInfo()">
         <div class="modal-box glass-panel token-box">
             <img class="token-hero" src="assets/mnstr.png" alt="">
-            <h2>Что такое $MNSTR</h2>
+            <h2>Что такое $Meat</h2>
             <table class="token-table">
                 <tr><td>Что это</td><td>Токен игры. Монстры фармят его <b>параллельно</b> с GRAM — из того же слота, не замедляя доход.</td></tr>
-                <tr><td>Сколько дают</td><td>От 100 до 230 MNSTR за полный цикл монстра — 42 дня. Точное число указано в магазине.</td></tr>
+                <tr><td>Сколько дают</td><td>От 100 до 230 Meat за полный цикл монстра — 42 дня. Точное число указано в магазине.</td></tr>
                 <tr><td>Сейчас</td><td>Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
-                <tr><td>После листинга</td><td>Накопленный $MNSTR станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
+                <tr><td>После листинга</td><td>Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
             </table>
             <p class="token-note">Курс и дата листинга не определены. Копи заранее.</p>
             <button class="btn-primary" style="margin-top:18px" onclick="closeTokenInfo()">Понятно</button>
@@ -1280,7 +1280,7 @@
                     <div class="monster-body">
                         <span class="rarity-tag" style="color:${tier.color}">${tier.name}</span>
                         <h3>${monster.name}</h3>
-                        <div class="monster-stat">${fmtGram(monster.payout)} GRAM + ${monster.mnstr} MNSTR • шанс ${monster.chance}%</div>
+                        <div class="monster-stat">${fmtGram(monster.payout)} GRAM + ${monster.mnstr} Meat • шанс ${monster.chance}%</div>
                         <div class="monster-desc">${monster.desc}</div>
                     </div>
                 </div>
@@ -1542,7 +1542,7 @@
 
         function finishDaily(reward, day) {
             haptic.notify('success');
-            const suffix = reward.monster ? '' : (reward.gram ? ' GRAM' : ' MNSTR');
+            const suffix = reward.monster ? '' : (reward.gram ? ' GRAM' : ' Meat');
             toast(`День ${day}: +${dailyLabel(reward)}${suffix}`);
             spawnBurst(12);
             renderAll();
@@ -1705,7 +1705,7 @@
             setTimeout(() => {
                 wheelSpinning = false;
                 haptic.notify('success');
-                const label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} MNSTR`;
+                const label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} Meat`;
                 toast(`Колесо фортуны: ${label}`);
                 spawnBurst(10);
                 renderAll();
@@ -1793,8 +1793,8 @@
             const need = mission.need;
             const q = CONFIG.referral.qualify_mnstr;
             return need === 1
-                ? `Пригласить друга, который заработает ${q} MNSTR`
-                : `Пригласить ${need} ${plural(need, 'друга', 'друзей', 'друзей')}, которые заработают ${q} MNSTR`;
+                ? `Пригласить друга, который заработает ${q} Meat`
+                : `Пригласить ${need} ${plural(need, 'друга', 'друзей', 'друзей')}, которые заработают ${q} Meat`;
         }
 
         function renderMissionCard(mission, list) {
@@ -1938,7 +1938,7 @@
                 <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • слот ${modalSlot + 1}</p>
 
                 <div class="stat-row"><span>Доход в секунду</span><b>${fmtPrecise(monsterRate(slot.id))}</b></div>
-                <div class="stat-row"><span>$MNSTR в сутки</span><b style="color:#a78bfa">${fmtToken(mnstrRate(slot.id) * 86400)}</b></div>
+                <div class="stat-row"><span>$Meat в сутки</span><b style="color:#a78bfa">${fmtToken(mnstrRate(slot.id) * 86400)}</b></div>
                 <div class="stat-row"><span>Отдано</span><b>${fmtPrecise(slot.mined)}</b></div>
                 <div class="stat-row"><span>Осталось</span><b style="color:var(--accent-coin)">${fmtPrecise(left)}</b></div>
 
@@ -2710,7 +2710,7 @@
 
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
-                `Друг засчитывается, когда намайнит ${CONFIG.referral.qualify_mnstr} MNSTR`;
+                `Друг засчитывается, когда намайнит ${CONFIG.referral.qualify_mnstr} Meat`;
             document.getElementById('wheelOpenBtn').style.display = CONFIG.wheel.segments.length ? '' : 'none';
 
             stageAnimator = new SpriteAnimator(document.getElementById('monsterSprite'));

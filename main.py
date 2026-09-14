@@ -151,7 +151,7 @@ async def notify_referrer(referrer: int, friend_name: str):
     await tg_send(
         referrer,
         f"🎉 К тебе присоединился <b>{friend_name}</b>!\n\n"
-        f"Друг засчитается в награды, когда намайнит {QUALIFY_MNSTR} MNSTR.",
+        f"Друг засчитается в награды, когда намайнит {QUALIFY_MNSTR} Meat.",
     )
 
 
@@ -209,7 +209,7 @@ def total_income(farm: List[dict]) -> float:
 def run_farm(farm: List[dict], seconds: float):
     """Mines for `seconds`, never paying a monster beyond its payout.
 
-    Returns (coins, mnstr). MNSTR is farmed in parallel over the same
+    Returns (coins, mnstr). Meat is farmed in parallel over the same
     lifetime, so it accrues in step with the coin payout.
     """
     coins = 0.0
@@ -250,7 +250,7 @@ def day_index(moment: Optional[float] = None) -> int:
 
 
 def daily_reward(day: int) -> dict:
-    """Награда за day-й день серии: MNSTR по нарастающей, кроме особых дней."""
+    """Награда за day-й день серии: Meat по нарастающей, кроме особых дней."""
     special = DAILY_SPECIAL.get(day)
     if special:
         return {
@@ -862,10 +862,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif invited_by:
         text = (
             f"🤝 <b>{invited_by}</b> позвал тебя в <b>Monster Gram</b>!\n\n"
-            f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} MNSTR, "
+            f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} Meat, "
             "друг получит за тебя награду.\n\n"
             f"🥚 Тебе уже выдан первый монстр — <b>{starter}</b>. Он добывает "
-            "GRAM и MNSTR круглосуточно, даже когда ты закрыл игру.\n"
+            "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови своих друзей — за них тоже платят.\n\n"
             "Ферма ждёт 👇"
@@ -874,7 +874,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             "🐲 Добро пожаловать в <b>Monster Gram</b>!\n\n"
             f"🥚 Тебе уже выдан первый монстр — <b>{starter}</b>. Он добывает "
-            "GRAM и MNSTR круглосуточно, даже когда ты закрыл игру.\n"
+            "GRAM и Meat круглосуточно, даже когда ты закрыл игру.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
             "👥 Зови друзей — за каждого дают награду.\n\n"
             "Ферма ждёт 👇"

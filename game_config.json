@@ -1,8 +1,8 @@
 {
   "currency": "GRAM",
   "token": {
-    "symbol": "MNSTR",
-    "ticker": "$MNSTR"
+    "symbol": "Meat",
+    "ticker": "$Meat"
   },
   "offline": {
     "max_seconds": 86400,

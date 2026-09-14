@@ -159,7 +159,7 @@ class SqliteStore:
         conn.close()
 
     async def count_referrals(self, user_id: int, min_mnstr: float) -> int:
-        """Сколько приглашённых уже намайнили нужный минимум MNSTR."""
+        """Сколько приглашённых уже намайнили нужный минимум Meat."""
         conn = self._connect()
         row = conn.execute(
             "SELECT COUNT(*) AS n FROM users WHERE referred_by = ? AND mnstr >= ?",
@@ -376,7 +376,7 @@ class MongoStore:
         await self.users.update_one({"_id": user_id}, {"$inc": fields})
 
     async def count_referrals(self, user_id: int, min_mnstr: float) -> int:
-        """Сколько приглашённых уже намайнили нужный минимум MNSTR."""
+        """Сколько приглашённых уже намайнили нужный минимум Meat."""
         return await self.users.count_documents(
             {"referred_by": user_id, "mnstr": {"$gte": min_mnstr}}
         )
