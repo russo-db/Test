@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import re
 import time
 import asyncio
@@ -44,6 +45,10 @@ DAILY = CONFIG.get("daily") or {}
 DAILY_DAYS = int(DAILY.get("days", 30))
 DAILY_STEP = float(DAILY.get("mnstr_step", 10))
 DAILY_SPECIAL = {int(item["day"]): item for item in DAILY.get("special", [])}
+
+WHEEL = CONFIG.get("wheel") or {}
+WHEEL_SEGMENTS = WHEEL.get("segments") or []
+WHEEL_SPIN_COST = float(WHEEL.get("spin_cost_gram", 0))
 
 TON = CONFIG.get("ton") or {}
 TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
@@ -274,6 +279,21 @@ def daily_state(row: dict) -> dict:
     }
 
 
+# --- КОЛЕСО ФОРТУНЫ ---
+def wheel_pick() -> dict:
+    """Взвешенный случайный сектор. Индекс нужен клиенту, чтобы анимация
+    останавливалась ровно на секторе, который выбрал сервер."""
+    total = sum(float(seg.get("weight", 1)) for seg in WHEEL_SEGMENTS) or 1
+    roll = random.uniform(0, total)
+    upto = 0.0
+    for index, seg in enumerate(WHEEL_SEGMENTS):
+        upto += float(seg.get("weight", 1))
+        if roll <= upto:
+            return {"index": index, "gram": float(seg.get("gram") or 0), "mnstr": float(seg.get("mnstr") or 0)}
+    last = WHEEL_SEGMENTS[-1]
+    return {"index": len(WHEEL_SEGMENTS) - 1, "gram": float(last.get("gram") or 0), "mnstr": float(last.get("mnstr") or 0)}
+
+
 async def ensure_user(user_id: int, referred_by: Optional[int] = None,
                       name: str = "") -> bool:
     """Создаёт игрока, если его ещё нет. True — если создан только что."""
@@ -293,6 +313,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "last_seen": int(time.time()),
             "daily_day": 0,
             "daily_last": 0,
+            "wheel_last": 0,
             "wallet": "",
             "ops": 0,
         }
@@ -452,6 +473,11 @@ class DailyClaim(BaseModel):
     user_id: int
 
 
+class WheelSpin(BaseModel):
+    user_id: int
+    paid: bool = False
+
+
 class DepositCheck(BaseModel):
     user_id: int
 
@@ -525,6 +551,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "referrals_qualified": await store.count_referrals(user_id, QUALIFY_MNSTR),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
+        "wheel_last": int(row.get("wheel_last") or 0),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
         "ton": ton_info(user_id),
@@ -659,6 +686,46 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
         "monsters": read_farm(fresh["monsters"]),
         "slots": int(fresh.get("slots") or START_SLOTS),
         "daily": daily_state(fresh),
+        "ops": int(fresh.get("ops") or 0),
+    }
+
+
+@app.post("/api/wheel/spin")
+async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = Header(None)):
+    """Крутит колесо фортуны. Бесплатный спин — раз в сутки, иначе — за GRAM.
+    Сектор выбирает сервер, чтобы клиент не мог подделать результат."""
+    if not WHEEL_SEGMENTS:
+        raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
+
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+
+    today = day_index()
+    cost = 0.0
+    if request.paid:
+        cost = WHEEL_SPIN_COST
+        if float(row.get("coins") or 0.0) < cost:
+            raise HTTPException(status_code=400, detail="Недостаточно GRAM")
+    elif int(row.get("wheel_last") or 0) == today:
+        raise HTTPException(status_code=409, detail="Бесплатный спин уже использован сегодня")
+
+    reward = wheel_pick()
+    granted = await store.claim_wheel(
+        user_id, today, request.paid, cost, reward["gram"], reward["mnstr"]
+    )
+    if not granted:
+        detail = "Недостаточно GRAM" if request.paid else "Бесплатный спин уже использован сегодня"
+        raise HTTPException(status_code=409, detail=detail)
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "segment": reward["index"],
+        "reward": {"gram": reward["gram"], "mnstr": reward["mnstr"]},
+        "coins": float(fresh.get("coins") or 0.0),
+        "mnstr": float(fresh.get("mnstr") or 0.0),
+        "total_earned": float(fresh.get("total_earned") or 0.0),
+        "wheel_last": int(fresh.get("wheel_last") or 0),
         "ops": int(fresh.get("ops") or 0),
     }
 

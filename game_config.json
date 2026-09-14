@@ -404,5 +404,18 @@
     "min_deposit": 1,
     "min_withdraw": 1,
     "memo_prefix": "MG"
+  },
+  "wheel": {
+    "spin_cost_gram": 0.3,
+    "segments": [
+      { "gram": 0.02, "mnstr": 0, "weight": 24 },
+      { "gram": 0, "mnstr": 40, "weight": 24 },
+      { "gram": 0.05, "mnstr": 0, "weight": 18 },
+      { "gram": 0, "mnstr": 100, "weight": 18 },
+      { "gram": 0.1, "mnstr": 0, "weight": 12 },
+      { "gram": 0, "mnstr": 220, "weight": 12 },
+      { "gram": 0.3, "mnstr": 0, "weight": 6 },
+      { "gram": 0, "mnstr": 500, "weight": 6 }
+    ]
   }
 }

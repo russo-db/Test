@@ -560,6 +560,36 @@
         .pay-actions .btn-action { margin-top: 9px; }
         .pay-status { font-size: 12px; font-weight: 800; color: var(--text-muted); text-align: center; margin-top: 10px; }
 
+        /* ---------- Колесо фортуны ---------- */
+        .wheel-open { width: 100%; justify-content: center; margin-top: 10px; background: linear-gradient(180deg, #8b5cf6, #6d33d6); }
+        .wheel-box { max-width: 320px; }
+        .wheel-box h2 { text-align: center; }
+        .wheel-sub { text-align: center; font-size: 13px; color: var(--text-muted); font-weight: 800; margin-bottom: 6px; }
+        .wheel-stage { position: relative; width: 216px; height: 216px; margin: 12px auto 16px auto; }
+        .wheel-dial {
+            position: absolute; inset: 0; border-radius: 50%;
+            border: 5px solid var(--ink); box-shadow: 0 6px 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, 0.2);
+            transition: transform 4s cubic-bezier(0.15, 0.65, 0.1, 1);
+        }
+        .wheel-seg { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-start; padding-top: 12px; }
+        .wheel-seg span {
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            font-size: 11px; font-weight: 900; color: #fff; white-space: nowrap;
+            text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink);
+        }
+        .wheel-seg img { width: 16px; height: 16px; object-fit: contain; }
+        .wheel-pointer {
+            position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+            width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent;
+            border-top: 16px solid var(--gold); filter: drop-shadow(0 2px 0 var(--ink)); z-index: 5;
+        }
+        .wheel-hub {
+            position: absolute; top: 50%; left: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%);
+            border-radius: 50%; background: linear-gradient(180deg, var(--gold-lt), #e08c00);
+            border: 4px solid var(--ink); box-shadow: 0 3px 0 var(--ink); z-index: 4;
+        }
+        .wheel-close { width: 100%; justify-content: center; margin-top: 9px; }
+
     </style>
 </head>
 <body>
@@ -629,6 +659,11 @@
                 <button class="btn-primary roll-open" id="rollOpenBtn" onclick="openRoll()">
                     <img class="coin-icon" src="assets/coin.png" alt="">
                     Купить монстра от <span id="rollOpenPrice">1</span>
+                </button>
+
+                <button class="btn-action wheel-open" id="wheelOpenBtn" onclick="openWheel()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 3v3M12 18v3M21 12h-3M6 12H3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7 5.6 5.6"></path></svg></div>
+                    Колесо фортуны
                 </button>
 
                 <div class="slot-grid" id="slotGrid"></div>
@@ -781,6 +816,21 @@
         <div class="modal-box glass-panel pay-box" id="withdrawBody"></div>
     </div>
 
+    <!-- WHEEL OF FORTUNE MODAL -->
+    <div class="modal-backdrop" id="wheelModal" onclick="if (event.target === this) closeWheel()">
+        <div class="modal-box glass-panel wheel-box">
+            <h2>Колесо фортуны</h2>
+            <p class="wheel-sub" id="wheelSub">Раз в сутки — бесплатно, потом — за GRAM</p>
+            <div class="wheel-stage">
+                <div class="wheel-pointer"></div>
+                <div class="wheel-dial" id="wheelDial"></div>
+                <div class="wheel-hub"></div>
+            </div>
+            <button class="btn-primary" id="wheelSpinBtn" onclick="spinWheel()">Крутить</button>
+            <button class="btn-action wheel-close" onclick="closeWheel()">Закрыть</button>
+        </div>
+    </div>
+
     <div class="modal-backdrop" id="dailyModal" onclick="if (event.target === this) closeDaily()">
         <div class="modal-box glass-panel daily-box" id="dailyBody"></div>
     </div>
@@ -883,6 +933,7 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
+            wheelLast: 0,        // номер суток последнего бесплатного спина
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0               // версия баланса на сервере
@@ -1555,6 +1606,183 @@
             }
         }
 
+        /* ---------- колесо фортуны ---------- */
+
+        const WHEEL_COLORS = ['#38a8f0', '#a78bfa', '#4ade80', '#f7b500', '#fb7185', '#22d3ee', '#a3e635', '#f97316'];
+
+        let wheelDeg = 0;
+        let wheelSpinning = false;
+
+        // Как и с ежедневным входом: доступность бесплатного спина считаем по суткам UTC.
+        function wheelStatus() {
+            return { ready: (state.wheelLast || 0) !== dayIndex() };
+        }
+
+        function wheelIcon(seg) {
+            return seg.gram ? 'assets/coin.png' : 'assets/mnstr.png';
+        }
+
+        function wheelLabel(seg) {
+            return seg.gram ? fmtGram(seg.gram) : String(seg.mnstr);
+        }
+
+        function renderWheelDial() {
+            const segments = CONFIG.wheel.segments;
+            const dial = document.getElementById('wheelDial');
+            if (!segments.length) return;
+            const per = 360 / segments.length;
+            dial.style.background = `conic-gradient(${segments.map((seg, i) =>
+                `${WHEEL_COLORS[i % WHEEL_COLORS.length]} ${i * per}deg ${(i + 1) * per}deg`
+            ).join(', ')})`;
+            dial.innerHTML = segments.map((seg, i) => {
+                const mid = i * per + per / 2;
+                return `<div class="wheel-seg" style="transform:rotate(${mid}deg)">
+                    <span style="transform:rotate(${-mid}deg)">
+                        <img src="${wheelIcon(seg)}" alt="">${wheelLabel(seg)}
+                    </span>
+                </div>`;
+            }).join('');
+        }
+
+        function updateWheelButton() {
+            const btn = document.getElementById('wheelSpinBtn');
+            const sub = document.getElementById('wheelSub');
+            if (!btn) return;
+            const status = wheelStatus();
+            const cost = CONFIG.wheel.spin_cost_gram;
+            const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
+            if (wheelSpinning) {
+                btn.disabled = true;
+                btn.innerHTML = 'Крутится…';
+            } else if (status.ready) {
+                btn.disabled = false;
+                btn.innerHTML = 'Крутить бесплатно';
+            } else if (state.coins >= cost) {
+                btn.disabled = false;
+                btn.innerHTML = `Крутить за ${fmtGram(cost)} ${coin}`;
+            } else {
+                btn.disabled = true;
+                btn.innerHTML = `Нужно ${fmtGram(cost)} ${coin}`;
+            }
+            if (sub) {
+                sub.innerText = status.ready
+                    ? 'Сегодняшний бесплатный спин ждёт тебя'
+                    : `Бесплатный спин завтра — сейчас за ${fmtGram(cost)} GRAM`;
+            }
+        }
+
+        function openWheel() {
+            if (!CONFIG.wheel.segments.length) return;
+            haptic.impact('light');
+            renderWheelDial();
+            updateWheelButton();
+            document.getElementById('wheelModal').classList.add('open');
+        }
+
+        function closeWheel() {
+            if (wheelSpinning) return;
+            document.getElementById('wheelModal').classList.remove('open');
+        }
+
+        // Крутит диск на N полных оборотов вперёд плюс доворот до середины выпавшего
+        // сектора — вращение всегда идёт вперёд, чтобы колесо не «дёргалось» назад.
+        function spinDialTo(index) {
+            const segments = CONFIG.wheel.segments;
+            const per = 360 / segments.length;
+            const mid = index * per + per / 2;
+            const target = (360 - mid + 360) % 360;
+            const base = Math.floor(wheelDeg / 360) * 360;
+            let next = base + 5 * 360 + target;
+            if (next <= wheelDeg) next += 360;
+            wheelDeg = next;
+            document.getElementById('wheelDial').style.transform = `rotate(${wheelDeg}deg)`;
+        }
+
+        function finishWheelSpin(index, reward) {
+            wheelSpinning = true;
+            spinDialTo(index);
+            updateWheelButton();
+            setTimeout(() => {
+                wheelSpinning = false;
+                haptic.notify('success');
+                const label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} MNSTR`;
+                toast(`Колесо фортуны: ${label}`);
+                spawnBurst(10);
+                renderAll();
+                updateWheelButton();
+            }, 4200);
+        }
+
+        function pickWheelIndexLocal() {
+            const segments = CONFIG.wheel.segments;
+            const total = segments.reduce((sum, seg) => sum + (Number(seg.weight) || 1), 0) || 1;
+            let roll = Math.random() * total;
+            for (let i = 0; i < segments.length; i++) {
+                roll -= Number(segments[i].weight) || 1;
+                if (roll <= 0) return i;
+            }
+            return segments.length - 1;
+        }
+
+        // Без бэкенда (статический хостинг) колесо крутит и списывает сам клиент.
+        function spinWheelLocal(paid) {
+            const cost = CONFIG.wheel.spin_cost_gram;
+            if (paid) {
+                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
+                state.coins -= cost;
+            }
+            const index = pickWheelIndexLocal();
+            const seg = CONFIG.wheel.segments[index];
+            const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0 };
+            if (reward.gram) earn(reward.gram);
+            if (reward.mnstr) state.mnstr += reward.mnstr;
+            if (!paid) state.wheelLast = dayIndex();
+            saveNow();
+            finishWheelSpin(index, reward);
+        }
+
+        async function spinWheel() {
+            if (wheelSpinning) return;
+            const status = wheelStatus();
+            const paid = !status.ready;
+            const cost = CONFIG.wheel.spin_cost_gram;
+            if (paid && state.coins < cost) { toast('Не хватает GRAM'); return; }
+
+            if (offlineOnly || !state.userId) {
+                spinWheelLocal(paid);
+                return;
+            }
+
+            wheelSpinning = true;
+            updateWheelButton();
+            try {
+                const response = await fetch('api/wheel/spin', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, paid })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    wheelSpinning = false;
+                    toast(data.detail || 'Спин недоступен');
+                    haptic.notify('warning');
+                    updateWheelButton();
+                    return;
+                }
+
+                state.coins = data.coins;
+                state.mnstr = data.mnstr;
+                state.totalEarned = data.total_earned;
+                state.wheelLast = Number(data.wheel_last) || 0;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                finishWheelSpin(data.segment, data.reward);
+            } catch (error) {
+                wheelSpinning = false;
+                toast('Сервер недоступен');
+                updateWheelButton();
+            }
+        }
+
         function missionReady(mission) {
             if (mission.type === 'referrals') return state.referralsQualified >= mission.need;
             return true;   // подписку на канал проверяет сервер
@@ -1623,6 +1851,7 @@
             renderCollection();
             renderMissions();
             updateRollButton();
+            updateWheelButton();
         }
 
         /* ---------- mined coins flying to the balance ---------- */
@@ -2317,6 +2546,7 @@
             state.ops = data.ops || 0;
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
+            state.wheelLast = Number(data.wheel_last) || 0;
             botUsername = data.bot_username || botUsername;
 
             renderAll();
@@ -2465,6 +2695,8 @@
             cfg.daily.days = Number(cfg.daily.days) || 30;
             cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 10;
             if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
+            cfg.wheel = Object.assign({ spin_cost_gram: 0, segments: [] }, cfg.wheel);
+            if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             return cfg;
         }
 
@@ -2479,6 +2711,7 @@
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
                 `Друг засчитывается, когда намайнит ${CONFIG.referral.qualify_mnstr} MNSTR`;
+            document.getElementById('wheelOpenBtn').style.display = CONFIG.wheel.segments.length ? '' : 'none';
 
             stageAnimator = new SpriteAnimator(document.getElementById('monsterSprite'));
             initProfile();

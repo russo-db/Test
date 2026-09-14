@@ -3,7 +3,7 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, wallet, ops
+    daily_day, daily_last, wheel_last, wallet, ops
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON)
 и заявки на вывод (withdrawals).
@@ -17,7 +17,7 @@ from typing import Optional
 FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
-    "daily_day", "daily_last", "wallet", "ops",
+    "daily_day", "daily_last", "wheel_last", "wallet", "ops",
 )
 JSON_FIELDS = ("monsters", "missions")
 
@@ -53,6 +53,7 @@ class SqliteStore:
                 last_seen      INTEGER DEFAULT 0,
                 daily_day      INTEGER DEFAULT 0,
                 daily_last     INTEGER DEFAULT 0,
+                wheel_last     INTEGER DEFAULT 0,
                 wallet         TEXT    DEFAULT '',
                 ops            INTEGER DEFAULT 0
             )
@@ -91,6 +92,7 @@ class SqliteStore:
             ("name", "TEXT DEFAULT ''"),
             ("daily_day", "INTEGER DEFAULT 0"),
             ("daily_last", "INTEGER DEFAULT 0"),
+            ("wheel_last", "INTEGER DEFAULT 0"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
         ):
@@ -234,6 +236,48 @@ class SqliteStore:
             conn.close()
 
 
+    async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
+                          gram: float, mnstr: float) -> bool:
+        """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
+        False — не хватило GRAM (платный) или бесплатный спин уже использован."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute(
+                "SELECT coins, wheel_last FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            if not row:
+                conn.rollback()
+                return False
+            if paid:
+                if float(row["coins"]) < cost:
+                    conn.rollback()
+                    return False
+                cur.execute(
+                    """UPDATE users
+                          SET coins = coins - ? + ?, total_earned = total_earned + ?,
+                              mnstr = mnstr + ?, ops = ops + 1
+                        WHERE user_id = ?""",
+                    (cost, gram, gram, mnstr, user_id),
+                )
+            else:
+                if int(row["wheel_last"] or 0) == today:
+                    conn.rollback()
+                    return False
+                cur.execute(
+                    """UPDATE users
+                          SET wheel_last = ?, coins = coins + ?,
+                              total_earned = total_earned + ?, mnstr = mnstr + ?,
+                              ops = ops + 1
+                        WHERE user_id = ?""",
+                    (today, gram, gram, mnstr, user_id),
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
         """Зачисляет пополнение. False — если эта транзакция уже была учтена."""
         conn = self._connect()
@@ -367,6 +411,23 @@ class MongoStore:
         )
         return result.modified_count > 0
 
+
+    async def claim_wheel(self, user_id: int, today: int, paid: bool, cost: float,
+                          gram: float, mnstr: float) -> bool:
+        """Списывает цену платного спина или отмечает бесплатный, начисляет приз.
+        Условие в фильтре делает операцию атомарной — гонка не даст двойной приз."""
+        if paid:
+            result = await self.users.update_one(
+                {"_id": user_id, "coins": {"$gte": cost}},
+                {"$inc": {"coins": gram - cost, "total_earned": gram, "mnstr": mnstr, "ops": 1}},
+            )
+        else:
+            result = await self.users.update_one(
+                {"_id": user_id, "wheel_last": {"$ne": today}},
+                {"$set": {"wheel_last": today},
+                 "$inc": {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}},
+            )
+        return result.modified_count > 0
 
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
         """Хэш транзакции — это _id, поэтому одно пополнение зачислится только раз."""
