@@ -192,33 +192,33 @@
   "wheel": {
     "segments": [
       {
-        "gram": 0.01,
+        "gram": 100,
         "mnstr": 0,
         "weight": 22
       },
       {
         "gram": 0,
-        "mnstr": 1,
+        "mnstr": 1000,
         "weight": 22
       },
       {
-        "gram": 0.05,
+        "gram": 100,
         "mnstr": 0,
         "weight": 16
       },
       {
         "gram": 0,
-        "mnstr": 2,
+        "mnstr": 1000,
         "weight": 16
       },
       {
-        "gram": 0.1,
+        "gram": 100,
         "mnstr": 0,
         "weight": 10
       },
       {
         "gram": 0,
-        "mnstr": 3,
+        "mnstr": 1000,
         "weight": 10
       },
       {
@@ -228,7 +228,7 @@
         "weight": 0.0002
       },
       {
-        "gram": 0.5,
+        "gram": 100,
         "mnstr": 0,
         "weight": 3
       },
