@@ -439,7 +439,7 @@ function renderFarmList() {
         const level = m.feed_level || 1;
         const ready = m.next_egg_at && m.next_egg_at * 1000 <= Date.now();
         let status;
-        if (level >= 7) status = 'максимум — готов к слиянию';
+        if (level >= 7) status = 'максимум — готов к улучшению';
         else if (ready) status = `уровень ${level}/7 — яйцо готово`;
         else if (m.next_egg_at) status = `уровень ${level}/7 — яйцо варится`;
         else status = `уровень ${level}/7 — кормление ${m.feed_taps || 0}/10`;

@@ -549,7 +549,7 @@
         }
         .wheel-close { width: 100%; justify-content: center; margin-top: 9px; }
 
-        /* ---------- Рулетка слияния орлов ---------- */
+        /* ---------- Рулетка улучшения орлов ---------- */
         .fusion-pair { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 10px; }
         .fusion-pair img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 3px 0 var(--ink)); }
         .fusion-plus { font-size: 20px; font-weight: 900; color: var(--text-muted); }
@@ -641,7 +641,7 @@
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
             <h1>Яйца</h1>
-            <p class="subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для слияния с таким же в старшую редкость</p>
+            <p class="subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость</p>
 
             <div class="egg-board" id="eggBoard"></div>
             <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
@@ -1002,7 +1002,7 @@
         }
 
         // Максимальный уровень (feed_levels) — терминальный: орёл больше не ест
-        // и не несёт яиц, а только ждёt слияния с таким же орлом.
+        // и не несёт яиц, а только ждёt улучшения с таким же орлом.
         function isFullyFed(slot) {
             return (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels;
         }
@@ -1017,7 +1017,7 @@
             return !isFullyFed(slot) && slot.nextEggAt > 0 && nowSeconds() >= slot.nextEggAt;
         }
 
-        // Значок слота: 🍖 на максимальном уровне (готов к слиянию), ⏳ пока
+        // Значок слота: 🍖 на максимальном уровне (готов к улучшению), ⏳ пока
         // варится яйцо, иначе прогресс кормления текущего уровня.
         function slotBadge(slot) {
             if (isFullyFed(slot)) return '🍖';
@@ -1138,7 +1138,7 @@
             const slot = activeSlotEntry();
             let status;
             if (eggReady(slot)) status = 'яйцо готово — тапни!';
-            else if (isFullyFed(slot)) status = 'откормлен полностью — готов к слиянию';
+            else if (isFullyFed(slot)) status = 'откормлен полностью — готов к улучшению';
             else if (isFarmingEgg(slot)) status = `яйцо через ${formatCountdown(slot.nextEggAt - nowSeconds())}`;
             else status = `уровень ${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels} — тапни, чтобы покормить`;
             document.getElementById('activeMonsterName').innerText = monster.name;
@@ -1230,7 +1230,7 @@
         let eggSelected = -1;
 
         // Уровень яйца = редкость орла, что его снёс (1 = обычный ... 6 = мифический);
-        // слияние двух одинаковых яиц поднимает уровень на 1 и удваивает добычу Meat.
+        // улучшение двух одинаковых яиц поднимает уровень на 1 и удваивает добычу Meat.
         function eggMaxLevel() {
             return CONFIG.tiers.length;
         }
@@ -1281,8 +1281,8 @@
         }
 
         // Тап по любому яйцу открывает окно с исходами и кнопкой «Вскрыть» —
-        // как раньше работало только с яйцом максимального уровня. Слияние
-        // теперь запускается кнопкой «Выбрать для слияния» внутри этого же
+        // как раньше работало только с яйцом максимального уровня. Улучшение
+        // теперь запускается кнопкой «Выбрать для улучшения» внутри этого же
         // окна: она помечает яйцо выбранным, и тап по второму такого же
         // уровня сливает их в уровень выше (тап по пустой ячейке — переносит,
         // по яйцу другого уровня — просто открывает окно уже для него).
@@ -1392,7 +1392,7 @@
 
         // Перед вскрытием показываем шансы — вскрывает только кнопка в модалке.
         // Работает для любого уровня; ниже максимума в окне есть ещё и выбор
-        // для слияния с таким же яйцом вместо немедленного вскрытия.
+        // для улучшения с таким же яйцом вместо немедленного вскрытия.
         function openEggModal(i) {
             eggModalIndex = i;
             const level = state.eggBoard[i];
@@ -1408,7 +1408,7 @@
                 <div class="stat-row"><span>🦅 Обычный орёл</span></div>
                 <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span></div>
                 <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">Вскрыть яйцо</button>
-                ${canMerge ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="selectEggForMerge(${i})">Выбрать для слияния</button>` : ''}
+                ${canMerge ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="selectEggForMerge(${i})">Выбрать для улучшения</button>` : ''}
                 <button class="btn-action roll-close" onclick="closeEggModal()">Отмена</button>
             `;
             document.getElementById('eggModal').classList.add('open');
@@ -1505,7 +1505,7 @@
         // Собирает яйцо с готового слота фермы и кладёт его на поле. Уровень
         // яйца = редкость орла, поэтому редкие орлы сразу несут более ценные яйца.
         // Сбор яйца поднимает орла на уровень. Дойдя до максимума (feed_levels),
-        // орёл больше не просит мяса и не несёт яиц — только ждёт слияния.
+        // орёл больше не просит мяса и не несёт яиц — только ждёт улучшения.
         function collectEgg(i) {
             const slot = state.farm[i];
             if (!slot || !eggReady(slot)) return;
@@ -1525,7 +1525,7 @@
             haptic.notify('success');
             spawnBurst(10);
             if (slot.feedLevel >= CONFIG.fusion.feed_levels) {
-                toast(`Яйцо собрано! ${monster.name} вырос до максимума — готов к слиянию`);
+                toast(`Яйцо собрано! ${monster.name} вырос до максимума — готов к улучшению`);
             } else {
                 toast(`Яйцо собрано! ${monster.name} — уровень ${slot.feedLevel}`);
             }
@@ -1629,14 +1629,14 @@
             saveNow();
         }
 
-        /* ---------- рулетка слияния: платная попытка с шансом успеха ---------- */
+        /* ---------- рулетка улучшения: платная попытка с шансом успеха ---------- */
 
         let fusionModalA = -1;
         let fusionModalB = -1;
         let fusionSpinning = false;
         let fusionDeg = 0;
 
-        // Шанс слияния зависит от текущей (не следующей) редкости орла.
+        // Шанс улучшения зависит от текущей (не следующей) редкости орла.
         function mergeChance(monster) {
             const arr = CONFIG.fusion.merge_chance_by_tier;
             const idx = tierIndexOf(monster);
@@ -1699,7 +1699,7 @@
             const baseChance = mergeChance(monster);
 
             document.getElementById('fusionModalBody').innerHTML = `
-                <h2>Слияние орлов</h2>
+                <h2>Улучшение орлов</h2>
                 <div class="fusion-pair">
                     <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <span class="fusion-plus">+</span>
@@ -1720,7 +1720,7 @@
             renderFusionDial(visualMergeChance(baseChance));
         }
 
-        // Одна платная попытка слияния. Успех сливает орлов; неудача не трогает
+        // Одна платная попытка улучшения. Успех сливает орлов; неудача не трогает
         // орлов — платёж сгорает, попытку можно повторить сразу же.
         function attemptFusion(useGram) {
             if (fusionSpinning) return;
@@ -1761,7 +1761,7 @@
                     closeFusionModal();
                 } else {
                     haptic.notify('warning');
-                    toast('Слияние не удалось — орлы остались на месте');
+                    toast('Улучшение не удалось — орлы остались на месте');
                     saveNow();
                     renderFusionModal();
                 }
@@ -2354,7 +2354,7 @@
             let progressHtml;
             if (fed) {
                 progressHtml = `
-                    <p class="slot-modal-sub">Орёл откормлен по максимуму — мясо и яйца ему больше не нужны, готов к слиянию</p>
+                    <p class="slot-modal-sub">Орёл откормлен по максимуму — мясо и яйца ему больше не нужны, готов к улучшению</p>
                 `;
             } else if (farming || ready) {
                 progressHtml = `
