@@ -2,6 +2,7 @@ import os
 import json
 import random
 import re
+import secrets
 import time
 import asyncio
 from typing import List, Optional
@@ -11,7 +12,7 @@ import httpx
 from auth import verify_init_data
 from storage import make_store
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -31,32 +32,46 @@ WEB_APP_URL = os.getenv("WEB_APP_URL")
 # Задавать вручную не обязательно: при старте бота имя берётся через getMe.
 BOT_USERNAME = os.getenv("BOT_USERNAME", "").lstrip("@").strip()
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    CONFIG = json.load(f)
+def load_config() -> dict:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
-QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
-MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
-STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
-START_SLOTS = CONFIG["slots"]["start"]
-MAX_SLOTS = CONFIG["slots"]["max"]
-EGGS_CFG = CONFIG.get("eggs") or {}
-EGG_INTERVAL_SECONDS = int(float(EGGS_CFG.get("egg_interval_hours", 24)) * 3600)
-FUSION_CFG = CONFIG.get("fusion") or {}
-FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
-DAILY = CONFIG.get("daily") or {}
-DAILY_DAYS = int(DAILY.get("days", 30))
-DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
-DAILY_SPECIAL = {int(item["day"]): item for item in DAILY.get("special", [])}
 
-WHEEL = CONFIG.get("wheel") or {}
-WHEEL_SEGMENTS = WHEEL.get("segments") or []
+def apply_config(cfg: dict):
+    """Пересчитывает все производные от game_config.json глобальные переменные.
+    Позволяет админ-панели менять баланс без перезапуска сервера."""
+    global CONFIG, MISSIONS, QUALIFY_MNSTR, MONSTERS, STARTER_MONSTER
+    global START_SLOTS, MAX_SLOTS, EGGS_CFG, EGG_INTERVAL_SECONDS
+    global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
+    global WHEEL, WHEEL_SEGMENTS, TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
 
-TON = CONFIG.get("ton") or {}
-TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
-MIN_DEPOSIT = float(TON.get("min_deposit", 1))
-MIN_WITHDRAW = float(TON.get("min_withdraw", 1))
-MEMO_PREFIX = str(TON.get("memo_prefix", "MG"))
+    CONFIG = cfg
+    MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
+    QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
+    MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
+    STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
+    START_SLOTS = CONFIG["slots"]["start"]
+    MAX_SLOTS = CONFIG["slots"]["max"]
+    EGGS_CFG = CONFIG.get("eggs") or {}
+    EGG_INTERVAL_SECONDS = int(float(EGGS_CFG.get("egg_interval_hours", 24)) * 3600)
+    FUSION_CFG = CONFIG.get("fusion") or {}
+    FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
+    DAILY = CONFIG.get("daily") or {}
+    DAILY_DAYS = int(DAILY.get("days", 30))
+    DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
+    DAILY_SPECIAL = {int(item["day"]): item for item in DAILY.get("special", [])}
+
+    WHEEL = CONFIG.get("wheel") or {}
+    WHEEL_SEGMENTS = WHEEL.get("segments") or []
+
+    TON = CONFIG.get("ton") or {}
+    TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
+    MIN_DEPOSIT = float(TON.get("min_deposit", 1))
+    MIN_WITHDRAW = float(TON.get("min_withdraw", 1))
+    MEMO_PREFIX = str(TON.get("memo_prefix", "MG"))
+
+
+apply_config(load_config())
 
 # Кошелёк проекта — получатель пополнений. Без него раздел кошелька выключен.
 TON_WALLET = os.getenv("TON_WALLET", "").strip()
@@ -65,6 +80,26 @@ TON_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 TON_POLL_SECONDS = int(os.getenv("TON_POLL_SECONDS", "30"))
 # Куда слать заявки на вывод: свой Telegram-id или id канала.
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
+
+# Пароль от админ-панели (/admin). Без него панель недоступна.
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
+ADMIN_SESSION_TTL = 12 * 3600
+ADMIN_SESSIONS: dict = {}  # token -> unix-время истечения
+
+
+def admin_session_valid(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    expires = ADMIN_SESSIONS.get(token)
+    if not expires or expires < time.time():
+        ADMIN_SESSIONS.pop(token, None)
+        return False
+    return True
+
+
+def require_admin(request: Request):
+    if not admin_session_valid(request.cookies.get("admin_session")):
+        raise HTTPException(status_code=401, detail="Не авторизован")
 
 
 store = make_store()
@@ -476,6 +511,26 @@ class WithdrawRequest(BaseModel):
     amount: float
 
 
+class AdminLogin(BaseModel):
+    password: str
+
+
+class AdminPlayerUpdate(BaseModel):
+    name: Optional[str] = None
+    coins: Optional[float] = None
+    mnstr: Optional[float] = None
+    slots: Optional[int] = None
+    active_slot: Optional[int] = None
+    wallet: Optional[str] = None
+    monsters: Optional[List[dict]] = None
+    eggs_board: Optional[List[int]] = None
+    eggs_board_unlocked: Optional[int] = None
+
+
+class AdminConfigUpdate(BaseModel):
+    config: dict
+
+
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
@@ -490,6 +545,12 @@ async def serve_webapp():
 @app.get("/game_config.json")
 async def serve_config():
     return FileResponse(CONFIG_PATH, media_type="application/json")
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def serve_admin():
+    with open(os.path.join(BASE_DIR, "admin.html"), "r", encoding="utf-8") as f:
+        return f.read()
 
 
 @app.get("/api/load/{user_id}")
@@ -788,6 +849,160 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
         "ops": int(fresh.get("ops") or 0),
         "operations": await store.recent_operations(user_id),
     }
+
+
+# --- АДМИН-ПАНЕЛЬ (/admin) ---
+# Отдельная авторизация паролем (ADMIN_PASSWORD), не связанная с Telegram.
+
+def player_summary(doc: dict) -> dict:
+    farm = read_farm(doc.get("monsters"))
+    return {
+        "user_id": doc.get("user_id"),
+        "name": doc.get("name") or "",
+        "coins": float(doc.get("coins") or 0.0),
+        "mnstr": float(doc.get("mnstr") or 0.0),
+        "total_earned": float(doc.get("total_earned") or 0.0),
+        "slots": int(doc.get("slots") or START_SLOTS),
+        "farm_count": len(farm),
+        "referrals": int(doc.get("referrals") or 0),
+        "wallet": doc.get("wallet") or "",
+        "last_seen": int(doc.get("last_seen") or 0),
+    }
+
+
+@app.post("/admin/api/login")
+async def admin_login(body: AdminLogin, response: Response):
+    if not ADMIN_PASSWORD:
+        raise HTTPException(status_code=500, detail="ADMIN_PASSWORD не задан на сервере")
+    if not secrets.compare_digest(body.password, ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="Неверный пароль")
+
+    token = secrets.token_urlsafe(32)
+    ADMIN_SESSIONS[token] = time.time() + ADMIN_SESSION_TTL
+    response.set_cookie(
+        "admin_session", token, httponly=True, samesite="strict",
+        max_age=ADMIN_SESSION_TTL, path="/admin",
+    )
+    return {"status": "success"}
+
+
+@app.post("/admin/api/logout")
+async def admin_logout(request: Request, response: Response):
+    ADMIN_SESSIONS.pop(request.cookies.get("admin_session"), None)
+    response.delete_cookie("admin_session", path="/admin")
+    return {"status": "success"}
+
+
+@app.get("/admin/api/me")
+async def admin_me(_: None = Depends(require_admin)):
+    return {"status": "success"}
+
+
+@app.get("/admin/api/stats")
+async def admin_stats(_: None = Depends(require_admin)):
+    return await store.stats()
+
+
+@app.get("/admin/api/players")
+async def admin_list_players(search: str = "", limit: int = 50, offset: int = 0,
+                              _: None = Depends(require_admin)):
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    search = search.strip()
+    items = await store.list_players(search, limit, offset)
+    total = await store.count_players(search)
+    return {"items": [player_summary(doc) for doc in items], "total": total}
+
+
+@app.get("/admin/api/players/{user_id}")
+async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
+    doc = await store.get(user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    doc["monsters"] = read_farm(doc.get("monsters"))
+    return doc
+
+
+@app.post("/admin/api/players/{user_id}")
+async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
+                               _: None = Depends(require_admin)):
+    doc = await store.get(user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="Нечего сохранять")
+
+    if "coins" in fields:
+        fields["coins"] = max(0.0, float(fields["coins"]))
+    if "mnstr" in fields:
+        fields["mnstr"] = max(0.0, float(fields["mnstr"]))
+    if "slots" in fields:
+        fields["slots"] = max(START_SLOTS, min(int(fields["slots"]), MAX_SLOTS))
+    if "active_slot" in fields:
+        fields["active_slot"] = max(0, int(fields["active_slot"]))
+    if "monsters" in fields:
+        fields["monsters"] = read_farm(fields["monsters"])
+    if "eggs_board" in fields:
+        max_level = len(CONFIG["tiers"])
+        board = list(fields["eggs_board"])[:9]
+        board += [0] * (9 - len(board))
+        fields["eggs_board"] = [max(0, min(max_level, int(v))) for v in board]
+    if "eggs_board_unlocked" in fields:
+        fields["eggs_board_unlocked"] = max(1, min(9, int(fields["eggs_board_unlocked"])))
+
+    await store.update(user_id, fields)
+    fresh = await store.get(user_id)
+    fresh["monsters"] = read_farm(fresh.get("monsters"))
+    return fresh
+
+
+@app.get("/admin/api/withdrawals")
+async def admin_list_withdrawals(status: str = "", limit: int = 50, offset: int = 0,
+                                  _: None = Depends(require_admin)):
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    items = await store.list_withdrawals(status.strip() or None, limit, offset)
+    return {"items": items}
+
+
+@app.post("/admin/api/withdrawals/{wd_id}/approve")
+async def admin_approve_withdrawal(wd_id: str, _: None = Depends(require_admin)):
+    wd_id = int(wd_id) if wd_id.isdigit() else wd_id
+    if not await store.set_withdrawal_status(wd_id, "approved", refund=False):
+        raise HTTPException(status_code=409, detail="Заявка уже обработана")
+    return {"status": "success"}
+
+
+@app.post("/admin/api/withdrawals/{wd_id}/reject")
+async def admin_reject_withdrawal(wd_id: str, _: None = Depends(require_admin)):
+    wd_id = int(wd_id) if wd_id.isdigit() else wd_id
+    if not await store.set_withdrawal_status(wd_id, "rejected", refund=True):
+        raise HTTPException(status_code=409, detail="Заявка уже обработана")
+    return {"status": "success"}
+
+
+@app.get("/admin/api/config")
+async def admin_get_config(_: None = Depends(require_admin)):
+    return CONFIG
+
+
+@app.post("/admin/api/config")
+async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require_admin)):
+    cfg = body.config
+    try:
+        assert isinstance(cfg["tiers"], list) and cfg["tiers"]
+        assert isinstance(cfg["missions"], list)
+        assert isinstance(cfg["slots"], dict)
+    except (AssertionError, KeyError, TypeError):
+        raise HTTPException(status_code=400, detail="В конфиге не хватает обязательных разделов")
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    apply_config(cfg)
+    return {"status": "success"}
 
 
 # --- TELEGRAM BOT LOGIC ---

@@ -11,6 +11,7 @@
 
 import json
 import os
+import re
 import sqlite3
 from typing import Optional
 
@@ -326,6 +327,121 @@ class SqliteStore:
         conn.close()
         return [dict(row) for row in rows]
 
+    # --- АДМИН-ПАНЕЛЬ ---
+
+    def _row_to_doc(self, row) -> dict:
+        doc = {key: row[key] for key in row.keys() if key in FIELDS}
+        for key in JSON_FIELDS:
+            try:
+                doc[key] = json.loads(doc.get(key) or "[]")
+            except (TypeError, ValueError):
+                doc[key] = []
+        return doc
+
+    async def list_players(self, search: str = "", limit: int = 50, offset: int = 0) -> list:
+        """Поиск по id (точное совпадение) или имени (подстрока)."""
+        conn = self._connect()
+        like = f"%{search}%"
+        search = (search or "").strip()
+        if search.lstrip("-").isdigit():
+            rows = conn.execute(
+                "SELECT * FROM users WHERE user_id = ? OR name LIKE ? "
+                "ORDER BY user_id DESC LIMIT ? OFFSET ?",
+                (int(search), like, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM users WHERE name LIKE ? ORDER BY user_id DESC LIMIT ? OFFSET ?",
+                (like, limit, offset),
+            ).fetchall()
+        conn.close()
+        return [self._row_to_doc(row) for row in rows]
+
+    async def count_players(self, search: str = "") -> int:
+        conn = self._connect()
+        like = f"%{search}%"
+        search = (search or "").strip()
+        if search.lstrip("-").isdigit():
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE user_id = ? OR name LIKE ?",
+                (int(search), like),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM users WHERE name LIKE ?", (like,)).fetchone()
+        conn.close()
+        return int(row["n"])
+
+    async def stats(self) -> dict:
+        conn = self._connect()
+        row = conn.execute(
+            """SELECT COUNT(*) AS players,
+                      COALESCE(SUM(coins), 0) AS coins,
+                      COALESCE(SUM(mnstr), 0) AS mnstr,
+                      COALESCE(SUM(total_earned), 0) AS total_earned,
+                      COALESCE(SUM(referrals), 0) AS referrals,
+                      COALESCE(SUM(CASE WHEN wallet != '' THEN 1 ELSE 0 END), 0) AS wallets
+                 FROM users"""
+        ).fetchone()
+        dep = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM deposits"
+        ).fetchone()
+        wd_pending = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM withdrawals WHERE status = 'pending'"
+        ).fetchone()
+        wd_paid = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM withdrawals WHERE status = 'approved'"
+        ).fetchone()
+        conn.close()
+        return {
+            "players": int(row["players"]),
+            "coins": float(row["coins"]),
+            "mnstr": float(row["mnstr"]),
+            "total_earned": float(row["total_earned"]),
+            "referrals": int(row["referrals"]),
+            "wallets": int(row["wallets"]),
+            "deposits_count": int(dep["n"]),
+            "deposits_total": float(dep["total"]),
+            "withdrawals_pending_count": int(wd_pending["n"]),
+            "withdrawals_pending_total": float(wd_pending["total"]),
+            "withdrawals_paid_count": int(wd_paid["n"]),
+            "withdrawals_paid_total": float(wd_paid["total"]),
+        }
+
+    async def list_withdrawals(self, status: Optional[str] = None, limit: int = 50, offset: int = 0) -> list:
+        conn = self._connect()
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM withdrawals WHERE status = ? ORDER BY ts DESC LIMIT ? OFFSET ?",
+                (status, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM withdrawals ORDER BY ts DESC LIMIT ? OFFSET ?", (limit, offset)
+            ).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    async def set_withdrawal_status(self, wd_id: int, status: str, refund: bool = False) -> bool:
+        """Меняет статус заявки (только если ещё pending); при отказе возвращает GRAM."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute("SELECT * FROM withdrawals WHERE id = ?", (wd_id,)).fetchone()
+            if not row or row["status"] != "pending":
+                conn.rollback()
+                return False
+            cur.execute("UPDATE withdrawals SET status = ? WHERE id = ?", (status, wd_id))
+            if refund:
+                cur.execute(
+                    "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+                    (row["amount"], row["user_id"]),
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
 
 class MongoStore:
     """MongoDB через motor. Документ хранит списки как есть, без JSON-строк."""
@@ -453,6 +569,90 @@ class MongoStore:
                          "ts": doc.get("ts", 0), "status": doc.get("status", "")})
         rows.sort(key=lambda row: row["ts"], reverse=True)
         return rows[:limit]
+
+    # --- АДМИН-ПАНЕЛЬ ---
+
+    def _search_query(self, search: str) -> dict:
+        search = (search or "").strip()
+        if not search:
+            return {}
+        clauses = [{"name": {"$regex": re.escape(search), "$options": "i"}}]
+        if search.lstrip("-").isdigit():
+            clauses.append({"_id": int(search)})
+        return {"$or": clauses}
+
+    async def list_players(self, search: str = "", limit: int = 50, offset: int = 0) -> list:
+        docs = []
+        cursor = self.users.find(self._search_query(search)).sort("_id", -1).skip(offset).limit(limit)
+        async for doc in cursor:
+            doc = dict(doc)
+            doc["user_id"] = doc.pop("_id")
+            docs.append(doc)
+        return docs
+
+    async def count_players(self, search: str = "") -> int:
+        return await self.users.count_documents(self._search_query(search))
+
+    async def stats(self) -> dict:
+        pipeline = [{"$group": {
+            "_id": None,
+            "players": {"$sum": 1},
+            "coins": {"$sum": "$coins"},
+            "mnstr": {"$sum": "$mnstr"},
+            "total_earned": {"$sum": "$total_earned"},
+            "referrals": {"$sum": "$referrals"},
+            "wallets": {"$sum": {"$cond": [{"$ne": ["$wallet", ""]}, 1, 0]}},
+        }}]
+        agg = await self.users.aggregate(pipeline).to_list(1)
+        base = agg[0] if agg else {}
+
+        async def _sum(collection, match=None):
+            stages = ([{"$match": match}] if match else []) + [
+                {"$group": {"_id": None, "n": {"$sum": 1}, "total": {"$sum": "$amount"}}}
+            ]
+            result = await collection.aggregate(stages).to_list(1)
+            return result[0] if result else {"n": 0, "total": 0}
+
+        dep = await _sum(self.deposits)
+        wd_pending = await _sum(self.withdrawals, {"status": "pending"})
+        wd_paid = await _sum(self.withdrawals, {"status": "approved"})
+
+        return {
+            "players": int(base.get("players", 0)),
+            "coins": float(base.get("coins", 0) or 0),
+            "mnstr": float(base.get("mnstr", 0) or 0),
+            "total_earned": float(base.get("total_earned", 0) or 0),
+            "referrals": int(base.get("referrals", 0) or 0),
+            "wallets": int(base.get("wallets", 0) or 0),
+            "deposits_count": int(dep.get("n", 0)),
+            "deposits_total": float(dep.get("total", 0) or 0),
+            "withdrawals_pending_count": int(wd_pending.get("n", 0)),
+            "withdrawals_pending_total": float(wd_pending.get("total", 0) or 0),
+            "withdrawals_paid_count": int(wd_paid.get("n", 0)),
+            "withdrawals_paid_total": float(wd_paid.get("total", 0) or 0),
+        }
+
+    async def list_withdrawals(self, status: Optional[str] = None, limit: int = 50, offset: int = 0) -> list:
+        query = {"status": status} if status else {}
+        docs = []
+        cursor = self.withdrawals.find(query).sort("ts", -1).skip(offset).limit(limit)
+        async for doc in cursor:
+            doc = dict(doc)
+            doc["id"] = str(doc.pop("_id"))
+            docs.append(doc)
+        return docs
+
+    async def set_withdrawal_status(self, wd_id: str, status: str, refund: bool = False) -> bool:
+        from bson import ObjectId
+
+        oid = ObjectId(wd_id)
+        doc = await self.withdrawals.find_one({"_id": oid, "status": "pending"})
+        if not doc:
+            return False
+        await self.withdrawals.update_one({"_id": oid}, {"$set": {"status": status}})
+        if refund:
+            await self.users.update_one({"_id": doc["user_id"]}, {"$inc": {"coins": doc["amount"]}})
+        return True
 
 
 def make_store(client=None):

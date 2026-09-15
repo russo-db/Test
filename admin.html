@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkyLords GRAMM — Админ</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        background: #0f1420; color: #e7ecf5; min-height: 100vh;
+    }
+    a { color: inherit; }
+    button {
+        font: inherit; cursor: pointer; border: none; border-radius: 8px;
+        padding: 9px 14px; background: #2a3350; color: #e7ecf5;
+    }
+    button:hover { background: #343f63; }
+    button.primary { background: #f0b429; color: #1a1408; font-weight: 700; }
+    button.primary:hover { background: #ffc94a; }
+    button.danger { background: #7a2b2b; }
+    button.danger:hover { background: #a03a3a; }
+    button:disabled { opacity: 0.45; cursor: default; background: #2a3350; }
+    input, select, textarea {
+        font: inherit; background: #161d2e; color: #e7ecf5; border: 1px solid #2a3350;
+        border-radius: 8px; padding: 8px 10px;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #f0b429; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #202840; white-space: nowrap; }
+    th { color: #8b96b3; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+    tr:hover td { background: #161d2e; }
+    .muted { color: #8b96b3; }
+    .hidden { display: none !important; }
+
+    /* --- login --- */
+    #loginScreen {
+        min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    #loginCard {
+        background: #161d2e; border: 1px solid #2a3350; border-radius: 16px;
+        padding: 28px; width: 100%; max-width: 340px;
+    }
+    #loginCard h1 { font-size: 18px; margin: 0 0 4px; }
+    #loginCard p { color: #8b96b3; font-size: 13px; margin: 0 0 18px; }
+    #loginCard input { width: 100%; margin-bottom: 12px; }
+    #loginCard button { width: 100%; }
+    #loginError { color: #ff6b6b; font-size: 13px; margin: 8px 0 0; min-height: 16px; }
+
+    /* --- layout --- */
+    #app { display: flex; min-height: 100vh; }
+    #sidebar {
+        width: 200px; flex: none; background: #131a29; border-right: 1px solid #202840;
+        padding: 18px 12px; display: flex; flex-direction: column; gap: 4px;
+    }
+    #sidebar h1 { font-size: 15px; margin: 4px 8px 16px; }
+    #sidebar h1 small { display: block; color: #8b96b3; font-weight: 400; font-size: 11px; }
+    .nav-btn {
+        background: none; text-align: left; padding: 10px 12px; border-radius: 8px; color: #c3cbdd;
+    }
+    .nav-btn.active { background: #2a3350; color: #fff; }
+    #sidebar .spacer { flex: 1; }
+    #main { flex: 1; padding: 22px 26px; overflow-x: auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .page h2 { margin: 0 0 16px; font-size: 20px; }
+    .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 14px 16px; }
+    .stat-card .label { color: #8b96b3; font-size: 12px; margin-bottom: 6px; }
+    .stat-card .value { font-size: 20px; font-weight: 700; }
+    .table-wrap { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; overflow: auto; }
+    .pager { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+    .toast {
+        position: fixed; bottom: 20px; right: 20px; background: #232c47; border: 1px solid #2a3350;
+        padding: 12px 16px; border-radius: 10px; font-size: 13px; max-width: 320px; z-index: 50;
+    }
+    .toast.error { border-color: #7a2b2b; color: #ffb3b3; }
+
+    /* --- modal --- */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(5, 8, 15, 0.6); display: flex;
+        align-items: flex-start; justify-content: center; padding: 30px 16px; z-index: 40; overflow-y: auto;
+    }
+    .modal {
+        background: #161d2e; border: 1px solid #2a3350; border-radius: 14px; padding: 20px;
+        width: 100%; max-width: 560px;
+    }
+    .modal h3 { margin: 0 0 14px; }
+    .modal .close-x { float: right; background: none; padding: 4px 8px; }
+    .field-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .field-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8b96b3; flex: 1; min-width: 120px; }
+    .farm-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+    .farm-row { display: flex; align-items: center; gap: 8px; background: #131a29; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+    .farm-row .grow { flex: 1; }
+    .farm-row button { padding: 4px 9px; font-size: 12px; }
+    .eggs-grid { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; margin: 10px 0; }
+    .eggs-grid input { width: 56px; text-align: center; padding: 6px 4px; }
+    .add-eagle-row { display: flex; gap: 8px; margin-top: 6px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+    #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+    <div id="loginCard">
+        <h1>SkyLords GRAMM</h1>
+        <p>Админ-панель — вход по паролю</p>
+        <input type="password" id="loginPassword" placeholder="Пароль" autocomplete="current-password">
+        <button class="primary" id="loginBtn">Войти</button>
+        <div id="loginError"></div>
+    </div>
+</div>
+
+<div id="app" class="hidden">
+    <div id="sidebar">
+        <h1>SkyLords GRAMM<small>Админ-панель</small></h1>
+        <button class="nav-btn active" data-page="overview">📊 Обзор</button>
+        <button class="nav-btn" data-page="players">👥 Игроки</button>
+        <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
+        <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+        <div class="spacer"></div>
+        <button id="logoutBtn">Выйти</button>
+    </div>
+    <div id="main">
+        <div class="page active" id="page-overview">
+            <h2>Обзор</h2>
+            <div class="card-grid" id="statsGrid"></div>
+            <button id="refreshStats">Обновить</button>
+        </div>
+
+        <div class="page" id="page-players">
+            <h2>Игроки</h2>
+            <div class="toolbar">
+                <input id="playerSearch" placeholder="Поиск по id или имени">
+                <button id="playerSearchBtn">Найти</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>ID</th><th>Имя</th><th>GRAM</th><th>Meat</th><th>Слоты</th>
+                        <th>Орлы</th><th>Рефералы</th><th>Кошелёк</th><th></th>
+                    </tr></thead>
+                    <tbody id="playersBody"></tbody>
+                </table>
+            </div>
+            <div class="pager">
+                <button id="playersPrev">← Назад</button>
+                <span id="playersPageInfo" class="muted"></span>
+                <button id="playersNext">Вперёд →</button>
+            </div>
+        </div>
+
+        <div class="page" id="page-withdrawals">
+            <h2>Заявки на вывод</h2>
+            <div class="toolbar">
+                <select id="wdStatus">
+                    <option value="">Все</option>
+                    <option value="pending" selected>Ожидают</option>
+                    <option value="approved">Выплачены</option>
+                    <option value="rejected">Отклонены</option>
+                </select>
+                <button id="wdRefresh">Обновить</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>ID</th><th>Игрок</th><th>Сумма GRAM</th><th>Адрес</th>
+                        <th>Статус</th><th>Дата</th><th></th>
+                    </tr></thead>
+                    <tbody id="wdBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="page" id="page-config">
+            <h2>Баланс игры (game_config.json)</h2>
+            <p class="muted">Изменения применяются сразу, без перезапуска сервера. Будь аккуратен — формат должен остаться валидным JSON.</p>
+            <textarea id="configArea" spellcheck="false"></textarea>
+            <div class="modal-actions" style="justify-content:flex-start; margin-top:12px;">
+                <button id="configReload">Обновить из файла</button>
+                <button class="primary" id="configSave">Сохранить</button>
+            </div>
+            <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
+        </div>
+    </div>
+</div>
+
+<div id="modalRoot"></div>
+
+<script>
+const state = { playersOffset: 0, playersLimit: 50, playersTotal: 0, playersSearch: '' };
+
+async function api(path, opts) {
+    const res = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
+    if (res.status === 401) {
+        showLogin();
+        throw new Error('unauthorized');
+    }
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) throw new Error((data && data.detail) || `Ошибка ${res.status}`);
+    return data;
+}
+
+function toast(message, isError) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (isError ? ' error' : '');
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+}
+
+function showLogin() {
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('loginScreen').classList.remove('hidden');
+}
+
+function showApp() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+}
+
+async function checkAuth() {
+    try {
+        await api('/admin/api/me');
+        showApp();
+        loadOverview();
+    } catch (e) {
+        showLogin();
+    }
+}
+
+document.getElementById('loginBtn').onclick = async () => {
+    const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    try {
+        await fetch('/admin/api/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password }),
+        }).then(async res => {
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || 'Ошибка входа');
+            }
+        });
+        document.getElementById('loginPassword').value = '';
+        showApp();
+        loadOverview();
+    } catch (e) {
+        errEl.textContent = e.message;
+    }
+};
+document.getElementById('loginPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+});
+
+document.getElementById('logoutBtn').onclick = async () => {
+    await fetch('/admin/api/logout', { method: 'POST' });
+    showLogin();
+};
+
+document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('page-' + btn.dataset.page).classList.add('active');
+        if (btn.dataset.page === 'players') loadPlayers();
+        if (btn.dataset.page === 'withdrawals') loadWithdrawals();
+        if (btn.dataset.page === 'config') loadConfig();
+    };
+});
+
+/* ---------- обзор ---------- */
+const STAT_LABELS = [
+    ['players', 'Игроков'],
+    ['coins', 'GRAM на балансах'],
+    ['mnstr', 'Meat на балансах'],
+    ['total_earned', 'GRAM заработано всего'],
+    ['referrals', 'Рефералов засчитано'],
+    ['wallets', 'Кошельков подключено'],
+    ['deposits_count', 'Пополнений'],
+    ['deposits_total', 'GRAM пополнено'],
+    ['withdrawals_pending_count', 'Заявок ждут'],
+    ['withdrawals_pending_total', 'GRAM в заявках'],
+    ['withdrawals_paid_count', 'Выплачено заявок'],
+    ['withdrawals_paid_total', 'GRAM выплачено'],
+];
+
+function fmtNum(n) {
+    n = Number(n) || 0;
+    return n % 1 === 0 ? n.toLocaleString('ru-RU') : n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+
+async function loadOverview() {
+    try {
+        const stats = await api('/admin/api/stats');
+        const grid = document.getElementById('statsGrid');
+        grid.innerHTML = STAT_LABELS.map(([key, label]) => `
+            <div class="stat-card">
+                <div class="label">${label}</div>
+                <div class="value">${fmtNum(stats[key])}</div>
+            </div>
+        `).join('');
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('refreshStats').onclick = loadOverview;
+
+/* ---------- игроки ---------- */
+async function loadPlayers() {
+    try {
+        const params = new URLSearchParams({
+            search: state.playersSearch, limit: state.playersLimit, offset: state.playersOffset,
+        });
+        const data = await api('/admin/api/players?' + params);
+        state.playersTotal = data.total;
+        document.getElementById('playersBody').innerHTML = data.items.map(p => `
+            <tr>
+                <td>${p.user_id}</td>
+                <td>${p.name || '—'}</td>
+                <td>${fmtNum(p.coins)}</td>
+                <td>${fmtNum(p.mnstr)}</td>
+                <td>${p.slots}</td>
+                <td>${p.farm_count}</td>
+                <td>${p.referrals}</td>
+                <td>${p.wallet ? p.wallet.slice(0, 8) + '…' : '—'}</td>
+                <td><button data-open="${p.user_id}">Открыть</button></td>
+            </tr>
+        `).join('') || '<tr><td colspan="9" class="muted">Никого не найдено</td></tr>';
+        document.querySelectorAll('[data-open]').forEach(btn => {
+            btn.onclick = () => openPlayerModal(Number(btn.dataset.open));
+        });
+        const from = data.total ? state.playersOffset + 1 : 0;
+        const to = Math.min(state.playersOffset + state.playersLimit, data.total);
+        document.getElementById('playersPageInfo').textContent = `${from}–${to} из ${data.total}`;
+        document.getElementById('playersPrev').disabled = state.playersOffset <= 0;
+        document.getElementById('playersNext').disabled = to >= data.total;
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('playerSearchBtn').onclick = () => {
+    state.playersSearch = document.getElementById('playerSearch').value.trim();
+    state.playersOffset = 0;
+    loadPlayers();
+};
+document.getElementById('playerSearch').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('playerSearchBtn').click();
+});
+document.getElementById('playersPrev').onclick = () => {
+    state.playersOffset = Math.max(0, state.playersOffset - state.playersLimit);
+    loadPlayers();
+};
+document.getElementById('playersNext').onclick = () => {
+    state.playersOffset += state.playersLimit;
+    loadPlayers();
+};
+
+let editingPlayer = null;
+let monsterCatalog = null;
+
+async function getMonsterCatalog() {
+    if (monsterCatalog) return monsterCatalog;
+    const cfg = await fetch('/game_config.json').then(r => r.json());
+    monsterCatalog = [];
+    cfg.tiers.forEach(tier => tier.monsters.forEach(m => monsterCatalog.push({ id: m.id, name: `${m.name} (${tier.name})` })));
+    return monsterCatalog;
+}
+
+async function openPlayerModal(userId) {
+    let doc;
+    try { doc = await api(`/admin/api/players/${userId}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    editingPlayer = doc;
+    const catalog = await getMonsterCatalog();
+
+    const board = (doc.eggs_board || []).slice(0, 9);
+    while (board.length < 9) board.push(0);
+
+    document.getElementById('modalRoot').innerHTML = `
+        <div class="modal-backdrop" id="playerModalBackdrop">
+            <div class="modal">
+                <button class="close-x" id="playerModalClose">✕</button>
+                <h3>Игрок ${doc.user_id}</h3>
+                <div class="field-row">
+                    <label>Имя <input id="fName" value="${(doc.name || '').replace(/"/g, '&quot;')}"></label>
+                    <label>Кошелёк <input id="fWallet" value="${(doc.wallet || '').replace(/"/g, '&quot;')}"></label>
+                </div>
+                <div class="field-row">
+                    <label>GRAM <input id="fCoins" type="number" step="0.01" value="${doc.coins || 0}"></label>
+                    <label>Meat <input id="fMnstr" type="number" step="0.01" value="${doc.mnstr || 0}"></label>
+                    <label>Слоты <input id="fSlots" type="number" value="${doc.slots || 3}"></label>
+                    <label>Активный слот <input id="fActiveSlot" type="number" value="${doc.active_slot || 0}"></label>
+                </div>
+
+                <b>Ферма (${doc.monsters.length} орлов)</b>
+                <div class="farm-list" id="farmList"></div>
+                <div class="add-eagle-row">
+                    <select id="addMonsterSelect">${catalog.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
+                    <button id="addMonsterBtn">+ Добавить орла</button>
+                </div>
+
+                <b style="display:block; margin-top:14px;">Доска яиц (0 — пусто, иначе уровень яйца)</b>
+                <div class="eggs-grid" id="eggsGrid">
+                    ${board.map((v, i) => `<input type="number" min="0" data-egg="${i}" value="${v}">`).join('')}
+                </div>
+
+                <div class="modal-actions">
+                    <button class="danger" id="playerModalCancel">Отмена</button>
+                    <button class="primary" id="playerModalSave">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    renderFarmList();
+
+    document.getElementById('addMonsterBtn').onclick = () => {
+        const id = document.getElementById('addMonsterSelect').value;
+        editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: 0, feed_taps: 0 });
+        renderFarmList();
+    };
+    document.getElementById('playerModalClose').onclick = closePlayerModal;
+    document.getElementById('playerModalCancel').onclick = closePlayerModal;
+    document.getElementById('playerModalBackdrop').addEventListener('click', e => {
+        if (e.target.id === 'playerModalBackdrop') closePlayerModal();
+    });
+    document.getElementById('playerModalSave').onclick = savePlayerModal;
+}
+
+function renderFarmList() {
+    const list = document.getElementById('farmList');
+    if (!editingPlayer.monsters.length) {
+        list.innerHTML = '<div class="muted" style="padding:6px 0">Ферма пуста</div>';
+        return;
+    }
+    list.innerHTML = editingPlayer.monsters.map((m, i) => {
+        const ready = m.next_egg_at && m.next_egg_at * 1000 <= Date.now();
+        const status = m.feed_level >= 7
+            ? (ready ? 'яйцо готово' : 'откормлен, ждёт яйцо')
+            : `откорм ${m.feed_level || 0}/7`;
+        return `
+            <div class="farm-row">
+                <span class="grow">#${i} — <b>${m.id}</b> — ${status}</span>
+                <button data-remove="${i}">Удалить</button>
+            </div>`;
+    }).join('');
+    list.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.onclick = () => {
+            editingPlayer.monsters.splice(Number(btn.dataset.remove), 1);
+            renderFarmList();
+        };
+    });
+}
+
+function closePlayerModal() {
+    document.getElementById('modalRoot').innerHTML = '';
+    editingPlayer = null;
+}
+
+async function savePlayerModal() {
+    const eggsBoard = Array.from(document.querySelectorAll('[data-egg]')).map(el => Number(el.value) || 0);
+    const payload = {
+        name: document.getElementById('fName').value,
+        wallet: document.getElementById('fWallet').value,
+        coins: Number(document.getElementById('fCoins').value) || 0,
+        mnstr: Number(document.getElementById('fMnstr').value) || 0,
+        slots: Number(document.getElementById('fSlots').value) || 3,
+        active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
+        monsters: editingPlayer.monsters,
+        eggs_board: eggsBoard,
+    };
+    try {
+        await api(`/admin/api/players/${editingPlayer.user_id}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        toast('Сохранено');
+        closePlayerModal();
+        loadPlayers();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+/* ---------- выводы ---------- */
+async function loadWithdrawals() {
+    try {
+        const status = document.getElementById('wdStatus').value;
+        const data = await api('/admin/api/withdrawals?' + new URLSearchParams({ status, limit: 100 }));
+        document.getElementById('wdBody').innerHTML = data.items.map(w => `
+            <tr>
+                <td>${w.id}</td>
+                <td>${w.user_id}</td>
+                <td>${fmtNum(w.amount)}</td>
+                <td title="${w.address}">${w.address.slice(0, 14)}…</td>
+                <td>${w.status}</td>
+                <td>${new Date(w.ts * 1000).toLocaleString('ru-RU')}</td>
+                <td>
+                    ${w.status === 'pending' ? `
+                        <button data-approve="${w.id}">Выплатить</button>
+                        <button class="danger" data-reject="${w.id}">Отклонить</button>
+                    ` : ''}
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="7" class="muted">Заявок нет</td></tr>';
+        document.querySelectorAll('[data-approve]').forEach(btn => {
+            btn.onclick = () => actWithdrawal(btn.dataset.approve, 'approve');
+        });
+        document.querySelectorAll('[data-reject]').forEach(btn => {
+            btn.onclick = () => actWithdrawal(btn.dataset.reject, 'reject');
+        });
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+async function actWithdrawal(id, action) {
+    if (action === 'reject' && !confirm('Отклонить заявку и вернуть GRAM игроку?')) return;
+    if (action === 'approve' && !confirm('Отметить заявку как выплаченную?')) return;
+    try {
+        await api(`/admin/api/withdrawals/${id}/${action}`, { method: 'POST' });
+        toast(action === 'approve' ? 'Отмечено как выплачено' : 'Отклонено, GRAM возвращён');
+        loadWithdrawals();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+document.getElementById('wdStatus').onchange = loadWithdrawals;
+document.getElementById('wdRefresh').onclick = loadWithdrawals;
+
+/* ---------- конфиг ---------- */
+async function loadConfig() {
+    try {
+        const cfg = await api('/admin/api/config');
+        document.getElementById('configArea').value = JSON.stringify(cfg, null, 2);
+        document.getElementById('configError').textContent = '';
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('configReload').onclick = loadConfig;
+document.getElementById('configSave').onclick = async () => {
+    const errEl = document.getElementById('configError');
+    errEl.textContent = '';
+    let cfg;
+    try { cfg = JSON.parse(document.getElementById('configArea').value); }
+    catch (e) { errEl.textContent = 'Невалидный JSON: ' + e.message; return; }
+    try {
+        await api('/admin/api/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: cfg }),
+        });
+        toast('Конфиг сохранён и применён');
+    } catch (e) {
+        if (e.message !== 'unauthorized') errEl.textContent = e.message;
+    }
+};
+
+checkAuth();
+</script>
+</body>
+</html>
