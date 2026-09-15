@@ -3133,7 +3133,7 @@
             cfg.wheel = Object.assign({ segments: [] }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
-                { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 24,
+                { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 1 / 3600,
                   hatch_common_chance: 0.01, hatch_meat_min: 7, hatch_meat_max: 13,
                   hatch_common_chance_by_level: null, hatch_jackpot_chance: 0,
                   hatch_jackpot_meat_by_level: null },

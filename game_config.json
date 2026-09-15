@@ -270,7 +270,7 @@
   "eggs": {
     "unlock_base_cost": 0.5,
     "unlock_growth": 1.6,
-    "egg_interval_hours": 0.016666666666666666,
+    "egg_interval_hours": 0.0002777777777777778,
     "hatch_common_chance": 0.01,
     "hatch_common_chance_by_level": [0.15, 0.17, 0.17, 0.18, 0.19, 0.20],
     "hatch_meat_min": 7,
