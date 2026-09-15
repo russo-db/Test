@@ -25,6 +25,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
+EGG_BOARD_SIZE = 25  # 5×5
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -248,6 +249,14 @@ def read_farm(raw) -> List[dict]:
     return farm
 
 
+def normalize_eggs_board(raw) -> List[int]:
+    """Доска — EGG_BOARD_SIZE ячеек (5×5). Приводит любые старые сохранения
+    (в т.ч. прежнюю доску 3×3) к текущему размеру, не теряя лежащие яйца."""
+    board = list(raw)[:EGG_BOARD_SIZE] if isinstance(raw, list) else []
+    board += [0] * (EGG_BOARD_SIZE - len(board))
+    return [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in board]
+
+
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
 def day_index(moment: Optional[float] = None) -> int:
     """Порядковый номер суток UTC — по нему считаем серию входов."""
@@ -334,7 +343,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "last_seen": int(time.time()),
             "daily_day": 0,
             "daily_last": 0,
-            "eggs_board": [0] * 9,
+            "eggs_board": [0] * EGG_BOARD_SIZE,
             "eggs_board_unlocked": 1,
             "wallet": "",
             "ops": 0,
@@ -587,7 +596,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "referrals_qualified": await store.count_referrals(user_id, QUALIFY_MNSTR),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
-        "eggs_board": row.get("eggs_board") or [0] * 9,
+        "eggs_board": normalize_eggs_board(row.get("eggs_board")),
         "eggs_board_unlocked": int(row.get("eggs_board_unlocked") or 1),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
@@ -610,9 +619,8 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
     if state.ops >= 0 and state.ops != server_ops:
         return {"status": "stale", "ops": server_ops}
 
-    eggs_board = list(state.eggs_board or [])[:9]
-    eggs_board += [0] * (9 - len(eggs_board))
-    eggs_board_unlocked = max(1, min(9, int(state.eggs_board_unlocked or 1)))
+    eggs_board = normalize_eggs_board(state.eggs_board)
+    eggs_board_unlocked = max(1, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 1)))
 
     await store.update(
         user_id,
@@ -954,11 +962,10 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
         fields["monsters"] = read_farm(fields["monsters"])
     if "eggs_board" in fields:
         max_level = len(CONFIG["tiers"])
-        board = list(fields["eggs_board"])[:9]
-        board += [0] * (9 - len(board))
-        fields["eggs_board"] = [max(0, min(max_level, int(v))) for v in board]
+        board = normalize_eggs_board(fields["eggs_board"])
+        fields["eggs_board"] = [min(max_level, v) for v in board]
     if "eggs_board_unlocked" in fields:
-        fields["eggs_board_unlocked"] = max(1, min(9, int(fields["eggs_board_unlocked"])))
+        fields["eggs_board_unlocked"] = max(1, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
 
     await store.update(user_id, fields)
     fresh = await store.get(user_id)

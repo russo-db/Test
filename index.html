@@ -191,7 +191,7 @@
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
 
         /* ---------- Яйца: доска собранных яиц ---------- */
-        .egg-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; max-width: 260px; margin-left: auto; margin-right: auto; }
+        .egg-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 16px 0; max-width: 360px; margin-left: auto; margin-right: auto; }
         .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
         .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
         .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
@@ -854,8 +854,8 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
-            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..9)
+            eggBoard: Array(25).fill(0),   // 5×5, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
+            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..25)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0               // версия баланса на сервере
@@ -1205,6 +1205,14 @@
         function eggColor(level) {
             const tier = CONFIG.tiers[level - 1];
             return tier ? tier.color : '#94a3b8';
+        }
+
+        // Доска — 5×5 (25 ячеек). Приводит любые старые сохранения (в т.ч.
+        // прежнюю доску 3×3) к текущему размеру, не теряя уже лежащие яйца.
+        function normalizeEggBoard(raw) {
+            const board = Array.isArray(raw) ? raw.slice(0, 25) : [];
+            while (board.length < 25) board.push(0);
+            return board.map(v => Math.max(0, Number(v) || 0));
         }
 
         function renderEggBoard() {
@@ -2785,9 +2793,8 @@
             state.ops = data.ops || 0;
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
-            state.eggBoard = Array.isArray(data.eggs_board) && data.eggs_board.length === 9
-                ? data.eggs_board : Array(9).fill(0);
-            state.eggBoardUnlocked = Number(data.eggs_board_unlocked) || 1;
+            state.eggBoard = normalizeEggBoard(data.eggs_board);
+            state.eggBoardUnlocked = Math.max(1, Math.min(25, Number(data.eggs_board_unlocked) || 1));
             botUsername = data.bot_username || botUsername;
 
             renderAll();
@@ -2854,7 +2861,7 @@
             // Never leave a farm holding more monsters than it has slots for.
             state.slots = Math.min(CONFIG.slots.max, Math.max(state.slots, usedSlots()));
 
-            if (!Array.isArray(state.eggBoard) || state.eggBoard.length !== 9) state.eggBoard = Array(9).fill(0);
+            state.eggBoard = normalizeEggBoard(state.eggBoard);
             if (typeof state.eggBoardUnlocked !== 'number') state.eggBoardUnlocked = 1;
             return 0;
         }

@@ -94,8 +94,8 @@
     .farm-row { display: flex; align-items: center; gap: 8px; background: #131a29; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
     .farm-row .grow { flex: 1; }
     .farm-row button { padding: 4px 9px; font-size: 12px; }
-    .eggs-grid { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; margin: 10px 0; }
-    .eggs-grid input { width: 56px; text-align: center; padding: 6px 4px; }
+    .eggs-grid { display: grid; grid-template-columns: repeat(5, 44px); gap: 5px; margin: 10px 0; }
+    .eggs-grid input { width: 44px; text-align: center; padding: 6px 3px; }
     .add-eagle-row { display: flex; gap: 8px; margin-top: 6px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
@@ -375,8 +375,8 @@ async function openPlayerModal(userId) {
     editingPlayer = doc;
     const catalog = await getMonsterCatalog();
 
-    const board = (doc.eggs_board || []).slice(0, 9);
-    while (board.length < 9) board.push(0);
+    const board = (doc.eggs_board || []).slice(0, 25);
+    while (board.length < 25) board.push(0);
 
     document.getElementById('modalRoot').innerHTML = `
         <div class="modal-backdrop" id="playerModalBackdrop">
