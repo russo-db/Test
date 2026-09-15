@@ -1285,14 +1285,37 @@
             return Math.round(base * Math.pow(2, level - 1));
         }
 
-        // Вскрывает яйцо: с шансом hatch_common_chance выпадает обычный орёл,
-        // иначе — Meat. Орла некуда селить — яйцо не трогаем, шанс не сгорает.
+        // Шанс обычного орла растёт с уровнем яйца: 15/17/17/18/19/20%.
+        function hatchCommonChance(level) {
+            const arr = CONFIG.eggs.hatch_common_chance_by_level;
+            const byLevel = Array.isArray(arr) ? arr[level - 1] : undefined;
+            return byLevel !== undefined ? byLevel : (CONFIG.eggs.hatch_common_chance ?? 0.01);
+        }
+
+        // Джекпот — фиксированная выплата Meat, есть только у старших яиц (5-6 уровня).
+        function hatchJackpotMeat(level) {
+            const arr = CONFIG.eggs.hatch_jackpot_meat_by_level;
+            return (Array.isArray(arr) && Number(arr[level - 1])) || 0;
+        }
+
+        // Один бросок делит 0..1 на три исхода: джекпот, орёл, иначе Meat.
+        function rollEggOutcome(level) {
+            const jackpotMeat = hatchJackpotMeat(level);
+            const jackpotChance = jackpotMeat ? (CONFIG.eggs.hatch_jackpot_chance ?? 0) : 0;
+            const commonChance = hatchCommonChance(level);
+            const roll = Math.random();
+            if (roll < jackpotChance) return { kind: 'jackpot', amount: jackpotMeat };
+            if (roll < jackpotChance + commonChance) return { kind: 'eagle' };
+            return { kind: 'meat', amount: eggMeatReward(level) };
+        }
+
+        // Вскрывает яйцо по таблице уровня: джекпот / обычный орёл / Meat.
+        // Орла некуда селить — яйцо не трогаем, шанс не сгорает.
         function openEgg(i) {
-            const cfg = CONFIG.eggs;
             const level = state.eggBoard[i];
             if (!level) return;
-            const isEagle = Math.random() < (cfg.hatch_common_chance ?? 0.01);
-            if (isEagle && !canHatch()) {
+            const outcome = rollEggOutcome(level);
+            if (outcome.kind === 'eagle' && !canHatch()) {
                 toast('На ферме нет места — освободи слот');
                 haptic.notify('warning');
                 renderEggBoard();
@@ -1300,14 +1323,16 @@
             }
 
             state.eggBoard[i] = 0;
-            if (isEagle) {
+            if (outcome.kind === 'jackpot') {
+                state.mnstr += outcome.amount;
+                toast(`Джекпот! +${fmtToken(outcome.amount)} Meat`);
+            } else if (outcome.kind === 'eagle') {
                 const monster = rollMonster('common');
                 addFarmSlot(monster.id);
                 toast(`Вылупился ${monster.name}!`);
             } else {
-                const amount = eggMeatReward(level);
-                state.mnstr += amount;
-                toast(`Яйцо принесло ${fmtToken(amount)} Meat!`);
+                state.mnstr += outcome.amount;
+                toast(`Яйцо принесло ${fmtToken(outcome.amount)} Meat!`);
             }
             haptic.notify('success');
             spawnBurst(14);
@@ -1318,8 +1343,8 @@
         // Одним нажатием вскрывает все яйца на доске, каждое по своему уровню.
         function openAllEggs() {
             const board = state.eggBoard;
-            const cfg = CONFIG.eggs;
             let meatTotal = 0;
+            let jackpotTotal = 0;
             let eagleCount = 0;
             let opened = 0;
             let blocked = false;
@@ -1327,15 +1352,17 @@
             for (let i = 0; i < board.length; i++) {
                 const level = board[i];
                 if (!level) continue;
-                const isEagle = Math.random() < (cfg.hatch_common_chance ?? 0.01);
-                if (isEagle && !canHatch()) { blocked = true; continue; }
+                const outcome = rollEggOutcome(level);
+                if (outcome.kind === 'eagle' && !canHatch()) { blocked = true; continue; }
                 board[i] = 0;
                 opened++;
-                if (isEagle) {
+                if (outcome.kind === 'jackpot') {
+                    jackpotTotal += outcome.amount;
+                } else if (outcome.kind === 'eagle') {
                     eagleCount++;
                     addFarmSlot(rollMonster('common').id);
                 } else {
-                    meatTotal += eggMeatReward(level);
+                    meatTotal += outcome.amount;
                 }
             }
 
@@ -1346,8 +1373,9 @@
                 return;
             }
 
-            if (meatTotal) state.mnstr += meatTotal;
+            if (meatTotal || jackpotTotal) state.mnstr += meatTotal + jackpotTotal;
             const parts = [];
+            if (jackpotTotal) parts.push(`джекпот ${fmtToken(jackpotTotal)} Meat`);
             if (meatTotal) parts.push(`${fmtToken(meatTotal)} Meat`);
             if (eagleCount) parts.push(`${eagleCount} ${plural(eagleCount, 'орёл', 'орла', 'орлов')}`);
             toast(`Вскрыто ${opened} — выпало: ${parts.join(' и ')}`);
@@ -2806,7 +2834,9 @@
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
                 { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 24,
-                  hatch_common_chance: 0.01, hatch_meat_min: 7, hatch_meat_max: 13 },
+                  hatch_common_chance: 0.01, hatch_meat_min: 7, hatch_meat_max: 13,
+                  hatch_common_chance_by_level: null, hatch_jackpot_chance: 0,
+                  hatch_jackpot_meat_by_level: null },
                 cfg.eggs
             );
             cfg.fusion = Object.assign(
