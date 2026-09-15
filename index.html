@@ -1643,6 +1643,13 @@
             return Array.isArray(arr) && arr[idx] !== undefined ? Number(arr[idx]) : 0;
         }
 
+        // Зелёный сектор на рулетке рисуется чуть больше настоящего шанса —
+        // сам бросок (Math.random() < chance) по-прежнему честно считается
+        // от реального шанса, эта прибавка только визуальная.
+        function visualMergeChance(chance) {
+            return Math.min(0.95, chance + 0.08);
+        }
+
         function openFusionModal(a, b) {
             fusionModalA = a;
             fusionModalB = b;
@@ -1710,7 +1717,7 @@
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">Закрыть</button>
                 </div>
             `;
-            renderFusionDial(baseChance);
+            renderFusionDial(visualMergeChance(baseChance));
         }
 
         // Одна платная попытка слияния. Успех сливает орлов; неудача не трогает
@@ -1742,8 +1749,9 @@
                 const el = document.getElementById(id);
                 if (el) el.disabled = true;
             });
-            renderFusionDial(chance);
-            spinFusionDialTo(success, chance);
+            const visualChance = visualMergeChance(chance);
+            renderFusionDial(visualChance);
+            spinFusionDialTo(success, visualChance);
             haptic.impact('light');
 
             setTimeout(() => {
@@ -3133,7 +3141,7 @@
             );
             cfg.fusion = Object.assign(
                 { feed_base_cost: 1, feed_growth: 2, feed_taps_per_level: 10, feed_levels: 7,
-                  merge_chance_by_tier: [0.2, 0.07, 0.03, 0.01, 0.0001],
+                  merge_chance_by_tier: [0.1, 0.035, 0.015, 0.005, 0.00005],
                   merge_cost_meat: 75, merge_cost_gram: 1, merge_gram_multiplier: 2 },
                 cfg.fusion
             );
