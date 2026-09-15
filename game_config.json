@@ -246,11 +246,14 @@
     "unlock_base_cost": 0.5,
     "unlock_growth": 1.6,
     "egg_interval_hours": 24,
-    "hatch_meat_chance": 0.5,
-    "hatch_meat_amount": 50
+    "hatch_common_chance": 0.01,
+    "hatch_meat_min": 7,
+    "hatch_meat_max": 13
   },
   "fusion": {
-    "feed_base_cost": 20,
-    "feed_growth": 2
+    "feed_base_cost": 1,
+    "feed_growth": 2,
+    "feed_taps_per_level": 10,
+    "feed_levels": 7
   }
 }

@@ -42,6 +42,8 @@ START_SLOTS = CONFIG["slots"]["start"]
 MAX_SLOTS = CONFIG["slots"]["max"]
 EGGS_CFG = CONFIG.get("eggs") or {}
 EGG_INTERVAL_SECONDS = int(float(EGGS_CFG.get("egg_interval_hours", 24)) * 3600)
+FUSION_CFG = CONFIG.get("fusion") or {}
+FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
 DAILY = CONFIG.get("daily") or {}
 DAILY_DAYS = int(DAILY.get("days", 30))
 DAILY_STEP = float(DAILY.get("mnstr_step", 10))
@@ -161,13 +163,16 @@ def next_egg_timestamp() -> int:
 
 
 def read_farm(raw) -> List[dict]:
-    """The farm is one slot per eagle: {"id", "next_egg_at", "fed"}.
+    """The farm is one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps"}.
 
-    Each occupied slot lays one egg every EGG_INTERVAL_SECONDS - eagles never
-    expire. `fed` marks an eagle fed with Meat, ready to fuse with a matching
-    fed eagle into the next rarity (client-side, like the rest of the economy).
-    Farms saved in older shapes - {id: copies}, a flat list of ids, or the
-    previous {"id", "mined"} payout slots - are converted into fresh slots.
+    Feeding is tap-driven: FEED_LEVELS levels, each needing a batch of taps
+    (client-side cost per tap doubling every rarity tier). Once an eagle
+    reaches the max feed level it starts a 24h timer for its first egg
+    (`next_egg_at`; 0 means no egg pending yet) and can be fused with another
+    maxed eagle of the same kind into the next rarity. Farms saved in older
+    shapes - {id: copies}, a flat list of ids, the very first {"id", "mined"}
+    payout slots, or the earlier lump-sum {"fed": bool} - are migrated; a
+    previously fed eagle keeps that status, mapped to the max feed level.
     """
     try:
         data = json.loads(raw or "[]") if isinstance(raw, str) else raw
@@ -189,10 +194,24 @@ def read_farm(raw) -> List[dict]:
         if monster_id not in MONSTERS:
             continue
         try:
+            feed_level = int(entry["feed_level"])
+        except (KeyError, TypeError, ValueError):
+            feed_level = FEED_LEVELS if entry.get("fed") else 0
+        feed_level = max(0, min(FEED_LEVELS, feed_level))
+        try:
+            feed_taps = max(0, int(entry["feed_taps"]))
+        except (KeyError, TypeError, ValueError):
+            feed_taps = 0
+        try:
             next_egg_at = int(entry["next_egg_at"])
         except (KeyError, TypeError, ValueError):
-            next_egg_at = next_egg_timestamp()
-        farm.append({"id": monster_id, "next_egg_at": next_egg_at, "fed": bool(entry.get("fed"))})
+            next_egg_at = next_egg_timestamp() if feed_level >= FEED_LEVELS else 0
+        farm.append({
+            "id": monster_id,
+            "next_egg_at": next_egg_at,
+            "feed_level": feed_level,
+            "feed_taps": feed_taps,
+        })
     return farm
 
 
@@ -266,7 +285,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "coins": 0.0,
             "total_earned": 0.0,
             "mnstr": 0.0,
-            "monsters": [{"id": STARTER_MONSTER, "next_egg_at": next_egg_timestamp()}],
+            "monsters": [{"id": STARTER_MONSTER, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0}],
             "active_slot": 0,
             "missions": [],
             "slots": START_SLOTS,
@@ -420,7 +439,7 @@ class FarmState(BaseModel):
     coins: float
     total_earned: float
     mnstr: float = 0.0
-    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "fed"}
+    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps"}
     active_slot: int = 0
     missions: list = []
     slots: int = START_SLOTS
@@ -626,7 +645,7 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
 
     granted = await store.claim_daily(
         user_id, today, day, reward["gram"], reward["mnstr"],
-        reward["monster"], extra_slot, next_egg_timestamp(),
+        reward["monster"], extra_slot,
     )
     if not granted:
         raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
@@ -672,7 +691,6 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
 
     await store.claim_wheel(
         user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot,
-        next_egg_timestamp(),
     )
 
     fresh = await store.get(user_id)

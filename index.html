@@ -142,8 +142,9 @@
         .slot-cell.egg-ready { border-color: var(--gold); animation: hatchGlow 1.1s ease-in-out infinite; }
         .slot-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
         .slot-index { position: absolute; top: 3px; left: 6px; font-size: 9px; font-weight: 900; color: var(--text-muted); }
-        .slot-fed-badge { display: none; position: absolute; top: 2px; right: 4px; font-size: 12px; filter: drop-shadow(0 1px 0 var(--ink)); }
-        .slot-cell.fed .slot-fed-badge { display: block; }
+        .slot-fed-badge { position: absolute; top: 3px; right: 5px; font-size: 9px; font-weight: 900; color: #fff; background: rgba(10, 4, 24, 0.6); padding: 1px 4px; border-radius: 6px; line-height: 1.3; }
+        .slot-cell.fed .slot-fed-badge { font-size: 12px; background: none; padding: 0; }
+        .slot-info-btn { position: absolute; bottom: 11px; right: 5px; font-size: 12px; color: rgba(255, 255, 255, 0.65); z-index: 2; }
         .slot-cell.empty { background: rgba(18, 8, 38, 0.35); border-style: dashed; border-color: rgba(185, 168, 232, 0.35); box-shadow: none; }
         .slot-plus { font-size: 24px; font-weight: 900; color: rgba(185, 168, 232, 0.5); }
         .slot-cell.locked { background: rgba(18, 8, 38, 0.5); border-color: rgba(185, 168, 232, 0.2); box-shadow: none; }
@@ -193,8 +194,9 @@
         .egg-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; max-width: 260px; margin-left: auto; margin-right: auto; }
         .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
         .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
         .egg-cell.locked { flex-direction: column; gap: 4px; background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; }
-        .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 26px; }
+        .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
         .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
         .egg-cell.hatch-ready { animation: hatchGlow 1.1s ease-in-out infinite; }
         .egg-cell.hatch-ready .egg-shape { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 14px rgba(247, 181, 0, 0.6); }
@@ -364,6 +366,7 @@
         .slot-progress { border-color: var(--ink); border-width: 2px; background: rgba(10,12,16,0.7); }
 
         .egg-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
+        .egg-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 16px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
         .egg-cell.locked { background: rgba(25,30,39,0.55); border-color: rgba(169,180,196,0.22); box-shadow: none; }
 
         .navbar { background: #2c333f; border-top: 5px solid var(--ink); }
@@ -615,7 +618,7 @@
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
             <h1>Яйца</h1>
-            <p class="subtitle">Каждое яйцо тапни, чтобы вскрыть — выпадет Meat или новый орёл</p>
+            <p class="subtitle">Сливай одинаковые яйца в старшую редкость, а готовое максимального уровня тапни, чтобы вскрыть</p>
 
             <div class="egg-board" id="eggBoard"></div>
             <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
@@ -839,7 +842,7 @@
             coins: 0,
             totalEarned: 0,
             mnstr: 0,
-            farm: [],            // one slot per eagle: { id, nextEggAt } — nextEggAt in unix seconds
+            farm: [],            // one slot per eagle: { id, nextEggAt, feedLevel, feedTaps }
             activeSlot: 0,       // which slot is shown on stage
             missions: [],        // забранные задания, источник истины — сервер
             slots: 3,
@@ -848,7 +851,7 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, 1 = собранное яйцо
+            eggBoard: Array(9).fill(0),    // 3×3, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
             eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..9)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
@@ -965,8 +968,27 @@
             return Math.min(100, ((total - remaining) / total) * 100);
         }
 
+        function isFullyFed(slot) {
+            return (slot.feedLevel || 0) >= CONFIG.fusion.feed_levels;
+        }
+
         function eggReady(slot) {
-            return nowSeconds() >= slot.nextEggAt;
+            return isFullyFed(slot) && slot.nextEggAt > 0 && nowSeconds() >= slot.nextEggAt;
+        }
+
+        // Progress bar for a slot cell: tap progress while feeding, egg
+        // countdown once fully fed.
+        function slotProgress(slot) {
+            if (!isFullyFed(slot)) {
+                const perLevel = CONFIG.fusion.feed_taps_per_level;
+                return Math.min(100, ((slot.feedTaps || 0) / perLevel) * 100);
+            }
+            return eggProgress(slot);
+        }
+
+        function tierIndexOf(monster) {
+            const idx = CONFIG.tiers.findIndex(t => t.id === monster.tier);
+            return idx === -1 ? 0 : idx;
         }
 
         function formatCountdown(seconds) {
@@ -1002,10 +1024,10 @@
             return state.farm.filter(eggReady).length;
         }
 
-        // Adds a fresh eagle to the farm, opening a new slot if every one is full.
+        // Adds a fresh, unfed eagle to the farm, opening a new slot if every one is full.
         function addFarmSlot(monsterId) {
             if (usedSlots() >= state.slots) state.slots = Math.min(CONFIG.slots.max, state.slots + 1);
-            state.farm.push({ id: monsterId, nextEggAt: nowSeconds() + eggIntervalSeconds() });
+            state.farm.push({ id: monsterId, nextEggAt: 0, feedLevel: 0, feedTaps: 0 });
         }
 
         function tierById(id) {
@@ -1057,13 +1079,16 @@
             if (!monster) {
                 stage.style.display = 'none';
                 document.getElementById('activeMonsterName').innerText = 'Ферма пустая';
-                document.getElementById('activeMonsterSub').innerText = 'Купи орла, чтобы занять слот';
+                document.getElementById('activeMonsterSub').innerText = 'Вскрой яйцо, чтобы поселить орла';
                 return;
             }
 
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
-            const status = eggReady(slot) ? 'яйцо готово — тапни!' : `яйцо через ${formatCountdown(slot.nextEggAt - nowSeconds())}`;
+            let status;
+            if (eggReady(slot)) status = 'яйцо готово — тапни!';
+            else if (isFullyFed(slot)) status = `яйцо через ${formatCountdown(slot.nextEggAt - nowSeconds())}`;
+            else status = `кормление ${slot.feedLevel || 0}/${CONFIG.fusion.feed_levels} — тапни, чтобы покормить`;
             document.getElementById('activeMonsterName').innerText = monster.name;
             document.getElementById('activeMonsterSub').innerText = `Слот ${state.activeSlot + 1} • ${status}`;
             document.getElementById('monsterGlow').style.background = monster.color;
@@ -1081,9 +1106,11 @@
                 const cell = cells[i];
                 if (!cell) return;
                 const bar = cell.querySelector('.slot-progress i');
-                if (bar) bar.style.width = eggProgress(slot) + '%';
+                if (bar) bar.style.width = slotProgress(slot) + '%';
+                const badge = cell.querySelector('.slot-fed-badge');
+                if (badge) badge.innerText = isFullyFed(slot) ? '🍖' : `${slot.feedLevel || 0}/${CONFIG.fusion.feed_levels}`;
                 cell.classList.toggle('egg-ready', eggReady(slot));
-                cell.classList.toggle('fed', !!slot.fed);
+                cell.classList.toggle('fed', isFullyFed(slot));
                 cell.classList.toggle('fusion-selected', i === fusionSelected);
             });
         }
@@ -1108,18 +1135,24 @@
 
                 if (slot) {
                     const monster = MONSTERS[slot.id];
-                    const progress = eggProgress(slot);
+                    const progress = slotProgress(slot);
+                    const fed = isFullyFed(slot);
                     cell.className = 'slot-cell glass-panel'
                         + (i === state.activeSlot ? ' selected' : '')
                         + (eggReady(slot) ? ' egg-ready' : '')
-                        + (slot.fed ? ' fed' : '')
+                        + (fed ? ' fed' : '')
                         + (i === fusionSelected ? ' fusion-selected' : '');
                     cell.style.setProperty('--slot-tint', monster.color);
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span>
-                                      <span class="slot-fed-badge">🍖</span>
+                                      <span class="slot-fed-badge">${fed ? '🍖' : `${slot.feedLevel || 0}/${CONFIG.fusion.feed_levels}`}</span>
                                       <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                                      <span class="slot-info-btn">ⓘ</span>
                                       <span class="slot-progress"><i style="width:${progress}%; background:${monster.color}"></i></span>`;
                     cell.onclick = () => { selectSlot(i); onFarmSlotTap(i); };
+                    cell.querySelector('.slot-info-btn').onclick = (event) => {
+                        event.stopPropagation();
+                        openSlotModal(i);
+                    };
                 } else if (i < state.slots) {
                     cell.className = 'slot-cell empty';
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span><span class="slot-plus">+</span>`;
@@ -1142,20 +1175,35 @@
             return cfg.unlock_base_cost * Math.pow(cfg.unlock_growth, index - 1);
         }
 
+        let eggSelected = -1;
+
+        // Уровень яйца = редкость орла, что его снёс (1 = обычный ... 6 = мифический);
+        // слияние двух одинаковых яиц поднимает уровень на 1 и удваивает добычу Meat.
+        function eggMaxLevel() {
+            return CONFIG.tiers.length;
+        }
+
+        function eggColor(level) {
+            const tier = CONFIG.tiers[level - 1];
+            return tier ? tier.color : '#94a3b8';
+        }
+
         function renderEggBoard() {
             const board = document.getElementById('eggBoard');
             const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
-            const eggFill = tierById('common').color;
-            board.innerHTML = state.eggBoard.map((has, i) => {
+            const maxLevel = eggMaxLevel();
+            board.innerHTML = state.eggBoard.map((level, i) => {
                 if (i >= state.eggBoardUnlocked) {
                     return `<div class="egg-cell locked" data-i="${i}">
                         <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         <span class="nest-cost">${fmtGram(boardUnlockCost(i))} ${coin}</span>
                     </div>`;
                 }
-                if (!has) return `<div class="egg-cell" data-i="${i}"></div>`;
-                return `<div class="egg-cell hatch-ready" data-i="${i}">
-                    <div class="egg-shape" style="background:${eggFill}">🥚</div>
+                if (!level) return `<div class="egg-cell" data-i="${i}"></div>`;
+                const sel = i === eggSelected ? ' selected' : '';
+                const ready = level >= maxLevel ? ' hatch-ready' : '';
+                return `<div class="egg-cell${sel}${ready}" data-i="${i}">
+                    <div class="egg-shape" style="background:${eggColor(level)}">${level}</div>
                 </div>`;
             }).join('');
             board.querySelectorAll('.egg-cell').forEach(cell => {
@@ -1163,7 +1211,8 @@
             });
         }
 
-        // Каждое яйцо на доске уже готово — тап сразу его вскрывает.
+        // Яйцо максимального уровня вскрывается тапом сразу; иначе тап выбирает
+        // яйцо, а тап по второму такого же уровня сливает их в уровень выше.
         function onEggCellClick(i) {
             if (i >= state.eggBoardUnlocked) {
                 if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
@@ -1178,19 +1227,60 @@
                 return;
             }
 
-            if (state.eggBoard[i]) openEgg(i);
+            const board = state.eggBoard;
+            if (board[i] >= eggMaxLevel()) { eggSelected = -1; openEgg(i); return; }
+
+            if (eggSelected === -1) {
+                if (board[i]) { eggSelected = i; renderEggBoard(); }
+                return;
+            }
+            if (eggSelected === i) { eggSelected = -1; renderEggBoard(); return; }
+
+            const from = eggSelected;
+            eggSelected = -1;
+
+            if (!board[i]) {
+                board[i] = board[from];
+                board[from] = 0;
+                renderEggBoard();
+                saveNow();
+                return;
+            }
+            if (board[i] === board[from]) {
+                mergeEggsAt(from, i);
+                renderEggBoard();
+                saveNow();
+                return;
+            }
+            // другой уровень — просто переключаем выбор на него
+            eggSelected = i;
+            renderEggBoard();
+        }
+
+        function mergeEggsAt(from, into) {
+            state.eggBoard[from] = 0;
+            state.eggBoard[into] += 1;
         }
 
         function canHatch() {
             return usedSlots() < state.slots || state.slots < CONFIG.slots.max;
         }
 
-        // Вскрывает яйцо: выпадает либо Meat, либо орёл самой обычной редкости.
-        // Орла некуда селить — яйцо не трогаем, шанс не сгорает.
+        // Базовый разброс Meat, удвоенный за каждый уровень яйца выше первого.
+        function eggMeatReward(level) {
+            const cfg = CONFIG.eggs;
+            const base = cfg.hatch_meat_min + Math.random() * (cfg.hatch_meat_max - cfg.hatch_meat_min);
+            return Math.round(base * Math.pow(2, level - 1));
+        }
+
+        // Вскрывает яйцо: с шансом hatch_common_chance выпадает обычный орёл,
+        // иначе — Meat. Орла некуда селить — яйцо не трогаем, шанс не сгорает.
         function openEgg(i) {
             const cfg = CONFIG.eggs;
-            const isMeat = Math.random() < (cfg.hatch_meat_chance ?? 0.5);
-            if (!isMeat && !canHatch()) {
+            const level = state.eggBoard[i];
+            if (!level) return;
+            const isEagle = Math.random() < (cfg.hatch_common_chance ?? 0.01);
+            if (isEagle && !canHatch()) {
                 toast('На ферме нет места — освободи слот');
                 haptic.notify('warning');
                 renderEggBoard();
@@ -1198,14 +1288,14 @@
             }
 
             state.eggBoard[i] = 0;
-            if (isMeat) {
-                const amount = Number(cfg.hatch_meat_amount) || 0;
-                state.mnstr += amount;
-                toast(`Яйцо принесло ${fmtToken(amount)} Meat!`);
-            } else {
+            if (isEagle) {
                 const monster = rollMonster('common');
                 addFarmSlot(monster.id);
                 toast(`Вылупился ${monster.name}!`);
+            } else {
+                const amount = eggMeatReward(level);
+                state.mnstr += amount;
+                toast(`Яйцо принесло ${fmtToken(amount)} Meat!`);
             }
             haptic.notify('success');
             spawnBurst(14);
@@ -1213,7 +1303,7 @@
             saveNow();
         }
 
-        // Одним нажатием вскрывает все яйца на доске.
+        // Одним нажатием вскрывает все яйца на доске, каждое по своему уровню.
         function openAllEggs() {
             const board = state.eggBoard;
             const cfg = CONFIG.eggs;
@@ -1223,16 +1313,17 @@
             let blocked = false;
 
             for (let i = 0; i < board.length; i++) {
-                if (!board[i]) continue;
-                const isMeat = Math.random() < (cfg.hatch_meat_chance ?? 0.5);
-                if (!isMeat && !canHatch()) { blocked = true; continue; }
+                const level = board[i];
+                if (!level) continue;
+                const isEagle = Math.random() < (cfg.hatch_common_chance ?? 0.01);
+                if (isEagle && !canHatch()) { blocked = true; continue; }
                 board[i] = 0;
                 opened++;
-                if (isMeat) {
-                    meatTotal += Number(cfg.hatch_meat_amount) || 0;
-                } else {
+                if (isEagle) {
                     eagleCount++;
                     addFarmSlot(rollMonster('common').id);
+                } else {
+                    meatTotal += eggMeatReward(level);
                 }
             }
 
@@ -1254,14 +1345,11 @@
             saveNow();
         }
 
-        // Собирает яйцо с готового слота фермы и кладёт его на поле.
+        // Собирает яйцо с готового слота фермы и кладёт его на поле. Уровень
+        // яйца = редкость орла, поэтому редкие орлы сразу несут более ценные яйца.
         function collectEgg(i) {
             const slot = state.farm[i];
-            if (!slot) return;
-            if (!eggReady(slot)) {
-                openSlotModal(i);
-                return;
-            }
+            if (!slot || !eggReady(slot)) return;
             let empty = -1;
             for (let j = 0; j < state.eggBoardUnlocked; j++) {
                 if (!state.eggBoard[j]) { empty = j; break; }
@@ -1271,7 +1359,8 @@
                 haptic.notify('warning');
                 return;
             }
-            state.eggBoard[empty] = 1;
+            const monster = MONSTERS[slot.id];
+            state.eggBoard[empty] = tierIndexOf(monster) + 1;
             slot.nextEggAt = nowSeconds() + eggIntervalSeconds();
             haptic.notify('success');
             spawnBurst(10);
@@ -1280,7 +1369,7 @@
             saveNow();
         }
 
-        /* ---------- объединение орлов: покорми мясом двух одинаковых, тапни оба ---------- */
+        /* ---------- кормление тапом и объединение орлов ---------- */
 
         let fusionSelected = -1;
 
@@ -1293,25 +1382,57 @@
             return !!nextTierOf(monster);
         }
 
+        // Meat за один тап кормления — удваивается с каждой редкостью выше обычной.
         function feedCost(monster) {
             const cfg = CONFIG.fusion;
-            const idx = CONFIG.tiers.findIndex(t => t.id === monster.tier);
-            return cfg.feed_base_cost * Math.pow(cfg.feed_growth, Math.max(0, idx));
+            return cfg.feed_base_cost * Math.pow(cfg.feed_growth, tierIndexOf(monster));
         }
 
-        // Тратит Meat, помечая орла готовым к объединению с таким же сытым орлом.
-        function feedSlot(i) {
+        // Один тап = один платёж Meat и +1 к прогрессу текущего уровня кормления.
+        // На feed_taps_per_level тапов уровень растёт; на feed_levels орёл сыт —
+        // запускается суточный таймер яйца, и орла можно сливать с таким же сытым.
+        function feedTap(i) {
             const slot = state.farm[i];
-            if (!slot || slot.fed) return;
+            if (!slot) return;
             const monster = MONSTERS[slot.id];
-            if (!canFuse(monster)) return;
             const cost = feedCost(monster);
-            if (state.mnstr < cost) { toast('Не хватает Meat'); return; }
+            if (state.mnstr < cost) {
+                toast('Не хватает Meat');
+                haptic.notify('warning');
+                return;
+            }
+
             state.mnstr -= cost;
-            slot.fed = true;
-            haptic.notify('success');
-            renderAll();
-            saveNow();
+            slot.feedTaps = (slot.feedTaps || 0) + 1;
+            haptic.impact('light');
+
+            const cfg = CONFIG.fusion;
+            let leveledUp = false;
+            if (slot.feedTaps >= cfg.feed_taps_per_level) {
+                slot.feedTaps = 0;
+                slot.feedLevel = (slot.feedLevel || 0) + 1;
+                leveledUp = true;
+                if (slot.feedLevel >= cfg.feed_levels) {
+                    slot.nextEggAt = nowSeconds() + eggIntervalSeconds();
+                }
+            }
+
+            renderHeader();
+            updateSlotProgress();
+            if (i === state.activeSlot) renderActiveMonster();
+
+            if (leveledUp) {
+                haptic.notify('success');
+                if (slot.feedLevel >= cfg.feed_levels) {
+                    toast(`${monster.name} откормлен! Яйцо будет через 24 часа`);
+                    spawnBurst(12);
+                } else {
+                    toast(`Уровень кормления ${slot.feedLevel}/${cfg.feed_levels}`);
+                }
+                saveNow();
+            } else {
+                scheduleSave();
+            }
         }
 
         // Тап по сытому орлу без готового яйца - выбор для объединения.
@@ -1328,7 +1449,8 @@
             fuseEagles(from, i);
         }
 
-        // Сливает двух сытых орлов одного вида в одного орла следующей редкости.
+        // Сливает двух откормленных орлов одного вида в одного орла следующей
+        // редкости; новый орёл снова начинает кормление с нуля.
         function fuseEagles(indexA, indexB) {
             const a = state.farm[indexA];
             const monster = MONSTERS[a.id];
@@ -1340,7 +1462,7 @@
             const drop = Math.max(indexA, indexB);
             state.farm.splice(drop, 1);
             state.farm.splice(keep, 1);
-            state.farm.push({ id: nextMonster.id, nextEggAt: nowSeconds() + eggIntervalSeconds(), fed: false });
+            state.farm.push({ id: nextMonster.id, nextEggAt: 0, feedLevel: 0, feedTaps: 0 });
             state.activeSlot = state.farm.length - 1;
 
             toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
@@ -1350,14 +1472,15 @@
             saveNow();
         }
 
-        // Тап по слоту фермы: готовое яйцо забирает приоритет, иначе - выбор
-        // для объединения (если орёл сыт) или окно орла (иначе).
+        // Тап по слоту фермы: готовое яйцо забирает приоритет, потом объединение
+        // (если орёл уже сыт), иначе — тап кормит орла.
         function onFarmSlotTap(i) {
             const slot = state.farm[i];
             if (!slot) return;
-            if (!eggReady(slot) && slot.fed) { onFusionTap(i); return; }
+            if (eggReady(slot)) { collectEgg(i); return; }
+            if (isFullyFed(slot)) { onFusionTap(i); return; }
             if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
-            collectEgg(i);
+            feedTap(i);
         }
 
         function renderEggs() {
@@ -1881,38 +2004,34 @@
             const monster = MONSTERS[slot.id];
             const tier = tierById(monster.tier);
             const ready = eggReady(slot);
-            const progress = eggProgress(slot);
-            const fusable = canFuse(monster);
+            const fed = isFullyFed(slot);
+            const cfg = CONFIG.fusion;
 
-            let fusionHtml = '';
-            if (fusable) {
-                if (slot.fed) {
-                    fusionHtml = `
-                        <div class="stat-row"><span>Готов к объединению</span><b style="color:var(--gold)">🍖 Да</b></div>
-                        <p class="slot-modal-sub">Тапни другого сытого орла «${monster.name}» на ферме, чтобы получить ${nextTierOf(monster).monsters[0].name}</p>
-                    `;
-                } else {
-                    const cost = feedCost(monster);
-                    const afford = state.mnstr >= cost;
-                    fusionHtml = `
-                        <p class="slot-modal-sub">Покорми мясом, чтобы объединить с таким же орлом в ${nextTierOf(monster).monsters[0].name}</p>
-                        <button class="btn-action" style="width:100%; justify-content:center" ${afford ? '' : 'disabled'} onclick="feedSlot(modalSlot); renderSlotModal();">
-                            ${afford ? `🍖 Покормить за ${fmtToken(cost)} Meat` : `Нужно ${fmtToken(cost)} Meat`}
-                        </button>
-                    `;
-                }
+            let progressHtml;
+            if (fed) {
+                progressHtml = `
+                    <div class="stat-row"><span>Яйцо</span><b style="color:var(--accent-coin)">${ready ? 'Готово!' : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
+                    <div class="modal-progress"><i style="width:${eggProgress(slot)}%; background:${monster.color}"></i></div>
+                    <p class="slot-modal-sub">Орёл откормлен — несёт одно яйцо в сутки</p>
+                `;
+            } else {
+                progressHtml = `
+                    <div class="stat-row"><span>Кормление</span><b style="color:var(--gold)">${slot.feedLevel || 0} / ${cfg.feed_levels}</b></div>
+                    <div class="modal-progress"><i style="width:${((slot.feedTaps || 0) / cfg.feed_taps_per_level) * 100}%; background:${monster.color}"></i></div>
+                    <p class="slot-modal-sub">Тапни орла на ферме — тап стоит ${fmtToken(feedCost(monster))} Meat (${slot.feedTaps || 0}/${cfg.feed_taps_per_level} тапов до следующего уровня)</p>
+                `;
             }
+
+            const fusionHtml = (canFuse(monster) && fed)
+                ? `<p class="slot-modal-sub">Тапни другого откормленного орла «${monster.name}» на ферме, чтобы получить ${nextTierOf(monster).monsters[0].name}</p>`
+                : '';
 
             document.getElementById('slotModalBody').innerHTML = `
                 <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                 <h2 style="color:${monster.color}">${monster.name}</h2>
                 <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • слот ${modalSlot + 1}</p>
 
-                <div class="stat-row"><span>Яйцо</span><b style="color:var(--accent-coin)">${ready ? 'Готово!' : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
-
-                <div class="modal-progress"><i style="width:${progress}%; background:${monster.color}"></i></div>
-                <p class="slot-modal-sub">Орёл несёт одно яйцо в сутки</p>
-
+                ${progressHtml}
                 ${fusionHtml}
 
                 <button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">Собрать яйцо</button>
@@ -2469,7 +2588,12 @@
                 coins: state.coins,
                 total_earned: state.totalEarned,
                 mnstr: state.mnstr,
-                monsters: state.farm.map(slot => ({ id: slot.id, next_egg_at: slot.nextEggAt, fed: !!slot.fed })),
+                monsters: state.farm.map(slot => ({
+                    id: slot.id,
+                    next_egg_at: slot.nextEggAt,
+                    feed_level: slot.feedLevel || 0,
+                    feed_taps: slot.feedTaps || 0,
+                })),
                 active_slot: state.activeSlot,
                 missions: state.missions,
                 slots: state.slots,
@@ -2523,12 +2647,13 @@
         }
 
         function newSlot(monsterId) {
-            return { id: monsterId, nextEggAt: nowSeconds() + eggIntervalSeconds() };
+            return { id: monsterId, nextEggAt: 0, feedLevel: 0, feedTaps: 0 };
         }
 
         // Farms saved before slots were separated stored { monsterId: copies };
         // expand those back into one entry per slot. Older saves used a
-        // {"id", "mined"} payout shape - those become fresh egg timers.
+        // {"id", "mined"} payout shape, or the earlier lump-sum {"fed": bool} -
+        // a previously fed eagle keeps that status, mapped to the max feed level.
         function readFarm(raw) {
             let entries = raw;
             if (raw && !Array.isArray(raw) && typeof raw === 'object') {
@@ -2540,11 +2665,18 @@
             return entries.reduce((farm, entry) => {
                 const slot = typeof entry === 'string' ? { id: entry } : entry;
                 if (!slot || !MONSTERS[slot.id]) return farm;
+                const feedLevels = CONFIG.fusion.feed_levels;
+                const rawLevel = slot.feed_level !== undefined ? slot.feed_level : slot.feedLevel;
+                let feedLevel = Number(rawLevel);
+                if (!Number.isFinite(feedLevel)) feedLevel = slot.fed ? feedLevels : 0;
+                feedLevel = Math.max(0, Math.min(feedLevels, feedLevel));
+                const feedTaps = Math.max(0, Number(slot.feed_taps !== undefined ? slot.feed_taps : slot.feedTaps) || 0);
                 const nextEggAt = Number(slot.next_egg_at !== undefined ? slot.next_egg_at : slot.nextEggAt);
                 farm.push({
                     id: slot.id,
-                    nextEggAt: Number.isFinite(nextEggAt) ? nextEggAt : nowSeconds() + eggIntervalSeconds(),
-                    fed: !!slot.fed,
+                    nextEggAt: Number.isFinite(nextEggAt) ? nextEggAt : (feedLevel >= feedLevels ? nowSeconds() + eggIntervalSeconds() : 0),
+                    feedLevel,
+                    feedTaps,
                 });
                 return farm;
             }, []);
@@ -2656,10 +2788,13 @@
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
                 { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 24,
-                  hatch_meat_chance: 0.5, hatch_meat_amount: 50 },
+                  hatch_common_chance: 0.01, hatch_meat_min: 7, hatch_meat_max: 13 },
                 cfg.eggs
             );
-            cfg.fusion = Object.assign({ feed_base_cost: 20, feed_growth: 2 }, cfg.fusion);
+            cfg.fusion = Object.assign(
+                { feed_base_cost: 1, feed_growth: 2, feed_taps_per_level: 10, feed_levels: 7 },
+                cfg.fusion
+            );
             return cfg;
         }
 
