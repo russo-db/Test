@@ -167,12 +167,11 @@
   },
   "daily": {
     "days": 30,
-    "gram_base": 0.1,
-    "gram_growth": 2,
+    "mnstr_step": 0.1,
     "special": [
       {
         "day": 30,
-        "gram": 1
+        "gram": 0.5
       }
     ]
   },

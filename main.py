@@ -46,8 +46,7 @@ FUSION_CFG = CONFIG.get("fusion") or {}
 FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
 DAILY = CONFIG.get("daily") or {}
 DAILY_DAYS = int(DAILY.get("days", 30))
-DAILY_GRAM_BASE = float(DAILY.get("gram_base", 0.1))
-DAILY_GRAM_GROWTH = float(DAILY.get("gram_growth", 2))
+DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
 DAILY_SPECIAL = {int(item["day"]): item for item in DAILY.get("special", [])}
 
 WHEEL = CONFIG.get("wheel") or {}
@@ -223,7 +222,7 @@ def day_index(moment: Optional[float] = None) -> int:
 
 
 def daily_reward(day: int) -> dict:
-    """Награда за day-й день серии: GRAM, удваивающийся с каждым днём, кроме особых дней."""
+    """Награда за day-й день серии: Meat по нарастающей (day × шаг), кроме особых дней."""
     special = DAILY_SPECIAL.get(day)
     if special:
         return {
@@ -231,8 +230,7 @@ def daily_reward(day: int) -> dict:
             "mnstr": float(special.get("mnstr") or 0.0),
             "monster": special.get("monster"),
         }
-    gram = round(DAILY_GRAM_BASE * (DAILY_GRAM_GROWTH ** (day - 1)), 2)
-    return {"gram": gram, "mnstr": 0.0, "monster": None}
+    return {"gram": 0.0, "mnstr": round(day * DAILY_STEP, 2), "monster": None}
 
 
 def daily_state(row: dict) -> dict:
