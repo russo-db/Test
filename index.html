@@ -535,6 +535,7 @@
         }
         .wheel-seg img { width: 16px; height: 16px; object-fit: contain; }
         .wheel-seg-monster img { width: 30px; height: 30px; filter: drop-shadow(0 2px 0 var(--ink)); }
+        .wheel-egg-icon { font-size: 16px; line-height: 1; }
         .wheel-pointer {
             position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
             width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent;
@@ -1754,11 +1755,13 @@
 
         function wheelLabel(seg) {
             if (seg.monster) return tierById(seg.monster).name;
+            if (seg.egg_level) return `${seg.egg_count || 0} яиц`;
             return seg.gram ? fmtGram(seg.gram) : String(seg.mnstr);
         }
 
         function wheelSegColor(seg, i) {
             if (seg.monster) return tierById(seg.monster).color;
+            if (seg.egg_level) return eggColor(seg.egg_level);
             return WHEEL_COLORS[i % WHEEL_COLORS.length];
         }
 
@@ -1773,9 +1776,12 @@
             dial.innerHTML = segments.map((seg, i) => {
                 const mid = i * per + per / 2;
                 const cls = seg.monster ? 'wheel-seg wheel-seg-monster' : 'wheel-seg';
+                const icon = seg.egg_level
+                    ? `<span class="wheel-egg-icon">🥚</span>`
+                    : `<img src="${wheelIcon(seg)}" alt="">`;
                 return `<div class="${cls}" style="transform:rotate(${mid}deg)">
                     <span style="transform:rotate(${-mid}deg)">
-                        <img src="${wheelIcon(seg)}" alt="">${seg.monster ? '' : wheelLabel(seg)}
+                        ${icon}${seg.monster ? '' : wheelLabel(seg)}
                     </span>
                 </div>`;
             }).join('');
@@ -1827,14 +1833,33 @@
             setTimeout(() => {
                 wheelSpinning = false;
                 haptic.notify('success');
-                let label;
-                if (reward.monster) label = MONSTERS[reward.monster].name;
-                else label = reward.gram ? `+${fmtGram(reward.gram)} GRAM` : `+${reward.mnstr} Meat`;
-                toast(`Колесо фортуны: ${label}`);
+                const parts = [];
+                if (reward.monster) parts.push(MONSTERS[reward.monster].name);
+                if (reward.gram) parts.push(`+${fmtGram(reward.gram)} GRAM`);
+                if (reward.mnstr) parts.push(`+${reward.mnstr} Meat`);
+                toast(`Колесо фортуны: ${parts.join(' и ')}`);
                 spawnBurst(reward.monster ? 14 : 10);
                 renderAll();
                 updateWheelButton();
             }, 4200);
+        }
+
+        // Мешок из `count` бросков яйца уровня `level` (та же таблица, что и
+        // ручное вскрытие). Приз колеса выдаёт максимум одного орла за спин —
+        // лишние "орлиные" броски оплачиваются Meat вместо орла.
+        function resolveEggBundle(level, count) {
+            let meatTotal = 0;
+            let monster = null;
+            for (let i = 0; i < count; i++) {
+                const outcome = rollEggOutcome(level);
+                if (outcome.kind === 'eagle') {
+                    if (!monster) monster = rollMonster('common').id;
+                    else meatTotal += eggMeatReward(level);
+                } else {
+                    meatTotal += outcome.amount;
+                }
+            }
+            return { mnstr: meatTotal, monster };
         }
 
         function pickWheelIndexLocal() {
@@ -1853,6 +1878,11 @@
             const index = pickWheelIndexLocal();
             const seg = CONFIG.wheel.segments[index];
             const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0, monster: seg.monster || null };
+            if (seg.egg_level && seg.egg_count) {
+                const bundle = resolveEggBundle(Number(seg.egg_level), Number(seg.egg_count));
+                reward.mnstr += bundle.mnstr;
+                if (bundle.monster && !reward.monster) reward.monster = bundle.monster;
+            }
 
             if (reward.monster && !canHatch()) {
                 toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');

@@ -243,6 +243,27 @@
         "mnstr": 0,
         "monster": "rare",
         "weight": 0.0002
+      },
+      {
+        "gram": 0,
+        "mnstr": 0,
+        "egg_level": 1,
+        "egg_count": 50,
+        "weight": 4
+      },
+      {
+        "gram": 0,
+        "mnstr": 0,
+        "egg_level": 1,
+        "egg_count": 50,
+        "weight": 4
+      },
+      {
+        "gram": 0,
+        "mnstr": 0,
+        "egg_level": 1,
+        "egg_count": 50,
+        "weight": 4
       }
     ]
   },
