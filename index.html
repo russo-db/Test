@@ -191,7 +191,7 @@
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
 
         /* ---------- Яйца: доска собранных яиц ---------- */
-        .egg-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 16px 0; max-width: 360px; margin-left: auto; margin-right: auto; }
+        .egg-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; max-width: 300px; margin-left: auto; margin-right: auto; }
         .egg-cell { position: relative; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.2s ease; }
         .egg-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
         .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
@@ -885,8 +885,8 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
-            eggBoard: Array(25).fill(0),   // 5×5, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
-            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..25)
+            eggBoard: Array(16).fill(0),   // 4×4, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
+            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..16)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0               // версия баланса на сервере
@@ -1241,12 +1241,21 @@
             return tier ? tier.color : '#94a3b8';
         }
 
-        // Доска — 5×5 (25 ячеек). Приводит любые старые сохранения (в т.ч.
-        // прежнюю доску 3×3) к текущему размеру, не теряя уже лежащие яйца.
+        // Доска — 4×4 (16 ячеек). Приводит любые старые сохранения (доску
+        // 3×3 или 5×5) к текущему размеру. Если старая доска была больше и
+        // яйца лежали за пределами новой сетки, переносим их в свободные
+        // ячейки внутри неё вместо того, чтобы просто их терять.
         function normalizeEggBoard(raw) {
-            const board = Array.isArray(raw) ? raw.slice(0, 25) : [];
-            while (board.length < 25) board.push(0);
-            return board.map(v => Math.max(0, Number(v) || 0));
+            const source = Array.isArray(raw) ? raw.map(v => Math.max(0, Number(v) || 0)) : [];
+            const board = source.slice(0, 16);
+            while (board.length < 16) board.push(0);
+            for (let i = 16; i < source.length; i++) {
+                if (!source[i]) continue;
+                const empty = board.indexOf(0);
+                if (empty === -1) break; // доска и так полна — дальше некуда
+                board[empty] = source[i];
+            }
+            return board;
         }
 
         function renderEggBoard() {
@@ -2978,7 +2987,7 @@
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
             state.eggBoard = normalizeEggBoard(data.eggs_board);
-            state.eggBoardUnlocked = Math.max(1, Math.min(25, Number(data.eggs_board_unlocked) || 1));
+            state.eggBoardUnlocked = Math.max(1, Math.min(16, Number(data.eggs_board_unlocked) || 1));
             botUsername = data.bot_username || botUsername;
 
             renderAll();

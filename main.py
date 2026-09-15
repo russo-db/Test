@@ -25,7 +25,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
-EGG_BOARD_SIZE = 25  # 5×5
+EGG_BOARD_SIZE = 16  # 4×4
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -250,11 +250,22 @@ def read_farm(raw) -> List[dict]:
 
 
 def normalize_eggs_board(raw) -> List[int]:
-    """Доска — EGG_BOARD_SIZE ячеек (5×5). Приводит любые старые сохранения
-    (в т.ч. прежнюю доску 3×3) к текущему размеру, не теряя лежащие яйца."""
-    board = list(raw)[:EGG_BOARD_SIZE] if isinstance(raw, list) else []
+    """Доска — EGG_BOARD_SIZE ячеек (4×4). Приводит любые старые сохранения
+    (доску 3×3 или 5×5) к текущему размеру. Если старая доска была больше и
+    яйца лежали за пределами новой сетки, переносим их в свободные ячейки
+    внутри неё вместо того, чтобы просто их терять."""
+    source = [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in raw] if isinstance(raw, list) else []
+    board = source[:EGG_BOARD_SIZE]
     board += [0] * (EGG_BOARD_SIZE - len(board))
-    return [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in board]
+    for value in source[EGG_BOARD_SIZE:]:
+        if not value:
+            continue
+        try:
+            empty = board.index(0)
+        except ValueError:
+            break  # доска и так полна — дальше некуда
+        board[empty] = value
+    return board
 
 
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
@@ -597,7 +608,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
-        "eggs_board_unlocked": int(row.get("eggs_board_unlocked") or 1),
+        "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
         "ton": ton_info(user_id),
@@ -936,6 +947,7 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     if not doc:
         raise HTTPException(status_code=404, detail="Игрок не найден")
     doc["monsters"] = read_farm(doc.get("monsters"))
+    doc["eggs_board"] = normalize_eggs_board(doc.get("eggs_board"))
     return doc
 
 
