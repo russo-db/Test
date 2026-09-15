@@ -418,7 +418,7 @@ async function openPlayerModal(userId) {
 
     document.getElementById('addMonsterBtn').onclick = () => {
         const id = document.getElementById('addMonsterSelect').value;
-        editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: 0, feed_taps: 0 });
+        editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: 1, feed_taps: 0 });
         renderFarmList();
     };
     document.getElementById('playerModalClose').onclick = closePlayerModal;
@@ -436,10 +436,13 @@ function renderFarmList() {
         return;
     }
     list.innerHTML = editingPlayer.monsters.map((m, i) => {
+        const level = m.feed_level || 1;
         const ready = m.next_egg_at && m.next_egg_at * 1000 <= Date.now();
-        const status = m.feed_level >= 7
-            ? (ready ? 'яйцо готово' : 'откормлен, ждёт яйцо')
-            : `откорм ${m.feed_level || 0}/7`;
+        let status;
+        if (level >= 7) status = 'максимум — готов к слиянию';
+        else if (ready) status = `уровень ${level}/7 — яйцо готово`;
+        else if (m.next_egg_at) status = `уровень ${level}/7 — яйцо варится`;
+        else status = `уровень ${level}/7 — кормление ${m.feed_taps || 0}/10`;
         return `
             <div class="farm-row">
                 <span class="grow">#${i} — <b>${m.id}</b> — ${status}</span>

@@ -223,7 +223,7 @@ class SqliteStore:
                     farm = json.loads(row["monsters"] or "[]")
                 except (TypeError, ValueError):
                     farm = []
-                farm.append({"id": monster, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0})
+                farm.append({"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0})
                 fields.append("monsters = ?")
                 values.append(json.dumps(farm))
             if extra_slot:
@@ -258,7 +258,7 @@ class SqliteStore:
                     farm = json.loads(row["monsters"] or "[]") if row else []
                 except (TypeError, ValueError):
                     farm = []
-                farm.append({"id": monster, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0})
+                farm.append({"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0})
                 fields.append("monsters = ?")
                 values.append(json.dumps(farm))
             if extra_slot:
@@ -511,7 +511,7 @@ class MongoStore:
             inc["slots"] = 1
         changes = {"$set": {"daily_last": today, "daily_day": day}, "$inc": inc}
         if monster:
-            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0}}
+            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
 
         result = await self.users.update_one(
             {"_id": user_id, "daily_last": {"$ne": today}}, changes
@@ -527,7 +527,7 @@ class MongoStore:
             inc["slots"] = 1
         changes = {"$inc": inc}
         if monster:
-            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0}}
+            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
 
         await self.users.update_one({"_id": user_id}, changes)
 

@@ -41,7 +41,7 @@ def apply_config(cfg: dict):
     """Пересчитывает все производные от game_config.json глобальные переменные.
     Позволяет админ-панели менять баланс без перезапуска сервера."""
     global CONFIG, MISSIONS, QUALIFY_MNSTR, MONSTERS, STARTER_MONSTER
-    global START_SLOTS, MAX_SLOTS, EGGS_CFG, EGG_INTERVAL_SECONDS
+    global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
     global WHEEL, WHEEL_SEGMENTS, TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
 
@@ -52,8 +52,6 @@ def apply_config(cfg: dict):
     STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
     START_SLOTS = CONFIG["slots"]["start"]
     MAX_SLOTS = CONFIG["slots"]["max"]
-    EGGS_CFG = CONFIG.get("eggs") or {}
-    EGG_INTERVAL_SECONDS = int(float(EGGS_CFG.get("egg_interval_hours", 24)) * 3600)
     FUSION_CFG = CONFIG.get("fusion") or {}
     FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
     DAILY = CONFIG.get("daily") or {}
@@ -193,21 +191,19 @@ async def notify_referrer(referrer: int, friend_name: str):
 
 
 # --- GAME MATH (mirrored by the client in index.html) ---
-def next_egg_timestamp() -> int:
-    return int(time.time()) + EGG_INTERVAL_SECONDS
-
-
 def read_farm(raw) -> List[dict]:
     """The farm is one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps"}.
 
-    Feeding is tap-driven: FEED_LEVELS levels, each needing a batch of taps
-    (client-side cost per tap doubling every rarity tier). Once an eagle
-    reaches the max feed level it starts a 24h timer for its first egg
-    (`next_egg_at`; 0 means no egg pending yet) and can be fused with another
+    Feeding is tap-driven: a fresh eagle starts at level 1. Every
+    feed_taps_per_level taps starts a 24h egg timer (`next_egg_at`; 0 means no
+    egg pending); collecting that egg is what advances feed_level by 1 (see
+    collectEgg client-side). The max level (FEED_LEVELS) is terminal - the
+    eagle no longer eats or lays eggs, only waits to be fused with another
     maxed eagle of the same kind into the next rarity. Farms saved in older
     shapes - {id: copies}, a flat list of ids, the very first {"id", "mined"}
-    payout slots, or the earlier lump-sum {"fed": bool} - are migrated; a
-    previously fed eagle keeps that status, mapped to the max feed level.
+    payout slots, or the lump-sum {"fed": bool} or leveled-by-taps schemes -
+    are migrated; a previously fed/maxed eagle keeps that status, and any
+    stray timer on an already-maxed eagle is cleared since max is terminal.
     """
     try:
         data = json.loads(raw or "[]") if isinstance(raw, str) else raw
@@ -231,8 +227,8 @@ def read_farm(raw) -> List[dict]:
         try:
             feed_level = int(entry["feed_level"])
         except (KeyError, TypeError, ValueError):
-            feed_level = FEED_LEVELS if entry.get("fed") else 0
-        feed_level = max(0, min(FEED_LEVELS, feed_level))
+            feed_level = FEED_LEVELS if entry.get("fed") else 1
+        feed_level = max(1, min(FEED_LEVELS, feed_level))
         try:
             feed_taps = max(0, int(entry["feed_taps"]))
         except (KeyError, TypeError, ValueError):
@@ -240,7 +236,9 @@ def read_farm(raw) -> List[dict]:
         try:
             next_egg_at = int(entry["next_egg_at"])
         except (KeyError, TypeError, ValueError):
-            next_egg_at = next_egg_timestamp() if feed_level >= FEED_LEVELS else 0
+            next_egg_at = 0
+        if feed_level >= FEED_LEVELS:
+            next_egg_at = 0
         farm.append({
             "id": monster_id,
             "next_egg_at": next_egg_at,
@@ -320,7 +318,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "coins": 0.0,
             "total_earned": 0.0,
             "mnstr": 0.0,
-            "monsters": [{"id": STARTER_MONSTER, "next_egg_at": 0, "feed_level": 0, "feed_taps": 0}],
+            "monsters": [{"id": STARTER_MONSTER, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}],
             "active_slot": 0,
             "missions": [],
             "slots": START_SLOTS,
