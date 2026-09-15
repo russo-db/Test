@@ -1503,7 +1503,9 @@
                     monster: special.monster || null
                 };
             }
-            return { gram: 0, mnstr: day * CONFIG.daily.mnstr_step, monster: null };
+            const cfg = CONFIG.daily;
+            const gram = (cfg.gram_base ?? 0.1) * Math.pow(cfg.gram_growth ?? 2, day - 1);
+            return { gram: Math.round(gram * 100) / 100, mnstr: 0, monster: null };
         }
 
         // Серию продолжает только вчерашний вход, пропуск обнуляет её.
@@ -2780,9 +2782,10 @@
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
             cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
-            cfg.daily = Object.assign({ days: 30, mnstr_step: 10, special: [] }, cfg.daily);
+            cfg.daily = Object.assign({ days: 30, gram_base: 0.1, gram_growth: 2, special: [] }, cfg.daily);
             cfg.daily.days = Number(cfg.daily.days) || 30;
-            cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 10;
+            cfg.daily.gram_base = Number(cfg.daily.gram_base) || 0.1;
+            cfg.daily.gram_growth = Number(cfg.daily.gram_growth) || 2;
             if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
             cfg.wheel = Object.assign({ segments: [] }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];

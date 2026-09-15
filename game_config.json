@@ -167,15 +167,12 @@
   },
   "daily": {
     "days": 30,
-    "mnstr_step": 10,
+    "gram_base": 0.1,
+    "gram_growth": 2,
     "special": [
       {
-        "day": 29,
-        "gram": 0.5
-      },
-      {
         "day": 30,
-        "monster": "uncommon"
+        "gram": 1
       }
     ]
   },
