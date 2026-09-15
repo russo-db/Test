@@ -1331,10 +1331,6 @@
             };
         }
 
-        function pct(x) {
-            return `${Math.round(x * 100)}%`;
-        }
-
         let eggModalIndex = -1;
 
         // Перед вскрытием показываем шансы — вскрывает только кнопка в модалке.
@@ -1345,12 +1341,12 @@
             document.getElementById('eggModalBody').innerHTML = `
                 <div class="egg-modal-badge" style="background:${eggColor(level)}">${level}</div>
                 <h2>Яйцо ${level} уровня</h2>
-                <p class="slot-modal-sub">Выпадет что-то одно — шансы взаимоисключающие</p>
+                <p class="slot-modal-sub">Выпадет только один из вариантов</p>
                 ${odds.jackpotMeat ? `
-                    <div class="stat-row"><span>💰 Джекпот, ${odds.jackpotMeat} Meat</span><b style="color:var(--accent-coin)">${pct(odds.jackpotChance)}</b></div>
+                    <div class="stat-row"><span>💰 Джекпот, ${odds.jackpotMeat} Meat</span></div>
                 ` : ''}
-                <div class="stat-row"><span>🦅 Обычный орёл</span><b style="color:var(--gold)">${pct(odds.commonChance)}</b></div>
-                <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span><b style="color:var(--accent-token)">${pct(odds.meatChance)}</b></div>
+                <div class="stat-row"><span>🦅 Обычный орёл</span></div>
+                <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span></div>
                 <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">Вскрыть яйцо</button>
                 <button class="btn-action roll-close" onclick="closeEggModal()">Отмена</button>
             `;
