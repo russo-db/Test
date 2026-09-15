@@ -1892,6 +1892,16 @@
                 if (reward.monster) parts.push(MONSTERS[reward.monster].name);
                 if (reward.gram) parts.push(`+${fmtGram(reward.gram)} GRAM`);
                 if (reward.mnstr) parts.push(`+${reward.mnstr} Meat`);
+                if (reward.eggLevel) {
+                    const placed = reward.eggsPlaced || 0;
+                    const requested = reward.eggsRequested || 0;
+                    if (placed > 0) {
+                        parts.push(`${placed} ${plural(placed, 'яйцо', 'яйца', 'яиц')} ${reward.eggLevel} ур. на доску`);
+                    }
+                    if (placed < requested) {
+                        parts.push(placed > 0 ? 'остальные не поместились' : 'яйца не поместились — доска полна');
+                    }
+                }
                 toast(`Колесо фортуны: ${parts.join(' и ')}`);
                 spawnBurst(reward.monster ? 14 : 10);
                 renderAll();
@@ -1899,22 +1909,20 @@
             }, 4200);
         }
 
-        // Мешок из `count` бросков яйца уровня `level` (та же таблица, что и
-        // ручное вскрытие). Приз колеса выдаёт максимум одного орла за спин —
-        // лишние "орлиные" броски оплачиваются Meat вместо орла.
-        function resolveEggBundle(level, count) {
-            let meatTotal = 0;
-            let monster = null;
-            for (let i = 0; i < count; i++) {
-                const outcome = rollEggOutcome(level);
-                if (outcome.kind === 'eagle') {
-                    if (!monster) monster = rollMonster('common').id;
-                    else meatTotal += eggMeatReward(level);
-                } else {
-                    meatTotal += outcome.amount;
+        // Кладёт до `count` яиц уровня `level` в свободные разблокированные
+        // ячейки доски яиц — они не вскрываются сразу, а ждут игрока во
+        // вкладке «Яйца». В отличие от слотов фермы доска не резинится, так
+        // что если места не хватает на все — лишние просто не помещаются
+        // (возвращает, сколько реально положили).
+        function grantEggsFromWheel(level, count) {
+            let placed = 0;
+            for (let i = 0; i < state.eggBoardUnlocked && placed < count; i++) {
+                if (!state.eggBoard[i]) {
+                    state.eggBoard[i] = level;
+                    placed++;
                 }
             }
-            return { mnstr: meatTotal, monster };
+            return placed;
         }
 
         function pickWheelIndexLocal() {
@@ -1933,11 +1941,6 @@
             const index = pickWheelIndexLocal();
             const seg = CONFIG.wheel.segments[index];
             const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0, monster: seg.monster || null };
-            if (seg.egg_level && seg.egg_count) {
-                const bundle = resolveEggBundle(Number(seg.egg_level), Number(seg.egg_count));
-                reward.mnstr += bundle.mnstr;
-                if (bundle.monster && !reward.monster) reward.monster = bundle.monster;
-            }
 
             if (reward.monster && !canHatch()) {
                 toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');
@@ -1948,6 +1951,11 @@
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
             if (reward.monster) addFarmSlot(reward.monster);
+            if (seg.egg_level && seg.egg_count) {
+                reward.eggLevel = Number(seg.egg_level);
+                reward.eggsRequested = Number(seg.egg_count);
+                reward.eggsPlaced = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
+            }
             saveNow();
             finishWheelSpin(index, reward);
         }
@@ -1983,7 +1991,15 @@
                 if (data.monsters) state.farm = readFarm(data.monsters);
                 if (data.slots) state.slots = data.slots;
                 if (typeof data.ops === 'number') state.ops = data.ops;
-                finishWheelSpin(data.segment, data.reward);
+
+                const reward = data.reward;
+                if (reward.egg_level && reward.egg_count) {
+                    reward.eggLevel = Number(reward.egg_level);
+                    reward.eggsRequested = Number(reward.egg_count);
+                    reward.eggsPlaced = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
+                    saveNow(); // доска яиц — чисто клиентское состояние, сервер её не сохраняет
+                }
+                finishWheelSpin(data.segment, reward);
             } catch (error) {
                 wheelSpinning = false;
                 toast('Сервер недоступен');

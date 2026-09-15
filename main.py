@@ -285,57 +285,21 @@ def daily_state(row: dict) -> dict:
 
 
 # --- КОЛЕСО ФОРТУНЫ ---
-def _resolve_egg_bundle(level: int, count: int) -> dict:
-    """Мешок из `count` бросков яйца уровня `level` (та же таблица, что и
-    ручное вскрытие — mirrored from index.html's rollEggOutcome/eggMeatReward).
-    Приз колеса может выдать только одного орла за спин, поэтому орёл
-    выпадает не более одного раза — остальные такие же броски оплачиваются
-    Meat вместо орла."""
-    eggs_cfg = CONFIG.get("eggs") or {}
-    chance_by_level = eggs_cfg.get("hatch_common_chance_by_level") or []
-    common_chance = (
-        float(chance_by_level[level - 1])
-        if len(chance_by_level) >= level
-        else float(eggs_cfg.get("hatch_common_chance", 0.01))
-    )
-    jackpot_by_level = eggs_cfg.get("hatch_jackpot_meat_by_level") or []
-    jackpot_meat = float(jackpot_by_level[level - 1]) if len(jackpot_by_level) >= level else 0.0
-    jackpot_chance = float(eggs_cfg.get("hatch_jackpot_chance", 0.0)) if jackpot_meat else 0.0
-    meat_min = float(eggs_cfg.get("hatch_meat_min", 7))
-    meat_max = float(eggs_cfg.get("hatch_meat_max", 13))
-
-    meat_total = 0.0
-    monster_id = None
-    for _ in range(count):
-        roll = random.random()
-        if jackpot_meat and roll < jackpot_chance:
-            meat_total += jackpot_meat
-            continue
-        if roll < jackpot_chance + common_chance:
-            if monster_id is None:
-                monster_id = "common"
-                continue
-        meat_total += round((meat_min + random.random() * (meat_max - meat_min)) * (2 ** (level - 1)))
-
-    return {"mnstr": meat_total, "monster": monster_id}
-
-
 def _wheel_reward(index: int) -> dict:
+    """gram/mnstr/monster сервер начисляет сам. egg_level/egg_count — не
+    деньги и не орёл: это яйца, которые нужно положить на доску яиц, а её
+    состояние (eggs_board) целиком клиентское (как и вскрытие яиц вручную),
+    поэтому сервер их не резолвит — просто передаёт клиенту, чтобы он сам
+    разложил их по свободным ячейкам и сохранил."""
     seg = WHEEL_SEGMENTS[index]
-    reward = {
+    return {
         "index": index,
         "gram": float(seg.get("gram") or 0),
         "mnstr": float(seg.get("mnstr") or 0),
         "monster": seg.get("monster"),
+        "egg_level": seg.get("egg_level"),
+        "egg_count": seg.get("egg_count"),
     }
-    egg_level = seg.get("egg_level")
-    egg_count = seg.get("egg_count")
-    if egg_level and egg_count:
-        bundle = _resolve_egg_bundle(int(egg_level), int(egg_count))
-        reward["mnstr"] += bundle["mnstr"]
-        if bundle["monster"] and not reward["monster"]:
-            reward["monster"] = bundle["monster"]
-    return reward
 
 
 def wheel_pick() -> dict:
@@ -799,7 +763,10 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
     return {
         "status": "success",
         "segment": reward["index"],
-        "reward": {"gram": reward["gram"], "mnstr": reward["mnstr"], "monster": reward["monster"]},
+        "reward": {
+            "gram": reward["gram"], "mnstr": reward["mnstr"], "monster": reward["monster"],
+            "egg_level": reward["egg_level"], "egg_count": reward["egg_count"],
+        },
         "coins": float(fresh.get("coins") or 0.0),
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
