@@ -571,8 +571,7 @@
             border: 4px solid var(--ink); box-shadow: 0 3px 0 var(--ink); z-index: 4;
             display: flex; align-items: center; justify-content: center; font-size: 15px;
         }
-        .fusion-chance { text-align: center; font-size: 13px; color: var(--text-muted); font-weight: 800; margin-bottom: 10px; }
-        .fusion-actions { display: flex; flex-direction: column; gap: 8px; }
+        .fusion-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
         .fusion-actions .btn-primary, .fusion-actions .btn-action { width: 100%; justify-content: center; }
 
     </style>
@@ -1644,12 +1643,6 @@
             return Array.isArray(arr) && arr[idx] !== undefined ? Number(arr[idx]) : 0;
         }
 
-        function pctLabel(x) {
-            const pct = x * 100;
-            if (pct > 0 && pct < 0.01) return '<0.01%';
-            return `${Math.round(pct * 100) / 100}%`;
-        }
-
         function openFusionModal(a, b) {
             fusionModalA = a;
             fusionModalB = b;
@@ -1697,7 +1690,6 @@
             const nextMonster = nextTier ? MONSTERS[nextTier.monsters[0].id] : null;
             const cfg = CONFIG.fusion;
             const baseChance = mergeChance(monster);
-            const gramChance = Math.min(1, baseChance * Number(cfg.merge_gram_multiplier || 2));
 
             document.getElementById('fusionModalBody').innerHTML = `
                 <h2>Слияние орлов</h2>
@@ -1712,10 +1704,9 @@
                     <div class="fusion-dial" id="fusionDial"></div>
                     <div class="fusion-hub">🥚</div>
                 </div>
-                <p class="fusion-chance">Шанс слияния: ${pctLabel(baseChance)}</p>
                 <div class="fusion-actions">
                     <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">Попытка за ${fmtToken(cfg.merge_cost_meat)} Meat</button>
-                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">Попытка за ${fmtGram(cfg.merge_cost_gram)} GRAM — шанс ×${cfg.merge_gram_multiplier} (${pctLabel(gramChance)})</button>
+                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">Попытка за ${fmtGram(cfg.merge_cost_gram)} GRAM — шанс ×${cfg.merge_gram_multiplier}</button>
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">Закрыть</button>
                 </div>
             `;
