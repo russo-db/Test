@@ -616,7 +616,7 @@
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
             <h1>Яйца</h1>
-            <p class="subtitle">Сливай одинаковые яйца в старшую редкость, а готовое максимального уровня тапни, чтобы вскрыть</p>
+            <p class="subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для слияния с таким же в старшую редкость</p>
 
             <div class="egg-board" id="eggBoard"></div>
             <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
@@ -1238,8 +1238,12 @@
             });
         }
 
-        // Яйцо максимального уровня вскрывается тапом сразу; иначе тап выбирает
-        // яйцо, а тап по второму такого же уровня сливает их в уровень выше.
+        // Тап по любому яйцу открывает окно с исходами и кнопкой «Вскрыть» —
+        // как раньше работало только с яйцом максимального уровня. Слияние
+        // теперь запускается кнопкой «Выбрать для слияния» внутри этого же
+        // окна: она помечает яйцо выбранным, и тап по второму такого же
+        // уровня сливает их в уровень выше (тап по пустой ячейке — переносит,
+        // по яйцу другого уровня — просто открывает окно уже для него).
         function onEggCellClick(i) {
             if (i >= state.eggBoardUnlocked) {
                 if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
@@ -1255,32 +1259,35 @@
             }
 
             const board = state.eggBoard;
-            if (board[i] >= eggMaxLevel()) { eggSelected = -1; openEggModal(i); return; }
 
-            if (eggSelected === -1) {
-                if (board[i]) { eggSelected = i; renderEggBoard(); }
-                return;
-            }
-            if (eggSelected === i) { eggSelected = -1; renderEggBoard(); return; }
-
-            const from = eggSelected;
-            eggSelected = -1;
-
-            if (!board[i]) {
-                board[i] = board[from];
-                board[from] = 0;
+            if (eggSelected !== -1) {
+                const from = eggSelected;
+                eggSelected = -1;
+                if (from === i) { renderEggBoard(); return; } // повторный тап снимает выбор
+                if (!board[i]) {
+                    board[i] = board[from];
+                    board[from] = 0;
+                    renderEggBoard();
+                    saveNow();
+                    return;
+                }
+                if (board[i] === board[from]) {
+                    mergeEggsAt(from, i);
+                    renderEggBoard();
+                    saveNow();
+                    return;
+                }
                 renderEggBoard();
-                saveNow();
-                return;
+                // другой уровень — выбор снят, откроем окно по вновь нажатому яйцу
             }
-            if (board[i] === board[from]) {
-                mergeEggsAt(from, i);
-                renderEggBoard();
-                saveNow();
-                return;
-            }
-            // другой уровень — просто переключаем выбор на него
+
+            if (!board[i]) return;
+            openEggModal(i);
+        }
+
+        function selectEggForMerge(i) {
             eggSelected = i;
+            closeEggModal();
             renderEggBoard();
         }
 
@@ -1342,10 +1349,13 @@
         let eggModalIndex = -1;
 
         // Перед вскрытием показываем шансы — вскрывает только кнопка в модалке.
+        // Работает для любого уровня; ниже максимума в окне есть ещё и выбор
+        // для слияния с таким же яйцом вместо немедленного вскрытия.
         function openEggModal(i) {
             eggModalIndex = i;
             const level = state.eggBoard[i];
             const odds = eggOdds(level);
+            const canMerge = level < eggMaxLevel();
             document.getElementById('eggModalBody').innerHTML = `
                 <div class="egg-modal-badge" style="background:${eggColor(level)}">${level}</div>
                 <h2>Яйцо ${level} уровня</h2>
@@ -1356,6 +1366,7 @@
                 <div class="stat-row"><span>🦅 Обычный орёл</span></div>
                 <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span></div>
                 <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">Вскрыть яйцо</button>
+                ${canMerge ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="selectEggForMerge(${i})">Выбрать для слияния</button>` : ''}
                 <button class="btn-action roll-close" onclick="closeEggModal()">Отмена</button>
             `;
             document.getElementById('eggModal').classList.add('open');
