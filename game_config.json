@@ -270,7 +270,7 @@
   "eggs": {
     "unlock_base_cost": 0.5,
     "unlock_growth": 1.6,
-    "egg_interval_hours": 24,
+    "egg_interval_hours": 0.016666666666666666,
     "hatch_common_chance": 0.01,
     "hatch_common_chance_by_level": [0.15, 0.17, 0.17, 0.18, 0.19, 0.20],
     "hatch_meat_min": 7,
@@ -282,6 +282,10 @@
     "feed_base_cost": 1,
     "feed_growth": 2,
     "feed_taps_per_level": 10,
-    "feed_levels": 7
+    "feed_levels": 7,
+    "merge_chance_by_tier": [0.2, 0.07, 0.03, 0.01, 0.0001],
+    "merge_cost_meat": 75,
+    "merge_cost_gram": 1,
+    "merge_gram_multiplier": 2
   }
 }
