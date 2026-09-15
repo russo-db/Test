@@ -197,6 +197,7 @@
         .egg-cell.selected { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
         .egg-cell.locked { flex-direction: column; gap: 4px; background: rgba(25, 30, 39, 0.55); border-color: rgba(169, 180, 196, 0.22); box-shadow: none; }
         .egg-shape { width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
+        .egg-modal-badge { width: 68px; height: 76px; margin: 0 auto 14px; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900; color: #fff; text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
         .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
         .egg-cell.hatch-ready { animation: hatchGlow 1.1s ease-in-out infinite; }
         .egg-cell.hatch-ready .egg-shape { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 14px rgba(247, 181, 0, 0.6); }
@@ -799,6 +800,11 @@
         <div class="modal-box glass-panel" id="slotModalBody"></div>
     </div>
 
+    <!-- EGG PRE-OPEN INFO MODAL -->
+    <div class="modal-backdrop" id="eggModal" onclick="if (event.target === this) closeEggModal()">
+        <div class="modal-box glass-panel" id="eggModalBody"></div>
+    </div>
+
     <div id="toast"></div>
 
     <div id="boot">
@@ -1241,7 +1247,7 @@
             }
 
             const board = state.eggBoard;
-            if (board[i] >= eggMaxLevel()) { eggSelected = -1; openEgg(i); return; }
+            if (board[i] >= eggMaxLevel()) { eggSelected = -1; openEggModal(i); return; }
 
             if (eggSelected === -1) {
                 if (board[i]) { eggSelected = i; renderEggBoard(); }
@@ -1308,6 +1314,59 @@
             if (roll < jackpotChance) return { kind: 'jackpot', amount: jackpotMeat };
             if (roll < jackpotChance + commonChance) return { kind: 'eagle' };
             return { kind: 'meat', amount: eggMeatReward(level) };
+        }
+
+        // Шансы исходов для яйца уровня level — общие для превью и подсказок.
+        function eggOdds(level) {
+            const cfg = CONFIG.eggs;
+            const jackpotMeat = hatchJackpotMeat(level);
+            const jackpotChance = jackpotMeat ? (cfg.hatch_jackpot_chance ?? 0) : 0;
+            const commonChance = hatchCommonChance(level);
+            const meatChance = Math.max(0, 1 - jackpotChance - commonChance);
+            const scale = Math.pow(2, level - 1);
+            return {
+                jackpotMeat, jackpotChance, commonChance, meatChance,
+                meatMin: Math.round(cfg.hatch_meat_min * scale),
+                meatMax: Math.round(cfg.hatch_meat_max * scale),
+            };
+        }
+
+        function pct(x) {
+            return `${Math.round(x * 100)}%`;
+        }
+
+        let eggModalIndex = -1;
+
+        // Перед вскрытием показываем шансы — вскрывает только кнопка в модалке.
+        function openEggModal(i) {
+            eggModalIndex = i;
+            const level = state.eggBoard[i];
+            const odds = eggOdds(level);
+            document.getElementById('eggModalBody').innerHTML = `
+                <div class="egg-modal-badge" style="background:${eggColor(level)}">${level}</div>
+                <h2>Яйцо ${level} уровня</h2>
+                <p class="slot-modal-sub">Выпадет что-то одно — шансы взаимоисключающие</p>
+                ${odds.jackpotMeat ? `
+                    <div class="stat-row"><span>💰 Джекпот, ${odds.jackpotMeat} Meat</span><b style="color:var(--accent-coin)">${pct(odds.jackpotChance)}</b></div>
+                ` : ''}
+                <div class="stat-row"><span>🦅 Обычный орёл</span><b style="color:var(--gold)">${pct(odds.commonChance)}</b></div>
+                <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span><b style="color:var(--accent-token)">${pct(odds.meatChance)}</b></div>
+                <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">Вскрыть яйцо</button>
+                <button class="btn-action roll-close" onclick="closeEggModal()">Отмена</button>
+            `;
+            document.getElementById('eggModal').classList.add('open');
+        }
+
+        function closeEggModal() {
+            eggModalIndex = -1;
+            document.getElementById('eggModal').classList.remove('open');
+        }
+
+        function confirmOpenEgg() {
+            const i = eggModalIndex;
+            closeEggModal();
+            if (i === -1) return;
+            openEgg(i);
         }
 
         // Вскрывает яйцо по таблице уровня: джекпот / обычный орёл / Meat.
