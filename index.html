@@ -442,7 +442,6 @@
         .daily-scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; margin: 0 -6px; padding: 0 6px 6px 6px; }
         .daily-sub { font-size: 13px; font-weight: 800; color: var(--text-muted); margin-bottom: 4px; }
         .daily-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 14px 0 0 0; }
-        .daily-grid.special { grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 9px; }
         .daily-cell {
             position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
             padding: 6px 3px 6px 3px; border-radius: 14px; min-width: 0;
@@ -454,9 +453,6 @@
         .daily-cell .d-amount { font-size: 10px; font-weight: 900; color: var(--accent-token); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .daily-cell.gram .d-amount { color: var(--accent-coin); }
         .daily-cell.monster .d-amount { color: var(--gold); }
-        .daily-grid.special .daily-cell { padding: 10px 6px; gap: 4px; }
-        .daily-grid.special .daily-cell img { width: 42px; height: 42px; }
-        .daily-grid.special .daily-cell .d-amount { font-size: 13px; }
         .daily-cell.done { opacity: 0.55; }
         .daily-cell.done::after {
             content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -1607,9 +1603,6 @@
         function renderDaily() {
             const status = dailyStatus();
             const days = Array.from({ length: status.days }, (_, i) => i + 1);
-            const specialDays = new Set(CONFIG.daily.special.map(item => Number(item.day)));
-            const plain = days.filter(day => !specialDays.has(day));
-            const special = days.filter(day => specialDays.has(day));
             const reward = dailyReward(status.day);
 
             document.getElementById('dailyBody').innerHTML = `
@@ -1619,8 +1612,7 @@
                     : `Награда за день ${status.claimed} забрана`}</p>
                 <p class="daily-sub">Серия: ${status.claimed} ${plural(status.claimed, 'день', 'дня', 'дней')} подряд</p>
                 <div class="daily-scroll">
-                    <div class="daily-grid">${plain.map(day => dailyCell(day, status)).join('')}</div>
-                    ${special.length ? `<div class="daily-grid special">${special.map(day => dailyCell(day, status)).join('')}</div>` : ''}
+                    <div class="daily-grid">${days.map(day => dailyCell(day, status)).join('')}</div>
                 </div>
                 <div class="daily-actions">
                     <button class="btn-primary daily-claim" id="dailyClaimBtn" ${status.ready ? '' : 'disabled'}>
