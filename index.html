@@ -554,23 +554,6 @@
         .fusion-pair img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 3px 0 var(--ink)); }
         .fusion-plus { font-size: 20px; font-weight: 900; color: var(--text-muted); }
         .fusion-arrow { font-size: 18px; color: var(--gold); }
-        .fusion-stage { position: relative; width: 150px; height: 150px; margin: 6px auto 14px auto; }
-        .fusion-dial {
-            position: absolute; inset: 0; border-radius: 50%;
-            border: 5px solid var(--ink); box-shadow: 0 6px 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, 0.2);
-            transition: transform 3.2s cubic-bezier(0.15, 0.65, 0.1, 1);
-        }
-        .fusion-pointer {
-            position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
-            width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent;
-            border-top: 15px solid var(--gold); filter: drop-shadow(0 2px 0 var(--ink)); z-index: 5;
-        }
-        .fusion-hub {
-            position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%);
-            border-radius: 50%; background: linear-gradient(180deg, var(--gold-lt), #e08c00);
-            border: 4px solid var(--ink); box-shadow: 0 3px 0 var(--ink); z-index: 4;
-            display: flex; align-items: center; justify-content: center; font-size: 15px;
-        }
         .fusion-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
         .fusion-actions .btn-primary, .fusion-actions .btn-action { width: 100%; justify-content: center; }
 
@@ -1629,25 +1612,51 @@
             saveNow();
         }
 
-        /* ---------- рулетка улучшения: платная попытка с шансом успеха ---------- */
+        /* ---------- рулетка улучшения: платная попытка, 7 призов равной ширины ---------- */
 
         let fusionModalA = -1;
         let fusionModalB = -1;
         let fusionSpinning = false;
-        let fusionDeg = 0;
+        let fusionWheelDeg = 0;
 
-        // Шанс улучшения зависит от текущей (не следующей) редкости орла.
-        function mergeChance(monster) {
-            const arr = CONFIG.fusion.merge_chance_by_tier;
+        // Таблица призов зависит от текущей (не следующей) редкости орла.
+        function fusionSegments(monster) {
+            const arr = CONFIG.fusion.roulette_by_tier;
             const idx = tierIndexOf(monster);
-            return Array.isArray(arr) && arr[idx] !== undefined ? Number(arr[idx]) : 0;
+            return Array.isArray(arr) && Array.isArray(arr[idx]) ? arr[idx] : [];
         }
 
-        // Зелёный сектор на рулетке рисуется чуть больше настоящего шанса —
-        // сам бросок (Math.random() < chance) по-прежнему честно считается
-        // от реального шанса, эта прибавка только визуальная.
-        function visualMergeChance(chance) {
-            return Math.min(0.95, chance + 0.08);
+        function fusionSegColor(seg, i) {
+            if (seg.type === 'eagle') return tierById(seg.tier).color;
+            if (seg.type === 'success') return '#f7b500';
+            return WHEEL_COLORS[i % WHEEL_COLORS.length];
+        }
+
+        function fusionSegIcon(seg, monster, nextMonster) {
+            if (seg.type === 'eagle') {
+                const tier = tierById(seg.tier);
+                return framePath((MONSTERS[(tier.monsters[0] || {}).id] || monster).sprite, 0);
+            }
+            if (seg.type === 'success') return nextMonster ? framePath(nextMonster.sprite, 0) : 'assets/mnstr.png';
+            return 'assets/mnstr.png';
+        }
+
+        function fusionSegLabel(seg) {
+            if (seg.type === 'eagle') return tierById(seg.tier).name;
+            if (seg.type === 'success') return 'Улучшение';
+            return `${seg.amount} Meat`;
+        }
+
+        // Все сектора рисуются одинаковой ширины (360°/7) — размер сектора не
+        // намекает на его реальный шанс, а сами шансы нигде не показываются.
+        function pickFusionIndex(segments) {
+            const total = segments.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+            let roll = Math.random() * total;
+            for (let i = 0; i < segments.length; i++) {
+                roll -= Number(segments[i].weight) || 0;
+                if (roll <= 0) return i;
+            }
+            return segments.length - 1;
         }
 
         function openFusionModal(a, b) {
@@ -1666,26 +1675,34 @@
             renderSlotGrid();
         }
 
-        // Зелёный сектор = шанс успеха именно этой попытки (растёт вдвое за GRAM).
-        function renderFusionDial(chance) {
-            const dial = document.getElementById('fusionDial');
-            if (!dial) return;
-            const successDeg = Math.min(360, Math.max(0, chance * 360));
-            dial.style.background = `conic-gradient(#4ade80 0deg ${successDeg}deg, #ef4444 ${successDeg}deg 360deg)`;
+        function renderFusionWheelDial(monster, nextMonster) {
+            const segments = fusionSegments(monster);
+            const dial = document.getElementById('fusionWheelDial');
+            if (!dial || !segments.length) return;
+            const per = 360 / segments.length;
+            dial.style.background = `conic-gradient(${segments.map((seg, i) =>
+                `${fusionSegColor(seg, i)} ${i * per}deg ${(i + 1) * per}deg`
+            ).join(', ')})`;
+            dial.innerHTML = segments.map((seg, i) => {
+                const mid = i * per + per / 2;
+                return `<div class="wheel-seg" style="transform:rotate(${mid}deg)">
+                    <span style="transform:rotate(${-mid}deg)">
+                        <img src="${fusionSegIcon(seg, monster, nextMonster)}" alt="">${fusionSegLabel(seg)}
+                    </span>
+                </div>`;
+            }).join('');
         }
 
-        function spinFusionDialTo(success, chance) {
-            const dial = document.getElementById('fusionDial');
-            const successDeg = Math.min(360, Math.max(0, chance * 360));
-            const targetMid = success
-                ? (successDeg > 0 ? Math.random() * successDeg : 0)
-                : (successDeg < 360 ? successDeg + Math.random() * (360 - successDeg) : 359.9);
-            const target = (360 - targetMid + 360) % 360;
-            const base = Math.floor(fusionDeg / 360) * 360;
-            let next = base + 4 * 360 + target;
-            if (next <= fusionDeg) next += 360;
-            fusionDeg = next;
-            dial.style.transform = `rotate(${fusionDeg}deg)`;
+        function spinFusionWheelTo(index, segmentsLength) {
+            const dial = document.getElementById('fusionWheelDial');
+            const per = 360 / segmentsLength;
+            const mid = index * per + per / 2;
+            const target = (360 - mid + 360) % 360;
+            const base = Math.floor(fusionWheelDeg / 360) * 360;
+            let next = base + 5 * 360 + target;
+            if (next <= fusionWheelDeg) next += 360;
+            fusionWheelDeg = next;
+            dial.style.transform = `rotate(${fusionWheelDeg}deg)`;
         }
 
         function renderFusionModal() {
@@ -1696,7 +1713,6 @@
             const nextTier = nextTierOf(monster);
             const nextMonster = nextTier ? MONSTERS[nextTier.monsters[0].id] : null;
             const cfg = CONFIG.fusion;
-            const baseChance = mergeChance(monster);
 
             document.getElementById('fusionModalBody').innerHTML = `
                 <h2>Улучшение орлов</h2>
@@ -1706,10 +1722,10 @@
                     <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     ${nextMonster ? `<span class="fusion-arrow">➜</span><img src="${framePath(nextMonster.sprite, 0)}" alt="${nextMonster.name}">` : ''}
                 </div>
-                <div class="fusion-stage">
-                    <div class="fusion-pointer"></div>
-                    <div class="fusion-dial" id="fusionDial"></div>
-                    <div class="fusion-hub">🥚</div>
+                <div class="wheel-stage">
+                    <div class="wheel-pointer"></div>
+                    <div class="wheel-dial" id="fusionWheelDial"></div>
+                    <div class="wheel-hub"></div>
                 </div>
                 <div class="fusion-actions">
                     <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">Попытка за ${fmtToken(cfg.merge_cost_meat)} Meat</button>
@@ -1717,11 +1733,13 @@
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">Закрыть</button>
                 </div>
             `;
-            renderFusionDial(visualMergeChance(baseChance));
+            renderFusionWheelDial(monster, nextMonster);
         }
 
-        // Одна платная попытка улучшения. Успех сливает орлов; неудача не трогает
-        // орлов — платёж сгорает, попытку можно повторить сразу же.
+        // Одна платная попытка — приз определяет рулетка (сектора равной
+        // ширины, шансы нигде не показываются). Улучшение орла — лишь один из
+        // призов; остальные — утешительный Meat или бонусный орёл, исходная
+        // пара орлов при этом остаётся на месте.
         function attemptFusion(useGram) {
             if (fusionSpinning) return;
             const a = state.farm[fusionModalA];
@@ -1737,34 +1755,49 @@
                 toast('Не хватает Meat'); haptic.notify('warning'); return;
             }
 
-            const chance = mergeChance(monster);
+            const segments = fusionSegments(monster);
+            if (!segments.length) return;
+            const index = pickFusionIndex(segments);
+            const outcome = segments[index];
+
+            if (outcome.type === 'eagle' && !canHatch()) {
+                toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');
+                haptic.notify('warning');
+                return;
+            }
 
             if (useGram) state.coins -= cost; else state.mnstr -= cost;
             renderHeader();
 
-            const success = Math.random() < chance;
             fusionSpinning = true;
             ['fusionMeatBtn', 'fusionGramBtn', 'fusionCancelBtn'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = true;
             });
-            const visualChance = visualMergeChance(chance);
-            renderFusionDial(visualChance);
-            spinFusionDialTo(success, visualChance);
+            spinFusionWheelTo(index, segments.length);
             haptic.impact('light');
 
             setTimeout(() => {
                 fusionSpinning = false;
-                if (success) {
+                if (outcome.type === 'success') {
                     fuseEagles(fusionModalA, fusionModalB);
                     closeFusionModal();
-                } else {
-                    haptic.notify('warning');
-                    toast('Улучшение не удалось — орлы остались на месте');
-                    saveNow();
-                    renderFusionModal();
+                    return;
                 }
-            }, 3300);
+                if (outcome.type === 'eagle') {
+                    const bonus = rollMonster(outcome.tier);
+                    addFarmSlot(bonus.id);
+                    haptic.notify('success');
+                    toast(`Бонусный орёл — ${bonus.name}!`);
+                } else {
+                    state.mnstr += outcome.amount;
+                    haptic.notify('success');
+                    toast(`+${fmtToken(outcome.amount)} Meat`);
+                }
+                renderHeader();
+                saveNow();
+                renderFusionModal();
+            }, 4200);
         }
 
         // Тап по слоту фермы: готовое яйцо забирает приоритет, потом объединение
@@ -3108,6 +3141,21 @@
             }
         }
 
+        // Резервная таблица рулетки улучшения (на случай, если сервер не прислал
+        // свою) — тот же набор призов, что и в game_config.json.
+        function defaultFusionTierSegments(success) {
+            return [
+                { type: 'meat', amount: 1, weight: 100 - 8.03 - success },
+                { type: 'eagle', tier: 'uncommon', weight: 0.02 },
+                { type: 'meat', amount: 5, weight: 5 },
+                { type: 'meat', amount: 10, weight: 2 },
+                { type: 'meat', amount: 15, weight: 1 },
+                { type: 'eagle', tier: 'rare', weight: 0.01 },
+                { type: 'success', weight: success },
+            ];
+        }
+        const DEFAULT_FUSION_ROULETTE = [9.98, 3.5, 1.5, 0.5, 0.005].map(defaultFusionTierSegments);
+
         function normalizeConfig(raw) {
             const cfg = raw || {};
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
@@ -3140,10 +3188,13 @@
             );
             cfg.fusion = Object.assign(
                 { feed_base_cost: 1, feed_growth: 2, feed_taps_per_level: 10, feed_levels: 7,
-                  merge_chance_by_tier: [0.1, 0.035, 0.015, 0.005, 0.00005],
+                  roulette_by_tier: DEFAULT_FUSION_ROULETTE,
                   merge_cost_meat: 75, merge_cost_gram: 1 },
                 cfg.fusion
             );
+            if (!Array.isArray(cfg.fusion.roulette_by_tier) || !cfg.fusion.roulette_by_tier.length) {
+                cfg.fusion.roulette_by_tier = DEFAULT_FUSION_ROULETTE;
+            }
             return cfg;
         }
 

@@ -283,8 +283,54 @@
     "feed_growth": 2,
     "feed_taps_per_level": 10,
     "feed_levels": 7,
-    "merge_chance_by_tier": [0.1, 0.035, 0.015, 0.005, 0.00005],
     "merge_cost_meat": 75,
-    "merge_cost_gram": 1
+    "merge_cost_gram": 1,
+    "roulette_by_tier": [
+      [
+        { "type": "meat", "amount": 1, "weight": 82 },
+        { "type": "eagle", "tier": "uncommon", "weight": 0.02 },
+        { "type": "meat", "amount": 5, "weight": 5 },
+        { "type": "meat", "amount": 10, "weight": 2 },
+        { "type": "meat", "amount": 15, "weight": 1 },
+        { "type": "eagle", "tier": "rare", "weight": 0.01 },
+        { "type": "success", "weight": 9.98 }
+      ],
+      [
+        { "type": "meat", "amount": 1, "weight": 88.488 },
+        { "type": "eagle", "tier": "uncommon", "weight": 0.02 },
+        { "type": "meat", "amount": 5, "weight": 5 },
+        { "type": "meat", "amount": 10, "weight": 2 },
+        { "type": "meat", "amount": 15, "weight": 1 },
+        { "type": "eagle", "tier": "rare", "weight": 0.01 },
+        { "type": "success", "weight": 3.5 }
+      ],
+      [
+        { "type": "meat", "amount": 1, "weight": 90.488 },
+        { "type": "eagle", "tier": "uncommon", "weight": 0.02 },
+        { "type": "meat", "amount": 5, "weight": 5 },
+        { "type": "meat", "amount": 10, "weight": 2 },
+        { "type": "meat", "amount": 15, "weight": 1 },
+        { "type": "eagle", "tier": "rare", "weight": 0.01 },
+        { "type": "success", "weight": 1.5 }
+      ],
+      [
+        { "type": "meat", "amount": 1, "weight": 91.488 },
+        { "type": "eagle", "tier": "uncommon", "weight": 0.02 },
+        { "type": "meat", "amount": 5, "weight": 5 },
+        { "type": "meat", "amount": 10, "weight": 2 },
+        { "type": "meat", "amount": 15, "weight": 1 },
+        { "type": "eagle", "tier": "rare", "weight": 0.01 },
+        { "type": "success", "weight": 0.5 }
+      ],
+      [
+        { "type": "meat", "amount": 1, "weight": 91.983 },
+        { "type": "eagle", "tier": "uncommon", "weight": 0.02 },
+        { "type": "meat", "amount": 5, "weight": 5 },
+        { "type": "meat", "amount": 10, "weight": 2 },
+        { "type": "meat", "amount": 15, "weight": 1 },
+        { "type": "eagle", "tier": "rare", "weight": 0.01 },
+        { "type": "success", "weight": 0.005 }
+      ]
+    ]
   }
 }
