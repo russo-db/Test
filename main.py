@@ -193,7 +193,8 @@ async def notify_referrer(referrer: int, friend_name: str):
 
 # --- GAME MATH (mirrored by the client in index.html) ---
 def read_farm(raw) -> List[dict]:
-    """The farm is one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps"}.
+    """The farm is one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps",
+    "expedition_until"}.
 
     Feeding is tap-driven: a fresh eagle starts at level 1. Every
     feed_taps_per_level taps starts a 24h egg timer (`next_egg_at`; 0 means no
@@ -240,11 +241,16 @@ def read_farm(raw) -> List[dict]:
             next_egg_at = 0
         if feed_level >= FEED_LEVELS:
             next_egg_at = 0
+        try:
+            expedition_until = int(entry["expedition_until"])
+        except (KeyError, TypeError, ValueError):
+            expedition_until = 0
         farm.append({
             "id": monster_id,
             "next_egg_at": next_egg_at,
             "feed_level": feed_level,
             "feed_taps": feed_taps,
+            "expedition_until": max(0, expedition_until),
         })
     return farm
 
@@ -499,7 +505,7 @@ class FarmState(BaseModel):
     coins: float
     total_earned: float
     mnstr: float = 0.0
-    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps"}
+    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps", "expedition_until"}
     active_slot: int = 0
     missions: list = []
     slots: int = START_SLOTS

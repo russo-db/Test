@@ -140,6 +140,7 @@
         .slot-cell img { width: 84%; height: 84%; object-fit: contain; pointer-events: none; }
         .slot-cell.selected { border-color: var(--slot-tint); box-shadow: 0 3px 0 var(--ink), 0 0 16px var(--slot-tint), inset 0 2px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
         .slot-cell.egg-ready { border-color: var(--gold); animation: hatchGlow 1.1s ease-in-out infinite; }
+        .slot-cell.expedition-ready { border-color: #38bdf8; animation: hatchGlow 1.1s ease-in-out infinite; }
         .slot-cell:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
         .slot-index { position: absolute; top: 3px; left: 6px; font-size: 9px; font-weight: 900; color: var(--text-muted); }
         .slot-fed-badge { position: absolute; top: 3px; right: 5px; font-size: 9px; font-weight: 900; color: #fff; background: rgba(10, 4, 24, 0.6); padding: 1px 4px; border-radius: 6px; line-height: 1.3; }
@@ -1000,9 +1001,37 @@
             return !isFullyFed(slot) && slot.nextEggAt > 0 && nowSeconds() >= slot.nextEggAt;
         }
 
-        // Значок слота: 🍖 на максимальном уровне (готов к улучшению), ⏳ пока
-        // варится яйцо, иначе прогресс кормления текущего уровня.
+        // Экспедиция — платная отправка орла добывать GRAM: пока он в пути,
+        // кормление и яйца этого слота на паузе (см. onFarmSlotTap).
+        function expeditionDurationSeconds() {
+            return (CONFIG.expeditions.duration_hours || 4) * 3600;
+        }
+
+        function isOnExpedition(slot) {
+            return (slot.expeditionUntil || 0) > 0;
+        }
+
+        function expeditionReady(slot) {
+            return isOnExpedition(slot) && nowSeconds() >= slot.expeditionUntil;
+        }
+
+        function expeditionProgress(slot) {
+            const total = expeditionDurationSeconds();
+            const remaining = Math.max(0, slot.expeditionUntil - nowSeconds());
+            return Math.min(100, ((total - remaining) / total) * 100);
+        }
+
+        function expeditionGramReward(monster) {
+            const arr = CONFIG.expeditions.gram_by_tier;
+            const idx = tierIndexOf(monster);
+            return Array.isArray(arr) && arr[idx] !== undefined ? Number(arr[idx]) : 0;
+        }
+
+        // Значок слота: 🧭 экспедиция (яркий, когда пора собирать GRAM), 🍖 на
+        // максимальном уровне (готов к улучшению), ⏳ пока варится яйцо, иначе
+        // прогресс кормления текущего уровня.
         function slotBadge(slot) {
+            if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
             return `${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels}`;
@@ -1011,6 +1040,7 @@
         // Progress bar for a slot cell: tap progress while feeding, egg
         // countdown while it's cooking, full while waiting for fusion.
         function slotProgress(slot) {
+            if (isOnExpedition(slot)) return expeditionReady(slot) ? 100 : expeditionProgress(slot);
             if (isFullyFed(slot)) return 100;
             if (slot.nextEggAt > 0) return eggProgress(slot);
             const perLevel = CONFIG.fusion.feed_taps_per_level;
@@ -1061,7 +1091,7 @@
         // Adds a fresh, level-1 eagle to the farm, opening a new slot if every one is full.
         function addFarmSlot(monsterId) {
             if (usedSlots() >= state.slots) state.slots = Math.min(CONFIG.slots.max, state.slots + 1);
-            state.farm.push({ id: monsterId, nextEggAt: 0, feedLevel: 1, feedTaps: 0 });
+            state.farm.push(newSlot(monsterId));
         }
 
         function tierById(id) {
@@ -1120,7 +1150,8 @@
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
             let status;
-            if (eggReady(slot)) status = 'яйцо готово — тапни!';
+            if (isOnExpedition(slot)) status = expeditionReady(slot) ? 'экспедиция вернулась — тапни за GRAM!' : `в экспедиции — вернётся через ${formatCountdown(slot.expeditionUntil - nowSeconds())}`;
+            else if (eggReady(slot)) status = 'яйцо готово — тапни!';
             else if (isFullyFed(slot)) status = 'откормлен полностью — готов к улучшению';
             else if (isFarmingEgg(slot)) status = `яйцо через ${formatCountdown(slot.nextEggAt - nowSeconds())}`;
             else status = `уровень ${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels} — тапни, чтобы покормить`;
@@ -1147,6 +1178,7 @@
                 cell.classList.toggle('egg-ready', eggReady(slot));
                 cell.classList.toggle('fed', isFullyFed(slot));
                 cell.classList.toggle('fusion-selected', i === fusionSelected);
+                cell.classList.toggle('expedition-ready', expeditionReady(slot));
             });
         }
 
@@ -1176,7 +1208,8 @@
                         + (i === state.activeSlot ? ' selected' : '')
                         + (eggReady(slot) ? ' egg-ready' : '')
                         + (fed ? ' fed' : '')
-                        + (i === fusionSelected ? ' fusion-selected' : '');
+                        + (i === fusionSelected ? ' fusion-selected' : '')
+                        + (expeditionReady(slot) ? ' expedition-ready' : '');
                     cell.style.setProperty('--slot-tint', monster.color);
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span>
                                       <span class="slot-fed-badge">${slotBadge(slot)}</span>
@@ -1602,7 +1635,7 @@
             const drop = Math.max(indexA, indexB);
             state.farm.splice(drop, 1);
             state.farm.splice(keep, 1);
-            state.farm.push({ id: nextMonster.id, nextEggAt: 0, feedLevel: 1, feedTaps: 0 });
+            state.farm.push(newSlot(nextMonster.id));
             state.activeSlot = state.farm.length - 1;
 
             toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
@@ -1800,12 +1833,19 @@
             }, 4200);
         }
 
-        // Тап по слоту фермы: готовое яйцо забирает приоритет, потом объединение
-        // (если орёл уже на максимуме), пока яйцо варится — тап ничего не делает,
-        // иначе тап кормит орла.
+        // Тап по слоту фермы: пока орёл в экспедиции, слот на паузе — тап либо
+        // собирает GRAM, либо просто показывает, сколько осталось ждать. Иначе
+        // готовое яйцо забирает приоритет, потом объединение (если орёл уже на
+        // максимуме), пока яйцо варится — тап ничего не делает, иначе тап
+        // кормит орла.
         function onFarmSlotTap(i) {
             const slot = state.farm[i];
             if (!slot) return;
+            if (isOnExpedition(slot)) {
+                if (expeditionReady(slot)) collectExpedition(i);
+                else toast(`Орёл в экспедиции — вернётся через ${formatCountdown(slot.expeditionUntil - nowSeconds())}`);
+                return;
+            }
             if (eggReady(slot)) { collectEgg(i); return; }
             if (isFullyFed(slot)) { onFusionTap(i); return; }
             if (isFarmingEgg(slot)) {
@@ -1814,6 +1854,35 @@
             }
             if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
             feedTap(i);
+        }
+
+        // Платно отправляет орла в экспедицию за GRAM — на время в пути слот
+        // на паузе (см. onFarmSlotTap): кормление и яйца ждут, пока орёл не
+        // вернётся. Возврат собирается тапом или из карточки орла.
+        function sendExpedition(i) {
+            const slot = state.farm[i];
+            if (!slot || isOnExpedition(slot)) return;
+            const cost = Number(CONFIG.expeditions.cost_meat || 1);
+            if (state.mnstr < cost) { toast('Не хватает Meat'); haptic.notify('warning'); return; }
+            state.mnstr -= cost;
+            slot.expeditionUntil = nowSeconds() + expeditionDurationSeconds();
+            haptic.impact('light');
+            toast(`${MONSTERS[slot.id].name} отправился в экспедицию на ${formatCountdown(expeditionDurationSeconds())}`);
+            renderAll();
+            saveNow();
+        }
+
+        function collectExpedition(i) {
+            const slot = state.farm[i];
+            if (!slot || !expeditionReady(slot)) return;
+            const reward = expeditionGramReward(MONSTERS[slot.id]);
+            slot.expeditionUntil = 0;
+            earn(reward);
+            haptic.notify('success');
+            spawnBurst(10);
+            toast(`Экспедиция принесла +${fmtGram(reward)} GRAM!`);
+            renderAll();
+            saveNow();
         }
 
         function renderEggs() {
@@ -2378,32 +2447,50 @@
 
             const monster = MONSTERS[slot.id];
             const tier = tierById(monster.tier);
+            const onExpedition = isOnExpedition(slot);
+            const expReady = expeditionReady(slot);
             const ready = eggReady(slot);
             const fed = isFullyFed(slot);
             const farming = isFarmingEgg(slot);
             const cfg = CONFIG.fusion;
+            const expCfg = CONFIG.expeditions;
 
             let progressHtml;
-            if (fed) {
+            let actionHtml;
+            if (onExpedition) {
+                progressHtml = `
+                    <div class="stat-row"><span>Экспедиция</span><b style="color:#38bdf8">${expReady ? 'Готово!' : formatCountdown(slot.expeditionUntil - nowSeconds())}</b></div>
+                    <div class="modal-progress"><i style="width:${expeditionProgress(slot)}%; background:#38bdf8"></i></div>
+                    <p class="slot-modal-sub">Орёл добывает GRAM — принесёт ${fmtGram(expeditionGramReward(monster))} GRAM</p>
+                `;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${expReady ? '' : 'disabled'} onclick="collectExpedition(modalSlot); closeSlotModal();">Собрать GRAM</button>`;
+            } else if (fed) {
                 progressHtml = `
                     <p class="slot-modal-sub">Орёл откормлен по максимуму — мясо и яйца ему больше не нужны, готов к улучшению</p>
                 `;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>Собрать яйцо</button>`;
             } else if (farming || ready) {
                 progressHtml = `
                     <div class="stat-row"><span>Яйцо</span><b style="color:var(--accent-coin)">${ready ? 'Готово!' : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
                     <div class="modal-progress"><i style="width:${eggProgress(slot)}%; background:${monster.color}"></i></div>
                     <p class="slot-modal-sub">Уровень ${slot.feedLevel || 1} из ${cfg.feed_levels} — собери яйцо, чтобы орёл вырос</p>
                 `;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">Собрать яйцо</button>`;
             } else {
                 progressHtml = `
                     <div class="stat-row"><span>Кормление</span><b style="color:var(--gold)">${slot.feedLevel || 1} / ${cfg.feed_levels}</b></div>
                     <div class="modal-progress"><i style="width:${((slot.feedTaps || 0) / cfg.feed_taps_per_level) * 100}%; background:${monster.color}"></i></div>
                     <p class="slot-modal-sub">Тапни орла на ферме — тап стоит ${fmtToken(feedCost(monster))} Meat (${slot.feedTaps || 0}/${cfg.feed_taps_per_level} тапов до яйца)</p>
                 `;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>Собрать яйцо</button>`;
             }
 
-            const fusionHtml = (canFuse(monster) && fed)
+            const fusionHtml = (!onExpedition && canFuse(monster) && fed)
                 ? `<p class="slot-modal-sub">Тапни другого откормленного орла «${monster.name}» на ферме, чтобы получить ${nextTierOf(monster).monsters[0].name}</p>`
+                : '';
+
+            const expeditionBtnHtml = !onExpedition
+                ? `<button class="btn-action" style="margin-top:8px; width:100%" onclick="sendExpedition(modalSlot); renderSlotModal();">🧭 Экспедиция за ${fmtToken(expCfg.cost_meat)} Meat — ${fmtGram(expeditionGramReward(monster))} GRAM за ${formatCountdown(expeditionDurationSeconds())}</button>`
                 : '';
 
             document.getElementById('slotModalBody').innerHTML = `
@@ -2414,7 +2501,8 @@
                 ${progressHtml}
                 ${fusionHtml}
 
-                <button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">Собрать яйцо</button>
+                ${actionHtml}
+                ${expeditionBtnHtml}
                 <button class="btn-action roll-close" onclick="closeSlotModal()">Закрыть</button>
             `;
         }
@@ -2973,6 +3061,7 @@
                     next_egg_at: slot.nextEggAt,
                     feed_level: slot.feedLevel || 1,
                     feed_taps: slot.feedTaps || 0,
+                    expedition_until: slot.expeditionUntil || 0,
                 })),
                 active_slot: state.activeSlot,
                 missions: state.missions,
@@ -3026,7 +3115,7 @@
         }
 
         function newSlot(monsterId) {
-            return { id: monsterId, nextEggAt: 0, feedLevel: 1, feedTaps: 0 };
+            return { id: monsterId, nextEggAt: 0, feedLevel: 1, feedTaps: 0, expeditionUntil: 0 };
         }
 
         // Farms saved before slots were separated stored { monsterId: copies };
@@ -3055,7 +3144,9 @@
                 const rawNextEgg = Number(slot.next_egg_at !== undefined ? slot.next_egg_at : slot.nextEggAt);
                 let nextEggAt = Number.isFinite(rawNextEgg) ? rawNextEgg : 0;
                 if (feedLevel >= feedLevels) nextEggAt = 0;
-                farm.push({ id: slot.id, nextEggAt, feedLevel, feedTaps });
+                const rawExpedition = Number(slot.expedition_until !== undefined ? slot.expedition_until : slot.expeditionUntil);
+                const expeditionUntil = Number.isFinite(rawExpedition) ? Math.max(0, rawExpedition) : 0;
+                farm.push({ id: slot.id, nextEggAt, feedLevel, feedTaps, expeditionUntil });
                 return farm;
             }, []);
         }
@@ -3195,6 +3286,10 @@
             if (!Array.isArray(cfg.fusion.roulette_by_tier) || !cfg.fusion.roulette_by_tier.length) {
                 cfg.fusion.roulette_by_tier = DEFAULT_FUSION_ROULETTE;
             }
+            cfg.expeditions = Object.assign(
+                { duration_hours: 4, cost_meat: 1, gram_by_tier: [0.5, 1, 2, 4, 8, 16] },
+                cfg.expeditions
+            );
             return cfg;
         }
 
