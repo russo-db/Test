@@ -1128,7 +1128,8 @@
                 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
-                'vip.timeLeft': 'Осталось: {time}', 'vip.renew': 'Продлить', 'vip.activate': 'Активировать',
+                'vip.timeLeft': 'Осталось: {time}', 'vip.activate': 'Активировать',
+                'vip.alreadyActive': 'Уже активен',
                 'vip.notEnoughGram': 'Не хватает GRAM',
                 'vip.activated': '{name} активирован!',
                 'vip.dailyMeat': 'VIP принёс +{amount} Meat',
@@ -1247,7 +1248,8 @@
                 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
-                'vip.timeLeft': 'Time left: {time}', 'vip.renew': 'Renew', 'vip.activate': 'Activate',
+                'vip.timeLeft': 'Time left: {time}', 'vip.activate': 'Activate',
+                'vip.alreadyActive': 'Already active',
                 'vip.notEnoughGram': 'Not enough GRAM',
                 'vip.activated': '{name} activated!',
                 'vip.dailyMeat': 'VIP brought +{amount} Meat',
@@ -2487,6 +2489,7 @@
             if (!tier) { closeVipModal(); return; }
             const isActive = vipActive() && state.vip.tier === tier.id;
             const affordable = state.coins >= tier.price_gram;
+            const buyDisabled = isActive || !affordable;
 
             document.getElementById('vipModalBody').innerHTML = `
                 <div style="text-align:center; font-size:44px; line-height:1;">${VIP_ICONS[tier.id] || '⭐'}</div>
@@ -2496,8 +2499,8 @@
                 <div class="stat-row"><span>${t('vip.expeditionReduction')}</span><b>-${tier.expedition_reduction_hours} ${t('vip.hoursShort')}</b></div>
                 <div class="stat-row"><span>${t('vip.duration')}</span><b>${tier.duration_days} ${t('vip.daysShort')}</b></div>
                 ${isActive ? `<p class="slot-modal-sub">${t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
-                <button class="btn-primary" style="margin-top:12px; width:100%" ${affordable ? '' : 'disabled'} onclick="buyVip('${tier.id}')">
-                    ${isActive ? t('vip.renew') : t('vip.activate')} — ${fmtGram(tier.price_gram)} GRAM
+                <button class="btn-primary" style="margin-top:12px; width:100%" ${buyDisabled ? 'disabled' : ''} onclick="buyVip('${tier.id}')">
+                    ${isActive ? t('vip.alreadyActive') : `${t('vip.activate')} — ${fmtGram(tier.price_gram)} GRAM`}
                 </button>
                 <button class="btn-action roll-close" onclick="closeVipModal()">${t('common.close')}</button>
             `;
@@ -2506,6 +2509,7 @@
         function buyVip(tierId) {
             const tier = vipTierDef(tierId);
             if (!tier) return;
+            if (vipActive() && state.vip.tier === tierId) { toast(t('vip.alreadyActive')); haptic.notify('warning'); return; }
             if (state.coins < tier.price_gram) { toast(t('vip.notEnoughGram')); haptic.notify('warning'); return; }
             state.coins -= tier.price_gram;
             const now = nowSeconds();
