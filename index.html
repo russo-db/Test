@@ -73,22 +73,22 @@
         #main-wrapper { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%; width: 100%; }
 
         /* ---------- Top bar ---------- */
-        .top-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 6px 16px; gap: 10px; }
-        .brand-title { font-size: 13px; font-weight: 900; letter-spacing: 0.4px; line-height: 1.1; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; text-transform: uppercase; text-shadow: 0 2px 0 var(--ink); }
-        .balance-bar { display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .top-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 10px 6px 10px; gap: 6px; }
+        .brand-title { font-size: 13px; font-weight: 900; letter-spacing: 0.4px; line-height: 1.1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; text-transform: uppercase; text-shadow: 0 2px 0 var(--ink); min-width: 0; }
+        .balance-bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
         .top-balance-badge {
-            background: var(--panel-hi); border: 3px solid var(--ink); border-radius: 16px;
-            padding: 6px 11px; display: flex; align-items: center; gap: 6px;
-            font-weight: 900; font-size: 14px;
+            background: var(--panel-hi); border: 3px solid var(--ink); border-radius: 14px;
+            padding: 5px 7px; display: flex; align-items: center; gap: 4px;
+            font-weight: 900; font-size: 12px;
             box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.15);
         }
-        .top-balance-badge .coin-icon { width: 17px; height: 17px; }
+        .top-balance-badge .coin-icon { width: 14px; height: 14px; }
         .token-badge { background: #4c2b8f; }
         .gold-badge { background: #7a5a12; }
-        .coin-icon-emoji { display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; }
+        .coin-icon-emoji { display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
 
         .coin-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
-        .coin-brand { width: 26px; height: 26px; filter: drop-shadow(0 2px 0 var(--ink)); }
+        .coin-brand { width: 22px; height: 22px; flex: 0 0 auto; filter: drop-shadow(0 2px 0 var(--ink)); }
         .coin-md { width: 30px; height: 30px; }
         .coin-lg { width: 40px; height: 40px; }
 
@@ -321,7 +321,7 @@
                 -2px  2px 0 var(--ink), 2px  2px 0 var(--ink),
                  0 5px 0 var(--ink), 0 8px 12px rgba(0,0,0,0.45);
         }
-        .brand-title { color: var(--gold); font-size: 14px; letter-spacing: 0.6px; }
+        .brand-title { color: var(--gold); font-size: 12px; letter-spacing: 0.4px; }
         h1 { color: #fff; letter-spacing: 1px; }
         .tier-heading { text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
 
@@ -332,8 +332,8 @@
             box-shadow: 0 var(--edge) 0 var(--ink), 0 10px 16px rgba(0,0,0,0.35), inset 0 4px 0 rgba(255,255,255,0.13);
         }
         .top-balance-badge {
-            background: var(--panel-hi); border: 4px solid var(--ink); border-radius: 18px;
-            box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.18);
+            background: var(--panel-hi); border: 3px solid var(--ink); border-radius: 13px;
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255,255,255,0.18);
         }
         .token-badge { background: #55486e; }
         .gold-badge { background: #6b4a10; }
@@ -391,13 +391,13 @@
         .token-table td { border-top-color: rgba(255,255,255,0.14); }
         .lock-hero { color: var(--gold); }
         .brand-stack { display: flex; flex-direction: column; line-height: 1.02; }
-        .brand-stack b { font-style: normal; font-weight: 900; font-size: 14px; color: #fff; letter-spacing: 0.9px; }
-        .brand-stack i { font-style: normal; font-weight: 900; font-size: 15px; color: var(--gold); letter-spacing: 1.6px; }
+        .brand-stack b { font-style: normal; font-weight: 900; font-size: 11px; color: #fff; letter-spacing: 0.5px; white-space: nowrap; }
+        .brand-stack i { font-style: normal; font-weight: 900; font-size: 12px; color: var(--gold); letter-spacing: 0.8px; white-space: nowrap; }
 
         /* ---------- Шапка и навбар как отдельные слои поверх сцены ---------- */
         .top-header {
             position: relative; z-index: 20;
-            padding: 12px 16px 13px 16px;
+            padding: 12px 10px 13px 10px;
             background: linear-gradient(180deg, #4a5462 0%, #333c49 55%, #2a323d 100%);
             border-bottom: 4px solid var(--ink);
             border-radius: 0 0 24px 24px;
