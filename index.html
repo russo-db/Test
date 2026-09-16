@@ -1130,6 +1130,8 @@
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
                 'vip.timeLeft': 'Осталось: {time}', 'vip.activate': 'Активировать',
                 'vip.alreadyActive': 'Уже активен',
+                'vip.anotherActive': 'Дождись окончания текущего VIP',
+                'vip.otherTimeLeft': 'Активен {name} — осталось {time}',
                 'vip.notEnoughGram': 'Не хватает GRAM',
                 'vip.activated': '{name} активирован!',
                 'vip.dailyMeat': 'VIP принёс +{amount} Meat',
@@ -1250,6 +1252,8 @@
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
                 'vip.timeLeft': 'Time left: {time}', 'vip.activate': 'Activate',
                 'vip.alreadyActive': 'Already active',
+                'vip.anotherActive': 'Wait for your current VIP to end',
+                'vip.otherTimeLeft': '{name} is active — {time} left',
                 'vip.notEnoughGram': 'Not enough GRAM',
                 'vip.activated': '{name} activated!',
                 'vip.dailyMeat': 'VIP brought +{amount} Meat',
@@ -2487,8 +2491,14 @@
             const tier = vipTierDef(vipModalTier);
             if (!tier) { closeVipModal(); return; }
             const isActive = vipActive() && state.vip.tier === tier.id;
+            const blockedByOther = vipActive() && state.vip.tier !== tier.id;
             const affordable = state.coins >= tier.price_gram;
-            const buyDisabled = isActive || !affordable;
+            const buyDisabled = isActive || blockedByOther || !affordable;
+
+            let buttonLabel;
+            if (isActive) buttonLabel = t('vip.alreadyActive');
+            else if (blockedByOther) buttonLabel = t('vip.anotherActive');
+            else buttonLabel = `${t('vip.activate')} — ${fmtGram(tier.price_gram)} GRAM`;
 
             document.getElementById('vipModalBody').innerHTML = `
                 <div style="text-align:center; font-size:44px; line-height:1;">${VIP_ICONS[tier.id] || '⭐'}</div>
@@ -2498,8 +2508,9 @@
                 <div class="stat-row"><span>${t('vip.expeditionReduction')}</span><b>-${tier.expedition_reduction_hours} ${t('vip.hoursShort')}</b></div>
                 <div class="stat-row"><span>${t('vip.duration')}</span><b>${tier.duration_days} ${t('vip.daysShort')}</b></div>
                 ${isActive ? `<p class="slot-modal-sub">${t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
+                ${blockedByOther ? `<p class="slot-modal-sub">${t('vip.otherTimeLeft', { name: vipTierDef(state.vip.tier).name, time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
                 <button class="btn-primary" style="margin-top:12px; width:100%" ${buyDisabled ? 'disabled' : ''} onclick="buyVip('${tier.id}')">
-                    ${isActive ? t('vip.alreadyActive') : `${t('vip.activate')} — ${fmtGram(tier.price_gram)} GRAM`}
+                    ${buttonLabel}
                 </button>
                 <button class="btn-action roll-close" onclick="closeVipModal()">${t('common.close')}</button>
             `;
@@ -2508,7 +2519,7 @@
         function buyVip(tierId) {
             const tier = vipTierDef(tierId);
             if (!tier) return;
-            if (vipActive() && state.vip.tier === tierId) { toast(t('vip.alreadyActive')); haptic.notify('warning'); return; }
+            if (vipActive()) { toast(t(state.vip.tier === tierId ? 'vip.alreadyActive' : 'vip.anotherActive')); haptic.notify('warning'); return; }
             if (state.coins < tier.price_gram) { toast(t('vip.notEnoughGram')); haptic.notify('warning'); return; }
             state.coins -= tier.price_gram;
             const now = nowSeconds();
