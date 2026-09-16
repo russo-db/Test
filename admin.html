@@ -395,7 +395,6 @@ async function openPlayerModal(userId) {
                     <label>Золото <input id="fGold" type="number" step="0.01" value="${doc.gold || 0}"></label>
                     <label>Слоты <input id="fSlots" type="number" value="${doc.slots || 3}"></label>
                     <label>Активный слот <input id="fActiveSlot" type="number" value="${doc.active_slot || 0}"></label>
-                    <label><input id="fMarketUnlocked" type="checkbox" ${doc.market_unlocked ? 'checked' : ''}> Рынок открыт</label>
                 </div>
 
                 <b>Ферма (${doc.monsters.length} орлов)</b>
@@ -476,7 +475,6 @@ async function savePlayerModal() {
         gold: Number(document.getElementById('fGold').value) || 0,
         slots: Number(document.getElementById('fSlots').value) || 3,
         active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
-        market_unlocked: document.getElementById('fMarketUnlocked').checked,
         monsters: editingPlayer.monsters,
         eggs_board: eggsBoard,
     };

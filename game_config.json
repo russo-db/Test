@@ -339,6 +339,6 @@
     "gold_by_tier": [0.5, 1, 2, 4, 8, 16]
   },
   "market": {
-    "gram_cost": { "uncommon": 10, "rare": 20, "epic": 40, "legendary": 80, "mythical": 160 }
+    "commission": 0.10
   }
 }

@@ -45,16 +45,22 @@ def apply_config(cfg: dict):
     global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
     global WHEEL, WHEEL_SEGMENTS, TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
+    global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
     QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
     MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
+    MONSTER_TIER = {m["id"]: tier["id"] for tier in CONFIG["tiers"] for m in tier["monsters"]}
+    TIER_INDEX = {tier["id"]: i for i, tier in enumerate(CONFIG["tiers"])}
     STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
     START_SLOTS = CONFIG["slots"]["start"]
     MAX_SLOTS = CONFIG["slots"]["max"]
     FUSION_CFG = CONFIG.get("fusion") or {}
     FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
+    MARKET_CFG = CONFIG.get("market") or {}
+    MARKET_MIN_TIER_INDEX = 1  # обычная (индекс 0) редкость на P2P-рынке не продаётся
+    MARKET_COMMISSION = float(MARKET_CFG.get("commission", 0.10))
     DAILY = CONFIG.get("daily") or {}
     DAILY_DAYS = int(DAILY.get("days", 30))
     DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
@@ -365,7 +371,6 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "eggs_board_unlocked": 1,
             "wallet": "",
             "ops": 0,
-            "market_unlocked": 0,
         }
     )
 
@@ -515,7 +520,6 @@ class FarmState(BaseModel):
     eggs_board: List[int] = []
     eggs_board_unlocked: int = 1
     ops: int = -1              # версия баланса, полученная при последней загрузке
-    market_unlocked: bool = False  # разблокируется навсегда — сервер только OR'ит, никогда не гасит
 
 
 class MissionClaim(BaseModel):
@@ -529,6 +533,22 @@ class DailyClaim(BaseModel):
 
 class WheelSpin(BaseModel):
     user_id: int
+
+
+class MarketListRequest(BaseModel):
+    user_id: int
+    monster_id: str
+    price_gram: float
+
+
+class MarketBuyRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class MarketCancelRequest(BaseModel):
+    user_id: int
+    listing_id: str
 
 
 class DepositCheck(BaseModel):
@@ -561,7 +581,6 @@ class AdminPlayerUpdate(BaseModel):
     monsters: Optional[List[dict]] = None
     eggs_board: Optional[List[int]] = None
     eggs_board_unlocked: Optional[int] = None
-    market_unlocked: Optional[bool] = None
 
 
 class AdminConfigUpdate(BaseModel):
@@ -624,7 +643,6 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
-        "market_unlocked": bool(row.get("market_unlocked")),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -646,9 +664,6 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
 
     eggs_board = normalize_eggs_board(state.eggs_board)
     eggs_board_unlocked = max(1, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 1)))
-    # Разблокировка рынка необратима — сервер только OR'ит с уже сохранённым
-    # значением, так что баг или откат клиента не может её погасить обратно.
-    market_unlocked = bool(row.get("market_unlocked")) or bool(state.market_unlocked)
 
     await store.update(
         user_id,
@@ -662,7 +677,6 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "slots": state.slots,
             "eggs_board": eggs_board,
             "eggs_board_unlocked": eggs_board_unlocked,
-            "market_unlocked": market_unlocked,
             "last_seen": int(time.time()),
         },
     )
@@ -814,6 +828,89 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
     }
 
 
+def _market_tier_ok(monster_id: str) -> bool:
+    """Только редкость «необычный» (зелёный) и выше — как и в прежнем NPC-магазине."""
+    tier = MONSTER_TIER.get(monster_id)
+    return tier is not None and TIER_INDEX.get(tier, -1) >= MARKET_MIN_TIER_INDEX
+
+
+@app.get("/api/market/listings")
+async def market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Список активных лотов рынка — P2P-торговля орлами между игроками."""
+    authenticate(x_telegram_init_data, user_id)
+    return {"listings": await store.list_listings()}
+
+
+@app.post("/api/market/list")
+async def market_list(request: MarketListRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выставляет прокачанного (макс. уровень) орла редкости необычный+ на продажу за GRAM."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    if request.monster_id not in MONSTERS or not _market_tier_ok(request.monster_id):
+        raise HTTPException(status_code=400, detail="Этот орёл не продаётся на рынке")
+    if not (request.price_gram > 0):
+        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+
+    row = await fetch_user(user_id)
+    listing_id = await store.create_listing(
+        user_id, row.get("name") or "", request.monster_id,
+        FEED_LEVELS, request.price_gram, int(time.time()),
+    )
+    if listing_id is None:
+        raise HTTPException(status_code=400, detail="Нет такого прокачанного орла на ферме")
+
+    fresh = await store.get(user_id)
+    return {"status": "success", "listing_id": listing_id, "monsters": read_farm(fresh["monsters"])}
+
+
+@app.post("/api/market/buy")
+async def market_buy(request: MarketBuyRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупает лот — сервер атомарно переводит GRAM и передаёт орла."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    result = await store.buy_listing(
+        user_id, request.listing_id, FEED_LEVELS, MAX_SLOTS, MARKET_COMMISSION,
+    )
+    if result != "ok":
+        messages = {
+            "not_found": "Лот уже продан или снят с продажи",
+            "own_listing": "Нельзя купить свой же лот",
+            "insufficient_funds": "Не хватает GRAM",
+            "no_room": "На ферме нет места — освободи слот",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось купить"))
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "coins": float(fresh.get("coins") or 0.0),
+        "monsters": read_farm(fresh["monsters"]),
+        "slots": int(fresh.get("slots") or START_SLOTS),
+    }
+
+
+@app.post("/api/market/cancel")
+async def market_cancel(request: MarketCancelRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Снимает свой лот с продажи — орёл возвращается на ферму."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    result = await store.cancel_listing(user_id, request.listing_id, FEED_LEVELS, MAX_SLOTS)
+    if result != "ok":
+        messages = {
+            "not_found": "Лот уже продан или снят с продажи",
+            "not_owner": "Это не твой лот",
+            "no_room": "На ферме нет места — освободи слот",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось снять лот"))
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "monsters": read_farm(fresh["monsters"]),
+        "slots": int(fresh.get("slots") or START_SLOTS),
+    }
+
+
 @app.get("/tonconnect-manifest.json")
 async def tonconnect_manifest():
     """Манифест для TON Connect. Адрес берётся из WEB_APP_URL, чтобы не хардкодить домен."""
@@ -914,7 +1011,6 @@ def player_summary(doc: dict) -> dict:
         "referrals": int(doc.get("referrals") or 0),
         "wallet": doc.get("wallet") or "",
         "last_seen": int(doc.get("last_seen") or 0),
-        "market_unlocked": bool(doc.get("market_unlocked")),
     }
 
 

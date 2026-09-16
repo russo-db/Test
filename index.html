@@ -211,6 +211,8 @@
         .market-locked { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; gap: 8px; }
         .market-locked .lock-hero { width: 56px; height: 56px; margin: 0 0 6px 0; }
         .market-locked p { color: var(--text-muted); font-size: 14px; font-weight: 700; max-width: 280px; }
+        .market-sell-btn { width: 100%; justify-content: center; margin-bottom: 16px; }
+        .lang-options .market-eagle { width: 32px; height: 32px; }
         .card-info { flex: 1; min-width: 0; }
         .card-info h3 { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
@@ -696,7 +698,11 @@
         <!-- MARKET TAB -->
         <div id="market" class="content">
             <h1 data-i18n="market.heading">Рынок</h1>
-            <p class="subtitle" data-i18n="market.subtitle">Покупай орлов редкости зелёный и выше за GRAM</p>
+            <p class="subtitle" data-i18n="market.subtitle">Торгуй орлами редкости зелёный и выше с другими игроками — комиссия рынка 10%</p>
+            <button class="btn-primary market-sell-btn" onclick="openMarketSell()">
+                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
+                <span data-i18n="market.sellBtn">Выставить орла на продажу</span>
+            </button>
             <div id="marketBody"></div>
         </div>
 
@@ -860,6 +866,11 @@
     <!-- LOCKED SLOT MODAL -->
     <div class="modal-backdrop" id="slotBuyModal" onclick="if (event.target === this) closeSlotBuy()">
         <div class="modal-box glass-panel" id="slotBuyBody"></div>
+    </div>
+
+    <!-- MARKET SELL MODAL -->
+    <div class="modal-backdrop" id="marketSellModal" onclick="if (event.target === this) closeMarketSell()">
+        <div class="modal-box glass-panel pay-box" id="marketSellBody"></div>
     </div>
 
     <!-- $Meat EXPLAINER MODAL -->
@@ -1038,12 +1049,23 @@
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
                 'missions.heading': 'Задания', 'missions.subtitle': 'Ежедневный вход и разовые награды',
-                'market.heading': 'Рынок', 'market.subtitle': 'Покупай орлов редкости зелёный и выше за GRAM',
-                'market.lockedTitle': 'Рынок закрыт',
-                'market.lockedHint': 'Скрафти (улучши) своего первого зелёного орла на вкладке «Орлы», чтобы открыть рынок',
-                'market.unlocked': 'Рынок открыт! Теперь можно покупать орлов за GRAM',
-                'market.notEnoughGram': 'Не хватает GRAM', 'market.noRoom': 'На ферме нет места — освободи слот',
-                'market.bought': 'Куплен {name}!',
+                'market.heading': 'Рынок',
+                'market.subtitle': 'Торгуй орлами редкости зелёный и выше с другими игроками — комиссия рынка 10%',
+                'market.sellBtn': 'Выставить орла на продажу',
+                'market.onlineOnly': 'Рынок работает только при подключении к серверу',
+                'market.empty': 'Пока никто ничего не продаёт — загляни позже',
+                'market.loading': 'Загружаем лоты…',
+                'market.yourListing': 'Твой лот', 'market.seller': 'Продавец',
+                'market.noEligible': 'Нет прокачанных (7 ур.) орлов редкости зелёный и выше на продажу',
+                'market.sellTitle': 'Выставить орла на продажу',
+                'market.priceLabel': 'Цена, GRAM',
+                'market.commissionHint': 'Рынок удержит комиссию {pct}% с продажи',
+                'market.listBtn': 'Выставить',
+                'market.invalidPrice': 'Укажи цену больше нуля',
+                'market.listFailed': 'Не удалось выставить лот', 'market.listed': 'Орёл выставлен на продажу',
+                'market.serverError': 'Сервер недоступен, попробуй ещё раз',
+                'market.buyFailed': 'Не удалось купить', 'market.bought': 'Орёл куплен!',
+                'market.cancelFailed': 'Не удалось снять лот', 'market.cancelled': 'Лот снят с продажи',
                 'profile.tapWhatIsThis': 'Нажми — что это', 'profile.goldLabel': 'Золото',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
@@ -1134,12 +1156,23 @@
                 'eggs.subtitle': 'Tap an egg to open it, or pick it for upgrading with another of the same level',
                 'eggs.openAll': 'Open all',
                 'missions.heading': 'Missions', 'missions.subtitle': 'Daily check-in and one-time rewards',
-                'market.heading': 'Market', 'market.subtitle': 'Buy eagles of uncommon rarity and above with GRAM',
-                'market.lockedTitle': 'Market is locked',
-                'market.lockedHint': 'Craft (upgrade) your first uncommon eagle on the Eagles tab to unlock the market',
-                'market.unlocked': 'Market unlocked! You can now buy eagles with GRAM',
-                'market.notEnoughGram': 'Not enough GRAM', 'market.noRoom': 'No room on the farm — free up a slot',
-                'market.bought': 'Bought {name}!',
+                'market.heading': 'Market',
+                'market.subtitle': 'Trade eagles of uncommon rarity and above with other players — 10% market fee',
+                'market.sellBtn': 'List an eagle for sale',
+                'market.onlineOnly': 'The market only works while connected to the server',
+                'market.empty': 'Nobody is selling anything yet — check back later',
+                'market.loading': 'Loading listings…',
+                'market.yourListing': 'Your listing', 'market.seller': 'Seller',
+                'market.noEligible': 'No fully-fed (level 7) eagles of uncommon rarity and above to sell',
+                'market.sellTitle': 'List an eagle for sale',
+                'market.priceLabel': 'Price, GRAM',
+                'market.commissionHint': 'The market keeps a {pct}% fee from the sale',
+                'market.listBtn': 'List for sale',
+                'market.invalidPrice': 'Enter a price greater than zero',
+                'market.listFailed': 'Failed to list the eagle', 'market.listed': 'Eagle listed for sale',
+                'market.serverError': 'Server unavailable, try again',
+                'market.buyFailed': 'Failed to buy', 'market.bought': 'Eagle purchased!',
+                'market.cancelFailed': 'Failed to cancel the listing', 'market.cancelled': 'Listing cancelled',
                 'profile.tapWhatIsThis': 'Tap — what is this', 'profile.goldLabel': 'Gold',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
@@ -1285,7 +1318,7 @@
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
-            marketUnlocked: false  // открывается навсегда после первого скрафченного (улучшённого) зелёного орла
+            marketListings: []   // активные лоты P2P-рынка (см. loadMarketListings)
         };
 
         let botUsername = '';
@@ -2053,14 +2086,6 @@
             state.farm.push(newSlot(nextMonster.id));
             state.activeSlot = state.farm.length - 1;
 
-            // Рынок открывается один раз и навсегда — как только игрок впервые
-            // скрафтил (улучшил) зелёного (необычного) орла, а не просто им
-            // разжился с колеса или из яйца.
-            if (nextTier.id === 'uncommon' && !state.marketUnlocked) {
-                state.marketUnlocked = true;
-                setTimeout(() => { toast(t('market.unlocked')); haptic.notify('success'); }, 1200);
-            }
-
             toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
             haptic.notify('success');
             spawnBurst(16);
@@ -2792,60 +2817,170 @@
                 CONFIG.missions.filter(m => m.type === 'referrals'));
         }
 
-        // Рынок продаёт орлов от зелёной (необычной) редкости и выше за GRAM —
-        // открывается навсегда, как только игрок впервые скрафтил (улучшил,
-        // не выиграл на колесе и не вылупил) зелёного орла (см. fuseEagles).
-        function marketPrice(tierId) {
-            const table = CONFIG.market.gram_cost || {};
-            return Number(table[tierId]) || 0;
+        // P2P-рынок: игроки торгуют друг с другом прокачанными (макс. уровень)
+        // орлами редкости необычный+ за GRAM, рынок берёт 10% комиссии с продавца
+        // (см. MARKET_COMMISSION в main.py). Полностью серверный — сервер сам
+        // проводит перевод GRAM и передачу орла, чтобы никто не мог подделать
+        // сделку или купить один лот дважды.
+        let marketListingsLoaded = false;
+        let marketSellChoice = null;
+
+        function eligibleMarketEagles() {
+            return state.farm.filter(slot => {
+                const monster = MONSTERS[slot.id];
+                return monster && tierIndexOf(monster) >= 1 && (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels;
+            });
         }
 
         function renderMarket() {
             const body = document.getElementById('marketBody');
             if (!body) return;
-            if (!state.marketUnlocked) {
-                body.innerHTML = `
-                    <div class="market-locked">
-                        <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
-                        <h3>${t('market.lockedTitle')}</h3>
-                        <p>${t('market.lockedHint')}</p>
-                    </div>
-                `;
+            if (offlineOnly) {
+                body.innerHTML = `<div class="market-locked"><p>${t('market.onlineOnly')}</p></div>`;
                 return;
             }
-            const tiers = CONFIG.tiers.slice(1); // без обычной редкости — рынок начинается с зелёной
-            body.innerHTML = tiers.map(tier => {
-                const monster = MONSTERS[tier.monsters[0].id];
-                const price = marketPrice(tier.id);
-                const affordable = state.coins >= price;
+            const listings = state.marketListings || [];
+            if (!listings.length) {
+                body.innerHTML = `<div class="market-locked"><p>${t(marketListingsLoaded ? 'market.empty' : 'market.loading')}</p></div>`;
+                return;
+            }
+            body.innerHTML = listings.map(listing => {
+                const monster = MONSTERS[listing.monster_id];
+                if (!monster) return '';
+                const tier = tierById(monster.tier);
+                const mine = String(listing.seller_id) === String(state.userId);
                 return `
                     <div class="card glass-panel market-card">
                         <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                         <div class="card-info">
-                            <h3 style="color:${tier.color}">${tier.name}</h3>
-                            <p style="font-size:13px; color:var(--text-muted)">${monster.name}</p>
+                            <h3 style="color:${tier.color}">${monster.name}</h3>
+                            <p style="font-size:12px; color:var(--text-muted)">${mine ? t('market.yourListing') : (listing.seller_name || t('market.seller'))}</p>
                         </div>
-                        <button class="btn-action ${affordable ? 'btn-buy' : 'btn-locked'}" onclick="buyMarketEagle('${tier.id}')">
-                            ${fmtGram(price)}<img class="coin-icon" src="assets/coin.png" alt="">
-                        </button>
+                        ${mine
+                            ? `<button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>`
+                            : `<button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>`}
                     </div>
                 `;
             }).join('');
         }
 
-        function buyMarketEagle(tierId) {
-            if (!state.marketUnlocked) return;
-            const price = marketPrice(tierId);
-            if (state.coins < price) { toast(t('market.notEnoughGram')); haptic.notify('warning'); return; }
-            if (!canHatch()) { toast(t('market.noRoom')); haptic.notify('warning'); return; }
-            state.coins -= price;
-            const monster = rollMonster(tierId);
-            addFarmSlot(monster.id);
-            haptic.notify('success');
-            spawnBurst(12);
-            toast(t('market.bought', { name: monster.name }));
-            renderAll();
-            saveNow();
+        async function loadMarketListings() {
+            if (offlineOnly || !state.userId) { renderMarket(); return; }
+            try {
+                const response = await fetch(`api/market/listings?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('market fetch failed');
+                const data = await response.json();
+                state.marketListings = data.listings || [];
+            } catch (e) {
+                // офлайн/сервер недоступен — оставляем то, что уже было в кэше
+            }
+            marketListingsLoaded = true;
+            renderMarket();
+        }
+
+        function openMarketSell() {
+            if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
+            if (!eligibleMarketEagles().length) { toast(t('market.noEligible')); haptic.notify('warning'); return; }
+            marketSellChoice = null;
+            renderMarketSell();
+            document.getElementById('marketSellModal').classList.add('open');
+        }
+
+        function closeMarketSell() {
+            document.getElementById('marketSellModal').classList.remove('open');
+        }
+
+        function renderMarketSell() {
+            const counts = {};
+            eligibleMarketEagles().forEach(slot => { counts[slot.id] = (counts[slot.id] || 0) + 1; });
+            const ids = Object.keys(counts);
+            if (!ids.length) { closeMarketSell(); return; }
+            if (!marketSellChoice || !counts[marketSellChoice]) marketSellChoice = ids[0];
+            const priceValue = document.getElementById('marketSellPrice');
+            const price = priceValue ? priceValue.value : '10';
+
+            document.getElementById('marketSellBody').innerHTML = `
+                <h2>${t('market.sellTitle')}</h2>
+                <div class="lang-options">
+                    ${ids.map(id => {
+                        const monster = MONSTERS[id];
+                        const tier = tierById(monster.tier);
+                        return `<button class="lang-option ${id === marketSellChoice ? 'active' : ''}" onclick="marketSellChoice='${id}'; renderMarketSell();">
+                            <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="">
+                            <span style="color:${tier.color}">${monster.name}</span>
+                            <span style="margin-left:auto; color:var(--text-muted)">×${counts[id]}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <div class="pay-label">${t('market.priceLabel')}</div>
+                <input class="pay-input" id="marketSellPrice" type="number" inputmode="decimal" min="0.01" step="0.01" value="${price}">
+                <p class="pay-warning">${t('market.commissionHint', { pct: Math.round((CONFIG.market.commission || 0) * 100) })}</p>
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="confirmMarketSell()">${t('market.listBtn')}</button>
+                    <button class="btn-action" onclick="closeMarketSell()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmMarketSell() {
+            const price = Number(document.getElementById('marketSellPrice').value) || 0;
+            if (price <= 0) { toast(t('market.invalidPrice')); return; }
+            try {
+                const response = await fetch('api/market/list', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, monster_id: marketSellChoice, price_gram: price }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); return; }
+                state.farm = readFarm(data.monsters);
+                closeMarketSell();
+                haptic.notify('success');
+                toast(t('market.listed'));
+                renderAll();
+                loadMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function buyMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/buy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadMarketListings(); return; }
+                state.coins = data.coins;
+                state.farm = readFarm(data.monsters);
+                state.slots = data.slots;
+                haptic.notify('success');
+                spawnBurst(12);
+                toast(t('market.bought'));
+                renderAll();
+                loadMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function cancelMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/cancel', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadMarketListings(); return; }
+                state.farm = readFarm(data.monsters);
+                state.slots = data.slots;
+                haptic.notify('success');
+                toast(t('market.cancelled'));
+                renderAll();
+                loadMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
         }
 
         function renderAll() {
@@ -3128,7 +3263,7 @@
 
             if (tabId === 'collection') renderEggs();
             if (tabId === 'missions') renderMissions();
-            if (tabId === 'market') renderMarket();
+            if (tabId === 'market') loadMarketListings();
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -3565,8 +3700,7 @@
                 slots: state.slots,
                 eggs_board: state.eggBoard,
                 eggs_board_unlocked: state.eggBoardUnlocked,
-                ops: state.ops,
-                market_unlocked: !!state.marketUnlocked
+                ops: state.ops
             };
             fetch('api/save', {
                 method: 'POST',
@@ -3592,7 +3726,6 @@
             state.totalEarned = data.total_earned;
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
-            state.marketUnlocked = !!data.market_unlocked;
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.activeSlot = data.active_slot || 0;
@@ -3670,7 +3803,6 @@
             if (typeof state.slots !== 'number') state.slots = CONFIG.slots.start;
             state.mnstr = Number(state.mnstr) || 0;
             state.gold = Number(state.gold) || 0;
-            state.marketUnlocked = !!state.marketUnlocked;
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -3792,10 +3924,7 @@
                 { duration_hours: 4, cost_meat: 1, gold_by_tier: [0.5, 1, 2, 4, 8, 16] },
                 cfg.expeditions
             );
-            cfg.market = Object.assign(
-                { gram_cost: { uncommon: 10, rare: 20, epic: 40, legendary: 80, mythical: 160 } },
-                cfg.market
-            );
+            cfg.market = Object.assign({ commission: 0.10 }, cfg.market);
             return cfg;
         }
 

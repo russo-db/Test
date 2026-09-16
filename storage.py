@@ -3,11 +3,11 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, gold, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops,
-    market_unlocked
+    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops
 
-Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON)
-и заявки на вывод (withdrawals).
+Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
+заявки на вывод (withdrawals) и лоты рынка (market_listings — P2P-торговля
+орлами между игроками).
 """
 
 import json
@@ -20,7 +20,6 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "wallet", "ops",
-    "market_unlocked",
 )
 JSON_FIELDS = ("monsters", "missions", "eggs_board")
 
@@ -60,8 +59,7 @@ class SqliteStore:
                 eggs_board     TEXT    DEFAULT '[]',
                 eggs_board_unlocked INTEGER DEFAULT 1,
                 wallet         TEXT    DEFAULT '',
-                ops            INTEGER DEFAULT 0,
-                market_unlocked INTEGER DEFAULT 0
+                ops            INTEGER DEFAULT 0
             )
             """
         )
@@ -88,6 +86,20 @@ class SqliteStore:
             )
             """
         )
+        # Рынок: игрок выставляет прокачанного (7 ур.) орла редкости зелёный+ на
+        # продажу за GRAM; строка живёт, пока орла не купили или не сняли с продажи.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_listings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                seller_id   INTEGER,
+                seller_name TEXT DEFAULT '',
+                monster_id  TEXT,
+                price_gram  REAL,
+                created_at  INTEGER
+            )
+            """
+        )
 
         # Колонки, добавленные после первых версий.
         columns = {row["name"] for row in cur.execute("PRAGMA table_info(users)")}
@@ -103,7 +115,6 @@ class SqliteStore:
             ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
-            ("market_unlocked", "INTEGER DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
@@ -273,6 +284,160 @@ class SqliteStore:
             values.append(user_id)
             cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", tuple(values))
             conn.commit()
+        finally:
+            conn.close()
+
+    async def create_listing(self, seller_id: int, seller_name: str, monster_id: str,
+                              feed_levels: int, price_gram: float, ts: int) -> Optional[str]:
+        """Снимает с фермы первого попавшегося прокачанного (feed_levels) орла
+        нужного вида и выставляет его на продажу. None — если такого орла нет."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute("SELECT monsters FROM users WHERE user_id = ?", (seller_id,)).fetchone()
+            try:
+                farm = json.loads(row["monsters"] or "[]") if row else []
+            except (TypeError, ValueError):
+                farm = []
+            idx = next((i for i, m in enumerate(farm)
+                        if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels), None)
+            if idx is None:
+                conn.rollback()
+                return None
+            farm.pop(idx)
+            cur.execute("UPDATE users SET monsters = ? WHERE user_id = ?", (json.dumps(farm), seller_id))
+            cur.execute(
+                "INSERT INTO market_listings (seller_id, seller_name, monster_id, price_gram, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (seller_id, seller_name, monster_id, price_gram, ts),
+            )
+            listing_id = cur.lastrowid
+            conn.commit()
+            return str(listing_id)
+        finally:
+            conn.close()
+
+    async def list_listings(self, limit: int = 200) -> list:
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT id, seller_id, seller_name, monster_id, price_gram, created_at "
+            "FROM market_listings ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        items = [dict(r) for r in rows]
+        for item in items:
+            item["id"] = str(item["id"])
+        return items
+
+    async def buy_listing(self, buyer_id: int, listing_id: int, feed_levels: int,
+                           max_slots: int, commission: float) -> str:
+        """Атомарно покупает лот: списывает GRAM с покупателя, зачисляет продавцу
+        цену за вычетом комиссии рынка, добавляет орла на ферму покупателя.
+        Возвращает "ok" либо код причины отказа."""
+        try:
+            listing_id = int(listing_id)
+        except (TypeError, ValueError):
+            return "not_found"
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            listing = cur.execute(
+                "SELECT * FROM market_listings WHERE id = ?", (listing_id,)
+            ).fetchone()
+            if not listing:
+                conn.rollback()
+                return "not_found"
+            if int(listing["seller_id"]) == int(buyer_id):
+                conn.rollback()
+                return "own_listing"
+
+            buyer = cur.execute(
+                "SELECT coins, slots, monsters FROM users WHERE user_id = ?", (buyer_id,)
+            ).fetchone()
+            price = float(listing["price_gram"])
+            if not buyer or float(buyer["coins"]) < price:
+                conn.rollback()
+                return "insufficient_funds"
+
+            try:
+                farm = json.loads(buyer["monsters"] or "[]")
+            except (TypeError, ValueError):
+                farm = []
+            slots = int(buyer["slots"] or 0)
+            used = len(farm)
+            if used >= slots:
+                if slots >= max_slots:
+                    conn.rollback()
+                    return "no_room"
+                slots = min(max_slots, slots + 1)
+            farm.append({"id": listing["monster_id"], "next_egg_at": 0,
+                         "feed_level": feed_levels, "feed_taps": 0})
+
+            cur.execute("DELETE FROM market_listings WHERE id = ?", (listing_id,))
+            cur.execute(
+                "UPDATE users SET coins = coins - ?, monsters = ?, slots = ?, ops = ops + 1 "
+                "WHERE user_id = ?",
+                (price, json.dumps(farm), slots, buyer_id),
+            )
+            seller_credit = price * (1 - commission)
+            cur.execute(
+                "UPDATE users SET coins = coins + ?, total_earned = total_earned + ?, ops = ops + 1 "
+                "WHERE user_id = ?",
+                (seller_credit, seller_credit, listing["seller_id"]),
+            )
+            conn.commit()
+            return "ok"
+        finally:
+            conn.close()
+
+    async def cancel_listing(self, seller_id: int, listing_id: int,
+                              feed_levels: int, max_slots: int) -> str:
+        """Снимает лот с продажи и возвращает орла на ферму продавца."""
+        try:
+            listing_id = int(listing_id)
+        except (TypeError, ValueError):
+            return "not_found"
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            listing = cur.execute(
+                "SELECT * FROM market_listings WHERE id = ?", (listing_id,)
+            ).fetchone()
+            if not listing:
+                conn.rollback()
+                return "not_found"
+            if int(listing["seller_id"]) != int(seller_id):
+                conn.rollback()
+                return "not_owner"
+
+            row = cur.execute(
+                "SELECT slots, monsters FROM users WHERE user_id = ?", (seller_id,)
+            ).fetchone()
+            try:
+                farm = json.loads(row["monsters"] or "[]") if row else []
+            except (TypeError, ValueError):
+                farm = []
+            slots = int(row["slots"] or 0) if row else 0
+            used = len(farm)
+            if used >= slots:
+                if slots >= max_slots:
+                    conn.rollback()
+                    return "no_room"
+                slots = min(max_slots, slots + 1)
+            farm.append({"id": listing["monster_id"], "next_egg_at": 0,
+                         "feed_level": feed_levels, "feed_taps": 0})
+
+            cur.execute("DELETE FROM market_listings WHERE id = ?", (listing_id,))
+            cur.execute(
+                "UPDATE users SET monsters = ?, slots = ? WHERE user_id = ?",
+                (json.dumps(farm), slots, seller_id),
+            )
+            conn.commit()
+            return "ok"
         finally:
             conn.close()
 
@@ -462,11 +627,13 @@ class MongoStore:
         self.users = client[db_name]["users"]
         self.deposits = client[db_name]["deposits"]
         self.withdrawals = client[db_name]["withdrawals"]
+        self.market = client[db_name]["market_listings"]
 
     async def init(self):
         await self.users.create_index("referred_by")
         await self.deposits.create_index("user_id")
         await self.withdrawals.create_index("user_id")
+        await self.market.create_index("seller_id")
 
     async def get(self, user_id: int) -> Optional[dict]:
         doc = await self.users.find_one({"_id": user_id})
@@ -538,6 +705,128 @@ class MongoStore:
             changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
 
         await self.users.update_one({"_id": user_id}, changes)
+
+    async def create_listing(self, seller_id: int, seller_name: str, monster_id: str,
+                              feed_levels: int, price_gram: float, ts: int) -> Optional[str]:
+        """Снимает с фермы первого попавшегося прокачанного (feed_levels) орла
+        нужного вида и выставляет его на продажу. None — если такого орла нет
+        (или ферму поменяли параллельно — оптимистичная блокировка по monsters)."""
+        doc = await self.users.find_one({"_id": seller_id}, {"monsters": 1})
+        farm = list((doc or {}).get("monsters") or [])
+        idx = next((i for i, m in enumerate(farm)
+                    if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels), None)
+        if idx is None:
+            return None
+        original = farm[:]
+        farm.pop(idx)
+        result = await self.users.update_one(
+            {"_id": seller_id, "monsters": original}, {"$set": {"monsters": farm}}
+        )
+        if result.modified_count == 0:
+            return None
+        listing = {
+            "seller_id": seller_id, "seller_name": seller_name,
+            "monster_id": monster_id, "price_gram": price_gram, "created_at": ts,
+        }
+        result = await self.market.insert_one(listing)
+        return str(result.inserted_id)
+
+    async def list_listings(self, limit: int = 200) -> list:
+        cursor = self.market.find().sort("created_at", -1).limit(limit)
+        items = []
+        async for doc in cursor:
+            doc["id"] = str(doc.pop("_id"))
+            items.append(doc)
+        return items
+
+    async def buy_listing(self, buyer_id: int, listing_id: str, feed_levels: int,
+                           max_slots: int, commission: float) -> str:
+        """Атомарно покупает лот: списывает GRAM с покупателя, зачисляет продавцу
+        цену за вычетом комиссии рынка, добавляет орла на ферму покупателя.
+        Возвращает "ok" либо код причины отказа."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.market.find_one_and_delete({"_id": oid})
+        if not listing:
+            return "not_found"
+        if int(listing["seller_id"]) == int(buyer_id):
+            # Отменять покупку не нужно — лот просто возвращаем на место.
+            await self.market.insert_one(listing)
+            return "own_listing"
+
+        price = float(listing["price_gram"])
+        buyer = await self.users.find_one({"_id": buyer_id}, {"coins": 1, "slots": 1, "monsters": 1})
+        if not buyer or float(buyer.get("coins") or 0) < price:
+            await self.market.insert_one(listing)
+            return "insufficient_funds"
+
+        farm = list(buyer.get("monsters") or [])
+        slots = int(buyer.get("slots") or 0)
+        used = len(farm)
+        if used >= slots:
+            if slots >= max_slots:
+                await self.market.insert_one(listing)
+                return "no_room"
+            slots = min(max_slots, slots + 1)
+        farm.append({"id": listing["monster_id"], "next_egg_at": 0,
+                     "feed_level": feed_levels, "feed_taps": 0})
+
+        result = await self.users.update_one(
+            {"_id": buyer_id, "coins": {"$gte": price}},
+            {"$set": {"monsters": farm, "slots": slots}, "$inc": {"coins": -price, "ops": 1}},
+        )
+        if result.modified_count == 0:
+            # Баланс утёк параллельным запросом — откатываем лот обратно.
+            await self.market.insert_one(listing)
+            return "insufficient_funds"
+
+        seller_credit = price * (1 - commission)
+        await self.users.update_one(
+            {"_id": listing["seller_id"]},
+            {"$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1}},
+        )
+        return "ok"
+
+    async def cancel_listing(self, seller_id: int, listing_id: str,
+                              feed_levels: int, max_slots: int) -> str:
+        """Снимает лот с продажи и возвращает орла на ферму продавца."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.market.find_one({"_id": oid})
+        if not listing:
+            return "not_found"
+        if int(listing["seller_id"]) != int(seller_id):
+            return "not_owner"
+
+        deleted = await self.market.find_one_and_delete({"_id": oid, "seller_id": seller_id})
+        if not deleted:
+            return "not_found"
+
+        row = await self.users.find_one({"_id": seller_id}, {"slots": 1, "monsters": 1})
+        farm = list((row or {}).get("monsters") or [])
+        slots = int((row or {}).get("slots") or 0)
+        used = len(farm)
+        if used >= slots:
+            if slots >= max_slots:
+                await self.market.insert_one(deleted)
+                return "no_room"
+            slots = min(max_slots, slots + 1)
+        farm.append({"id": deleted["monster_id"], "next_egg_at": 0,
+                     "feed_level": feed_levels, "feed_taps": 0})
+        await self.users.update_one({"_id": seller_id}, {"$set": {"monsters": farm, "slots": slots}})
+        return "ok"
 
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
         """Хэш транзакции — это _id, поэтому одно пополнение зачислится только раз."""
