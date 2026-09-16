@@ -339,7 +339,14 @@
     "gold_by_tier": [0.5, 1, 2, 4, 8, 16]
   },
   "market": {
-    "commission": 0.10
+    "commission": 0.10,
+    "min_price_by_tier": {
+      "uncommon": 2,
+      "rare": 4,
+      "epic": 8,
+      "legendary": 16,
+      "mythical": 32
+    }
   },
   "vip": {
     "tiers": [

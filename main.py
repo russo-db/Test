@@ -45,7 +45,7 @@ def apply_config(cfg: dict):
     global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
     global WHEEL, WHEEL_SEGMENTS, TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
-    global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION
+    global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -61,6 +61,7 @@ def apply_config(cfg: dict):
     MARKET_CFG = CONFIG.get("market") or {}
     MARKET_MIN_TIER_INDEX = 1  # обычная (индекс 0) редкость на P2P-рынке не продаётся
     MARKET_COMMISSION = float(MARKET_CFG.get("commission", 0.10))
+    MARKET_MIN_PRICE = {k: float(v) for k, v in (MARKET_CFG.get("min_price_by_tier") or {}).items()}
     DAILY = CONFIG.get("daily") or {}
     DAILY_DAYS = int(DAILY.get("days", 30))
     DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
@@ -848,6 +849,12 @@ def _market_tier_ok(monster_id: str) -> bool:
     return tier is not None and TIER_INDEX.get(tier, -1) >= MARKET_MIN_TIER_INDEX
 
 
+def _market_min_price(monster_id: str) -> float:
+    """Минимальная цена лота для редкости орла (0, если для редкости не задана)."""
+    tier = MONSTER_TIER.get(monster_id)
+    return MARKET_MIN_PRICE.get(tier, 0.0)
+
+
 @app.get("/api/market/listings")
 async def market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
     """Список активных лотов рынка — P2P-торговля орлами между игроками."""
@@ -864,6 +871,12 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
         raise HTTPException(status_code=400, detail="Этот орёл не продаётся на рынке")
     if not (request.price_gram > 0):
         raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    min_price = _market_min_price(request.monster_id)
+    if request.price_gram < min_price:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Минимальная цена для этой редкости — {min_price:g} GRAM",
+        )
 
     row = await fetch_user(user_id)
     listing_id = await store.create_listing(
