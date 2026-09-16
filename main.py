@@ -365,6 +365,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "eggs_board_unlocked": 1,
             "wallet": "",
             "ops": 0,
+            "market_unlocked": 0,
         }
     )
 
@@ -514,6 +515,7 @@ class FarmState(BaseModel):
     eggs_board: List[int] = []
     eggs_board_unlocked: int = 1
     ops: int = -1              # версия баланса, полученная при последней загрузке
+    market_unlocked: bool = False  # разблокируется навсегда — сервер только OR'ит, никогда не гасит
 
 
 class MissionClaim(BaseModel):
@@ -559,6 +561,7 @@ class AdminPlayerUpdate(BaseModel):
     monsters: Optional[List[dict]] = None
     eggs_board: Optional[List[int]] = None
     eggs_board_unlocked: Optional[int] = None
+    market_unlocked: Optional[bool] = None
 
 
 class AdminConfigUpdate(BaseModel):
@@ -621,6 +624,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
+        "market_unlocked": bool(row.get("market_unlocked")),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -642,6 +646,9 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
 
     eggs_board = normalize_eggs_board(state.eggs_board)
     eggs_board_unlocked = max(1, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 1)))
+    # Разблокировка рынка необратима — сервер только OR'ит с уже сохранённым
+    # значением, так что баг или откат клиента не может её погасить обратно.
+    market_unlocked = bool(row.get("market_unlocked")) or bool(state.market_unlocked)
 
     await store.update(
         user_id,
@@ -655,6 +662,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "slots": state.slots,
             "eggs_board": eggs_board,
             "eggs_board_unlocked": eggs_board_unlocked,
+            "market_unlocked": market_unlocked,
             "last_seen": int(time.time()),
         },
     )
@@ -906,6 +914,7 @@ def player_summary(doc: dict) -> dict:
         "referrals": int(doc.get("referrals") or 0),
         "wallet": doc.get("wallet") or "",
         "last_seen": int(doc.get("last_seen") or 0),
+        "market_unlocked": bool(doc.get("market_unlocked")),
     }
 
 

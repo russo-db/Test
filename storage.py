@@ -3,7 +3,8 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, gold, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops
+    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops,
+    market_unlocked
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON)
 и заявки на вывод (withdrawals).
@@ -19,6 +20,7 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "wallet", "ops",
+    "market_unlocked",
 )
 JSON_FIELDS = ("monsters", "missions", "eggs_board")
 
@@ -58,7 +60,8 @@ class SqliteStore:
                 eggs_board     TEXT    DEFAULT '[]',
                 eggs_board_unlocked INTEGER DEFAULT 1,
                 wallet         TEXT    DEFAULT '',
-                ops            INTEGER DEFAULT 0
+                ops            INTEGER DEFAULT 0,
+                market_unlocked INTEGER DEFAULT 0
             )
             """
         )
@@ -100,6 +103,7 @@ class SqliteStore:
             ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
+            ("market_unlocked", "INTEGER DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")

@@ -204,6 +204,13 @@
 
         /* ---------- Cards ---------- */
         .card { padding: 14px; margin-bottom: 13px; display: flex; justify-content: space-between; align-items: center; gap: 13px; }
+        .market-card .card-info { flex: 1; min-width: 0; }
+        .market-eagle { width: 48px; height: 48px; object-fit: contain; flex: 0 0 auto; filter: drop-shadow(0 3px 0 var(--ink)); }
+        .market-card .btn-action { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; padding: 10px 14px; }
+        .market-card .btn-action .coin-icon { width: 15px; height: 15px; }
+        .market-locked { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; gap: 8px; }
+        .market-locked .lock-hero { width: 56px; height: 56px; margin: 0 0 6px 0; }
+        .market-locked p { color: var(--text-muted); font-size: 14px; font-weight: 700; max-width: 280px; }
         .card-info { flex: 1; min-width: 0; }
         .card-info h3 { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
         .card-info p { font-size: 13px; color: var(--text-muted); font-weight: 700; }
@@ -686,6 +693,13 @@
             <div id="missionList"></div>
         </div>
 
+        <!-- MARKET TAB -->
+        <div id="market" class="content">
+            <h1 data-i18n="market.heading">Рынок</h1>
+            <p class="subtitle" data-i18n="market.subtitle">Покупай орлов редкости зелёный и выше за GRAM</p>
+            <div id="marketBody"></div>
+        </div>
+
         <!-- PROFILE TAB -->
         <div id="profile" class="content">
             <div class="avatar-container">
@@ -831,6 +845,10 @@
             <div class="nav-item" onclick="switchTab('missions', this)">
                 <div class="nav-icon nav-icon-emoji">✅</div>
                 <span data-i18n="nav.missions">Задания</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('market', this)">
+                <div class="nav-icon nav-icon-emoji">🛒</div>
+                <span data-i18n="nav.market">Рынок</span>
             </div>
             <div class="nav-item" onclick="switchTab('profile', this)">
                 <div class="nav-icon nav-icon-emoji">👨‍🎓</div>
@@ -1004,7 +1022,7 @@
 
         const I18N = {
             ru: {
-                'nav.farm': 'Орлы', 'nav.eggs': 'Яйца', 'nav.missions': 'Задания', 'nav.profile': 'Профиль',
+                'nav.farm': 'Орлы', 'nav.eggs': 'Яйца', 'nav.missions': 'Задания', 'nav.market': 'Рынок', 'nav.profile': 'Профиль',
                 'farm.eagles': 'Орлов', 'farm.eggsReady': 'Яиц готово',
                 'farm.empty': 'Ферма пустая', 'farm.hatchToSettle': 'Вскрой яйцо, чтобы поселить орла',
                 'farm.expeditionBack': 'экспедиция вернулась — тапни за золото!',
@@ -1020,6 +1038,12 @@
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
                 'missions.heading': 'Задания', 'missions.subtitle': 'Ежедневный вход и разовые награды',
+                'market.heading': 'Рынок', 'market.subtitle': 'Покупай орлов редкости зелёный и выше за GRAM',
+                'market.lockedTitle': 'Рынок закрыт',
+                'market.lockedHint': 'Скрафти (улучши) своего первого зелёного орла на вкладке «Орлы», чтобы открыть рынок',
+                'market.unlocked': 'Рынок открыт! Теперь можно покупать орлов за GRAM',
+                'market.notEnoughGram': 'Не хватает GRAM', 'market.noRoom': 'На ферме нет места — освободи слот',
+                'market.bought': 'Куплен {name}!',
                 'profile.tapWhatIsThis': 'Нажми — что это', 'profile.goldLabel': 'Золото',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
@@ -1094,7 +1118,7 @@
                 'withdraw.insufficientBalance': 'Недостаточно GRAM на балансе', 'withdraw.needAddress': 'Укажи адрес кошелька',
             },
             en: {
-                'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.profile': 'Profile',
+                'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.market': 'Market', 'nav.profile': 'Profile',
                 'farm.eagles': 'Eagles', 'farm.eggsReady': 'Eggs ready',
                 'farm.empty': 'Farm is empty', 'farm.hatchToSettle': 'Hatch an egg to settle an eagle',
                 'farm.expeditionBack': 'expedition is back — tap for gold!',
@@ -1110,6 +1134,12 @@
                 'eggs.subtitle': 'Tap an egg to open it, or pick it for upgrading with another of the same level',
                 'eggs.openAll': 'Open all',
                 'missions.heading': 'Missions', 'missions.subtitle': 'Daily check-in and one-time rewards',
+                'market.heading': 'Market', 'market.subtitle': 'Buy eagles of uncommon rarity and above with GRAM',
+                'market.lockedTitle': 'Market is locked',
+                'market.lockedHint': 'Craft (upgrade) your first uncommon eagle on the Eagles tab to unlock the market',
+                'market.unlocked': 'Market unlocked! You can now buy eagles with GRAM',
+                'market.notEnoughGram': 'Not enough GRAM', 'market.noRoom': 'No room on the farm — free up a slot',
+                'market.bought': 'Bought {name}!',
                 'profile.tapWhatIsThis': 'Tap — what is this', 'profile.goldLabel': 'Gold',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
@@ -1254,7 +1284,8 @@
             eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..16)
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
-            ops: 0               // версия баланса на сервере
+            ops: 0,              // версия баланса на сервере
+            marketUnlocked: false  // открывается навсегда после первого скрафченного (улучшённого) зелёного орла
         };
 
         let botUsername = '';
@@ -2022,6 +2053,14 @@
             state.farm.push(newSlot(nextMonster.id));
             state.activeSlot = state.farm.length - 1;
 
+            // Рынок открывается один раз и навсегда — как только игрок впервые
+            // скрафтил (улучшил) зелёного (необычного) орла, а не просто им
+            // разжился с колеса или из яйца.
+            if (nextTier.id === 'uncommon' && !state.marketUnlocked) {
+                state.marketUnlocked = true;
+                setTimeout(() => { toast(t('market.unlocked')); haptic.notify('success'); }, 1200);
+            }
+
             toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
             haptic.notify('success');
             spawnBurst(16);
@@ -2753,12 +2792,69 @@
                 CONFIG.missions.filter(m => m.type === 'referrals'));
         }
 
+        // Рынок продаёт орлов от зелёной (необычной) редкости и выше за GRAM —
+        // открывается навсегда, как только игрок впервые скрафтил (улучшил,
+        // не выиграл на колесе и не вылупил) зелёного орла (см. fuseEagles).
+        function marketPrice(tierId) {
+            const table = CONFIG.market.gram_cost || {};
+            return Number(table[tierId]) || 0;
+        }
+
+        function renderMarket() {
+            const body = document.getElementById('marketBody');
+            if (!body) return;
+            if (!state.marketUnlocked) {
+                body.innerHTML = `
+                    <div class="market-locked">
+                        <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                        <h3>${t('market.lockedTitle')}</h3>
+                        <p>${t('market.lockedHint')}</p>
+                    </div>
+                `;
+                return;
+            }
+            const tiers = CONFIG.tiers.slice(1); // без обычной редкости — рынок начинается с зелёной
+            body.innerHTML = tiers.map(tier => {
+                const monster = MONSTERS[tier.monsters[0].id];
+                const price = marketPrice(tier.id);
+                const affordable = state.coins >= price;
+                return `
+                    <div class="card glass-panel market-card">
+                        <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                        <div class="card-info">
+                            <h3 style="color:${tier.color}">${tier.name}</h3>
+                            <p style="font-size:13px; color:var(--text-muted)">${monster.name}</p>
+                        </div>
+                        <button class="btn-action ${affordable ? 'btn-buy' : 'btn-locked'}" onclick="buyMarketEagle('${tier.id}')">
+                            ${fmtGram(price)}<img class="coin-icon" src="assets/coin.png" alt="">
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function buyMarketEagle(tierId) {
+            if (!state.marketUnlocked) return;
+            const price = marketPrice(tierId);
+            if (state.coins < price) { toast(t('market.notEnoughGram')); haptic.notify('warning'); return; }
+            if (!canHatch()) { toast(t('market.noRoom')); haptic.notify('warning'); return; }
+            state.coins -= price;
+            const monster = rollMonster(tierId);
+            addFarmSlot(monster.id);
+            haptic.notify('success');
+            spawnBurst(12);
+            toast(t('market.bought', { name: monster.name }));
+            renderAll();
+            saveNow();
+        }
+
         function renderAll() {
             renderHeader();
             renderActiveMonster();
             renderSlotGrid();
             renderEggs();
             renderMissions();
+            renderMarket();
             updateWheelButton();
         }
 
@@ -3032,6 +3128,7 @@
 
             if (tabId === 'collection') renderEggs();
             if (tabId === 'missions') renderMissions();
+            if (tabId === 'market') renderMarket();
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -3468,7 +3565,8 @@
                 slots: state.slots,
                 eggs_board: state.eggBoard,
                 eggs_board_unlocked: state.eggBoardUnlocked,
-                ops: state.ops
+                ops: state.ops,
+                market_unlocked: !!state.marketUnlocked
             };
             fetch('api/save', {
                 method: 'POST',
@@ -3494,6 +3592,7 @@
             state.totalEarned = data.total_earned;
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
+            state.marketUnlocked = !!data.market_unlocked;
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.activeSlot = data.active_slot || 0;
@@ -3571,6 +3670,7 @@
             if (typeof state.slots !== 'number') state.slots = CONFIG.slots.start;
             state.mnstr = Number(state.mnstr) || 0;
             state.gold = Number(state.gold) || 0;
+            state.marketUnlocked = !!state.marketUnlocked;
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -3691,6 +3791,10 @@
             cfg.expeditions = Object.assign(
                 { duration_hours: 4, cost_meat: 1, gold_by_tier: [0.5, 1, 2, 4, 8, 16] },
                 cfg.expeditions
+            );
+            cfg.market = Object.assign(
+                { gram_cost: { uncommon: 10, rare: 20, epic: 40, legendary: 80, mythical: 160 } },
+                cfg.market
             );
             return cfg;
         }
