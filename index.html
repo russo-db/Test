@@ -1096,7 +1096,7 @@
                 'market.onlineOnly': 'Рынок работает только при подключении к серверу',
                 'market.empty': 'Пока никто ничего не продаёт — загляни позже',
                 'market.loading': 'Загружаем лоты…',
-                'market.yourListing': 'Твой лот', 'market.seller': 'Продавец',
+                'market.yourListing': 'Твой лот', 'market.seller': 'Продавец', 'market.myListings': 'Твои лоты',
                 'market.noEligible': 'Нет прокачанных (7 ур.) орлов редкости зелёный и выше на продажу',
                 'market.sellTitle': 'Выставить орла на продажу',
                 'market.priceLabel': 'Цена, GRAM',
@@ -1215,7 +1215,7 @@
                 'market.onlineOnly': 'The market only works while connected to the server',
                 'market.empty': 'Nobody is selling anything yet — check back later',
                 'market.loading': 'Loading listings…',
-                'market.yourListing': 'Your listing', 'market.seller': 'Seller',
+                'market.yourListing': 'Your listing', 'market.seller': 'Seller', 'market.myListings': 'Your listings',
                 'market.noEligible': 'No fully-fed (level 7) eagles of uncommon rarity and above to sell',
                 'market.sellTitle': 'List an eagle for sale',
                 'market.priceLabel': 'Price, GRAM',
@@ -3012,6 +3012,8 @@
 
         // Разделы рынка идут по редкости (обычная не торгуется), внутри раздела
         // лоты — живая очередь от самой дешёвой ставки сверху к самой дорогой.
+        // Свои лоты в общей очереди не показываются — только в отдельном блоке
+        // «Твои лоты» сверху, где их можно снять с продажи.
         function renderMarket() {
             const body = document.getElementById('marketBody');
             if (!body) return;
@@ -3023,14 +3025,39 @@
                 body.innerHTML = `<div class="market-locked"><p>${t('market.loading')}</p></div>`;
                 return;
             }
+            const mine = [];
             const byTier = {};
             (state.marketListings || []).forEach(listing => {
                 const monster = MONSTERS[listing.monster_id];
                 if (!monster) return;
-                (byTier[monster.tier] = byTier[monster.tier] || []).push(listing);
+                if (String(listing.seller_id) === String(state.userId)) {
+                    mine.push(listing);
+                } else {
+                    (byTier[monster.tier] = byTier[monster.tier] || []).push(listing);
+                }
             });
 
-            body.innerHTML = CONFIG.tiers.slice(1).map(tier => {
+            const mineHtml = mine.length ? `
+                <div class="market-section">
+                    <div class="market-section-header"><span>${t('market.myListings')}</span></div>
+                    ${mine.map(listing => {
+                        const monster = MONSTERS[listing.monster_id];
+                        const tier = tierById(monster.tier);
+                        return `
+                            <div class="card glass-panel market-card">
+                                <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                                <div class="card-info">
+                                    <h3 style="color:${tier.color}">${monster.name}</h3>
+                                    <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
+                                </div>
+                                <button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            ` : '';
+
+            const tiersHtml = CONFIG.tiers.slice(1).map(tier => {
                 const rows = (byTier[tier.id] || []).slice().sort((a, b) => a.price_gram - b.price_gram);
                 return `
                     <div class="market-section">
@@ -3040,23 +3067,22 @@
                         </div>
                         ${rows.length ? rows.map((listing, idx) => {
                             const monster = MONSTERS[listing.monster_id];
-                            const mine = String(listing.seller_id) === String(state.userId);
                             return `
                                 <div class="card glass-panel market-card">
                                     <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                                     <div class="card-info">
                                         <h3 style="color:${tier.color}">${monster.name} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                                        <p style="font-size:12px; color:var(--text-muted)">${mine ? t('market.yourListing') : (listing.seller_name || t('market.seller'))}</p>
+                                        <p style="font-size:12px; color:var(--text-muted)">${listing.seller_name || t('market.seller')}</p>
                                     </div>
-                                    ${mine
-                                        ? `<button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>`
-                                        : `<button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>`}
+                                    <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                                 </div>
                             `;
                         }).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
                     </div>
                 `;
             }).join('');
+
+            body.innerHTML = mineHtml + tiersHtml;
         }
 
         async function loadMarketListings() {
