@@ -962,11 +962,20 @@ class MongoStore:
         return True
 
 
+def _mask_uri(uri: str) -> str:
+    """Прячет пароль из строки подключения перед выводом в лог."""
+    return re.sub(r"://([^:/@]+):[^@]*@", r"://\1:***@", uri)
+
+
 def make_store(client=None):
     """MongoDB, если задан MONGODB_URI, иначе файловый SQLite."""
     uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URL")
     if uri or client is not None:
-        return MongoStore(uri, os.getenv("MONGODB_DB", "monstergram"), client=client)
+        db_name = os.getenv("MONGODB_DB", "monstergram")
+        print(f"[storage] backend = MongoDB, db = {db_name!r}, uri = {_mask_uri(uri) if uri else '(client passed in)'}")
+        return MongoStore(uri, db_name, client=client)
 
     base = os.path.dirname(os.path.abspath(__file__))
-    return SqliteStore(os.getenv("DB_PATH") or os.path.join(base, "monster_database.db"))
+    path = os.getenv("DB_PATH") or os.path.join(base, "monster_database.db")
+    print(f"[storage] backend = SQLite, path = {path!r} (MONGODB_URI/MONGO_URL не заданы)")
+    return SqliteStore(path)

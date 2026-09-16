@@ -1276,7 +1276,12 @@ async def run_bot():
 
 @app.on_event("startup")
 async def startup_event():
-    await store.init()
+    try:
+        await store.init()
+        print("[storage] init() OK — подключение к базе рабочее, индексы/коллекции созданы")
+    except Exception as e:
+        print(f"[storage] init() FAILED: {type(e).__name__}: {e}")
+        raise
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
     else:
