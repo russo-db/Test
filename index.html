@@ -1713,7 +1713,7 @@
                 </div>
                 <div class="fusion-actions">
                     <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">Попытка за ${fmtToken(cfg.merge_cost_meat)} Meat</button>
-                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">Попытка за ${fmtGram(cfg.merge_cost_gram)} GRAM — шанс ×${cfg.merge_gram_multiplier}</button>
+                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">Попытка за ${fmtGram(cfg.merge_cost_gram)} GRAM</button>
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">Закрыть</button>
                 </div>
             `;
@@ -1737,8 +1737,7 @@
                 toast('Не хватает Meat'); haptic.notify('warning'); return;
             }
 
-            let chance = mergeChance(monster);
-            if (useGram) chance = Math.min(1, chance * Number(cfg.merge_gram_multiplier || 2));
+            const chance = mergeChance(monster);
 
             if (useGram) state.coins -= cost; else state.mnstr -= cost;
             renderHeader();
@@ -3142,7 +3141,7 @@
             cfg.fusion = Object.assign(
                 { feed_base_cost: 1, feed_growth: 2, feed_taps_per_level: 10, feed_levels: 7,
                   merge_chance_by_tier: [0.1, 0.035, 0.015, 0.005, 0.00005],
-                  merge_cost_meat: 75, merge_cost_gram: 1, merge_gram_multiplier: 2 },
+                  merge_cost_meat: 75, merge_cost_gram: 1 },
                 cfg.fusion
             );
             return cfg;
