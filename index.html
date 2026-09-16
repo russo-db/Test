@@ -2134,7 +2134,6 @@
             if (startedFarming) {
                 haptic.notify('success');
                 toast(`${monster.name} несёт яйцо — будет готово через ${formatCountdown(eggIntervalSeconds())}`);
-                spawnBurst(12);
                 saveNow();
             } else {
                 scheduleSave();
