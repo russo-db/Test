@@ -97,6 +97,21 @@
         .content.active { display: block; animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
         @keyframes popIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
 
+        /* ---------- Профиль: подвкладки ---------- */
+        .subtab-bar { display: flex; border-bottom: 2px solid rgba(255, 255, 255, 0.15); margin: 4px 0 16px 0; }
+        .subtab-item {
+            flex: 1; text-align: center; padding: 10px 2px 12px 2px;
+            font-weight: 900; font-size: 12.5px; letter-spacing: 0.2px; text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.6); position: relative; cursor: pointer; white-space: nowrap;
+        }
+        .subtab-item.active { color: var(--gold); }
+        .subtab-item.active::after {
+            content: ''; position: absolute; left: 10%; right: 10%; bottom: -2px; height: 3px;
+            border-radius: 2px; background: #fff;
+        }
+        .subtab-panel { display: none; }
+        .subtab-panel.active { display: block; animation: popIn 0.25s ease; }
+
         h1 { font-size: 27px; font-weight: 900; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 3px 0 var(--ink), 0 6px 10px rgba(0, 0, 0, 0.35); }
         p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 18px; font-size: 14px; font-weight: 700; }
 
@@ -483,6 +498,28 @@
         .wallet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 11px; }
         .wallet-actions .btn-action { width: 100%; justify-content: center; padding: 13px 10px; font-size: 14px; }
         .wallet-note { text-align: center; font-size: 12px; font-weight: 800; color: var(--text-muted); margin-top: 11px; }
+
+        /* ---------- Язык и звук ---------- */
+        .lang-options { display: flex; flex-direction: column; gap: 10px; }
+        .lang-option {
+            display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+            background: var(--panel-soft); border: 3px solid var(--ink); border-radius: 16px;
+            font-weight: 900; font-size: 15px; color: #fff; cursor: pointer;
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.1);
+        }
+        .lang-option.active { border-color: var(--gold); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(247, 181, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.14); color: var(--gold); }
+        .lang-flag { font-size: 20px; }
+        .sound-toggle {
+            width: 52px; height: 30px; border-radius: 15px; background: var(--panel-soft);
+            border: 3px solid var(--ink); position: relative; cursor: pointer; flex: 0 0 auto;
+            box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.25);
+        }
+        .sound-toggle-knob {
+            position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+            background: var(--text-muted); transition: left 0.18s ease, background 0.18s ease;
+        }
+        .sound-toggle.on { background: rgba(74, 222, 128, 0.25); }
+        .sound-toggle.on .sound-toggle-knob { left: 26px; background: #4ade80; }
         .wallet-op { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border-radius: 15px; background: var(--panel-soft); border: 3px solid var(--ink); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1); margin-bottom: 8px; }
         .wallet-op .op-kind { font-size: 13px; font-weight: 900; }
         .wallet-op .op-date { font-size: 11px; font-weight: 800; color: var(--text-muted); margin-top: 2px; }
@@ -597,7 +634,7 @@
         <div id="farm" class="content active">
             <div class="stats-panel glass-panel" id="farmStats">
                 <div class="stat-cell">
-                    <span class="stat-label">Орлов</span>
+                    <span class="stat-label" data-i18n="farm.eagles">Орлов</span>
                     <span class="stat-value">
                         <span class="stat-coin-emoji">🦅</span>
                         <span id="statIncome">0</span>
@@ -605,7 +642,7 @@
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-cell">
-                    <span class="stat-label">Яиц готово</span>
+                    <span class="stat-label" data-i18n="farm.eggsReady">Яиц готово</span>
                     <span class="stat-value">
                         <svg class="stat-coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C7 2 4 9 4 14a8 8 0 0 0 16 0C20 9 17 2 12 2Z"></path></svg>
                         <span id="statTokenIncome">0</span>
@@ -623,7 +660,7 @@
 
                 <button class="btn-action wheel-open" id="wheelOpenBtn" onclick="openWheel()">
                     <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 3v3M12 18v3M21 12h-3M6 12H3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7 5.6 5.6"></path></svg></div>
-                    Колесо фортуны
+                    <span data-i18n="wheel.title">Колесо фортуны</span>
                 </button>
 
                 <div class="slot-grid" id="slotGrid"></div>
@@ -632,58 +669,21 @@
 
         <!-- COLLECTION TAB -->
         <div id="collection" class="content">
-            <h1>Яйца</h1>
-            <p class="subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость</p>
+            <h1 data-i18n="eggs.heading">Яйца</h1>
+            <p class="subtitle" data-i18n="eggs.subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость</p>
 
             <div class="egg-board" id="eggBoard"></div>
             <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
                 <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C7 2 4 9 4 14a8 8 0 0 0 16 0C20 9 17 2 12 2Z"></path></svg></div>
-                Вскрыть все
+                <span data-i18n="eggs.openAll">Вскрыть все</span>
             </button>
         </div>
 
         <!-- MISSIONS TAB -->
         <div id="missions" class="content">
-            <h1>Задания</h1>
-            <p class="subtitle">Ежедневный вход и разовые награды</p>
+            <h1 data-i18n="missions.heading">Задания</h1>
+            <p class="subtitle" data-i18n="missions.subtitle">Ежедневный вход и разовые награды</p>
             <div id="missionList"></div>
-        </div>
-
-        <!-- FRIENDS TAB -->
-        <div id="friends" class="content">
-            <h1>Друзья</h1>
-            <p class="subtitle">Зови друзей — расти быстрее</p>
-
-            <div class="card glass-panel" style="flex-direction: column; gap: 16px;">
-                <div class="card-info" style="text-align: center;">
-                    <h3 style="font-size: 20px;">Пригласи друга</h3>
-                    <p style="font-size: 14px; margin-top: 6px;" id="referralTerms">Получи бонус за каждого друга</p>
-                </div>
-                <button class="btn-primary" onclick="shareReferral()">
-                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg></div>
-                    Поделиться ссылкой
-                </button>
-                <button class="btn-action" style="width: 100%; justify-content: center;" onclick="copyReferral()">Скопировать ссылку</button>
-            </div>
-
-            <div class="card glass-panel" id="invitedByCard" style="display: none;">
-                <div class="card-info">
-                    <p>Тебя пригласил</p>
-                    <h3 id="invitedByName" style="font-size: 20px; margin-top: 5px;">—</h3>
-                </div>
-                <div class="icon-lg" style="color: var(--gold);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle><path d="m17 11 2 2 4-4"></path></svg></div>
-            </div>
-
-            <div class="card glass-panel">
-                <div class="card-info">
-                    <p>Приглашено друзей</p>
-                    <h3 id="referralCount" style="font-size: 24px; margin-top: 5px;">0</h3>
-                </div>
-                <div class="icon-lg" style="color: var(--accent-cyan);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
-            </div>
-
-            <div class="tier-heading"><span>Награды за друзей</span></div>
-            <div id="friendMissionList"></div>
         </div>
 
         <!-- PROFILE TAB -->
@@ -703,68 +703,138 @@
                     <img src="assets/mnstr.png" alt="">
                     <span class="balance-label">Meat</span>
                     <b id="profileMnstr">0</b>
-                    <span class="balance-hint">Нажми — что это</span>
+                    <span class="balance-hint" data-i18n="profile.tapWhatIsThis">Нажми — что это</span>
                 </div>
                 <div class="balance-card glass-panel">
                     <span class="balance-emoji">🪙</span>
-                    <span class="balance-label">Золото</span>
+                    <span class="balance-label" data-i18n="profile.goldLabel">Золото</span>
                     <b id="profileGold">0</b>
                 </div>
             </div>
 
-            <div class="tier-heading"><span>Кошелёк TON</span></div>
+            <div class="subtab-bar">
+                <div class="subtab-item active" data-subtab="wallet" onclick="switchProfileSubtab('wallet')" data-i18n="subtab.wallet">Кошелёк</div>
+                <div class="subtab-item" data-subtab="friends" onclick="switchProfileSubtab('friends')" data-i18n="subtab.friends">Друзья</div>
+                <div class="subtab-item" data-subtab="language" onclick="switchProfileSubtab('language')" data-i18n="subtab.language">Язык</div>
+                <div class="subtab-item" data-subtab="sound" onclick="switchProfileSubtab('sound')" data-i18n="subtab.sound">Звук</div>
+            </div>
 
-            <div class="card glass-panel">
-                <div class="card-info">
-                    <p id="walletState">Кошелёк не подключён</p>
-                    <h3 id="walletAddress" style="font-size: 18px; margin-top: 5px;">—</h3>
+            <!-- Подвкладка: Кошелёк -->
+            <div class="subtab-panel active" id="profileSubWallet">
+                <div class="tier-heading"><span data-i18n="wallet.heading">Кошелёк TON</span></div>
+
+                <div class="card glass-panel">
+                    <div class="card-info">
+                        <p id="walletState" data-i18n="wallet.notConnected">Кошелёк не подключён</p>
+                        <h3 id="walletAddress" style="font-size: 18px; margin-top: 5px;">—</h3>
+                    </div>
+                    <div class="icon-lg" style="color: var(--accent-coin);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21 3 8h18l-9 13Z"></path><path d="M3 8h18"></path><path d="M12 21V8"></path></svg></div>
                 </div>
-                <div class="icon-lg" style="color: var(--accent-coin);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21 3 8h18l-9 13Z"></path><path d="M3 8h18"></path><path d="M12 21V8"></path></svg></div>
+
+                <button class="btn-primary wallet-connect" id="walletBtn" onclick="toggleWallet()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="3"></rect><path d="M16 12h3"></path><path d="M2 10h20"></path></svg></div>
+                    <span id="walletBtnText" data-i18n="wallet.connect">Подключить кошелёк</span>
+                </button>
+
+                <div class="wallet-actions">
+                    <button class="btn-action" onclick="openDeposit()">
+                        <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg></div>
+                        <span data-i18n="wallet.deposit">Пополнить</span>
+                    </button>
+                    <button class="btn-action" onclick="openWithdraw()">
+                        <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></div>
+                        <span data-i18n="wallet.withdraw">Вывести</span>
+                    </button>
+                </div>
+
+                <p class="wallet-note" id="walletNote">1 GRAM = 1 TON • минимум 1 GRAM</p>
+
+                <div class="tier-heading" id="walletOpsHead" style="display: none;"><span data-i18n="wallet.recentOps">Последние операции</span></div>
+                <div id="walletOps"></div>
             </div>
 
-            <button class="btn-primary wallet-connect" id="walletBtn" onclick="toggleWallet()">
-                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="3"></rect><path d="M16 12h3"></path><path d="M2 10h20"></path></svg></div>
-                <span id="walletBtnText">Подключить кошелёк</span>
-            </button>
+            <!-- Подвкладка: Друзья -->
+            <div class="subtab-panel" id="profileSubFriends">
+                <div class="card glass-panel" style="flex-direction: column; gap: 16px;">
+                    <div class="card-info" style="text-align: center;">
+                        <h3 style="font-size: 20px;" data-i18n="friends.inviteTitle">Пригласи друга</h3>
+                        <p style="font-size: 14px; margin-top: 6px;" id="referralTerms">Получи бонус за каждого друга</p>
+                    </div>
+                    <button class="btn-primary" onclick="shareReferral()">
+                        <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg></div>
+                        <span data-i18n="friends.share">Поделиться ссылкой</span>
+                    </button>
+                    <button class="btn-action" style="width: 100%; justify-content: center;" onclick="copyReferral()" data-i18n="friends.copy">Скопировать ссылку</button>
+                </div>
 
-            <div class="wallet-actions">
-                <button class="btn-action" onclick="openDeposit()">
-                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg></div>
-                    Пополнить
-                </button>
-                <button class="btn-action" onclick="openWithdraw()">
-                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></div>
-                    Вывести
-                </button>
+                <div class="card glass-panel" id="invitedByCard" style="display: none;">
+                    <div class="card-info">
+                        <p data-i18n="friends.invitedByLabel">Тебя пригласил</p>
+                        <h3 id="invitedByName" style="font-size: 20px; margin-top: 5px;">—</h3>
+                    </div>
+                    <div class="icon-lg" style="color: var(--gold);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle><path d="m17 11 2 2 4-4"></path></svg></div>
+                </div>
+
+                <div class="card glass-panel">
+                    <div class="card-info">
+                        <p data-i18n="friends.invitedCountLabel">Приглашено друзей</p>
+                        <h3 id="referralCount" style="font-size: 24px; margin-top: 5px;">0</h3>
+                    </div>
+                    <div class="icon-lg" style="color: var(--accent-cyan);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+                </div>
+
+                <div class="tier-heading"><span data-i18n="friends.rewardsHeading">Награды за друзей</span></div>
+                <div id="friendMissionList"></div>
             </div>
 
-            <p class="wallet-note" id="walletNote">1 GRAM = 1 TON • минимум 1 GRAM</p>
+            <!-- Подвкладка: Язык -->
+            <div class="subtab-panel" id="profileSubLanguage">
+                <div class="tier-heading"><span data-i18n="lang.heading">Язык интерфейса</span></div>
+                <div class="lang-options">
+                    <button class="lang-option active" id="langOptRu" onclick="setLanguage('ru')">
+                        <span class="lang-flag">🇷🇺</span>
+                        <span>Русский</span>
+                    </button>
+                    <button class="lang-option" id="langOptEn" onclick="setLanguage('en')">
+                        <span class="lang-flag">🇬🇧</span>
+                        <span>English</span>
+                    </button>
+                </div>
+            </div>
 
-            <div class="tier-heading" id="walletOpsHead" style="display: none;"><span>Последние операции</span></div>
-            <div id="walletOps"></div>
+            <!-- Подвкладка: Звук -->
+            <div class="subtab-panel" id="profileSubSound">
+                <div class="tier-heading"><span data-i18n="sound.heading">Звук в игре</span></div>
+                <div class="card glass-panel">
+                    <div class="card-info">
+                        <p data-i18n="sound.effectsLabel">Звуковые эффекты</p>
+                        <h3 id="soundStateLabel" style="font-size: 18px; margin-top: 5px;" data-i18n="sound.on">Включены</h3>
+                    </div>
+                    <div class="sound-toggle" id="soundToggle" onclick="toggleSound()">
+                        <div class="sound-toggle-knob"></div>
+                    </div>
+                </div>
+                <button class="btn-action" style="width: 100%; justify-content: center; margin-top: 10px;" onclick="testSound()" data-i18n="sound.test">🔊 Проверить звук</button>
+            </div>
         </div>
 
         <!-- BOTTOM NAVIGATION -->
         <div class="navbar">
             <div class="nav-item active" onclick="switchTab('farm', this)">
                 <div class="nav-icon nav-icon-emoji">🦅</div>
-                <span>Орлы</span>
+                <span data-i18n="nav.farm">Орлы</span>
             </div>
             <div class="nav-item" onclick="switchTab('collection', this)">
                 <div class="nav-icon nav-icon-emoji">🥚</div>
-                <span>Яйца</span>
+                <span data-i18n="nav.eggs">Яйца</span>
             </div>
             <div class="nav-item" onclick="switchTab('missions', this)">
                 <div class="nav-icon nav-icon-emoji">✅</div>
-                <span>Задания</span>
-            </div>
-            <div class="nav-item" onclick="switchTab('friends', this)">
-                <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
-                <span>Друзья</span>
+                <span data-i18n="nav.missions">Задания</span>
             </div>
             <div class="nav-item" onclick="switchTab('profile', this)">
                 <div class="nav-icon nav-icon-emoji">👨‍🎓</div>
-                <span>Профиль</span>
+                <span data-i18n="nav.profile">Профиль</span>
             </div>
         </div>
     </div>
@@ -786,15 +856,15 @@
     <!-- WHEEL OF FORTUNE MODAL -->
     <div class="modal-backdrop" id="wheelModal" onclick="if (event.target === this) closeWheel()">
         <div class="modal-box glass-panel wheel-box">
-            <h2>Колесо фортуны</h2>
-            <p class="wheel-sub" id="wheelSub">Крути сколько угодно — совсем бесплатно</p>
+            <h2 data-i18n="wheel.title">Колесо фортуны</h2>
+            <p class="wheel-sub" id="wheelSub" data-i18n="wheel.subtitle">Крути сколько угодно — совсем бесплатно</p>
             <div class="wheel-stage">
                 <div class="wheel-pointer"></div>
                 <div class="wheel-dial" id="wheelDial"></div>
                 <div class="wheel-hub"></div>
             </div>
-            <button class="btn-primary" id="wheelSpinBtn" onclick="spinWheel()">Крутить</button>
-            <button class="btn-action wheel-close" onclick="closeWheel()">Закрыть</button>
+            <button class="btn-primary" id="wheelSpinBtn" onclick="spinWheel()" data-i18n="wheel.spin">Крутить</button>
+            <button class="btn-action wheel-close" onclick="closeWheel()" data-i18n="common.close">Закрыть</button>
         </div>
     </div>
 
@@ -805,15 +875,15 @@
     <div class="modal-backdrop" id="tokenModal" onclick="if (event.target === this) closeTokenInfo()">
         <div class="modal-box glass-panel token-box">
             <img class="token-hero" src="assets/mnstr.png" alt="">
-            <h2>Что такое $Meat</h2>
+            <h2 data-i18n="token.title">Что такое $Meat</h2>
             <table class="token-table">
-                <tr><td>Что это</td><td>Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.</td></tr>
-                <tr><td>Сколько дают</td><td>Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.</td></tr>
-                <tr><td>Сейчас</td><td>Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
-                <tr><td>После листинга</td><td>Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
+                <tr><td data-i18n="token.whatLabel">Что это</td><td data-i18n="token.whatText">Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.</td></tr>
+                <tr><td data-i18n="token.howMuchLabel">Сколько дают</td><td data-i18n="token.howMuchText">Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.</td></tr>
+                <tr><td data-i18n="token.nowLabel">Сейчас</td><td data-i18n="token.nowText">Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
+                <tr><td data-i18n="token.afterLabel">После листинга</td><td data-i18n="token.afterText">Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
             </table>
-            <p class="token-note">Курс и дата листинга не определены. Копи заранее.</p>
-            <button class="btn-primary" style="margin-top:18px" onclick="closeTokenInfo()">Понятно</button>
+            <p class="token-note" data-i18n="token.note">Курс и дата листинга не определены. Копи заранее.</p>
+            <button class="btn-primary" style="margin-top:18px" onclick="closeTokenInfo()" data-i18n="common.gotIt">Понятно</button>
         </div>
     </div>
 
@@ -851,11 +921,309 @@
         tg.expand();
         tg.ready();
 
-        const haptic = {
-            impact(style) { try { tg.HapticFeedback.impactOccurred(style); } catch (e) {} },
-            notify(type) { try { tg.HapticFeedback.notificationOccurred(type); } catch (e) {} },
-            select() { try { tg.HapticFeedback.selectionChanged(); } catch (e) {} }
+        // Простой звуковой движок на Web Audio — синтезирует короткие тона,
+        // никаких аудиофайлов не нужно. Включён/выключен через sound.enabled
+        // (переключатель во вкладке Профиль → Звук, хранится в localStorage).
+        // Подключён прямо в haptic, поэтому звук автоматически идёт везде,
+        // где уже есть тактильная отдача — тапы, покупки, успехи, ошибки.
+        const sound = {
+            enabled: true,
+            ctx: null,
+            _ctx() {
+                if (!this.ctx) {
+                    try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+                    catch (e) { this.ctx = null; }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') { try { this.ctx.resume(); } catch (e) {} }
+                return this.ctx;
+            },
+            _tone(freq, duration, type, peak) {
+                const ctx = this._ctx();
+                if (!ctx) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = type || 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(peak, ctx.currentTime + 0.008);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            },
+            play(kind) {
+                if (!this.enabled) return;
+                try {
+                    if (kind === 'tap') this._tone(520, 0.05, 'sine', 0.07);
+                    else if (kind === 'success') { this._tone(660, 0.09, 'sine', 0.11); setTimeout(() => this._tone(880, 0.13, 'sine', 0.11), 70); }
+                    else if (kind === 'error') this._tone(160, 0.18, 'sawtooth', 0.09);
+                } catch (e) {}
+            }
         };
+
+        function loadSoundPref() {
+            try {
+                const raw = localStorage.getItem('soundEnabled');
+                sound.enabled = raw === null ? true : raw === '1';
+            } catch (e) { sound.enabled = true; }
+        }
+
+        function toggleSound() {
+            sound.enabled = !sound.enabled;
+            try { localStorage.setItem('soundEnabled', sound.enabled ? '1' : '0'); } catch (e) {}
+            renderSoundToggle();
+            haptic.impact('light');
+            if (sound.enabled) sound.play('tap');
+        }
+
+        function testSound() {
+            sound.play('success');
+        }
+
+        function renderSoundToggle() {
+            const toggle = document.getElementById('soundToggle');
+            const label = document.getElementById('soundStateLabel');
+            if (!toggle || !label) return;
+            toggle.classList.toggle('on', sound.enabled);
+            label.innerText = t(sound.enabled ? 'sound.on' : 'sound.off');
+        }
+
+        const haptic = {
+            impact(style) { try { tg.HapticFeedback.impactOccurred(style); } catch (e) {} sound.play(style === 'heavy' || style === 'medium' ? 'success' : 'tap'); },
+            notify(type) { try { tg.HapticFeedback.notificationOccurred(type); } catch (e) {} sound.play(type === 'success' ? 'success' : 'error'); },
+            select() { try { tg.HapticFeedback.selectionChanged(); } catch (e) {} sound.play('tap'); }
+        };
+
+        /* ---------- Язык интерфейса (RU/EN) ---------- */
+        // Полностью переведены: навигация, шапки/подписи вкладок, Профиль
+        // (кошелёк, друзья, язык, звук) и статус фермы. Названия орлов и
+        // редкостей приходят из game_config.json и не переводятся — как и
+        // часть более редких тостов, которые остались на русском.
+        let LANG = 'ru';
+
+        const I18N = {
+            ru: {
+                'nav.farm': 'Орлы', 'nav.eggs': 'Яйца', 'nav.missions': 'Задания', 'nav.profile': 'Профиль',
+                'farm.eagles': 'Орлов', 'farm.eggsReady': 'Яиц готово',
+                'farm.empty': 'Ферма пустая', 'farm.hatchToSettle': 'Вскрой яйцо, чтобы поселить орла',
+                'farm.expeditionBack': 'экспедиция вернулась — тапни за золото!',
+                'farm.expeditionIn': 'в экспедиции — вернётся через {time}',
+                'farm.eggReady': 'яйцо готово — тапни!',
+                'farm.fullyFed': 'откормлен полностью — готов к улучшению',
+                'farm.eggIn': 'яйцо через {time}',
+                'farm.feedLevelHint': 'уровень {level}/{max} — тапни, чтобы покормить',
+                'farm.slotStatus': 'Слот {n} • {status}',
+                'farm.expeditionToast': 'Орёл в экспедиции — вернётся через {time}',
+                'farm.eggCookingToast': 'Яйцо ещё варится — {time}',
+                'eggs.heading': 'Яйца',
+                'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость',
+                'eggs.openAll': 'Вскрыть все',
+                'missions.heading': 'Задания', 'missions.subtitle': 'Ежедневный вход и разовые награды',
+                'profile.tapWhatIsThis': 'Нажми — что это', 'profile.goldLabel': 'Золото',
+                'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
+                'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
+                'wallet.connect': 'Подключить кошелёк', 'wallet.disconnect': 'Отключить кошелёк',
+                'wallet.connected': 'Кошелёк подключён', 'wallet.addressForPayouts': 'Адрес для выплат',
+                'wallet.deposit': 'Пополнить', 'wallet.withdraw': 'Вывести', 'wallet.recentOps': 'Последние операции',
+                'wallet.depositNoun': 'Пополнение', 'wallet.withdrawNoun': 'Вывод',
+                'wallet.serverSide': 'Пополнение и вывод работают на сервере проекта',
+                'wallet.noTonConnect': 'TON Connect не загрузился — переведи вручную по адресу и мемо',
+                'wallet.minimum': 'минимум {min} GRAM',
+                'wallet.credited': 'Зачислено', 'wallet.sent': 'Отправлено', 'wallet.processing': 'В обработке',
+                'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
+                'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
+                'friends.rewardsHeading': 'Награды за друзей',
+                'friends.qualifyHint': 'Друг засчитывается, когда намайнит {mnstr} Meat',
+                'lang.heading': 'Язык интерфейса',
+                'sound.heading': 'Звук в игре', 'sound.effectsLabel': 'Звуковые эффекты',
+                'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
+                'wheel.title': 'Колесо фортуны', 'wheel.spin': 'Крутить',
+                'wheel.subtitle': 'Крути сколько угодно — совсем бесплатно', 'wheel.eggsWord': 'яиц',
+                'wheel.spinning': 'Крутится…', 'wheel.spinFree': 'Крутить бесплатно',
+                'token.title': 'Что такое $Meat',
+                'token.whatLabel': 'Что это', 'token.whatText': 'Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.',
+                'token.howMuchLabel': 'Сколько дают', 'token.howMuchText': 'Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.',
+                'token.nowLabel': 'Сейчас', 'token.nowText': 'Токен просто копится на балансе. Потратить его пока нельзя.',
+                'token.afterLabel': 'После листинга', 'token.afterText': 'Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.',
+                'token.note': 'Курс и дата листинга не определены. Копи заранее.',
+                'common.close': 'Закрыть', 'common.cancel': 'Отмена', 'common.gotIt': 'Понятно',
+                'egg.title': 'Яйцо {level} уровня', 'egg.onlyOneOutcome': 'Выпадет только один из вариантов',
+                'egg.jackpot': 'Джекпот', 'egg.commonEagle': 'Обычный орёл',
+                'egg.open': 'Вскрыть яйцо', 'egg.selectForUpgrade': 'Выбрать для улучшения',
+                'fusion.title': 'Улучшение орлов', 'fusion.attemptFor': 'Попытка за', 'fusion.upgradeWord': 'Улучшение',
+                'slot.expedition': 'Экспедиция', 'slot.ready': 'Готово!',
+                'slot.expeditionMining': 'Орёл добывает золото — принесёт {amount} золота',
+                'slot.collectGold': 'Собрать золото',
+                'slot.maxFed': 'Орёл откормлен по максимуму — мясо и яйца ему больше не нужны, готов к улучшению',
+                'slot.collectEgg': 'Собрать яйцо', 'slot.egg': 'Яйцо',
+                'slot.levelProgress': 'Уровень {level} из {max} — собери яйцо, чтобы орёл вырос',
+                'slot.feeding': 'Кормление',
+                'slot.feedHint': 'Тапни орла на ферме — тап стоит {cost} Meat ({taps}/{max} тапов до яйца)',
+                'slot.fusionHint': 'Тапни другого откормленного орла «{name}» на ферме, чтобы получить {nextName}',
+                'slot.expeditionBtn': 'Экспедиция за {cost} Meat — {amount} золота за {time}',
+                'slot.slotNumber': 'слот {n}',
+                'slotBuy.allOpen': 'Все слоты открыты', 'slotBuy.locked': 'Слот {n} заперт',
+                'slotBuy.maxReached': 'Больше {max} слотов на ферме не бывает.',
+                'slotBuy.openHint': 'Открой его, чтобы поселить ещё одного орла.',
+                'slotBuy.price': 'Цена', 'slotBuy.opened': 'Открыто слотов',
+                'slotBuy.buyFor': 'Купить за {cost}', 'slotBuy.needMore': 'Нужно {cost} GRAM',
+                'daily.title': 'Ежедневный вход',
+                'daily.availableToday': 'Сегодня доступен день {day} из {days}',
+                'daily.claimedFor': 'Награда за день {day} забрана',
+                'daily.streak': 'Серия: {count} {word} подряд',
+                'daily.claim': 'Забрать', 'daily.comeTomorrow': 'Приходи завтра',
+                'daily.tomorrowPrefix': 'завтра: ', 'daily.open': 'Открыть',
+                'daily.cardStreak': 'День {day} из {days} • серия {count} {word}',
+                'missions.claim': 'Забрать', 'missions.done': 'Готово', 'missions.notReady': 'Не готово',
+                'missions.friendsWord': 'друзей',
+                'missions.inviteOne': 'Пригласить друга, который заработает {q} Meat',
+                'missions.inviteMany': 'Пригласить {need} {word}, которые заработают {q} Meat',
+                'deposit.title': 'Пополнение', 'deposit.amountLabel': 'Сумма, GRAM',
+                'deposit.addressLabel': 'Адрес проекта', 'deposit.addressCopied': 'Адрес скопирован',
+                'deposit.memoLabel': 'Комментарий к переводу (мемо)', 'deposit.memoCopied': 'Мемо скопировано',
+                'deposit.memoWarning': 'Перевод без этого комментария сервер не свяжет с твоим аккаунтом.',
+                'deposit.send': 'Отправить', 'deposit.iPaid': 'Я перевёл — проверить',
+                'deposit.autoStatus': 'Пополнение зачисляется автоматически по мемо, обычно за минуту.',
+                'deposit.minToast': 'Минимум для пополнения — {min} GRAM', 'deposit.connectFirst': 'Сначала подключи кошелёк',
+                'withdraw.title': 'Вывод', 'withdraw.available': 'Доступно {amount} GRAM',
+                'withdraw.half': 'Половина', 'withdraw.all': 'Всё', 'withdraw.addressLabel': 'Адрес TON',
+                'withdraw.warning': 'Минимум {min} GRAM. Выплату отправляет владелец проекта после проверки заявки.',
+                'withdraw.submit': 'Вывести', 'withdraw.telegramOnly': 'Вывод работает только в Telegram',
+                'withdraw.minToast': 'Минимум для вывода — {min} GRAM',
+                'withdraw.insufficientBalance': 'Недостаточно GRAM на балансе', 'withdraw.needAddress': 'Укажи адрес кошелька',
+            },
+            en: {
+                'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.profile': 'Profile',
+                'farm.eagles': 'Eagles', 'farm.eggsReady': 'Eggs ready',
+                'farm.empty': 'Farm is empty', 'farm.hatchToSettle': 'Hatch an egg to settle an eagle',
+                'farm.expeditionBack': 'expedition is back — tap for gold!',
+                'farm.expeditionIn': 'on expedition — back in {time}',
+                'farm.eggReady': 'egg ready — tap it!',
+                'farm.fullyFed': 'fully fed — ready to upgrade',
+                'farm.eggIn': 'egg in {time}',
+                'farm.feedLevelHint': 'level {level}/{max} — tap to feed',
+                'farm.slotStatus': 'Slot {n} • {status}',
+                'farm.expeditionToast': 'Eagle is on expedition — back in {time}',
+                'farm.eggCookingToast': 'Egg is still cooking — {time}',
+                'eggs.heading': 'Eggs',
+                'eggs.subtitle': 'Tap an egg to open it, or pick it for upgrading with another of the same level',
+                'eggs.openAll': 'Open all',
+                'missions.heading': 'Missions', 'missions.subtitle': 'Daily check-in and one-time rewards',
+                'profile.tapWhatIsThis': 'Tap — what is this', 'profile.goldLabel': 'Gold',
+                'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
+                'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
+                'wallet.connect': 'Connect wallet', 'wallet.disconnect': 'Disconnect wallet',
+                'wallet.connected': 'Wallet connected', 'wallet.addressForPayouts': 'Address for payouts',
+                'wallet.deposit': 'Deposit', 'wallet.withdraw': 'Withdraw', 'wallet.recentOps': 'Recent operations',
+                'wallet.depositNoun': 'Deposit', 'wallet.withdrawNoun': 'Withdrawal',
+                'wallet.serverSide': 'Deposits and withdrawals run on the project server',
+                'wallet.noTonConnect': "TON Connect didn't load — send manually to the address and memo",
+                'wallet.minimum': 'minimum {min} GRAM',
+                'wallet.credited': 'Credited', 'wallet.sent': 'Sent', 'wallet.processing': 'Processing',
+                'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
+                'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
+                'friends.rewardsHeading': 'Referral rewards',
+                'friends.qualifyHint': 'A friend counts once they mine {mnstr} Meat',
+                'lang.heading': 'Interface language',
+                'sound.heading': 'In-game sound', 'sound.effectsLabel': 'Sound effects',
+                'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
+                'wheel.title': 'Wheel of fortune', 'wheel.spin': 'Spin',
+                'wheel.subtitle': 'Spin as much as you like — completely free', 'wheel.eggsWord': 'eggs',
+                'wheel.spinning': 'Spinning…', 'wheel.spinFree': 'Spin for free',
+                'token.title': 'What is $Meat',
+                'token.whatLabel': 'What it is', 'token.whatText': "The game's token. Drops from farm eggs — open them and some will give Meat instead of an eagle.",
+                'token.howMuchLabel': 'How much', 'token.howMuchText': 'A random reward per opened egg — either Meat or a new common eagle.',
+                'token.nowLabel': 'Right now', 'token.nowText': "The token just accumulates on your balance. It can't be spent yet.",
+                'token.afterLabel': 'After listing', 'token.afterText': 'Accumulated $Meat will become the main in-game currency — unlocking purchases and exchange.',
+                'token.note': 'Rate and listing date are not set yet. Stack up early.',
+                'common.close': 'Close', 'common.cancel': 'Cancel', 'common.gotIt': 'Got it',
+                'egg.title': 'Level {level} egg', 'egg.onlyOneOutcome': 'Only one outcome will drop',
+                'egg.jackpot': 'Jackpot', 'egg.commonEagle': 'Common eagle',
+                'egg.open': 'Open egg', 'egg.selectForUpgrade': 'Select for upgrade',
+                'fusion.title': 'Upgrade eagles', 'fusion.attemptFor': 'Attempt for', 'fusion.upgradeWord': 'Upgrade',
+                'slot.expedition': 'Expedition', 'slot.ready': 'Ready!',
+                'slot.expeditionMining': 'Eagle is mining gold — will bring {amount} gold',
+                'slot.collectGold': 'Collect gold',
+                'slot.maxFed': "Eagle is fully fed — no more Meat or eggs needed, ready to upgrade",
+                'slot.collectEgg': 'Collect egg', 'slot.egg': 'Egg',
+                'slot.levelProgress': 'Level {level} of {max} — collect the egg to grow the eagle',
+                'slot.feeding': 'Feeding',
+                'slot.feedHint': 'Tap the eagle on the farm — a tap costs {cost} Meat ({taps}/{max} taps to egg)',
+                'slot.fusionHint': 'Tap another fully-fed "{name}" on the farm to get {nextName}',
+                'slot.expeditionBtn': 'Expedition for {cost} Meat — {amount} gold in {time}',
+                'slot.slotNumber': 'slot {n}',
+                'slotBuy.allOpen': 'All slots open', 'slotBuy.locked': 'Slot {n} is locked',
+                'slotBuy.maxReached': "The farm can't hold more than {max} slots.",
+                'slotBuy.openHint': 'Open it to settle another eagle.',
+                'slotBuy.price': 'Price', 'slotBuy.opened': 'Slots opened',
+                'slotBuy.buyFor': 'Buy for {cost}', 'slotBuy.needMore': 'Need {cost} GRAM',
+                'daily.title': 'Daily check-in',
+                'daily.availableToday': 'Day {day} of {days} is available today',
+                'daily.claimedFor': 'Day {day} reward already claimed',
+                'daily.streak': 'Streak: {count} {word} in a row',
+                'daily.claim': 'Claim', 'daily.comeTomorrow': 'Come back tomorrow',
+                'daily.tomorrowPrefix': 'tomorrow: ', 'daily.open': 'Open',
+                'daily.cardStreak': 'Day {day} of {days} • streak {count} {word}',
+                'missions.claim': 'Claim', 'missions.done': 'Done', 'missions.notReady': 'Not ready',
+                'missions.friendsWord': 'friends',
+                'missions.inviteOne': 'Invite a friend who earns {q} Meat',
+                'missions.inviteMany': 'Invite {need} {word} who earn {q} Meat',
+                'deposit.title': 'Deposit', 'deposit.amountLabel': 'Amount, GRAM',
+                'deposit.addressLabel': 'Project address', 'deposit.addressCopied': 'Address copied',
+                'deposit.memoLabel': 'Transfer comment (memo)', 'deposit.memoCopied': 'Memo copied',
+                'deposit.memoWarning': "A transfer without this comment can't be matched to your account.",
+                'deposit.send': 'Send', 'deposit.iPaid': "I've paid — check",
+                'deposit.autoStatus': 'Deposits are credited automatically by memo, usually within a minute.',
+                'deposit.minToast': 'Minimum deposit — {min} GRAM', 'deposit.connectFirst': 'Connect your wallet first',
+                'withdraw.title': 'Withdraw', 'withdraw.available': '{amount} GRAM available',
+                'withdraw.half': 'Half', 'withdraw.all': 'All', 'withdraw.addressLabel': 'TON address',
+                'withdraw.warning': 'Minimum {min} GRAM. The project owner sends the payout after reviewing the request.',
+                'withdraw.submit': 'Withdraw', 'withdraw.telegramOnly': 'Withdrawals only work inside Telegram',
+                'withdraw.minToast': 'Minimum withdrawal — {min} GRAM',
+                'withdraw.insufficientBalance': 'Not enough GRAM on balance', 'withdraw.needAddress': 'Enter a wallet address',
+            },
+        };
+
+        function t(key, params) {
+            const dict = I18N[LANG] || I18N.ru;
+            let str = dict[key] !== undefined ? dict[key] : (I18N.ru[key] !== undefined ? I18N.ru[key] : key);
+            if (params) {
+                for (const k in params) str = str.split('{' + k + '}').join(params[k]);
+            }
+            return str;
+        }
+
+        function pluralDays(n) {
+            if (LANG === 'en') return n === 1 ? 'day' : 'days';
+            return plural(n, 'день', 'дня', 'дней');
+        }
+
+        function applyI18n() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.innerText = t(el.getAttribute('data-i18n'));
+            });
+        }
+
+        function loadLanguagePref() {
+            try {
+                const raw = localStorage.getItem('lang');
+                LANG = raw === 'en' ? 'en' : 'ru';
+            } catch (e) { LANG = 'ru'; }
+        }
+
+        function setLanguage(lang) {
+            LANG = lang === 'en' ? 'en' : 'ru';
+            try { localStorage.setItem('lang', LANG); } catch (e) {}
+            const roEl = document.getElementById('langOptRu');
+            const enEl = document.getElementById('langOptEn');
+            if (roEl) roEl.classList.toggle('active', LANG === 'ru');
+            if (enEl) enEl.classList.toggle('active', LANG === 'en');
+            applyI18n();
+            renderSoundToggle();
+            haptic.select();
+            if (CONFIG) { renderAll(); renderWallet(); }
+        }
 
         const FRAME_MS = 70;
 
@@ -1158,21 +1526,21 @@
 
             if (!monster) {
                 stage.style.display = 'none';
-                document.getElementById('activeMonsterName').innerText = 'Ферма пустая';
-                document.getElementById('activeMonsterSub').innerText = 'Вскрой яйцо, чтобы поселить орла';
+                document.getElementById('activeMonsterName').innerText = t('farm.empty');
+                document.getElementById('activeMonsterSub').innerText = t('farm.hatchToSettle');
                 return;
             }
 
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
             let status;
-            if (isOnExpedition(slot)) status = expeditionReady(slot) ? 'экспедиция вернулась — тапни за золото!' : `в экспедиции — вернётся через ${formatCountdown(slot.expeditionUntil - nowSeconds())}`;
-            else if (eggReady(slot)) status = 'яйцо готово — тапни!';
-            else if (isFullyFed(slot)) status = 'откормлен полностью — готов к улучшению';
-            else if (isFarmingEgg(slot)) status = `яйцо через ${formatCountdown(slot.nextEggAt - nowSeconds())}`;
-            else status = `уровень ${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels} — тапни, чтобы покормить`;
+            if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
+            else if (eggReady(slot)) status = t('farm.eggReady');
+            else if (isFullyFed(slot)) status = t('farm.fullyFed');
+            else if (isFarmingEgg(slot)) status = t('farm.eggIn', { time: formatCountdown(slot.nextEggAt - nowSeconds()) });
+            else status = t('farm.feedLevelHint', { level: slot.feedLevel || 1, max: CONFIG.fusion.feed_levels });
             document.getElementById('activeMonsterName').innerText = monster.name;
-            document.getElementById('activeMonsterSub').innerText = `Слот ${state.activeSlot + 1} • ${status}`;
+            document.getElementById('activeMonsterSub').innerText = t('farm.slotStatus', { n: state.activeSlot + 1, status });
             document.getElementById('monsterGlow').style.background = monster.color;
             stage.classList.toggle('egg-ready', eggReady(slot));
             stageAnimator.play(monster.sprite);
@@ -1432,16 +1800,16 @@
             const canMerge = level < eggMaxLevel();
             document.getElementById('eggModalBody').innerHTML = `
                 <div class="egg-modal-badge" style="background:${eggColor(level)}">${level}</div>
-                <h2>Яйцо ${level} уровня</h2>
-                <p class="slot-modal-sub">Выпадет только один из вариантов</p>
+                <h2>${t('egg.title', { level })}</h2>
+                <p class="slot-modal-sub">${t('egg.onlyOneOutcome')}</p>
                 ${odds.jackpotMeat ? `
-                    <div class="stat-row"><span>💰 Джекпот, ${odds.jackpotMeat} Meat</span></div>
+                    <div class="stat-row"><span>💰 ${t('egg.jackpot')}, ${odds.jackpotMeat} Meat</span></div>
                 ` : ''}
-                <div class="stat-row"><span>🦅 Обычный орёл</span></div>
+                <div class="stat-row"><span>🦅 ${t('egg.commonEagle')}</span></div>
                 <div class="stat-row"><span>🍖 Meat, ${odds.meatMin}–${odds.meatMax}</span></div>
-                <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">Вскрыть яйцо</button>
-                ${canMerge ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="selectEggForMerge(${i})">Выбрать для улучшения</button>` : ''}
-                <button class="btn-action roll-close" onclick="closeEggModal()">Отмена</button>
+                <button class="btn-primary" style="margin-top:10px" onclick="confirmOpenEgg()">${t('egg.open')}</button>
+                ${canMerge ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="selectEggForMerge(${i})">${t('egg.selectForUpgrade')}</button>` : ''}
+                <button class="btn-action roll-close" onclick="closeEggModal()">${t('common.cancel')}</button>
             `;
             document.getElementById('eggModal').classList.add('open');
         }
@@ -1692,7 +2060,7 @@
 
         function fusionSegLabel(seg) {
             if (seg.type === 'eagle') return tierById(seg.tier).name;
-            if (seg.type === 'success') return 'Улучшение';
+            if (seg.type === 'success') return t('fusion.upgradeWord');
             return `${seg.amount} Meat`;
         }
 
@@ -1764,7 +2132,7 @@
             const cfg = CONFIG.fusion;
 
             document.getElementById('fusionModalBody').innerHTML = `
-                <h2>Улучшение орлов</h2>
+                <h2>${t('fusion.title')}</h2>
                 <div class="fusion-pair">
                     <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <span class="fusion-plus">+</span>
@@ -1777,9 +2145,9 @@
                     <div class="wheel-hub"></div>
                 </div>
                 <div class="fusion-actions">
-                    <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">Попытка за ${fmtToken(cfg.merge_cost_meat)} Meat</button>
-                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">Попытка за ${fmtGram(cfg.merge_cost_gram)} GRAM</button>
-                    <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">Закрыть</button>
+                    <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">${t('fusion.attemptFor')} ${fmtToken(cfg.merge_cost_meat)} Meat</button>
+                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">${t('fusion.attemptFor')} ${fmtGram(cfg.merge_cost_gram)} GRAM</button>
+                    <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">${t('common.close')}</button>
                 </div>
             `;
             renderFusionWheelDial(monster, nextMonster);
@@ -1859,13 +2227,13 @@
             if (!slot) return;
             if (isOnExpedition(slot)) {
                 if (expeditionReady(slot)) collectExpedition(i);
-                else toast(`Орёл в экспедиции — вернётся через ${formatCountdown(slot.expeditionUntil - nowSeconds())}`);
+                else toast(t('farm.expeditionToast', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) }));
                 return;
             }
             if (eggReady(slot)) { collectEgg(i); return; }
             if (isFullyFed(slot)) { onFusionTap(i); return; }
             if (isFarmingEgg(slot)) {
-                toast(`Яйцо ещё варится — ${formatCountdown(slot.nextEggAt - nowSeconds())}`);
+                toast(t('farm.eggCookingToast', { time: formatCountdown(slot.nextEggAt - nowSeconds()) }));
                 return;
             }
             if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
@@ -1982,18 +2350,18 @@
                     <div class="card-top">
                         <div class="daily-icon">${CALENDAR_ICON}</div>
                         <div style="min-width:0">
-                            <h3>Ежедневный вход</h3>
+                            <h3>${t('daily.title')}</h3>
                             <div class="mission-reward">
                                 <span class="roll-num ${dailyKind(reward) === 'gram' ? '' : 'token'}">
-                                    <b>${status.ready ? '' : 'завтра: '}${dailyLabel(reward)}</b>
+                                    <b>${status.ready ? '' : t('daily.tomorrowPrefix')}${dailyLabel(reward)}</b>
                                     <img src="${dailyIcon(reward)}" alt="">
                                 </span>
                             </div>
                         </div>
                     </div>
-                    <div class="daily-streak">День ${Math.max(status.day, 1)} из ${status.days} • серия ${status.claimed} ${plural(status.claimed, 'день', 'дня', 'дней')}</div>
+                    <div class="daily-streak">${t('daily.cardStreak', { day: Math.max(status.day, 1), days: status.days, count: status.claimed, word: pluralDays(status.claimed) })}</div>
                 </div>
-                <button class="btn-action ${status.ready ? 'btn-buy' : ''}">${status.ready ? 'Забрать' : 'Открыть'}</button>
+                <button class="btn-action ${status.ready ? 'btn-buy' : ''}">${status.ready ? t('missions.claim') : t('daily.open')}</button>
             `;
             card.onclick = openDaily;
             list.prepend(card);
@@ -2028,21 +2396,21 @@
             const reward = dailyReward(status.day);
 
             document.getElementById('dailyBody').innerHTML = `
-                <h2>Ежедневный вход</h2>
+                <h2>${t('daily.title')}</h2>
                 <p class="daily-sub">${status.ready
-                    ? `Сегодня доступен день ${status.day} из ${status.days}`
-                    : `Награда за день ${status.claimed} забрана`}</p>
-                <p class="daily-sub">Серия: ${status.claimed} ${plural(status.claimed, 'день', 'дня', 'дней')} подряд</p>
+                    ? t('daily.availableToday', { day: status.day, days: status.days })
+                    : t('daily.claimedFor', { day: status.claimed })}</p>
+                <p class="daily-sub">${t('daily.streak', { count: status.claimed, word: pluralDays(status.claimed) })}</p>
                 <div class="daily-scroll">
                     <div class="daily-grid">${days.map(day => dailyCell(day, status)).join('')}</div>
                 </div>
                 <div class="daily-actions">
                     <button class="btn-primary daily-claim" id="dailyClaimBtn" ${status.ready ? '' : 'disabled'}>
                         ${status.ready
-                            ? `Забрать ${dailyLabel(reward)} <img class="coin-icon" src="${dailyIcon(reward)}" alt="">`
-                            : 'Приходи завтра'}
+                            ? `${t('daily.claim')} ${dailyLabel(reward)} <img class="coin-icon" src="${dailyIcon(reward)}" alt="">`
+                            : t('daily.comeTomorrow')}
                     </button>
-                    <button class="btn-action daily-close" onclick="closeDaily()">Закрыть</button>
+                    <button class="btn-action daily-close" onclick="closeDaily()">${t('common.close')}</button>
                 </div>
             `;
             if (status.ready) {
@@ -2127,7 +2495,7 @@
 
         function wheelLabel(seg) {
             if (seg.monster) return tierById(seg.monster).name;
-            if (seg.egg_level) return `${seg.egg_count || 0} яиц`;
+            if (seg.egg_level) return `${seg.egg_count || 0} ${t('wheel.eggsWord')}`;
             return seg.gram ? fmtGram(seg.gram) : String(seg.mnstr);
         }
 
@@ -2164,10 +2532,10 @@
             if (!btn) return;
             if (wheelSpinning) {
                 btn.disabled = true;
-                btn.innerHTML = 'Крутится…';
+                btn.innerHTML = t('wheel.spinning');
             } else {
                 btn.disabled = false;
-                btn.innerHTML = 'Крутить бесплатно';
+                btn.innerHTML = t('wheel.spinFree');
             }
         }
 
@@ -2334,8 +2702,8 @@
             const need = mission.need;
             const q = CONFIG.referral.qualify_mnstr;
             return need === 1
-                ? `Пригласить друга, который заработает ${q} Meat`
-                : `Пригласить ${need} ${plural(need, 'друга', 'друзей', 'друзей')}, которые заработают ${q} Meat`;
+                ? t('missions.inviteOne', { q })
+                : t('missions.inviteMany', { need, word: LANG === 'en' ? 'friends' : plural(need, 'друга', 'друзей', 'друзей'), q });
         }
 
         function renderMissionCard(mission, list) {
@@ -2345,13 +2713,13 @@
             card.className = 'card glass-panel mission-card';
 
             const progress = mission.type === 'referrals'
-                ? `<div class="mission-progress">${Math.min(state.referralsQualified, mission.need)} / ${mission.need} друзей</div>`
+                ? `<div class="mission-progress">${Math.min(state.referralsQualified, mission.need)} / ${mission.need} ${t('missions.friendsWord')}</div>`
                 : '';
 
-            let label = 'Забрать';
+            let label = t('missions.claim');
             let style = 'btn-buy';
-            if (done) { label = 'Готово'; style = ''; }
-            else if (!ready) { label = 'Не готово'; style = 'btn-locked'; }
+            if (done) { label = t('missions.done'); style = ''; }
+            else if (!ready) { label = t('missions.notReady'); style = 'btn-locked'; }
 
             card.innerHTML = `
                 <div class="card-info">
@@ -2475,51 +2843,51 @@
             let actionHtml;
             if (onExpedition) {
                 progressHtml = `
-                    <div class="stat-row"><span>Экспедиция</span><b style="color:#38bdf8">${expReady ? 'Готово!' : formatCountdown(slot.expeditionUntil - nowSeconds())}</b></div>
+                    <div class="stat-row"><span>${t('slot.expedition')}</span><b style="color:#38bdf8">${expReady ? t('slot.ready') : formatCountdown(slot.expeditionUntil - nowSeconds())}</b></div>
                     <div class="modal-progress"><i style="width:${expeditionProgress(slot)}%; background:#38bdf8"></i></div>
-                    <p class="slot-modal-sub">Орёл добывает золото — принесёт ${fmtGram(expeditionGoldReward(monster))} золота</p>
+                    <p class="slot-modal-sub">${t('slot.expeditionMining', { amount: fmtGram(expeditionGoldReward(monster)) })}</p>
                 `;
-                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${expReady ? '' : 'disabled'} onclick="collectExpedition(modalSlot); closeSlotModal();">Собрать золото</button>`;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${expReady ? '' : 'disabled'} onclick="collectExpedition(modalSlot); closeSlotModal();">${t('slot.collectGold')}</button>`;
             } else if (fed) {
                 progressHtml = `
-                    <p class="slot-modal-sub">Орёл откормлен по максимуму — мясо и яйца ему больше не нужны, готов к улучшению</p>
+                    <p class="slot-modal-sub">${t('slot.maxFed')}</p>
                 `;
-                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>Собрать яйцо</button>`;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>${t('slot.collectEgg')}</button>`;
             } else if (farming || ready) {
                 progressHtml = `
-                    <div class="stat-row"><span>Яйцо</span><b style="color:var(--accent-coin)">${ready ? 'Готово!' : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
+                    <div class="stat-row"><span>${t('slot.egg')}</span><b style="color:var(--accent-coin)">${ready ? t('slot.ready') : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
                     <div class="modal-progress"><i style="width:${eggProgress(slot)}%; background:${monster.color}"></i></div>
-                    <p class="slot-modal-sub">Уровень ${slot.feedLevel || 1} из ${cfg.feed_levels} — собери яйцо, чтобы орёл вырос</p>
+                    <p class="slot-modal-sub">${t('slot.levelProgress', { level: slot.feedLevel || 1, max: cfg.feed_levels })}</p>
                 `;
-                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">Собрать яйцо</button>`;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">${t('slot.collectEgg')}</button>`;
             } else {
                 progressHtml = `
-                    <div class="stat-row"><span>Кормление</span><b style="color:var(--gold)">${slot.feedLevel || 1} / ${cfg.feed_levels}</b></div>
+                    <div class="stat-row"><span>${t('slot.feeding')}</span><b style="color:var(--gold)">${slot.feedLevel || 1} / ${cfg.feed_levels}</b></div>
                     <div class="modal-progress"><i style="width:${((slot.feedTaps || 0) / cfg.feed_taps_per_level) * 100}%; background:${monster.color}"></i></div>
-                    <p class="slot-modal-sub">Тапни орла на ферме — тап стоит ${fmtToken(feedCost(monster))} Meat (${slot.feedTaps || 0}/${cfg.feed_taps_per_level} тапов до яйца)</p>
+                    <p class="slot-modal-sub">${t('slot.feedHint', { cost: fmtToken(feedCost(monster)), taps: slot.feedTaps || 0, max: cfg.feed_taps_per_level })}</p>
                 `;
-                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>Собрать яйцо</button>`;
+                actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>${t('slot.collectEgg')}</button>`;
             }
 
             const fusionHtml = (!onExpedition && canFuse(monster) && fed)
-                ? `<p class="slot-modal-sub">Тапни другого откормленного орла «${monster.name}» на ферме, чтобы получить ${nextTierOf(monster).monsters[0].name}</p>`
+                ? `<p class="slot-modal-sub">${t('slot.fusionHint', { name: monster.name, nextName: nextTierOf(monster).monsters[0].name })}</p>`
                 : '';
 
             const expeditionBtnHtml = !onExpedition
-                ? `<button class="btn-action" style="margin-top:8px; width:100%" onclick="sendExpedition(modalSlot); renderSlotModal();">🧭 Экспедиция за ${fmtToken(expCfg.cost_meat)} Meat — ${fmtGram(expeditionGoldReward(monster))} золота за ${formatCountdown(expeditionDurationSeconds())}</button>`
+                ? `<button class="btn-action" style="margin-top:8px; width:100%" onclick="sendExpedition(modalSlot); renderSlotModal();">🧭 ${t('slot.expeditionBtn', { cost: fmtToken(expCfg.cost_meat), amount: fmtGram(expeditionGoldReward(monster)), time: formatCountdown(expeditionDurationSeconds()) })}</button>`
                 : '';
 
             document.getElementById('slotModalBody').innerHTML = `
                 <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                 <h2 style="color:${monster.color}">${monster.name}</h2>
-                <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • слот ${modalSlot + 1}</p>
+                <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
 
                 ${progressHtml}
                 ${fusionHtml}
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
-                <button class="btn-action roll-close" onclick="closeSlotModal()">Закрыть</button>
+                <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
             `;
         }
 
@@ -2540,20 +2908,20 @@
 
             document.getElementById('slotBuyBody').innerHTML = `
                 <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
-                <h2>${maxed ? 'Все слоты открыты' : `Слот ${state.slots + 1} заперт`}</h2>
+                <h2>${maxed ? t('slotBuy.allOpen') : t('slotBuy.locked', { n: state.slots + 1 })}</h2>
                 <p>${maxed
-                    ? `Больше ${CONFIG.slots.max} слотов на ферме не бывает.`
-                    : 'Открой его, чтобы поселить ещё одного орла.'}</p>
+                    ? t('slotBuy.maxReached', { max: CONFIG.slots.max })
+                    : t('slotBuy.openHint')}</p>
 
                 ${maxed ? '' : `
-                <div class="stat-row"><span>Цена</span><b style="color:var(--accent-coin)">${fmtGram(cost)} GRAM</b></div>
-                <div class="stat-row"><span>Открыто слотов</span><b>${state.slots} / ${CONFIG.slots.max}</b></div>`}
+                <div class="stat-row"><span>${t('slotBuy.price')}</span><b style="color:var(--accent-coin)">${fmtGram(cost)} GRAM</b></div>
+                <div class="stat-row"><span>${t('slotBuy.opened')}</span><b>${state.slots} / ${CONFIG.slots.max}</b></div>`}
 
                 ${maxed ? '' : `
                 <button class="btn-primary" style="margin-top:18px" ${affordable ? '' : 'disabled'} onclick="buySlot()">
-                    ${affordable ? `Купить за ${fmtGram(cost)}` : `Нужно ${fmtGram(cost)} GRAM`}
+                    ${affordable ? t('slotBuy.buyFor', { cost: fmtGram(cost) }) : t('slotBuy.needMore', { cost: fmtGram(cost) })}
                 </button>`}
-                <button class="btn-action roll-close" onclick="closeSlotBuy()">Закрыть</button>
+                <button class="btn-action roll-close" onclick="closeSlotBuy()">${t('common.close')}</button>
             `;
         }
 
@@ -2663,7 +3031,22 @@
             element.classList.add('active');
 
             if (tabId === 'collection') renderEggs();
-            if (tabId === 'missions' || tabId === 'friends') renderMissions();
+            if (tabId === 'missions') renderMissions();
+            if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
+        }
+
+        // Профиль объединяет кошелёк, друзей и настройки в подвкладки —
+        // переключаются так же, как основные вкладки, но внутри одного экрана.
+        let activeProfileSubtab = 'wallet';
+
+        function switchProfileSubtab(id) {
+            haptic.select();
+            activeProfileSubtab = id;
+            document.querySelectorAll('#profile .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.subtab === id));
+            document.querySelectorAll('#profile .subtab-panel').forEach(el => el.classList.remove('active'));
+            const panelId = 'profileSub' + id.charAt(0).toUpperCase() + id.slice(1);
+            document.getElementById(panelId).classList.add('active');
+            if (id === 'friends') renderMissions();
         }
 
         /* ---------- кошелёк TON ---------- */
@@ -2789,21 +3172,21 @@
             // остаётся между запусками и нужен только для выплат.
             const address = walletAddress();
             document.getElementById('walletState').innerText = tonAddress
-                ? 'Кошелёк подключён'
-                : (address ? 'Адрес для выплат' : 'Кошелёк не подключён');
+                ? t('wallet.connected')
+                : (address ? t('wallet.addressForPayouts') : t('wallet.notConnected'));
             document.getElementById('walletAddress').innerText = address ? shortAddress(address) : '—';
             document.getElementById('walletBtnText').innerText =
-                tonAddress ? 'Отключить кошелёк' : 'Подключить кошелёк';
+                tonAddress ? t('wallet.disconnect') : t('wallet.connect');
             document.getElementById('walletBtn').disabled = !tonUI || !TON_CFG.enabled;
 
             const note = document.getElementById('walletNote');
             if (!TON_CFG.enabled) {
-                note.innerText = 'Пополнение и вывод работают на сервере проекта';
+                note.innerText = t('wallet.serverSide');
             } else if (!tonUI) {
-                note.innerText = 'TON Connect не загрузился — переведи вручную по адресу и мемо';
+                note.innerText = t('wallet.noTonConnect');
             } else {
                 note.innerText = `1 GRAM = ${(1 / TON_CFG.rate).toFixed(TON_CFG.rate >= 1 ? 0 : 2)} TON `
-                    + `• минимум ${fmtGram(TON_CFG.min_deposit)} GRAM`;
+                    + `• ${t('wallet.minimum', { min: fmtGram(TON_CFG.min_deposit) })}`;
             }
             document.querySelectorAll('.wallet-actions .btn-action')
                 .forEach(btn => { btn.disabled = !TON_CFG.enabled; });
@@ -2813,11 +3196,11 @@
             document.getElementById('walletOpsHead').style.display = operations.length ? 'flex' : 'none';
             list.innerHTML = operations.map(op => {
                 const deposit = op.kind === 'deposit';
-                const status = deposit ? 'Зачислено' : (op.status === 'sent' ? 'Отправлено' : 'В обработке');
+                const status = deposit ? t('wallet.credited') : (op.status === 'sent' ? t('wallet.sent') : t('wallet.processing'));
                 return `
                     <div class="wallet-op ${deposit ? 'deposit' : 'withdraw'}">
                         <div>
-                            <div class="op-kind">${deposit ? 'Пополнение' : 'Вывод'} • ${status}</div>
+                            <div class="op-kind">${deposit ? t('wallet.depositNoun') : t('wallet.withdrawNoun')} • ${status}</div>
                             <div class="op-date">${opDate(op.ts)}</div>
                         </div>
                         <div class="op-amount">${deposit ? '+' : '−'}${fmtGram(op.amount)}<img src="assets/coin.png" alt=""></div>
@@ -2860,10 +3243,10 @@
             const value = current ? current.value : fmtGram(min);
 
             document.getElementById('depositBody').innerHTML = `
-                <h2>Пополнение</h2>
+                <h2>${t('deposit.title')}</h2>
                 <p>1 GRAM = ${tonAmount(1)} TON</p>
 
-                <div class="pay-label">Сумма, GRAM</div>
+                <div class="pay-label">${t('deposit.amountLabel')}</div>
                 <input class="pay-input" id="depositAmount" type="number" inputmode="decimal"
                        min="${min}" step="0.01" value="${value}" oninput="updateDepositAmount()">
                 <div class="pay-chips">
@@ -2871,25 +3254,25 @@
                         `<button onclick="setDeposit(${sum})">${fmtGram(sum)}</button>`).join('')}
                 </div>
 
-                <div class="pay-label">Адрес проекта</div>
-                <div class="pay-copy" onclick="copyText('${TON_CFG.wallet}', 'Адрес скопирован')">
+                <div class="pay-label">${t('deposit.addressLabel')}</div>
+                <div class="pay-copy" onclick="copyText('${TON_CFG.wallet}', '${t('deposit.addressCopied')}')">
                     <span>${TON_CFG.wallet}</span>${COPY_ICON}
                 </div>
 
-                <div class="pay-label">Комментарий к переводу (мемо)</div>
-                <div class="pay-copy pay-memo" onclick="copyText('${TON_CFG.memo}', 'Мемо скопировано')">
+                <div class="pay-label">${t('deposit.memoLabel')}</div>
+                <div class="pay-copy pay-memo" onclick="copyText('${TON_CFG.memo}', '${t('deposit.memoCopied')}')">
                     <span>${TON_CFG.memo}</span>${COPY_ICON}
                 </div>
-                <p class="pay-warning">Перевод без этого комментария сервер не свяжет с твоим аккаунтом.</p>
+                <p class="pay-warning">${t('deposit.memoWarning')}</p>
 
                 <div class="pay-actions">
                     ${tonAddress
-                        ? `<button class="btn-primary" onclick="payFromWallet()">Отправить <span id="depositTon">${tonAmount(Number(value) || min)}</span> TON</button>`
-                        : `<button class="btn-primary" onclick="toggleWallet()">Подключить кошелёк</button>`}
-                    <button class="btn-action" onclick="checkDeposit(false)">Я перевёл — проверить</button>
-                    <button class="btn-action" onclick="closeDeposit()">Закрыть</button>
+                        ? `<button class="btn-primary" onclick="payFromWallet()">${t('deposit.send')} <span id="depositTon">${tonAmount(Number(value) || min)}</span> TON</button>`
+                        : `<button class="btn-primary" onclick="toggleWallet()">${t('wallet.connect')}</button>`}
+                    <button class="btn-action" onclick="checkDeposit(false)">${t('deposit.iPaid')}</button>
+                    <button class="btn-action" onclick="closeDeposit()">${t('common.close')}</button>
                 </div>
-                <p class="pay-status">Пополнение зачисляется автоматически по мемо, обычно за минуту.</p>
+                <p class="pay-status">${t('deposit.autoStatus')}</p>
             `;
         }
 
@@ -2908,10 +3291,10 @@
             const input = document.getElementById('depositAmount');
             const gram = Number(input && input.value) || 0;
             if (gram < TON_CFG.min_deposit) {
-                toast(`Минимум для пополнения — ${fmtGram(TON_CFG.min_deposit)} GRAM`);
+                toast(t('deposit.minToast', { min: fmtGram(TON_CFG.min_deposit) }));
                 return;
             }
-            if (!tonUI || !tonAddress) { toast('Сначала подключи кошелёк'); return; }
+            if (!tonUI || !tonAddress) { toast(t('deposit.connectFirst')); return; }
 
             try {
                 await tonUI.sendTransaction({
@@ -2974,27 +3357,27 @@
         function renderWithdraw() {
             const min = TON_CFG.min_withdraw;
             document.getElementById('withdrawBody').innerHTML = `
-                <h2>Вывод</h2>
-                <p>Доступно ${fmtGram(state.coins)} GRAM</p>
+                <h2>${t('withdraw.title')}</h2>
+                <p>${t('withdraw.available', { amount: fmtGram(state.coins) })}</p>
 
-                <div class="pay-label">Сумма, GRAM</div>
+                <div class="pay-label">${t('deposit.amountLabel')}</div>
                 <input class="pay-input" id="withdrawAmount" type="number" inputmode="decimal"
                        min="${min}" step="0.01" value="${fmtGram(Math.max(min, 0))}">
                 <div class="pay-chips">
                     <button onclick="setWithdraw(${min})">${fmtGram(min)}</button>
-                    <button onclick="setWithdraw(${state.coins / 2})">Половина</button>
-                    <button onclick="setWithdraw(${state.coins})">Всё</button>
+                    <button onclick="setWithdraw(${state.coins / 2})">${t('withdraw.half')}</button>
+                    <button onclick="setWithdraw(${state.coins})">${t('withdraw.all')}</button>
                 </div>
 
-                <div class="pay-label">Адрес TON</div>
+                <div class="pay-label">${t('withdraw.addressLabel')}</div>
                 <input class="pay-input address" id="withdrawAddress" type="text"
                        placeholder="UQ…" value="${walletAddress()}">
 
-                <p class="pay-warning">Минимум ${fmtGram(min)} GRAM. Выплату отправляет владелец проекта после проверки заявки.</p>
+                <p class="pay-warning">${t('withdraw.warning', { min: fmtGram(min) })}</p>
 
                 <div class="pay-actions">
-                    <button class="btn-primary" onclick="submitWithdraw()">Вывести</button>
-                    <button class="btn-action" onclick="closeWithdraw()">Закрыть</button>
+                    <button class="btn-primary" onclick="submitWithdraw()">${t('withdraw.submit')}</button>
+                    <button class="btn-action" onclick="closeWithdraw()">${t('common.close')}</button>
                 </div>
             `;
         }
@@ -3005,16 +3388,16 @@
         }
 
         async function submitWithdraw() {
-            if (offlineOnly || !state.userId) { toast('Вывод работает только в Telegram'); return; }
+            if (offlineOnly || !state.userId) { toast(t('withdraw.telegramOnly')); return; }
             const amount = Number(document.getElementById('withdrawAmount').value) || 0;
             const address = (document.getElementById('withdrawAddress').value || '').trim();
 
             if (amount < TON_CFG.min_withdraw) {
-                toast(`Минимум для вывода — ${fmtGram(TON_CFG.min_withdraw)} GRAM`);
+                toast(t('withdraw.minToast', { min: fmtGram(TON_CFG.min_withdraw) }));
                 return;
             }
-            if (amount > state.coins) { toast('Недостаточно GRAM на балансе'); return; }
-            if (!address) { toast('Укажи адрес кошелька'); return; }
+            if (amount > state.coins) { toast(t('withdraw.insufficientBalance')); return; }
+            if (!address) { toast(t('withdraw.needAddress')); return; }
 
             try {
                 const response = await fetch('api/ton/withdraw', {
@@ -3322,12 +3705,18 @@
 
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
-                `Друг засчитывается, когда намайнит ${CONFIG.referral.qualify_mnstr} Meat`;
+                t('friends.qualifyHint', { mnstr: CONFIG.referral.qualify_mnstr });
             document.getElementById('wheelOpenBtn').style.display = CONFIG.wheel.segments.length ? '' : 'none';
 
             stageAnimator = new SpriteAnimator(document.getElementById('monsterSprite'));
             initProfile();
             initTonConnect();
+            loadSoundPref();
+            loadLanguagePref();
+            document.getElementById('langOptRu').classList.toggle('active', LANG === 'ru');
+            document.getElementById('langOptEn').classList.toggle('active', LANG === 'en');
+            applyI18n();
+            renderSoundToggle();
 
             // Default farm: one free starter monster in the first slot.
             state.farm = [newSlot(CONFIG.monsters[0].id)];
