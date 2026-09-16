@@ -112,6 +112,23 @@
         .subtab-panel { display: none; }
         .subtab-panel.active { display: block; animation: popIn 0.25s ease; }
 
+        /* ---------- Рынок: вкладки по редкости + «Мой рынок» ---------- */
+        .market-tab-bar {
+            display: flex; overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.15); margin: 4px 0 16px 0;
+        }
+        .market-tab-bar::-webkit-scrollbar { display: none; }
+        .market-tab-item {
+            flex: 0 0 auto; text-align: center; padding: 10px 14px 12px 14px; opacity: 0.5;
+            font-weight: 900; font-size: 12.5px; letter-spacing: 0.2px; text-transform: uppercase;
+            position: relative; cursor: pointer; white-space: nowrap; transition: opacity 0.15s ease;
+        }
+        .market-tab-item.active { opacity: 1; }
+        .market-tab-item.active::after {
+            content: ''; position: absolute; left: 10%; right: 10%; bottom: -2px; height: 3px;
+            border-radius: 2px; background: #fff;
+        }
+
         h1 { font-size: 27px; font-weight: 900; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 3px 0 var(--ink), 0 6px 10px rgba(0, 0, 0, 0.35); }
         p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 18px; font-size: 14px; font-weight: 700; }
 
@@ -227,12 +244,7 @@
         .market-locked p { color: var(--text-muted); font-size: 14px; font-weight: 700; max-width: 280px; }
         .market-sell-btn { width: 100%; justify-content: center; margin-bottom: 16px; }
         .lang-options .market-eagle { width: 32px; height: 32px; }
-        .market-section { margin-bottom: 18px; }
-        .market-section-header {
-            display: flex; justify-content: space-between; align-items: baseline;
-            font-size: 14px; font-weight: 900; padding: 0 2px 8px; text-transform: uppercase; letter-spacing: 0.02em;
-        }
-        .market-min-price { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: none; letter-spacing: normal; }
+        .market-min-price-line { font-size: 11px; font-weight: 700; color: var(--text-muted); padding: 0 2px 10px; }
         .market-section-empty { font-size: 12px; color: var(--text-muted); font-weight: 700; padding: 0 2px 10px; }
         .market-best-badge {
             font-size: 9px; font-weight: 900; text-transform: uppercase; color: #1d2b06;
@@ -735,6 +747,7 @@
                 <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
                 <span data-i18n="market.sellBtn">Выставить орла на продажу</span>
             </button>
+            <div class="market-tab-bar" id="marketTabBar"></div>
             <div id="marketBody"></div>
         </div>
 
@@ -1094,7 +1107,6 @@
                 'market.subtitle': 'Торгуй орлами редкости зелёный и выше с другими игроками по разделам редкости — комиссия рынка 10%',
                 'market.sellBtn': 'Выставить орла на продажу',
                 'market.onlineOnly': 'Рынок работает только при подключении к серверу',
-                'market.empty': 'Пока никто ничего не продаёт — загляни позже',
                 'market.loading': 'Загружаем лоты…',
                 'market.yourListing': 'Твой лот', 'market.seller': 'Продавец', 'market.myListings': 'Твои лоты',
                 'market.noEligible': 'Нет прокачанных (7 ур.) орлов редкости зелёный и выше на продажу',
@@ -1111,6 +1123,7 @@
                 'market.minPriceHint': 'Минимальная цена для этой редкости — {price} GRAM',
                 'market.belowMinPrice': 'Цена ниже минимальной для этой редкости — {price} GRAM',
                 'market.sectionEmpty': 'Пока никто не продаёт — загляни позже',
+                'market.noOwnListings': 'У тебя пока нет лотов на рынке',
                 'market.bestPrice': 'лучшая цена',
                 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
@@ -1213,7 +1226,6 @@
                 'market.subtitle': 'Trade eagles of uncommon rarity and above with other players, grouped by rarity — 10% market fee',
                 'market.sellBtn': 'List an eagle for sale',
                 'market.onlineOnly': 'The market only works while connected to the server',
-                'market.empty': 'Nobody is selling anything yet — check back later',
                 'market.loading': 'Loading listings…',
                 'market.yourListing': 'Your listing', 'market.seller': 'Seller', 'market.myListings': 'Your listings',
                 'market.noEligible': 'No fully-fed (level 7) eagles of uncommon rarity and above to sell',
@@ -1230,6 +1242,7 @@
                 'market.minPriceHint': 'Minimum price for this rarity — {price} GRAM',
                 'market.belowMinPrice': 'Price is below the minimum for this rarity — {price} GRAM',
                 'market.sectionEmpty': 'Nobody is selling here yet — check back later',
+                'market.noOwnListings': 'You have no listings on the market yet',
                 'market.bestPrice': 'best price',
                 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
@@ -2998,6 +3011,7 @@
         // сделку или купить один лот дважды.
         let marketListingsLoaded = false;
         let marketSellChoice = null;
+        let marketActiveTab = null; // id редкости или 'mine' — какая вкладка рынка сейчас открыта
 
         function eligibleMarketEagles() {
             return state.farm.filter(slot => {
@@ -3010,13 +3024,36 @@
             return Number((CONFIG.market.min_price_by_tier || {})[tierId]) || 0;
         }
 
-        // Разделы рынка идут по редкости (обычная не торгуется), внутри раздела
-        // лоты — живая очередь от самой дешёвой ставки сверху к самой дорогой.
-        // Свои лоты в общей очереди не показываются — только в отдельном блоке
-        // «Твои лоты» сверху, где их можно снять с продажи.
+        // Обычная редкость на рынке не торгуется — вкладки строятся по остальным тирам.
+        function marketTiers() {
+            return CONFIG.tiers.slice(1);
+        }
+
+        function renderMarketTabs() {
+            const bar = document.getElementById('marketTabBar');
+            if (!bar) return;
+            if (!marketActiveTab) marketActiveTab = marketTiers()[0].id;
+            bar.innerHTML = marketTiers().map(tier => `
+                <div class="market-tab-item ${marketActiveTab === tier.id ? 'active' : ''}" style="color:${tier.color}" onclick="switchMarketTab('${tier.id}')">${tier.name}</div>
+            `).join('') + `
+                <div class="market-tab-item ${marketActiveTab === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchMarketTab('mine')">${t('market.myListings')}</div>
+            `;
+        }
+
+        function switchMarketTab(tabId) {
+            marketActiveTab = tabId;
+            haptic.select();
+            renderMarket();
+        }
+
+        // Вкладки рынка идут по редкости (обычная не торгуется) плюс «Мой рынок».
+        // Внутри вкладки редкости — живая очередь от самой дешёвой ставки сверху
+        // к самой дорогой; свои лоты там не показываются, они только на вкладке
+        // «Мой рынок», где их можно снять с продажи.
         function renderMarket() {
             const body = document.getElementById('marketBody');
             if (!body) return;
+            renderMarketTabs();
             if (offlineOnly) {
                 body.innerHTML = `<div class="market-locked"><p>${t('market.onlineOnly')}</p></div>`;
                 return;
@@ -3025,64 +3062,48 @@
                 body.innerHTML = `<div class="market-locked"><p>${t('market.loading')}</p></div>`;
                 return;
             }
-            const mine = [];
-            const byTier = {};
-            (state.marketListings || []).forEach(listing => {
-                const monster = MONSTERS[listing.monster_id];
-                if (!monster) return;
-                if (String(listing.seller_id) === String(state.userId)) {
-                    mine.push(listing);
-                } else {
-                    (byTier[monster.tier] = byTier[monster.tier] || []).push(listing);
-                }
-            });
+            const listings = (state.marketListings || []).filter(listing => MONSTERS[listing.monster_id]);
 
-            const mineHtml = mine.length ? `
-                <div class="market-section">
-                    <div class="market-section-header"><span>${t('market.myListings')}</span></div>
-                    ${mine.map(listing => {
-                        const monster = MONSTERS[listing.monster_id];
-                        const tier = tierById(monster.tier);
-                        return `
-                            <div class="card glass-panel market-card">
-                                <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                                <div class="card-info">
-                                    <h3 style="color:${tier.color}">${monster.name}</h3>
-                                    <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
-                                </div>
-                                <button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+            if (marketActiveTab === 'mine') {
+                const mine = listings.filter(listing => String(listing.seller_id) === String(state.userId));
+                body.innerHTML = mine.length ? mine.map(listing => {
+                    const monster = MONSTERS[listing.monster_id];
+                    const tier = tierById(monster.tier);
+                    return `
+                        <div class="card glass-panel market-card">
+                            <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                            <div class="card-info">
+                                <h3 style="color:${tier.color}">${monster.name}</h3>
+                                <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
                             </div>
-                        `;
-                    }).join('')}
-                </div>
-            ` : '';
-
-            const tiersHtml = CONFIG.tiers.slice(1).map(tier => {
-                const rows = (byTier[tier.id] || []).slice().sort((a, b) => a.price_gram - b.price_gram);
-                return `
-                    <div class="market-section">
-                        <div class="market-section-header" style="color:${tier.color}">
-                            <span>${tier.name}</span>
-                            <span class="market-min-price">${t('market.minPriceLabel', { price: fmtGram(marketMinPrice(tier.id)) })}</span>
+                            <button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
                         </div>
-                        ${rows.length ? rows.map((listing, idx) => {
-                            const monster = MONSTERS[listing.monster_id];
-                            return `
-                                <div class="card glass-panel market-card">
-                                    <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                                    <div class="card-info">
-                                        <h3 style="color:${tier.color}">${monster.name} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                                        <p style="font-size:12px; color:var(--text-muted)">${listing.seller_name || t('market.seller')}</p>
-                                    </div>
-                                    <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
-                                </div>
-                            `;
-                        }).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
+                return;
+            }
 
-            body.innerHTML = mineHtml + tiersHtml;
+            const tier = tierById(marketActiveTab);
+            const rows = listings
+                .filter(listing => MONSTERS[listing.monster_id].tier === marketActiveTab && String(listing.seller_id) !== String(state.userId))
+                .sort((a, b) => a.price_gram - b.price_gram);
+
+            body.innerHTML = `
+                <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(marketMinPrice(marketActiveTab)) })}</p>
+                ${rows.length ? rows.map((listing, idx) => {
+                    const monster = MONSTERS[listing.monster_id];
+                    return `
+                        <div class="card glass-panel market-card">
+                            <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                            <div class="card-info">
+                                <h3 style="color:${tier.color}">${monster.name} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
+                                <p style="font-size:12px; color:var(--text-muted)">${listing.seller_name || t('market.seller')}</p>
+                            </div>
+                            <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                        </div>
+                    `;
+                }).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
+            `;
         }
 
         async function loadMarketListings() {
