@@ -351,6 +351,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "coins": 0.0,
             "total_earned": 0.0,
             "mnstr": 0.0,
+            "gold": 0.0,
             "monsters": [{"id": STARTER_MONSTER, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}],
             "active_slot": 0,
             "missions": [],
@@ -505,6 +506,7 @@ class FarmState(BaseModel):
     coins: float
     total_earned: float
     mnstr: float = 0.0
+    gold: float = 0.0
     monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps", "expedition_until"}
     active_slot: int = 0
     missions: list = []
@@ -550,6 +552,7 @@ class AdminPlayerUpdate(BaseModel):
     name: Optional[str] = None
     coins: Optional[float] = None
     mnstr: Optional[float] = None
+    gold: Optional[float] = None
     slots: Optional[int] = None
     active_slot: Optional[int] = None
     wallet: Optional[str] = None
@@ -605,6 +608,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "coins": float(row.get("coins") or 0.0),
         "total_earned": float(row.get("total_earned") or 0.0),
         "mnstr": float(row.get("mnstr") or 0.0),
+        "gold": float(row.get("gold") or 0.0),
         "monsters": farm,
         "active_slot": int(row.get("active_slot") or 0),
         "missions": row.get("missions") or [],
@@ -645,6 +649,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "coins": state.coins,
             "total_earned": state.total_earned,
             "mnstr": state.mnstr,
+            "gold": max(0.0, state.gold),
             "monsters": read_farm(state.monsters),
             "active_slot": state.active_slot,
             "slots": state.slots,
@@ -894,6 +899,7 @@ def player_summary(doc: dict) -> dict:
         "name": doc.get("name") or "",
         "coins": float(doc.get("coins") or 0.0),
         "mnstr": float(doc.get("mnstr") or 0.0),
+        "gold": float(doc.get("gold") or 0.0),
         "total_earned": float(doc.get("total_earned") or 0.0),
         "slots": int(doc.get("slots") or START_SLOTS),
         "farm_count": len(farm),
@@ -972,6 +978,8 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
         fields["coins"] = max(0.0, float(fields["coins"]))
     if "mnstr" in fields:
         fields["mnstr"] = max(0.0, float(fields["mnstr"]))
+    if "gold" in fields:
+        fields["gold"] = max(0.0, float(fields["gold"]))
     if "slots" in fields:
         fields["slots"] = max(START_SLOTS, min(int(fields["slots"]), MAX_SLOTS))
     if "active_slot" in fields:

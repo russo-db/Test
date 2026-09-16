@@ -1,7 +1,7 @@
 """Хранилище фермы: MongoDB в проде, SQLite для локальной разработки.
 
 Оба бэкенда работают с одним и тем же словарём:
-    user_id, coins, total_earned, mnstr, monsters, active_slot,
+    user_id, coins, total_earned, mnstr, gold, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops
 
@@ -16,7 +16,7 @@ import sqlite3
 from typing import Optional
 
 FIELDS = (
-    "user_id", "name", "coins", "total_earned", "mnstr", "monsters",
+    "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "wallet", "ops",
 )
@@ -45,6 +45,7 @@ class SqliteStore:
                 coins          REAL    DEFAULT 0.0,
                 total_earned   REAL    DEFAULT 0.0,
                 mnstr          REAL    DEFAULT 0.0,
+                gold           REAL    DEFAULT 0.0,
                 monsters       TEXT    DEFAULT '[]',
                 active_slot    INTEGER DEFAULT 0,
                 missions       TEXT    DEFAULT '[]',
@@ -91,6 +92,7 @@ class SqliteStore:
             ("slots", "INTEGER DEFAULT 3"),
             ("active_slot", "INTEGER DEFAULT 0"),
             ("mnstr", "REAL DEFAULT 0.0"),
+            ("gold", "REAL DEFAULT 0.0"),
             ("name", "TEXT DEFAULT ''"),
             ("daily_day", "INTEGER DEFAULT 0"),
             ("daily_last", "INTEGER DEFAULT 0"),
@@ -377,6 +379,7 @@ class SqliteStore:
             """SELECT COUNT(*) AS players,
                       COALESCE(SUM(coins), 0) AS coins,
                       COALESCE(SUM(mnstr), 0) AS mnstr,
+                      COALESCE(SUM(gold), 0) AS gold,
                       COALESCE(SUM(total_earned), 0) AS total_earned,
                       COALESCE(SUM(referrals), 0) AS referrals,
                       COALESCE(SUM(CASE WHEN wallet != '' THEN 1 ELSE 0 END), 0) AS wallets
@@ -396,6 +399,7 @@ class SqliteStore:
             "players": int(row["players"]),
             "coins": float(row["coins"]),
             "mnstr": float(row["mnstr"]),
+            "gold": float(row["gold"]),
             "total_earned": float(row["total_earned"]),
             "referrals": int(row["referrals"]),
             "wallets": int(row["wallets"]),
@@ -599,6 +603,7 @@ class MongoStore:
             "players": {"$sum": 1},
             "coins": {"$sum": "$coins"},
             "mnstr": {"$sum": "$mnstr"},
+            "gold": {"$sum": "$gold"},
             "total_earned": {"$sum": "$total_earned"},
             "referrals": {"$sum": "$referrals"},
             "wallets": {"$sum": {"$cond": [{"$ne": ["$wallet", ""]}, 1, 0]}},
@@ -621,6 +626,7 @@ class MongoStore:
             "players": int(base.get("players", 0)),
             "coins": float(base.get("coins", 0) or 0),
             "mnstr": float(base.get("mnstr", 0) or 0),
+            "gold": float(base.get("gold", 0) or 0),
             "total_earned": float(base.get("total_earned", 0) or 0),
             "referrals": int(base.get("referrals", 0) or 0),
             "wallets": int(base.get("wallets", 0) or 0),

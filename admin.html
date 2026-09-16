@@ -139,7 +139,7 @@
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>ID</th><th>Имя</th><th>GRAM</th><th>Meat</th><th>Слоты</th>
+                        <th>ID</th><th>Имя</th><th>GRAM</th><th>Meat</th><th>Золото</th><th>Слоты</th>
                         <th>Орлы</th><th>Рефералы</th><th>Кошелёк</th><th></th>
                     </tr></thead>
                     <tbody id="playersBody"></tbody>
@@ -279,6 +279,7 @@ const STAT_LABELS = [
     ['players', 'Игроков'],
     ['coins', 'GRAM на балансах'],
     ['mnstr', 'Meat на балансах'],
+    ['gold', 'Золото на балансах'],
     ['total_earned', 'GRAM заработано всего'],
     ['referrals', 'Рефералов засчитано'],
     ['wallets', 'Кошельков подключено'],
@@ -323,6 +324,7 @@ async function loadPlayers() {
                 <td>${p.name || '—'}</td>
                 <td>${fmtNum(p.coins)}</td>
                 <td>${fmtNum(p.mnstr)}</td>
+                <td>${fmtNum(p.gold)}</td>
                 <td>${p.slots}</td>
                 <td>${p.farm_count}</td>
                 <td>${p.referrals}</td>
@@ -390,6 +392,7 @@ async function openPlayerModal(userId) {
                 <div class="field-row">
                     <label>GRAM <input id="fCoins" type="number" step="0.01" value="${doc.coins || 0}"></label>
                     <label>Meat <input id="fMnstr" type="number" step="0.01" value="${doc.mnstr || 0}"></label>
+                    <label>Золото <input id="fGold" type="number" step="0.01" value="${doc.gold || 0}"></label>
                     <label>Слоты <input id="fSlots" type="number" value="${doc.slots || 3}"></label>
                     <label>Активный слот <input id="fActiveSlot" type="number" value="${doc.active_slot || 0}"></label>
                 </div>
@@ -469,6 +472,7 @@ async function savePlayerModal() {
         wallet: document.getElementById('fWallet').value,
         coins: Number(document.getElementById('fCoins').value) || 0,
         mnstr: Number(document.getElementById('fMnstr').value) || 0,
+        gold: Number(document.getElementById('fGold').value) || 0,
         slots: Number(document.getElementById('fSlots').value) || 3,
         active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
         monsters: editingPlayer.monsters,

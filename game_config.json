@@ -336,6 +336,6 @@
   "expeditions": {
     "duration_hours": 4,
     "cost_meat": 1,
-    "gram_by_tier": [0.5, 1, 2, 4, 8, 16]
+    "gold_by_tier": [0.5, 1, 2, 4, 8, 16]
   }
 }
