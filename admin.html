@@ -59,6 +59,7 @@
         background: none; text-align: left; padding: 10px 12px; border-radius: 8px; color: #c3cbdd;
     }
     .nav-btn.active { background: #2a3350; color: #fff; }
+    .nav-scroll { display: contents; }
     #sidebar .spacer { flex: 1; }
     #main { flex: 1; padding: 22px 26px; overflow-x: auto; }
     .page { display: none; }
@@ -99,6 +100,63 @@
     .add-eagle-row { display: flex; gap: 8px; margin-top: 6px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+    /* --- мобильный интерфейс --- */
+    @media (max-width: 780px) {
+        #app { flex-direction: column; min-height: 100vh; }
+        #sidebar {
+            width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+            padding: 10px 10px; border-right: none; border-bottom: 1px solid #202840;
+        }
+        #sidebar h1 { order: 1; flex: 1 1 auto; margin: 0; font-size: 13px; white-space: nowrap; }
+        #sidebar h1 small { display: none; }
+        #sidebar .spacer { display: none; }
+        #logoutBtn { order: 2; flex: 0 0 auto; white-space: nowrap; }
+        .nav-scroll {
+            display: flex; order: 3; flex: 1 1 100%; gap: 6px;
+            overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        }
+        .nav-scroll::-webkit-scrollbar { display: none; }
+        .nav-btn { white-space: nowrap; flex: 0 0 auto; padding: 9px 12px; }
+        #main { padding: 14px 12px; }
+        .page h2 { font-size: 17px; }
+
+        .toolbar { flex-wrap: wrap; }
+        .toolbar input { flex: 1 1 auto; min-width: 0; }
+
+        /* таблицы -> карточки */
+        .table-wrap { border: none; background: none; overflow: visible; }
+        .table-wrap table, .table-wrap thead, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
+        .table-wrap thead { display: none; }
+        .table-wrap tr {
+            background: #161d2e; border: 1px solid #2a3350; border-radius: 12px;
+            padding: 10px 12px; margin-bottom: 10px;
+        }
+        .table-wrap td {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            border-bottom: 1px solid #202840; padding: 7px 0; white-space: normal; text-align: right;
+        }
+        .table-wrap td:last-child { border-bottom: none; }
+        .table-wrap td[data-label]::before {
+            content: attr(data-label); color: #8b96b3; font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em; text-align: left; flex: 0 0 auto;
+        }
+        .table-wrap td.td-action { justify-content: flex-end; gap: 8px; }
+
+        .pager { flex-wrap: wrap; justify-content: space-between; }
+
+        /* модалка */
+        .modal-backdrop { padding: 0; align-items: stretch; }
+        .modal { max-width: none; min-height: 100vh; border-radius: 0; border: none; }
+        .field-row label { flex: 1 1 100%; min-width: 0; }
+        .add-eagle-row { flex-wrap: wrap; }
+        .add-eagle-row select { flex: 1 1 auto; min-width: 0; }
+        .eggs-grid { grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); }
+        .modal-actions { flex-wrap: wrap; }
+        .modal-actions button { flex: 1 1 auto; }
+
+        .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+    }
 </style>
 </head>
 <body>
@@ -116,10 +174,12 @@
 <div id="app" class="hidden">
     <div id="sidebar">
         <h1>SkyLords GRAMM<small>Админ-панель</small></h1>
-        <button class="nav-btn active" data-page="overview">📊 Обзор</button>
-        <button class="nav-btn" data-page="players">👥 Игроки</button>
-        <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
-        <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+        <div class="nav-scroll">
+            <button class="nav-btn active" data-page="overview">📊 Обзор</button>
+            <button class="nav-btn" data-page="players">👥 Игроки</button>
+            <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
+            <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+        </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
     </div>
@@ -320,16 +380,16 @@ async function loadPlayers() {
         state.playersTotal = data.total;
         document.getElementById('playersBody').innerHTML = data.items.map(p => `
             <tr>
-                <td>${p.user_id}</td>
-                <td>${p.name || '—'}</td>
-                <td>${fmtNum(p.coins)}</td>
-                <td>${fmtNum(p.mnstr)}</td>
-                <td>${fmtNum(p.gold)}</td>
-                <td>${p.slots}</td>
-                <td>${p.farm_count}</td>
-                <td>${p.referrals}</td>
-                <td>${p.wallet ? p.wallet.slice(0, 8) + '…' : '—'}</td>
-                <td><button data-open="${p.user_id}">Открыть</button></td>
+                <td data-label="ID">${p.user_id}</td>
+                <td data-label="Имя">${p.name || '—'}</td>
+                <td data-label="GRAM">${fmtNum(p.coins)}</td>
+                <td data-label="Meat">${fmtNum(p.mnstr)}</td>
+                <td data-label="Золото">${fmtNum(p.gold)}</td>
+                <td data-label="Слоты">${p.slots}</td>
+                <td data-label="Орлы">${p.farm_count}</td>
+                <td data-label="Рефералы">${p.referrals}</td>
+                <td data-label="Кошелёк">${p.wallet ? p.wallet.slice(0, 8) + '…' : '—'}</td>
+                <td class="td-action"><button data-open="${p.user_id}">Открыть</button></td>
             </tr>
         `).join('') || '<tr><td colspan="9" class="muted">Никого не найдено</td></tr>';
         document.querySelectorAll('[data-open]').forEach(btn => {
@@ -508,13 +568,13 @@ async function loadWithdrawals() {
         const data = await api('/admin/api/withdrawals?' + new URLSearchParams({ status, limit: 100 }));
         document.getElementById('wdBody').innerHTML = data.items.map(w => `
             <tr>
-                <td>${w.id}</td>
-                <td>${w.user_id}</td>
-                <td>${fmtNum(w.amount)}</td>
-                <td title="${w.address}">${w.address.slice(0, 14)}…</td>
-                <td>${w.status}</td>
-                <td>${new Date(w.ts * 1000).toLocaleString('ru-RU')}</td>
-                <td>
+                <td data-label="ID">${w.id}</td>
+                <td data-label="Игрок">${w.user_id}</td>
+                <td data-label="Сумма GRAM">${fmtNum(w.amount)}</td>
+                <td data-label="Адрес" title="${w.address}">${w.address.slice(0, 14)}…</td>
+                <td data-label="Статус">${w.status}</td>
+                <td data-label="Дата">${new Date(w.ts * 1000).toLocaleString('ru-RU')}</td>
+                <td class="td-action">
                     ${w.status === 'pending' ? `
                         <button data-approve="${w.id}">Выплатить</button>
                         <button class="danger" data-reject="${w.id}">Отклонить</button>
