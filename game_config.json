@@ -340,5 +340,36 @@
   },
   "market": {
     "commission": 0.10
+  },
+  "vip": {
+    "tiers": [
+      {
+        "id": "bronze",
+        "name": "Bronze Eagle VIP",
+        "price_gram": 3,
+        "duration_days": 10,
+        "meat_per_day": 5,
+        "egg_reduction_hours": 2,
+        "expedition_reduction_hours": 1
+      },
+      {
+        "id": "silver",
+        "name": "Silver Eagle VIP",
+        "price_gram": 6,
+        "duration_days": 10,
+        "meat_per_day": 10,
+        "egg_reduction_hours": 4,
+        "expedition_reduction_hours": 2
+      },
+      {
+        "id": "gold",
+        "name": "Gold Eagle VIP",
+        "price_gram": 10,
+        "duration_days": 10,
+        "meat_per_day": 15,
+        "egg_reduction_hours": 6,
+        "expedition_reduction_hours": 3
+      }
+    ]
   }
 }

@@ -395,6 +395,13 @@ async function openPlayerModal(userId) {
                     <label>Золото <input id="fGold" type="number" step="0.01" value="${doc.gold || 0}"></label>
                     <label>Слоты <input id="fSlots" type="number" value="${doc.slots || 3}"></label>
                     <label>Активный слот <input id="fActiveSlot" type="number" value="${doc.active_slot || 0}"></label>
+                    <label>VIP-тариф <select id="fVipTier">
+                        <option value="" ${!doc.vip_tier ? 'selected' : ''}>нет</option>
+                        <option value="bronze" ${doc.vip_tier === 'bronze' ? 'selected' : ''}>Bronze</option>
+                        <option value="silver" ${doc.vip_tier === 'silver' ? 'selected' : ''}>Silver</option>
+                        <option value="gold" ${doc.vip_tier === 'gold' ? 'selected' : ''}>Gold</option>
+                    </select></label>
+                    <label>VIP дней осталось <input id="fVipDays" type="number" step="1" value="${doc.vip_expires_at ? Math.max(0, Math.ceil((doc.vip_expires_at - Date.now()/1000) / 86400)) : 0}"></label>
                 </div>
 
                 <b>Ферма (${doc.monsters.length} орлов)</b>
@@ -475,6 +482,11 @@ async function savePlayerModal() {
         gold: Number(document.getElementById('fGold').value) || 0,
         slots: Number(document.getElementById('fSlots').value) || 3,
         active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
+        vip_tier: document.getElementById('fVipTier').value,
+        vip_expires_at: (() => {
+            const days = Number(document.getElementById('fVipDays').value) || 0;
+            return days > 0 ? Math.floor(Date.now() / 1000) + days * 86400 : 0;
+        })(),
         monsters: editingPlayer.monsters,
         eggs_board: eggsBoard,
     };

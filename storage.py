@@ -3,7 +3,8 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, gold, monsters, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops
+    daily_day, daily_last, eggs_board, eggs_board_unlocked, wallet, ops,
+    vip_tier, vip_expires_at, vip_last_meat_at
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals) и лоты рынка (market_listings — P2P-торговля
@@ -20,6 +21,7 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "wallet", "ops",
+    "vip_tier", "vip_expires_at", "vip_last_meat_at",
 )
 JSON_FIELDS = ("monsters", "missions", "eggs_board")
 
@@ -59,7 +61,10 @@ class SqliteStore:
                 eggs_board     TEXT    DEFAULT '[]',
                 eggs_board_unlocked INTEGER DEFAULT 1,
                 wallet         TEXT    DEFAULT '',
-                ops            INTEGER DEFAULT 0
+                ops            INTEGER DEFAULT 0,
+                vip_tier       TEXT    DEFAULT '',
+                vip_expires_at REAL    DEFAULT 0,
+                vip_last_meat_at REAL  DEFAULT 0
             )
             """
         )
@@ -115,6 +120,9 @@ class SqliteStore:
             ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
+            ("vip_tier", "TEXT DEFAULT ''"),
+            ("vip_expires_at", "REAL DEFAULT 0"),
+            ("vip_last_meat_at", "REAL DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")

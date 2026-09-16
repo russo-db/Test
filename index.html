@@ -126,6 +126,20 @@
 
         /* ---------- Farm ---------- */
         .farm-area { display: flex; flex-direction: column; align-items: center; position: relative; }
+        .farm-hero-row { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; }
+
+        .vip-rail { display: flex; flex-direction: column; gap: 7px; }
+        .vip-cell {
+            width: 42px; height: 42px; border-radius: 12px; border: 3px solid var(--ink);
+            display: flex; align-items: center; justify-content: center; font-size: 19px; cursor: pointer;
+            box-shadow: 0 3px 0 var(--ink), inset 0 2px 0 rgba(255, 255, 255, 0.16);
+            transition: transform 0.08s ease;
+        }
+        .vip-cell:active { transform: translateY(2px); }
+        .vip-cell.vip-bronze { background: linear-gradient(180deg, #cd8a4f, #8b5522); }
+        .vip-cell.vip-silver { background: linear-gradient(180deg, #d8dee3, #98a1a8); }
+        .vip-cell.vip-gold { background: linear-gradient(180deg, var(--gold-lt), #e08c00); }
+        .vip-cell.active { box-shadow: 0 3px 0 var(--ink), 0 0 12px rgba(74, 222, 128, 0.75), inset 0 2px 0 rgba(255, 255, 255, 0.2); }
 
         .monster-stage { cursor: pointer; position: relative; width: 150px; height: 150px; margin-top: 6px; display: flex; align-items: center; justify-content: center; }
         .monster-stage::after {
@@ -660,9 +674,12 @@
             </div>
 
             <div class="farm-area">
-                <div class="monster-stage" id="monsterStage" onclick="onFarmSlotTap(state.activeSlot)">
-                    <div class="monster-glow" id="monsterGlow"></div>
-                    <img class="monster-sprite" id="monsterSprite" alt="">
+                <div class="farm-hero-row">
+                    <div class="vip-rail" id="vipRail"></div>
+                    <div class="monster-stage" id="monsterStage" onclick="onFarmSlotTap(state.activeSlot)">
+                        <div class="monster-glow" id="monsterGlow"></div>
+                        <img class="monster-sprite" id="monsterSprite" alt="">
+                    </div>
                 </div>
                 <div class="monster-name-tag" id="activeMonsterName">—</div>
                 <div class="monster-sub-tag" id="activeMonsterSub">—</div>
@@ -873,6 +890,11 @@
         <div class="modal-box glass-panel pay-box" id="marketSellBody"></div>
     </div>
 
+    <!-- VIP TIER MODAL -->
+    <div class="modal-backdrop" id="vipModal" onclick="if (event.target === this) closeVipModal()">
+        <div class="modal-box glass-panel" id="vipModalBody"></div>
+    </div>
+
     <!-- $Meat EXPLAINER MODAL -->
     <div class="modal-backdrop" id="depositModal" onclick="if (event.target === this) closeDeposit()">
         <div class="modal-box glass-panel pay-box" id="depositBody"></div>
@@ -1066,6 +1088,13 @@
                 'market.serverError': 'Сервер недоступен, попробуй ещё раз',
                 'market.buyFailed': 'Не удалось купить', 'market.bought': 'Орёл куплен!',
                 'market.cancelFailed': 'Не удалось снять лот', 'market.cancelled': 'Лот снят с продажи',
+                'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
+                'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
+                'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
+                'vip.timeLeft': 'Осталось: {time}', 'vip.renew': 'Продлить', 'vip.activate': 'Активировать',
+                'vip.notEnoughGram': 'Не хватает GRAM',
+                'vip.activated': '{name} активирован!',
+                'vip.dailyMeat': 'VIP принёс +{amount} Meat',
                 'profile.tapWhatIsThis': 'Нажми — что это', 'profile.goldLabel': 'Золото',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
@@ -1173,6 +1202,13 @@
                 'market.serverError': 'Server unavailable, try again',
                 'market.buyFailed': 'Failed to buy', 'market.bought': 'Eagle purchased!',
                 'market.cancelFailed': 'Failed to cancel the listing', 'market.cancelled': 'Listing cancelled',
+                'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
+                'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
+                'vip.hoursShort': 'h', 'vip.daysShort': 'd',
+                'vip.timeLeft': 'Time left: {time}', 'vip.renew': 'Renew', 'vip.activate': 'Activate',
+                'vip.notEnoughGram': 'Not enough GRAM',
+                'vip.activated': '{name} activated!',
+                'vip.dailyMeat': 'VIP brought +{amount} Meat',
                 'profile.tapWhatIsThis': 'Tap — what is this', 'profile.goldLabel': 'Gold',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
@@ -1318,7 +1354,8 @@
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
-            marketListings: []   // активные лоты P2P-рынка (см. loadMarketListings)
+            marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
+            vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }  // текущий VIP-тариф (см. buyVip/collectVipDailyMeat)
         };
 
         let botUsername = '';
@@ -1421,7 +1458,9 @@
         }
 
         function eggIntervalSeconds() {
-            return (CONFIG.eggs.egg_interval_hours || 24) * 3600;
+            const base = (CONFIG.eggs.egg_interval_hours || 24) * 3600;
+            const vip = currentVipTier();
+            return Math.max(0, base - (vip ? vip.egg_reduction_hours * 3600 : 0));
         }
 
         // Progress (0-100) towards a slot's next egg.
@@ -1450,7 +1489,9 @@
         // Экспедиция — платная отправка орла добывать GRAM: пока он в пути,
         // кормление и яйца этого слота на паузе (см. onFarmSlotTap).
         function expeditionDurationSeconds() {
-            return (CONFIG.expeditions.duration_hours || 4) * 3600;
+            const base = (CONFIG.expeditions.duration_hours || 4) * 3600;
+            const vip = currentVipTier();
+            return Math.max(0, base - (vip ? vip.expedition_reduction_hours * 3600 : 0));
         }
 
         function isOnExpedition(slot) {
@@ -2333,6 +2374,110 @@
             saveNow();
         }
 
+        /* ---------- VIP-тарифы: ускоряют яйца/экспедиции, дают Meat каждый день ---------- */
+        // Три ячейки слева от орла на сцене — Bronze/Silver/Gold. Один активный
+        // тариф за раз: покупка любого заменяет текущий свежим периодом с этого
+        // момента. Оплата — в GRAM (в игре 1 GRAM = 1 TON, см. кошелёк), как и
+        // всё остальное в экономике — клиентское состояние, сохраняется как обычно.
+        const VIP_ICONS = { bronze: '🥉', silver: '🥈', gold: '🥇' };
+        let vipModalTier = null;
+
+        function vipTierDef(tierId) {
+            return (CONFIG.vip.tiers || []).find(t => t.id === tierId) || null;
+        }
+
+        function vipActive() {
+            return !!(state.vip && state.vip.tier && state.vip.expiresAt > nowSeconds());
+        }
+
+        function currentVipTier() {
+            return vipActive() ? vipTierDef(state.vip.tier) : null;
+        }
+
+        // Раз в сутки, пока тариф активен, начисляет Meat — с наверстыванием,
+        // если игрок не заходил несколько дней (но не дольше, чем тариф ещё
+        // был активен).
+        function collectVipDailyMeat() {
+            if (!vipActive()) return;
+            const tier = currentVipTier();
+            if (!tier || !tier.meat_per_day) return;
+            const now = nowSeconds();
+            const dayLen = 86400;
+            let days = Math.floor((now - state.vip.lastMeatAt) / dayLen);
+            if (days <= 0) return;
+            const capAt = Math.min(now, state.vip.expiresAt);
+            const maxDays = Math.floor((capAt - state.vip.lastMeatAt) / dayLen);
+            days = Math.min(days, Math.max(0, maxDays));
+            if (days <= 0) return;
+            state.vip.lastMeatAt += days * dayLen;
+            const amount = days * tier.meat_per_day;
+            state.mnstr += amount;
+            haptic.notify('success');
+            toast(t('vip.dailyMeat', { amount: fmtToken(amount) }));
+            renderHeader();
+            saveNow();
+        }
+
+        function renderVipRail() {
+            const rail = document.getElementById('vipRail');
+            if (!rail || !CONFIG.vip) return;
+            const activeTier = vipActive() ? state.vip.tier : null;
+            rail.innerHTML = (CONFIG.vip.tiers || []).map(tier => `
+                <div class="vip-cell vip-${tier.id} ${tier.id === activeTier ? 'active' : ''}" onclick="openVipModal('${tier.id}')">
+                    <span>${VIP_ICONS[tier.id] || '⭐'}</span>
+                </div>
+            `).join('');
+        }
+
+        function openVipModal(tierId) {
+            vipModalTier = tierId;
+            renderVipModal();
+            document.getElementById('vipModal').classList.add('open');
+            haptic.impact('light');
+        }
+
+        function closeVipModal() {
+            document.getElementById('vipModal').classList.remove('open');
+        }
+
+        function renderVipModal() {
+            const tier = vipTierDef(vipModalTier);
+            if (!tier) { closeVipModal(); return; }
+            const isActive = vipActive() && state.vip.tier === tier.id;
+            const affordable = state.coins >= tier.price_gram;
+
+            document.getElementById('vipModalBody').innerHTML = `
+                <div style="text-align:center; font-size:44px; line-height:1;">${VIP_ICONS[tier.id] || '⭐'}</div>
+                <h2 style="text-align:center">${tier.name}</h2>
+                <div class="stat-row"><span>${t('vip.meatPerDay')}</span><b style="color:var(--accent-token)">+${fmtToken(tier.meat_per_day)} Meat</b></div>
+                <div class="stat-row"><span>${t('vip.eggReduction')}</span><b>-${tier.egg_reduction_hours} ${t('vip.hoursShort')}</b></div>
+                <div class="stat-row"><span>${t('vip.expeditionReduction')}</span><b>-${tier.expedition_reduction_hours} ${t('vip.hoursShort')}</b></div>
+                <div class="stat-row"><span>${t('vip.duration')}</span><b>${tier.duration_days} ${t('vip.daysShort')}</b></div>
+                ${isActive ? `<p class="slot-modal-sub">${t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
+                <button class="btn-primary" style="margin-top:12px; width:100%" ${affordable ? '' : 'disabled'} onclick="buyVip('${tier.id}')">
+                    ${isActive ? t('vip.renew') : t('vip.activate')} — ${fmtGram(tier.price_gram)} GRAM
+                </button>
+                <button class="btn-action roll-close" onclick="closeVipModal()">${t('common.close')}</button>
+            `;
+        }
+
+        function buyVip(tierId) {
+            const tier = vipTierDef(tierId);
+            if (!tier) return;
+            if (state.coins < tier.price_gram) { toast(t('vip.notEnoughGram')); haptic.notify('warning'); return; }
+            state.coins -= tier.price_gram;
+            const now = nowSeconds();
+            state.vip = { tier: tier.id, expiresAt: now + tier.duration_days * 86400, lastMeatAt: now };
+            state.mnstr += tier.meat_per_day;
+            haptic.notify('success');
+            spawnBurst(14);
+            toast(t('vip.activated', { name: tier.name }));
+            closeVipModal();
+            renderHeader();
+            renderVipRail();
+            saveNow();
+        }
+
         function renderEggs() {
             renderEggBoard();
         }
@@ -2990,6 +3135,7 @@
             renderEggs();
             renderMissions();
             renderMarket();
+            renderVipRail();
             updateWheelButton();
         }
 
@@ -3700,7 +3846,10 @@
                 slots: state.slots,
                 eggs_board: state.eggBoard,
                 eggs_board_unlocked: state.eggBoardUnlocked,
-                ops: state.ops
+                ops: state.ops,
+                vip_tier: (state.vip && state.vip.tier) || '',
+                vip_expires_at: (state.vip && state.vip.expiresAt) || 0,
+                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0
             };
             fetch('api/save', {
                 method: 'POST',
@@ -3726,6 +3875,7 @@
             state.totalEarned = data.total_earned;
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
+            state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.activeSlot = data.active_slot || 0;
@@ -3803,6 +3953,7 @@
             if (typeof state.slots !== 'number') state.slots = CONFIG.slots.start;
             state.mnstr = Number(state.mnstr) || 0;
             state.gold = Number(state.gold) || 0;
+            if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -3831,11 +3982,15 @@
             setInterval(() => {
                 renderHeader();
                 updateSlotProgress();
+                collectVipDailyMeat();
                 if (document.getElementById('farm').classList.contains('active')) {
                     renderActiveMonster();
                 }
                 if (document.getElementById('slotModal').classList.contains('open')) {
                     renderSlotModal();
+                }
+                if (document.getElementById('vipModal').classList.contains('open')) {
+                    renderVipModal();
                 }
             }, 1000);
 
@@ -3881,6 +4036,13 @@
         }
         const DEFAULT_FUSION_ROULETTE = [9.98, 3.5, 1.5, 0.5, 0.005].map(defaultFusionTierSegments);
 
+        // Резервная таблица VIP-тарифов (на случай, если сервер не прислал свою).
+        const DEFAULT_VIP_TIERS = [
+            { id: 'bronze', name: 'Bronze Eagle VIP', price_gram: 3, duration_days: 10, meat_per_day: 5, egg_reduction_hours: 2, expedition_reduction_hours: 1 },
+            { id: 'silver', name: 'Silver Eagle VIP', price_gram: 6, duration_days: 10, meat_per_day: 10, egg_reduction_hours: 4, expedition_reduction_hours: 2 },
+            { id: 'gold', name: 'Gold Eagle VIP', price_gram: 10, duration_days: 10, meat_per_day: 15, egg_reduction_hours: 6, expedition_reduction_hours: 3 },
+        ];
+
         function normalizeConfig(raw) {
             const cfg = raw || {};
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
@@ -3925,6 +4087,8 @@
                 cfg.expeditions
             );
             cfg.market = Object.assign({ commission: 0.10 }, cfg.market);
+            cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
+            if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
             return cfg;
         }
 

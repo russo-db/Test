@@ -371,6 +371,9 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "eggs_board_unlocked": 1,
             "wallet": "",
             "ops": 0,
+            "vip_tier": "",
+            "vip_expires_at": 0,
+            "vip_last_meat_at": 0,
         }
     )
 
@@ -520,6 +523,9 @@ class FarmState(BaseModel):
     eggs_board: List[int] = []
     eggs_board_unlocked: int = 1
     ops: int = -1              # версия баланса, полученная при последней загрузке
+    vip_tier: str = ""
+    vip_expires_at: float = 0
+    vip_last_meat_at: float = 0
 
 
 class MissionClaim(BaseModel):
@@ -581,6 +587,8 @@ class AdminPlayerUpdate(BaseModel):
     monsters: Optional[List[dict]] = None
     eggs_board: Optional[List[int]] = None
     eggs_board_unlocked: Optional[int] = None
+    vip_tier: Optional[str] = None
+    vip_expires_at: Optional[float] = None
 
 
 class AdminConfigUpdate(BaseModel):
@@ -643,6 +651,9 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
+        "vip_tier": row.get("vip_tier") or "",
+        "vip_expires_at": float(row.get("vip_expires_at") or 0),
+        "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -677,6 +688,9 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "slots": state.slots,
             "eggs_board": eggs_board,
             "eggs_board_unlocked": eggs_board_unlocked,
+            "vip_tier": state.vip_tier,
+            "vip_expires_at": max(0.0, state.vip_expires_at),
+            "vip_last_meat_at": max(0.0, state.vip_last_meat_at),
             "last_seen": int(time.time()),
         },
     )
@@ -1011,6 +1025,8 @@ def player_summary(doc: dict) -> dict:
         "referrals": int(doc.get("referrals") or 0),
         "wallet": doc.get("wallet") or "",
         "last_seen": int(doc.get("last_seen") or 0),
+        "vip_tier": doc.get("vip_tier") or "",
+        "vip_expires_at": float(doc.get("vip_expires_at") or 0),
     }
 
 
