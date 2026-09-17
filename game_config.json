@@ -161,21 +161,19 @@
     "share": 0.1
   },
   "daily": {
-    "days": 30,
-    "mnstr_step": 0.1,
+    "days": 10,
+    "mnstr_step": 1,
     "special": [
-      {
-        "day": 10,
-        "gram": 0.1
-      },
-      {
-        "day": 20,
-        "gram": 0.2
-      },
-      {
-        "day": 30,
-        "gram": 0.3
-      }
+      { "day": 1, "mnstr": 1 },
+      { "day": 2, "mnstr": 2 },
+      { "day": 3, "mnstr": 3 },
+      { "day": 4, "mnstr": 4 },
+      { "day": 5, "mnstr": 5 },
+      { "day": 6, "mnstr": 6 },
+      { "day": 7, "monster": "common", "repeat_mnstr": 7 },
+      { "day": 8, "mnstr": 7 },
+      { "day": 9, "mnstr": 8 },
+      { "day": 10, "mnstr": 9 }
     ]
   },
   "ton": {

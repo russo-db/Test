@@ -1455,6 +1455,7 @@
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
+            dailyFirstLap: true, // первый круг ежедневных наград ещё не пройден
             eggBoard: Array(16).fill(0),   // 4×4, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
             eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..16)
             eggQueue: [],                  // яйца, не поместившиеся на доску, ждут своей очереди по порядку
@@ -2783,9 +2784,12 @@
             return Math.floor(Date.now() / 86400000);
         }
 
-        function dailyReward(day) {
+        function dailyReward(day, firstLap = true) {
             const special = CONFIG.daily.special.find(item => Number(item.day) === day);
             if (special) {
+                if (!firstLap && special.repeat_mnstr !== undefined && special.repeat_mnstr !== null) {
+                    return { gram: 0, mnstr: Number(special.repeat_mnstr) || 0, monster: null };
+                }
                 return {
                     gram: Number(special.gram) || 0,
                     mnstr: Number(special.mnstr) || 0,
@@ -2816,6 +2820,7 @@
             if (!daily) return;
             state.dailyClaimed = Number(daily.claimed) || 0;
             state.dailyLast = Number(daily.last) || 0;
+            if (typeof daily.first_lap === 'boolean') state.dailyFirstLap = daily.first_lap;
         }
 
         function dailyIcon(reward) {
@@ -2844,7 +2849,7 @@
             const preview = status.ready
                 ? status.day
                 : Math.min(status.claimed + 1, CONFIG.daily.days);
-            const reward = dailyReward(preview);
+            const reward = dailyReward(preview, state.dailyFirstLap !== false);
 
             const card = document.createElement('div');
             card.className = 'card glass-panel mission-card daily-card';
@@ -2881,7 +2886,7 @@
         }
 
         function dailyCell(day, status) {
-            const reward = dailyReward(day);
+            const reward = dailyReward(day, state.dailyFirstLap !== false);
             const classes = ['daily-cell', dailyKind(reward)];
             if (day <= status.claimed) classes.push('done');
             else if (status.ready && day === status.day) classes.push('today');
@@ -2896,7 +2901,7 @@
         function renderDaily() {
             const status = dailyStatus();
             const days = Array.from({ length: status.days }, (_, i) => i + 1);
-            const reward = dailyReward(status.day);
+            const reward = dailyReward(status.day, state.dailyFirstLap !== false);
 
             document.getElementById('dailyBody').innerHTML = `
                 <h2>${t('daily.title')}</h2>
@@ -2932,13 +2937,14 @@
 
         // Без бэкенда (статический хостинг) серию ведёт сам клиент.
         function claimDailyLocal(day) {
-            const reward = dailyReward(day);
+            const reward = dailyReward(day, state.dailyFirstLap !== false);
             if (reward.monster) addFarmSlot(reward.monster);
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
 
             state.dailyClaimed = day;
             state.dailyLast = dayIndex();
+            if (day >= CONFIG.daily.days) state.dailyFirstLap = false;
             saveNow();
             finishDaily(reward, day);
         }
@@ -4367,6 +4373,7 @@
             state.mnstr = Number(state.mnstr) || 0;
             state.gold = Number(state.gold) || 0;
             if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
+            if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -4469,6 +4476,20 @@
             4.5, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 35,
         ];
 
+        // Резервная таблица наград ежедневного входа (10-дневный круг).
+        const DEFAULT_DAILY_SPECIAL = [
+            { day: 1, mnstr: 1 },
+            { day: 2, mnstr: 2 },
+            { day: 3, mnstr: 3 },
+            { day: 4, mnstr: 4 },
+            { day: 5, mnstr: 5 },
+            { day: 6, mnstr: 6 },
+            { day: 7, monster: 'common', repeat_mnstr: 7 },
+            { day: 8, mnstr: 7 },
+            { day: 9, mnstr: 8 },
+            { day: 10, mnstr: 9 },
+        ];
+
         function normalizeConfig(raw) {
             const cfg = raw || {};
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
@@ -4489,10 +4510,10 @@
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
             cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
-            cfg.daily = Object.assign({ days: 30, mnstr_step: 0.1, special: [] }, cfg.daily);
-            cfg.daily.days = Number(cfg.daily.days) || 30;
-            cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 0.1;
-            if (!Array.isArray(cfg.daily.special)) cfg.daily.special = [];
+            cfg.daily = Object.assign({ days: 10, mnstr_step: 1, special: DEFAULT_DAILY_SPECIAL }, cfg.daily);
+            cfg.daily.days = Number(cfg.daily.days) || 10;
+            cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 1;
+            if (!Array.isArray(cfg.daily.special) || !cfg.daily.special.length) cfg.daily.special = DEFAULT_DAILY_SPECIAL;
             cfg.wheel = Object.assign({ segments: [] }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(

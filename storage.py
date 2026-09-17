@@ -3,7 +3,7 @@
 Оба бэкенда работают с одним и тем же словарём:
     user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
-    daily_day, daily_last, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
+    daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
     vip_tier, vip_expires_at, vip_last_meat_at
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
@@ -20,7 +20,7 @@ from typing import Optional
 FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters", "farm_queue",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
-    "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
+    "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at",
 )
 JSON_FIELDS = ("monsters", "farm_queue", "missions", "eggs_board", "eggs_queue")
@@ -59,6 +59,7 @@ class SqliteStore:
                 last_seen      INTEGER DEFAULT 0,
                 daily_day      INTEGER DEFAULT 0,
                 daily_last     INTEGER DEFAULT 0,
+                daily_cycles   INTEGER DEFAULT 0,
                 eggs_board     TEXT    DEFAULT '[]',
                 eggs_board_unlocked INTEGER DEFAULT 1,
                 eggs_queue     TEXT    DEFAULT '[]',
@@ -118,6 +119,7 @@ class SqliteStore:
             ("name", "TEXT DEFAULT ''"),
             ("daily_day", "INTEGER DEFAULT 0"),
             ("daily_last", "INTEGER DEFAULT 0"),
+            ("daily_cycles", "INTEGER DEFAULT 0"),
             ("eggs_board", "TEXT DEFAULT '[]'"),
             ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("eggs_queue", "TEXT DEFAULT '[]'"),
@@ -230,7 +232,7 @@ class SqliteStore:
 
     async def claim_daily(self, user_id: int, today: int, day: int, gram: float,
                           mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
+                          extra_slot: bool = False, cycle_complete: bool = False) -> bool:
         """Отмечает сегодняшний вход и выдаёт награду. False — если уже забрано сегодня."""
         conn = self._connect()
         cur = conn.cursor()
@@ -247,6 +249,8 @@ class SqliteStore:
                       "total_earned = total_earned + ?", "mnstr = mnstr + ?",
                       "ops = ops + 1"]
             values = [today, day, gram, gram, mnstr]
+            if cycle_complete:
+                fields.append("daily_cycles = daily_cycles + 1")
             if monster:
                 try:
                     farm = json.loads(row["monsters"] or "[]")
@@ -690,12 +694,14 @@ class MongoStore:
 
     async def claim_daily(self, user_id: int, today: int, day: int, gram: float,
                           mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False) -> bool:
+                          extra_slot: bool = False, cycle_complete: bool = False) -> bool:
         """Условие daily_last != today делает выдачу однократной: два одновременных
         запроса не начислят награду дважды."""
         inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
         if extra_slot:
             inc["slots"] = 1
+        if cycle_complete:
+            inc["daily_cycles"] = 1
         changes = {"$set": {"daily_last": today, "daily_day": day}, "$inc": inc}
         if monster:
             changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}

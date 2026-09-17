@@ -296,10 +296,16 @@ def day_index(moment: Optional[float] = None) -> int:
     return int((moment if moment is not None else time.time()) // 86400)
 
 
-def daily_reward(day: int) -> dict:
-    """Награда за day-й день серии: Meat по нарастающей (day × шаг), кроме особых дней."""
+def daily_reward(day: int, first_lap: bool = True) -> dict:
+    """Награда за day-й день серии: Meat по нарастающей (day × шаг), кроме особых дней.
+
+    После первого прохождения круга (first_lap=False) особые дни, у которых
+    задан repeat_mnstr, выдают вместо своей обычной награды (например, орла)
+    просто Meat в этом количестве — так круг можно проходить бесконечно."""
     special = DAILY_SPECIAL.get(day)
     if special:
+        if not first_lap and special.get("repeat_mnstr") is not None:
+            return {"gram": 0.0, "mnstr": float(special.get("repeat_mnstr") or 0.0), "monster": None}
         return {
             "gram": float(special.get("gram") or 0.0),
             "mnstr": float(special.get("mnstr") or 0.0),
@@ -323,6 +329,7 @@ def daily_state(row: dict) -> dict:
         "claimed": streak,
         "day": min(streak + 1, DAILY_DAYS) if last != today else streak,
         "ready": last != today,
+        "first_lap": int(row.get("daily_cycles") or 0) == 0,
     }
 
 
@@ -378,6 +385,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "last_seen": int(time.time()),
             "daily_day": 0,
             "daily_last": 0,
+            "daily_cycles": 0,
             "eggs_board": [0] * EGG_BOARD_SIZE,
             "eggs_board_unlocked": 1,
             "eggs_queue": [],
@@ -781,7 +789,9 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
         raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
 
     day = daily_state(row)["day"]
-    reward = daily_reward(day)
+    first_lap = int(row.get("daily_cycles") or 0) == 0
+    reward = daily_reward(day, first_lap)
+    cycle_complete = day >= DAILY_DAYS
 
     # Орла некуда селить — открываем под него слот, чтобы награда не пропала.
     extra_slot = False
@@ -796,7 +806,7 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
 
     granted = await store.claim_daily(
         user_id, today, day, reward["gram"], reward["mnstr"],
-        reward["monster"], extra_slot,
+        reward["monster"], extra_slot, cycle_complete,
     )
     if not granted:
         raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
