@@ -359,9 +359,10 @@ class SqliteStore:
             conn.close()
 
     async def sell_merchant_eagle(self, user_id: int, slot_index: int, limit: int,
-                                   price: float, common_ids) -> dict:
+                                   price: float, common_ids, feed_levels: int) -> dict:
         """Общий (на всех игроков) лимит проданных орлов — как и с Meat, лимит и
-        ферма продавца меняются в одной транзакции."""
+        ферма продавца меняются в одной транзакции. Купец берёт только полностью
+        откормленных (feed_level >= feed_levels) обычных орлов."""
         conn = self._connect()
         cur = conn.cursor()
         try:
@@ -383,6 +384,9 @@ class SqliteStore:
             if farm[slot_index].get("id") not in common_ids:
                 conn.rollback()
                 return {"status": "wrong_tier"}
+            if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
+                conn.rollback()
+                return {"status": "not_fed"}
             if len(farm) <= 1:
                 conn.rollback()
                 return {"status": "last_eagle"}
@@ -861,10 +865,11 @@ class MongoStore:
         return {"status": "ok", "amount": amount, "cost": cost}
 
     async def sell_merchant_eagle(self, user_id: int, slot_index: int, limit: int,
-                                   price: float, common_ids) -> dict:
+                                   price: float, common_ids, feed_levels: int) -> dict:
         """Общий (на всех игроков) лимит проданных орлов — тот же двухфазный
         подход: резерв лимита, потом ферма продавца по оптимистичной блокировке
-        (полное совпадение monsters), с откатом резерва при конфликте."""
+        (полное совпадение monsters), с откатом резерва при конфликте. Купец
+        берёт только полностью откормленных (feed_level >= feed_levels) обычных орлов."""
         state = await self.merchant.find_one({"_id": "global"}) or {}
         sold = int(state.get("eagles_sold") or 0)
         if sold >= limit:
@@ -877,6 +882,8 @@ class MongoStore:
             return {"status": "not_found"}
         if farm[slot_index].get("id") not in common_ids:
             return {"status": "wrong_tier"}
+        if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
+            return {"status": "not_fed"}
         if len(farm) <= 1:
             return {"status": "last_eagle"}
 

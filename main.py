@@ -935,13 +935,15 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
     price = float(cfg.get("eagle_gram_price", 0.2))
     common_ids = {m_id for m_id, tier in MONSTER_TIER.items() if tier == "common"}
 
-    result = await store.sell_merchant_eagle(user_id, request.slot_index, limit, price, common_ids)
+    result = await store.sell_merchant_eagle(user_id, request.slot_index, limit, price, common_ids, FEED_LEVELS)
     if result["status"] == "limit_reached":
         raise HTTPException(status_code=409, detail="Лимит продажи орлов исчерпан")
     if result["status"] == "not_found":
         raise HTTPException(status_code=400, detail="Орёл не найден")
     if result["status"] == "wrong_tier":
         raise HTTPException(status_code=400, detail="Купец берёт только обычных орлов")
+    if result["status"] == "not_fed":
+        raise HTTPException(status_code=400, detail="Купец берёт только полностью откормленных орлов")
     if result["status"] == "last_eagle":
         raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
     if result["status"] == "conflict":

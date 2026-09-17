@@ -305,6 +305,10 @@
         .exchange-section-title:first-child { margin-top: 0; }
         .exchange-rate-line { font-size: 13px; font-weight: 800; color: var(--accent-emerald); margin: 0 2px 8px; text-align: center; }
         .exchange-receive-line { font-size: 14px; font-weight: 800; margin: 10px 2px; text-align: center; }
+        .merchant-eagle-card { padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 10px; }
+        .merchant-eagle-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .merchant-eagle-row h3 { font-size: 15px; font-weight: 900; }
+        .merchant-eagle-card .btn-action { width: 100%; justify-content: center; }
 
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
@@ -1164,11 +1168,11 @@
                 'merchant.enterAmount': 'Укажи количество Meat',
                 'merchant.meatBought': 'Куплено {amount} Meat',
                 'merchant.eagleSectionTitle': 'Продать орла',
-                'merchant.eaglePriceLabel': 'Цена: {price} GRAM за орла',
+                'merchant.eaglePriceLabel': 'Цена: {price} GRAM за полностью откормленного обычного орла',
                 'merchant.eagleLimitLabel': 'Продано {sold} из {limit} орлов',
                 'merchant.sellEagleBtn': 'Продать',
                 'merchant.eagleLimitReached': 'Лимит продажи орлов исчерпан',
-                'merchant.noEagles': 'Нет обычных орлов на продажу',
+                'merchant.noEagles': 'Нет полностью откормленных обычных орлов на продажу',
                 'merchant.eagleSold': 'Орёл продан: +{amount} GRAM',
                 'eggs.heading': 'Яйца',
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
@@ -1314,11 +1318,11 @@
                 'merchant.enterAmount': 'Enter a Meat amount',
                 'merchant.meatBought': 'Bought {amount} Meat',
                 'merchant.eagleSectionTitle': 'Sell an eagle',
-                'merchant.eaglePriceLabel': 'Price: {price} GRAM per eagle',
+                'merchant.eaglePriceLabel': 'Price: {price} GRAM per fully-trained common eagle',
                 'merchant.eagleLimitLabel': 'Sold {sold} of {limit} eagles',
                 'merchant.sellEagleBtn': 'Sell',
                 'merchant.eagleLimitReached': 'Eagle sell limit reached',
-                'merchant.noEagles': 'No common eagles to sell',
+                'merchant.noEagles': 'No fully-trained common eagles to sell',
                 'merchant.eagleSold': 'Eagle sold: +{amount} GRAM',
                 'eggs.heading': 'Eggs',
                 'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
@@ -2827,15 +2831,15 @@
            Лимиты общие на всех игроков (не персональные), поэтому считает и
            проверяет их сервер — здесь только отображение и вызов API. */
 
-        // Серые (обычные) орлы, которых можно продать купцу. Последнего орла
-        // на ферме продать нельзя — сцене нужен хотя бы один активный.
+        // Серые (обычные), полностью откормленные орлы — только таких берёт купец.
+        // Последнего орла на ферме продать нельзя — сцене нужен хотя бы один активный.
         function eligibleMerchantEagles() {
             if (state.farm.length <= 1) return [];
             return state.farm
                 .map((slot, idx) => ({ slot, idx }))
                 .filter(({ slot }) => {
                     const monster = MONSTERS[slot.id];
-                    return monster && monster.tier === 'common';
+                    return monster && monster.tier === 'common' && isFullyFed(slot);
                 });
         }
 
@@ -2977,12 +2981,12 @@
                     ? (eligibleEagles.length ? eligibleEagles.map(({ slot, idx }) => {
                         const monster = MONSTERS[slot.id];
                         return `
-                            <div class="card glass-panel market-card">
-                                <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                                <div class="card-info">
+                            <div class="glass-panel merchant-eagle-card">
+                                <div class="merchant-eagle-row">
+                                    <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                                     <h3 style="color:${monster.color}">${monster.name}</h3>
                                 </div>
-                                <button class="btn-action btn-buy" onclick="sellEagleToMerchant(${idx})">${t('merchant.sellEagleBtn')} +${fmtGram(eaglePrice)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                                <button class="btn-action btn-buy" onclick="sellEagleToMerchant(${idx})">${t('merchant.sellEagleBtn')}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                             </div>
                         `;
                     }).join('') : `<p class="market-section-empty">${t('merchant.noEagles')}</p>`)
