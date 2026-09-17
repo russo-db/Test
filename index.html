@@ -1669,9 +1669,10 @@
             return state.farm.length;
         }
 
+        // Цена слота — фиксированная таблица по номеру открываемого слота
+        // (CONFIG.slots.prices, индекс 0 = слот №1), а не формула.
         function slotCost() {
-            const { base_cost: base, growth, start } = CONFIG.slots;
-            return base * Math.pow(growth, state.slots - start);
+            return Number((CONFIG.slots.prices || [])[state.slots]) || 0;
         }
 
         function slotsMaxed() {
@@ -4459,6 +4460,12 @@
         // Резервные минимальные цены по редкости на P2P-рынке (максимум не ограничен).
         const DEFAULT_MARKET_MIN_PRICE = { uncommon: 2, rare: 4, epic: 8, legendary: 16, mythical: 32 };
 
+        // Резервная таблица цен слотов фермы (индекс 0 = слот №1, GRAM).
+        const DEFAULT_SLOT_PRICES = [
+            0, 0, 1, 1.2, 1.4, 1.6, 1.8, 2, 2.5, 3, 3.5, 4,
+            4.5, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 35,
+        ];
+
         function normalizeConfig(raw) {
             const cfg = raw || {};
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
@@ -4472,7 +4479,10 @@
                     frames: 20
                 }, monster)));
             if (!cfg.monsters.length) throw new Error('в game_config.json нет орлов');
-            cfg.slots = Object.assign({ start: 3, max: 24, base_cost: 1200, growth: 1.28 }, cfg.slots);
+            cfg.slots = Object.assign({ start: 2, max: 24, prices: DEFAULT_SLOT_PRICES }, cfg.slots);
+            if (!Array.isArray(cfg.slots.prices) || cfg.slots.prices.length < cfg.slots.max) {
+                cfg.slots.prices = DEFAULT_SLOT_PRICES;
+            }
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
             cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
