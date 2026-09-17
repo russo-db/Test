@@ -270,6 +270,28 @@
         .nest-cost { font-size: 10px; font-weight: 900; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
         .nest-cost img { width: 11px; height: 11px; object-fit: contain; }
 
+        /* Активная ячейка во время перетаскивания и подсветка цели сброса. */
+        .egg-cell { touch-action: none; }
+        .egg-cell.dragging { opacity: 0.35; }
+        .egg-cell.drop-ok { border-color: var(--accent-emerald, #4ade80); box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(74, 222, 128, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.14); }
+        .egg-cell.drop-bad { border-color: #ef4444; box-shadow: 0 3px 0 var(--ink), 0 0 14px rgba(239, 68, 68, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.14); }
+        .egg-ghost {
+            position: fixed; left: 0; top: 0; width: 54px; height: 60px; z-index: 999; pointer-events: none;
+            border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; border: 3px solid var(--ink);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4), inset 0 3px 0 rgba(255, 255, 255, 0.3);
+            display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: #fff;
+            text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink);
+        }
+
+        /* ---------- Яйца: очередь тех, что не поместились на доску ---------- */
+        .egg-queue-wrap { margin: 0 0 16px; }
+        .egg-queue-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; margin: 0 0 8px; }
+        .egg-queue { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; -webkit-overflow-scrolling: touch; scrollbar-width: none; justify-content: flex-start; }
+        .egg-queue::-webkit-scrollbar { display: none; }
+        .egg-queue-item { flex: 0 0 auto; width: 38px; height: 42px; opacity: 0.5; filter: grayscale(0.4); }
+        .egg-queue-item .egg-shape { width: 100%; height: 100%; font-size: 14px; }
+        .egg-queue-item:first-child { opacity: 0.75; filter: grayscale(0.15); }
+
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
 
@@ -726,6 +748,10 @@
             <p class="subtitle" data-i18n="eggs.subtitle">Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость</p>
 
             <div class="egg-board" id="eggBoard"></div>
+            <div class="egg-queue-wrap" id="eggQueueWrap" style="display:none;">
+                <p class="egg-queue-label" data-i18n="eggs.queueLabel">Не поместились — ждут своей очереди</p>
+                <div class="egg-queue" id="eggQueue"></div>
+            </div>
             <button class="btn-action egg-auto" id="eggAutoBtn" onclick="openAllEggs()">
                 <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C7 2 4 9 4 14a8 8 0 0 0 16 0C20 9 17 2 12 2Z"></path></svg></div>
                 <span data-i18n="eggs.openAll">Вскрыть все</span>
@@ -1100,8 +1126,9 @@
                 'farm.expeditionToast': 'Орёл в экспедиции — вернётся через {time}',
                 'farm.eggCookingToast': 'Яйцо ещё варится — {time}',
                 'eggs.heading': 'Яйца',
-                'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его или выбрать для улучшения с таким же в старшую редкость',
+                'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
+                'eggs.queueLabel': 'Не поместились — ждут своей очереди',
                 'missions.heading': 'Задания', 'missions.subtitle': 'Ежедневный вход и разовые награды',
                 'market.heading': 'Рынок',
                 'market.subtitle': 'Торгуй орлами редкости зелёный и выше с другими игроками по разделам редкости — комиссия рынка 10%',
@@ -1222,8 +1249,9 @@
                 'farm.expeditionToast': 'Eagle is on expedition — back in {time}',
                 'farm.eggCookingToast': 'Egg is still cooking — {time}',
                 'eggs.heading': 'Eggs',
-                'eggs.subtitle': 'Tap an egg to open it, or pick it for upgrading with another of the same level',
+                'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
                 'eggs.openAll': 'Open all',
+                'eggs.queueLabel': "Didn't fit — waiting in line",
                 'missions.heading': 'Missions', 'missions.subtitle': 'Daily check-in and one-time rewards',
                 'market.heading': 'Market',
                 'market.subtitle': 'Trade eagles of uncommon rarity and above with other players, grouped by rarity — 10% market fee',
@@ -1399,6 +1427,7 @@
             dailyLast: 0,        // номер суток последнего забора
             eggBoard: Array(16).fill(0),   // 4×4, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
             eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..16)
+            eggQueue: [],                  // яйца, не поместившиеся на доску, ждут своей очереди по порядку
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
@@ -1810,6 +1839,41 @@
             return board;
         }
 
+        function normalizeEggQueue(raw) {
+            const source = Array.isArray(raw) ? raw.map(v => Math.max(0, Number(v) || 0)) : [];
+            return source.filter(v => v > 0);
+        }
+
+        // Кладёт яйцо уровня level в первую свободную разблокированную ячейку
+        // доски; если свободных ячеек нет (доска заполнена или всё ещё
+        // заблокировано), яйцо встаёт в конец очереди — она хранит порядок,
+        // и как только освобождается ячейка, из очереди в неё уходит самое
+        // старое яйцо (см. drainEggQueue).
+        function placeEggOnBoardOrQueue(level) {
+            for (let i = 0; i < state.eggBoardUnlocked; i++) {
+                if (!state.eggBoard[i]) {
+                    state.eggBoard[i] = level;
+                    return 'board';
+                }
+            }
+            state.eggQueue.push(level);
+            return 'queue';
+        }
+
+        // Переносит яйца из очереди на доску, пока есть свободные ячейки —
+        // вызывается после любого действия, освобождающего ячейку (вскрытие,
+        // слияние, разблокировка новой ячейки).
+        function drainEggQueue() {
+            let moved = false;
+            for (let i = 0; i < state.eggBoardUnlocked && state.eggQueue.length; i++) {
+                if (!state.eggBoard[i]) {
+                    state.eggBoard[i] = state.eggQueue.shift();
+                    moved = true;
+                }
+            }
+            return moved;
+        }
+
         function renderEggBoard() {
             const board = document.getElementById('eggBoard');
             const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
@@ -1830,7 +1894,23 @@
             }).join('');
             board.querySelectorAll('.egg-cell').forEach(cell => {
                 cell.onclick = () => onEggCellClick(Number(cell.dataset.i));
+                cell.addEventListener('pointerdown', eggPointerDown);
             });
+            renderEggQueueTray();
+        }
+
+        function renderEggQueueTray() {
+            const wrap = document.getElementById('eggQueueWrap');
+            const track = document.getElementById('eggQueue');
+            if (!wrap || !track) return;
+            const queue = state.eggQueue || [];
+            wrap.style.display = queue.length ? '' : 'none';
+            if (!queue.length) { track.innerHTML = ''; return; }
+            track.innerHTML = queue.map(level => `
+                <div class="egg-queue-item">
+                    <div class="egg-shape" style="background:${eggColor(level)}">${level}</div>
+                </div>
+            `).join('');
         }
 
         // Тап по любому яйцу открывает окно с исходами и кнопкой «Вскрыть» —
@@ -1840,12 +1920,14 @@
         // уровня сливает их в уровень выше (тап по пустой ячейке — переносит,
         // по яйцу другого уровня — просто открывает окно уже для него).
         function onEggCellClick(i) {
+            if (eggDragHandled) { eggDragHandled = false; return; } // клик сразу после драга — игнорируем
             if (i >= state.eggBoardUnlocked) {
                 if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
                 const cost = boardUnlockCost(i);
                 if (state.coins < cost) { toast('Не хватает GRAM'); return; }
                 state.coins -= cost;
                 state.eggBoardUnlocked += 1;
+                drainEggQueue();
                 haptic.notify('success');
                 renderEggBoard();
                 renderHeader();
@@ -1889,6 +1971,117 @@
         function mergeEggsAt(from, into) {
             state.eggBoard[from] = 0;
             state.eggBoard[into] += 1;
+            drainEggQueue();
+        }
+
+        /* ---------- перетаскивание яиц (слияние наведением одного на другое) ---------- */
+        // Работает поверх обычного тапа: короткое нажатие без сдвига по-прежнему
+        // открывает окно яйца (onEggCellClick), а сдвиг за порог превращает
+        // жест в drag — наведение на такое же яйцо сливает их в старшую
+        // редкость, наведение на пустую ячейку — просто переносит яйцо.
+        let eggDrag = null;
+        let eggDragHandled = false;
+        const EGG_DRAG_THRESHOLD = 8;
+
+        function eggPointerDown(e) {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const cell = e.currentTarget;
+            const i = Number(cell.dataset.i);
+            if (i >= state.eggBoardUnlocked || !state.eggBoard[i]) return;
+            eggDrag = {
+                from: i, level: state.eggBoard[i], cell,
+                pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
+                moved: false, ghost: null,
+            };
+            cell.setPointerCapture(e.pointerId);
+            cell.addEventListener('pointermove', eggPointerMove);
+            cell.addEventListener('pointerup', eggPointerUp);
+            cell.addEventListener('pointercancel', eggPointerCancel);
+        }
+
+        function eggPointerMove(e) {
+            if (!eggDrag || e.pointerId !== eggDrag.pointerId) return;
+            if (!eggDrag.moved) {
+                const dx = e.clientX - eggDrag.startX;
+                const dy = e.clientY - eggDrag.startY;
+                if (Math.hypot(dx, dy) < EGG_DRAG_THRESHOLD) return;
+                eggDrag.moved = true;
+                eggSelected = -1;
+                eggDrag.cell.classList.add('dragging');
+                const ghost = document.createElement('div');
+                ghost.className = 'egg-ghost';
+                ghost.style.background = eggColor(eggDrag.level);
+                ghost.textContent = eggDrag.level;
+                document.body.appendChild(ghost);
+                eggDrag.ghost = ghost;
+                haptic.select();
+            }
+            eggDrag.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%)`;
+            highlightEggDropTarget(e.clientX, e.clientY);
+        }
+
+        function eggDropTargetAt(x, y) {
+            const el = document.elementFromPoint(x, y);
+            const cell = el && el.closest ? el.closest('.egg-cell') : null;
+            if (!cell || cell.classList.contains('locked')) return -1;
+            return Number(cell.dataset.i);
+        }
+
+        function highlightEggDropTarget(x, y) {
+            document.querySelectorAll('.egg-cell.drop-ok, .egg-cell.drop-bad').forEach(el => el.classList.remove('drop-ok', 'drop-bad'));
+            const targetIndex = eggDropTargetAt(x, y);
+            if (targetIndex === -1 || targetIndex === eggDrag.from) return;
+            const cellEl = document.querySelector(`.egg-cell[data-i="${targetIndex}"]`);
+            if (!cellEl) return;
+            const targetLevel = state.eggBoard[targetIndex];
+            cellEl.classList.add(!targetLevel || targetLevel === eggDrag.level ? 'drop-ok' : 'drop-bad');
+        }
+
+        function eggPointerUp(e) {
+            if (!eggDrag || e.pointerId !== eggDrag.pointerId) return;
+            const drag = eggDrag;
+            const targetIndex = drag.moved ? eggDropTargetAt(e.clientX, e.clientY) : -1;
+            cleanupEggDrag(drag);
+            eggDrag = null;
+            if (!drag.moved) return; // не сдвинулось — это обычный тап, onclick сработает сам
+            eggDragHandled = true;
+            applyEggDrop(drag.from, drag.level, targetIndex);
+        }
+
+        function eggPointerCancel(e) {
+            if (!eggDrag || e.pointerId !== eggDrag.pointerId) return;
+            cleanupEggDrag(eggDrag);
+            eggDrag = null;
+        }
+
+        function cleanupEggDrag(drag) {
+            drag.cell.removeEventListener('pointermove', eggPointerMove);
+            drag.cell.removeEventListener('pointerup', eggPointerUp);
+            drag.cell.removeEventListener('pointercancel', eggPointerCancel);
+            if (drag.ghost) drag.ghost.remove();
+            document.querySelectorAll('.egg-cell.dragging').forEach(el => el.classList.remove('dragging'));
+            document.querySelectorAll('.egg-cell.drop-ok, .egg-cell.drop-bad').forEach(el => el.classList.remove('drop-ok', 'drop-bad'));
+        }
+
+        function applyEggDrop(from, level, targetIndex) {
+            if (targetIndex === -1 || targetIndex === from) { renderEggBoard(); return; }
+            const board = state.eggBoard;
+            if (!board[targetIndex]) {
+                board[targetIndex] = board[from];
+                board[from] = 0;
+                renderEggBoard();
+                saveNow();
+                return;
+            }
+            if (board[targetIndex] === level) {
+                mergeEggsAt(from, targetIndex);
+                haptic.notify('success');
+                toast(`Яйца слиты — новый уровень ${board[targetIndex]}!`);
+                renderEggBoard();
+                saveNow();
+                return;
+            }
+            renderEggBoard(); // разные уровни — перетаскивание отменяется
         }
 
         function canHatch() {
@@ -1993,6 +2186,7 @@
             }
 
             state.eggBoard[i] = 0;
+            drainEggQueue();
             if (outcome.kind === 'jackpot') {
                 state.mnstr += outcome.amount;
                 toast(`Джекпот! +${fmtToken(outcome.amount)} Meat`);
@@ -2042,6 +2236,7 @@
                 renderEggBoard();
                 return;
             }
+            drainEggQueue();
 
             if (meatTotal || jackpotTotal) state.mnstr += meatTotal + jackpotTotal;
             const parts = [];
@@ -2062,26 +2257,16 @@
         function collectEgg(i) {
             const slot = state.farm[i];
             if (!slot || !eggReady(slot)) return;
-            let empty = -1;
-            for (let j = 0; j < state.eggBoardUnlocked; j++) {
-                if (!state.eggBoard[j]) { empty = j; break; }
-            }
-            if (empty === -1) {
-                toast('Доска яиц заполнена');
-                haptic.notify('warning');
-                return;
-            }
             const monster = MONSTERS[slot.id];
-            state.eggBoard[empty] = tierIndexOf(monster) + 1;
+            const where = placeEggOnBoardOrQueue(tierIndexOf(monster) + 1);
             slot.nextEggAt = 0;
             slot.feedLevel = Math.min(CONFIG.fusion.feed_levels, (slot.feedLevel || 1) + 1);
             haptic.notify('success');
             spawnBurst(10);
-            if (slot.feedLevel >= CONFIG.fusion.feed_levels) {
-                toast(`Яйцо собрано! ${monster.name} вырос до максимума — готов к улучшению`);
-            } else {
-                toast(`Яйцо собрано! ${monster.name} — уровень ${slot.feedLevel}`);
-            }
+            const grewUp = slot.feedLevel >= CONFIG.fusion.feed_levels
+                ? ` ${monster.name} вырос до максимума — готов к улучшению`
+                : ` ${monster.name} — уровень ${slot.feedLevel}`;
+            toast(where === 'queue' ? `Яйцо собрано и встало в очередь! —${grewUp}` : `Яйцо собрано!${grewUp}`);
             renderAll();
             saveNow();
         }
@@ -2843,13 +3028,12 @@
                 if (reward.gram) parts.push(`+${fmtGram(reward.gram)} GRAM`);
                 if (reward.mnstr) parts.push(`+${reward.mnstr} Meat`);
                 if (reward.eggLevel) {
-                    const placed = reward.eggsPlaced || 0;
-                    const requested = reward.eggsRequested || 0;
-                    if (placed > 0) {
-                        parts.push(`${placed} ${plural(placed, 'яйцо', 'яйца', 'яиц')} ${reward.eggLevel} ур. на доску`);
+                    const result = reward.eggsResult || { board: 0, queue: 0 };
+                    if (result.board > 0) {
+                        parts.push(`${result.board} ${plural(result.board, 'яйцо', 'яйца', 'яиц')} ${reward.eggLevel} ур. на доску`);
                     }
-                    if (placed < requested) {
-                        parts.push(placed > 0 ? 'остальные не поместились' : 'яйца не поместились — доска полна');
+                    if (result.queue > 0) {
+                        parts.push(`${result.queue} ${plural(result.queue, 'яйцо', 'яйца', 'яиц')} встали в очередь`);
                     }
                 }
                 toast(`Колесо фортуны: ${parts.join(' и ')}`);
@@ -2859,20 +3043,18 @@
             }, 4200);
         }
 
-        // Кладёт до `count` яиц уровня `level` в свободные разблокированные
-        // ячейки доски яиц — они не вскрываются сразу, а ждут игрока во
-        // вкладке «Яйца». В отличие от слотов фермы доска не резинится, так
-        // что если места не хватает на все — лишние просто не помещаются
-        // (возвращает, сколько реально положили).
+        // Кладёт `count` яиц уровня `level` на доску яиц — они не вскрываются
+        // сразу, а ждут игрока во вкладке «Яйца». Если места на доске не
+        // хватает, лишние яйца не пропадают — встают в очередь и займут
+        // ячейку, как только она освободится (см. placeEggOnBoardOrQueue).
+        // Возвращает { board, queue } — сколько легло сразу, сколько в очередь.
         function grantEggsFromWheel(level, count) {
-            let placed = 0;
-            for (let i = 0; i < state.eggBoardUnlocked && placed < count; i++) {
-                if (!state.eggBoard[i]) {
-                    state.eggBoard[i] = level;
-                    placed++;
-                }
+            let board = 0, queue = 0;
+            for (let n = 0; n < count; n++) {
+                if (placeEggOnBoardOrQueue(level) === 'board') board++;
+                else queue++;
             }
-            return placed;
+            return { board, queue };
         }
 
         function pickWheelIndexLocal() {
@@ -2904,7 +3086,7 @@
             if (seg.egg_level && seg.egg_count) {
                 reward.eggLevel = Number(seg.egg_level);
                 reward.eggsRequested = Number(seg.egg_count);
-                reward.eggsPlaced = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
+                reward.eggsResult = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
             }
             saveNow();
             finishWheelSpin(index, reward);
@@ -2946,7 +3128,7 @@
                 if (reward.egg_level && reward.egg_count) {
                     reward.eggLevel = Number(reward.egg_level);
                     reward.eggsRequested = Number(reward.egg_count);
-                    reward.eggsPlaced = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
+                    reward.eggsResult = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
                     saveNow(); // доска яиц — чисто клиентское состояние, сервер её не сохраняет
                 }
                 finishWheelSpin(data.segment, reward);
@@ -3961,6 +4143,7 @@
                 slots: state.slots,
                 eggs_board: state.eggBoard,
                 eggs_board_unlocked: state.eggBoardUnlocked,
+                eggs_queue: state.eggQueue,
                 ops: state.ops,
                 vip_tier: (state.vip && state.vip.tier) || '',
                 vip_expires_at: (state.vip && state.vip.expiresAt) || 0,
@@ -4006,6 +4189,8 @@
             applyDaily(data.daily);
             state.eggBoard = normalizeEggBoard(data.eggs_board);
             state.eggBoardUnlocked = Math.max(1, Math.min(16, Number(data.eggs_board_unlocked) || 1));
+            state.eggQueue = normalizeEggQueue(data.eggs_queue);
+            drainEggQueue();
             botUsername = data.bot_username || botUsername;
 
             renderAll();
@@ -4078,6 +4263,8 @@
 
             state.eggBoard = normalizeEggBoard(state.eggBoard);
             if (typeof state.eggBoardUnlocked !== 'number') state.eggBoardUnlocked = 1;
+            state.eggQueue = normalizeEggQueue(state.eggQueue);
+            drainEggQueue();
             return 0;
         }
 

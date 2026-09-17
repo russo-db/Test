@@ -26,6 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
 EGG_BOARD_SIZE = 16  # 4×4
+EGG_QUEUE_MAX = 300  # защитный предел на длину очереди яиц, не помещающихся на доску
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -281,6 +282,13 @@ def normalize_eggs_board(raw) -> List[int]:
     return board
 
 
+def normalize_eggs_queue(raw) -> List[int]:
+    """Очередь яиц, не поместившихся на доску, — список уровней по порядку
+    (первое положенное — первое, что займёт освободившуюся ячейку)."""
+    source = [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in raw] if isinstance(raw, list) else []
+    return [v for v in source if v][:EGG_QUEUE_MAX]
+
+
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
 def day_index(moment: Optional[float] = None) -> int:
     """Порядковый номер суток UTC — по нему считаем серию входов."""
@@ -370,6 +378,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "daily_last": 0,
             "eggs_board": [0] * EGG_BOARD_SIZE,
             "eggs_board_unlocked": 1,
+            "eggs_queue": [],
             "wallet": "",
             "ops": 0,
             "vip_tier": "",
@@ -523,6 +532,7 @@ class FarmState(BaseModel):
     slots: int = START_SLOTS
     eggs_board: List[int] = []
     eggs_board_unlocked: int = 1
+    eggs_queue: List[int] = []
     ops: int = -1              # версия баланса, полученная при последней загрузке
     vip_tier: str = ""
     vip_expires_at: float = 0
@@ -650,6 +660,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "daily": daily_state(row),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
         "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
+        "eggs_queue": normalize_eggs_queue(row.get("eggs_queue")),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
         "vip_tier": row.get("vip_tier") or "",
@@ -676,6 +687,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
 
     eggs_board = normalize_eggs_board(state.eggs_board)
     eggs_board_unlocked = max(1, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 1)))
+    eggs_queue = normalize_eggs_queue(state.eggs_queue)
 
     await store.update(
         user_id,
@@ -689,6 +701,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "slots": state.slots,
             "eggs_board": eggs_board,
             "eggs_board_unlocked": eggs_board_unlocked,
+            "eggs_queue": eggs_queue,
             "vip_tier": state.vip_tier,
             "vip_expires_at": max(0.0, state.vip_expires_at),
             "vip_last_meat_at": max(0.0, state.vip_last_meat_at),
@@ -1094,6 +1107,7 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Игрок не найден")
     doc["monsters"] = read_farm(doc.get("monsters"))
     doc["eggs_board"] = normalize_eggs_board(doc.get("eggs_board"))
+    doc["eggs_queue"] = normalize_eggs_queue(doc.get("eggs_queue"))
     return doc
 
 
