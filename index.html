@@ -2199,7 +2199,6 @@
                 toast(`Яйцо принесло ${fmtToken(outcome.amount)} Meat!`);
             }
             haptic.notify('success');
-            spawnBurst(14);
             renderAll();
             saveNow();
         }
@@ -2245,7 +2244,6 @@
             if (eagleCount) parts.push(`${eagleCount} ${plural(eagleCount, 'орёл', 'орла', 'орлов')}`);
             toast(`Вскрыто ${opened} — выпало: ${parts.join(' и ')}`);
             haptic.notify('success');
-            spawnBurst(Math.min(20, opened * 4));
             renderAll();
             saveNow();
         }
@@ -2262,7 +2260,6 @@
             slot.nextEggAt = 0;
             slot.feedLevel = Math.min(CONFIG.fusion.feed_levels, (slot.feedLevel || 1) + 1);
             haptic.notify('success');
-            spawnBurst(10);
             const grewUp = slot.feedLevel >= CONFIG.fusion.feed_levels
                 ? ` ${monster.name} вырос до максимума — готов к улучшению`
                 : ` ${monster.name} — уровень ${slot.feedLevel}`;
