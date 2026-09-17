@@ -1155,6 +1155,7 @@
                 'merchant.meatSectionTitle': 'Купить Meat',
                 'merchant.meatRateLabel': 'Курс: 1 золото = {rate} Meat',
                 'merchant.meatLimitLabel': 'Куплено {bought} из {limit} Meat',
+                'merchant.meatMaxPerPurchaseLabel': 'Не больше {max} Meat за одну покупку',
                 'merchant.meatAmountLabel': 'Сколько Meat купить',
                 'merchant.meatCostLabel': 'Стоимость: {amount} золота',
                 'merchant.buyMeatBtn': 'Купить',
@@ -1304,6 +1305,7 @@
                 'merchant.meatSectionTitle': 'Buy Meat',
                 'merchant.meatRateLabel': 'Rate: 1 gold = {rate} Meat',
                 'merchant.meatLimitLabel': 'Bought {bought} of {limit} Meat',
+                'merchant.meatMaxPerPurchaseLabel': 'Up to {max} Meat per purchase',
                 'merchant.meatAmountLabel': 'How much Meat to buy',
                 'merchant.meatCostLabel': 'Cost: {amount} gold',
                 'merchant.buyMeatBtn': 'Buy',
@@ -2829,6 +2831,13 @@
             return Math.max(0, cfg.meat_buy_limit - (state.merchantMeatBought || 0));
         }
 
+        // Сколько Meat можно взять за одну покупку — меньшее из разового лимита
+        // и того, что вообще осталось от лимита на покупку.
+        function merchantMeatMaxPerPurchase() {
+            const cfg = CONFIG.merchant;
+            return Math.max(0, Math.min(Number(cfg.meat_buy_max_per_purchase) || 5, merchantMeatRemaining()));
+        }
+
         function merchantEaglesRemaining() {
             const cfg = CONFIG.merchant;
             return Math.max(0, cfg.eagle_buy_limit - (state.merchantEaglesBought || 0));
@@ -2836,7 +2845,7 @@
 
         function setMerchantMeatAmount(amount) {
             const input = document.getElementById('merchantMeatAmount');
-            if (input) input.value = Math.max(0, Math.min(merchantMeatRemaining(), Math.floor(amount)));
+            if (input) input.value = Math.max(0, Math.min(merchantMeatMaxPerPurchase(), Math.floor(amount)));
             updateMerchantMeatPreview();
         }
 
@@ -2856,7 +2865,7 @@
             const input = document.getElementById('merchantMeatAmount');
             let amount = Math.floor(Number(input && input.value) || 0);
             if (amount <= 0) { toast(t('merchant.enterAmount')); return; }
-            amount = Math.min(amount, remaining);
+            amount = Math.min(amount, merchantMeatMaxPerPurchase());
 
             const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
             if (cost > (state.gold || 0)) { toast(t('merchant.notEnoughGold')); haptic.notify('warning'); return; }
@@ -2891,7 +2900,7 @@
             const cfg = CONFIG.merchant;
             const rate = Number(cfg.meat_per_gold) || 5;
             const meatRemaining = merchantMeatRemaining();
-            const meatDefault = Math.min(meatRemaining, 100);
+            const maxPerPurchase = merchantMeatMaxPerPurchase();
             const eaglesBought = state.merchantEaglesBought || 0;
             const eaglesRemaining = merchantEaglesRemaining();
 
@@ -2900,15 +2909,15 @@
                 <div class="exchange-rate-line">${t('merchant.meatRateLabel', { rate: Number.isInteger(rate) ? rate : rate.toFixed(2) })}</div>
                 <div class="exchange-rate-line">${t('merchant.meatLimitLabel', { bought: fmtToken(state.merchantMeatBought || 0), limit: fmtToken(cfg.meat_buy_limit) })}</div>
                 ${meatRemaining > 0 ? `
+                    <div class="exchange-rate-line">${t('merchant.meatMaxPerPurchaseLabel', { max: fmtToken(maxPerPurchase) })}</div>
                     <div class="pay-label">${t('merchant.meatAmountLabel')}</div>
                     <input class="pay-input" id="merchantMeatAmount" type="number" inputmode="decimal"
-                           min="0" max="${meatRemaining}" step="1" value="${meatDefault}" oninput="updateMerchantMeatPreview()">
+                           min="0" max="${maxPerPurchase}" step="1" value="${maxPerPurchase}" oninput="updateMerchantMeatPreview()">
                     <div class="pay-chips">
-                        <button onclick="setMerchantMeatAmount(100)">100</button>
-                        <button onclick="setMerchantMeatAmount(500)">500</button>
-                        <button onclick="setMerchantMeatAmount(${meatRemaining})">${t('withdraw.all')}</button>
+                        <button onclick="setMerchantMeatAmount(1)">1</button>
+                        <button onclick="setMerchantMeatAmount(${maxPerPurchase})">${t('withdraw.all')}</button>
                     </div>
-                    <div class="exchange-receive-line" id="merchantMeatCostLine">${t('merchant.meatCostLabel', { amount: fmtToken(meatDefault / rate) })}</div>
+                    <div class="exchange-receive-line" id="merchantMeatCostLine">${t('merchant.meatCostLabel', { amount: fmtToken(maxPerPurchase / rate) })}</div>
                     <button class="btn-primary" style="margin-top:6px" onclick="buyMeatFromMerchant()">${t('merchant.buyMeatBtn')}</button>
                 ` : `<p class="market-section-empty">${t('merchant.meatLimitReached')}</p>`}
 
@@ -4626,7 +4635,7 @@
         const DEFAULT_MARKET_MIN_PRICE = { uncommon: 2, rare: 4, epic: 8, legendary: 16, mythical: 32 };
 
         // Резервные настройки лавки купца (покупка Meat за золото и орлов за GRAM).
-        const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, eagle_gram_price: 0.2, eagle_buy_limit: 10 };
+        const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, meat_buy_max_per_purchase: 5, eagle_gram_price: 0.2, eagle_buy_limit: 10 };
 
         // Резервная таблица цен слотов фермы (индекс 0 = слот №1, GRAM).
         const DEFAULT_SLOT_PRICES = [
