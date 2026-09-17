@@ -395,7 +395,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "vip_expires_at": 0,
             "vip_last_meat_at": 0,
             "merchant_meat_bought": 0,
-            "merchant_eagles_bought": 0,
+            "merchant_eagles_sold": 0,
         }
     )
 
@@ -551,7 +551,7 @@ class FarmState(BaseModel):
     vip_expires_at: float = 0
     vip_last_meat_at: float = 0
     merchant_meat_bought: float = 0
-    merchant_eagles_bought: int = 0
+    merchant_eagles_sold: int = 0
 
 
 class MissionClaim(BaseModel):
@@ -683,7 +683,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "vip_expires_at": float(row.get("vip_expires_at") or 0),
         "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
         "merchant_meat_bought": float(row.get("merchant_meat_bought") or 0),
-        "merchant_eagles_bought": int(row.get("merchant_eagles_bought") or 0),
+        "merchant_eagles_sold": int(row.get("merchant_eagles_sold") or 0),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -725,7 +725,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "vip_expires_at": max(0.0, state.vip_expires_at),
             "vip_last_meat_at": max(0.0, state.vip_last_meat_at),
             "merchant_meat_bought": max(0.0, state.merchant_meat_bought),
-            "merchant_eagles_bought": max(0, state.merchant_eagles_bought),
+            "merchant_eagles_sold": max(0, state.merchant_eagles_sold),
             "last_seen": int(time.time()),
         },
     )

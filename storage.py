@@ -4,7 +4,7 @@
     user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
-    vip_tier, vip_expires_at, vip_last_meat_at, merchant_meat_bought, merchant_eagles_bought
+    vip_tier, vip_expires_at, vip_last_meat_at, merchant_meat_bought, merchant_eagles_sold
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals) и лоты рынка (market_listings — P2P-торговля
@@ -21,7 +21,7 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters", "farm_queue",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
-    "vip_tier", "vip_expires_at", "vip_last_meat_at", "merchant_meat_bought", "merchant_eagles_bought",
+    "vip_tier", "vip_expires_at", "vip_last_meat_at", "merchant_meat_bought", "merchant_eagles_sold",
 )
 JSON_FIELDS = ("monsters", "farm_queue", "missions", "eggs_board", "eggs_queue")
 
@@ -69,7 +69,7 @@ class SqliteStore:
                 vip_expires_at REAL    DEFAULT 0,
                 vip_last_meat_at REAL  DEFAULT 0,
                 merchant_meat_bought REAL DEFAULT 0,
-                merchant_eagles_bought INTEGER DEFAULT 0
+                merchant_eagles_sold INTEGER DEFAULT 0
             )
             """
         )
@@ -132,7 +132,7 @@ class SqliteStore:
             ("vip_expires_at", "REAL DEFAULT 0"),
             ("vip_last_meat_at", "REAL DEFAULT 0"),
             ("merchant_meat_bought", "REAL DEFAULT 0"),
-            ("merchant_eagles_bought", "INTEGER DEFAULT 0"),
+            ("merchant_eagles_sold", "INTEGER DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")

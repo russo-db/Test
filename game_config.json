@@ -346,7 +346,7 @@
     "meat_buy_limit": 1000,
     "meat_buy_max_per_purchase": 5,
     "eagle_gram_price": 0.2,
-    "eagle_buy_limit": 10
+    "eagle_sell_limit": 10
   },
   "vip": {
     "tiers": [
