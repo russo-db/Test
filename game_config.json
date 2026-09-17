@@ -341,6 +341,12 @@
       "mythical": 32
     }
   },
+  "merchant": {
+    "gold_rate_base": 5,
+    "gold_rate_flex": 0.2,
+    "gold_rate_interval_hours": 1,
+    "eagle_gram_reward": 0.2
+  },
   "vip": {
     "tiers": [
       {
