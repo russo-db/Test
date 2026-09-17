@@ -2847,7 +2847,11 @@
             const input = document.getElementById('merchantMeatAmount');
             const line = document.getElementById('merchantMeatCostLine');
             if (!input || !line) return;
-            const amount = Math.max(0, Math.floor(Number(input.value) || 0));
+            // Некоторые клавиатуры/браузеры не соблюдают атрибут max при ручном вводе —
+            // клэмпим значение сразу, чтобы превью стоимости не расходилось с тем,
+            // что реально спишется при покупке.
+            const amount = Math.max(0, Math.min(merchantMeatMaxPerPurchase(), Math.floor(Number(input.value) || 0)));
+            if (String(amount) !== input.value) input.value = amount;
             const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
             line.innerText = t('merchant.meatCostLabel', { amount: fmtToken(cost) });
         }
