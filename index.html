@@ -1152,6 +1152,7 @@
                 'farm.queueLabel': 'Не поместились — ждут своей очереди',
                 'nav.merchant': 'Купец',
                 'merchant.heading': 'Купец',
+                'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
                 'merchant.meatRateLabel': 'Курс: 1 золото = {rate} Meat',
                 'merchant.meatLimitLabel': 'Куплено {bought} из {limit} Meat',
@@ -1161,7 +1162,6 @@
                 'merchant.buyMeatBtn': 'Купить',
                 'merchant.meatLimitReached': 'Лимит покупки Meat исчерпан',
                 'merchant.enterAmount': 'Укажи количество Meat',
-                'merchant.notEnoughGold': 'Недостаточно золота',
                 'merchant.meatBought': 'Куплено {amount} Meat',
                 'merchant.eagleSectionTitle': 'Продать орла',
                 'merchant.eaglePriceLabel': 'Цена: {price} GRAM за орла',
@@ -1170,7 +1170,6 @@
                 'merchant.eagleLimitReached': 'Лимит продажи орлов исчерпан',
                 'merchant.noEagles': 'Нет обычных орлов на продажу',
                 'merchant.eagleSold': 'Орёл продан: +{amount} GRAM',
-                'merchant.lastEagleBlocked': 'Нельзя остаться без орлов',
                 'eggs.heading': 'Яйца',
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
@@ -1303,6 +1302,7 @@
                 'farm.queueLabel': "Didn't fit — waiting in line",
                 'nav.merchant': 'Merchant',
                 'merchant.heading': 'Merchant',
+                'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
                 'merchant.meatRateLabel': 'Rate: 1 gold = {rate} Meat',
                 'merchant.meatLimitLabel': 'Bought {bought} of {limit} Meat',
@@ -1312,7 +1312,6 @@
                 'merchant.buyMeatBtn': 'Buy',
                 'merchant.meatLimitReached': 'Meat purchase limit reached',
                 'merchant.enterAmount': 'Enter a Meat amount',
-                'merchant.notEnoughGold': 'Not enough gold',
                 'merchant.meatBought': 'Bought {amount} Meat',
                 'merchant.eagleSectionTitle': 'Sell an eagle',
                 'merchant.eaglePriceLabel': 'Price: {price} GRAM per eagle',
@@ -1321,7 +1320,6 @@
                 'merchant.eagleLimitReached': 'Eagle sell limit reached',
                 'merchant.noEagles': 'No common eagles to sell',
                 'merchant.eagleSold': 'Eagle sold: +{amount} GRAM',
-                'merchant.lastEagleBlocked': "Can't be left with no eagles",
                 'eggs.heading': 'Eggs',
                 'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
                 'eggs.openAll': 'Open all',
@@ -1515,8 +1513,7 @@
             ops: 0,              // версия баланса на сервере
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip/collectVipDailyMeat)
-            merchantMeatBought: 0,    // сколько Meat уже куплено у купца (лимит merchant.meat_buy_limit)
-            merchantEaglesSold: 0     // сколько орлов уже продано купцу (лимит merchant.eagle_sell_limit)
+            merchant: { meatBought: 0, eaglesSold: 0 } // общий (не персональный!) остаток лимитов купца, кэш с сервера
         };
 
         let botUsername = '';
@@ -2826,24 +2823,9 @@
             saveNow();
         }
 
-        /* ---------- купец: покупка Meat за золото и продажа орлов за GRAM, с лимитами ---------- */
-
-        function merchantMeatRemaining() {
-            const cfg = CONFIG.merchant;
-            return Math.max(0, cfg.meat_buy_limit - (state.merchantMeatBought || 0));
-        }
-
-        // Сколько Meat можно взять за одну покупку — меньшее из разового лимита
-        // и того, что вообще осталось от лимита на покупку.
-        function merchantMeatMaxPerPurchase() {
-            const cfg = CONFIG.merchant;
-            return Math.max(0, Math.min(Number(cfg.meat_buy_max_per_purchase) || 5, merchantMeatRemaining()));
-        }
-
-        function merchantEaglesRemaining() {
-            const cfg = CONFIG.merchant;
-            return Math.max(0, cfg.eagle_sell_limit - (state.merchantEaglesSold || 0));
-        }
+        /* ---------- купец: покупка Meat за золото и продажа орлов за GRAM ----------
+           Лимиты общие на всех игроков (не персональные), поэтому считает и
+           проверяет их сервер — здесь только отображение и вызов API. */
 
         // Серые (обычные) орлы, которых можно продать купцу. Последнего орла
         // на ферме продать нельзя — сцене нужен хотя бы один активный.
@@ -2861,76 +2843,124 @@
             const input = document.getElementById('merchantMeatAmount');
             const line = document.getElementById('merchantMeatCostLine');
             if (!input || !line) return;
+            const cfg = CONFIG.merchant;
+            const meatRemaining = Math.max(0, cfg.meat_buy_limit - (state.merchant.meatBought || 0));
+            const maxPerPurchase = Math.max(0, Math.min(Number(cfg.meat_buy_max_per_purchase) || 5, meatRemaining));
             // Некоторые клавиатуры/браузеры не соблюдают атрибут max при ручном вводе —
             // клэмпим значение сразу, чтобы превью стоимости не расходилось с тем,
             // что реально спишется при покупке.
-            const amount = Math.max(0, Math.min(merchantMeatMaxPerPurchase(), Math.floor(Number(input.value) || 0)));
+            const amount = Math.max(0, Math.min(maxPerPurchase, Math.floor(Number(input.value) || 0)));
             if (String(amount) !== input.value) input.value = amount;
-            const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
+            const cost = amount / (Number(cfg.meat_per_gold) || 5);
             line.innerText = t('merchant.meatCostLabel', { amount: fmtToken(cost) });
         }
 
-        function buyMeatFromMerchant() {
-            const remaining = merchantMeatRemaining();
-            if (remaining <= 0) { toast(t('merchant.meatLimitReached')); return; }
-
-            const input = document.getElementById('merchantMeatAmount');
-            let amount = Math.floor(Number(input && input.value) || 0);
-            if (amount <= 0) { toast(t('merchant.enterAmount')); return; }
-            amount = Math.min(amount, merchantMeatMaxPerPurchase());
-
-            const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
-            if (cost > (state.gold || 0)) { toast(t('merchant.notEnoughGold')); haptic.notify('warning'); return; }
-
-            state.gold -= cost;
-            state.mnstr += amount;
-            state.merchantMeatBought = (state.merchantMeatBought || 0) + amount;
-            haptic.notify('success');
-            toast(t('merchant.meatBought', { amount: fmtToken(amount) }));
-            renderHeader();
-            renderMerchantShop();
-            saveNow();
+        // Обновляет общий остаток лимитов купца без полной пересинхронизации
+        // аккаунта — вызывается при каждом открытии вкладки, чтобы игроки
+        // видели актуальный (а не устаревший локальный) прогресс друг друга.
+        async function refreshMerchantState() {
+            if (offlineOnly || !state.userId) return;
+            try {
+                const response = await fetch('api/merchant/state', { headers: apiHeaders() });
+                if (!response.ok) return;
+                const data = await response.json();
+                state.merchant = { meatBought: data.meat_bought || 0, eaglesSold: data.eagles_sold || 0 };
+                if (document.getElementById('merchant').classList.contains('active')) renderMerchantShop();
+            } catch (error) {
+                // офлайн — оставляем то, что уже знаем
+            }
         }
 
-        function sellEagleToMerchant(idx) {
-            if (merchantEaglesRemaining() <= 0) { toast(t('merchant.eagleLimitReached')); return; }
+        async function buyMeatFromMerchant() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
 
-            const slot = state.farm[idx];
-            const monster = slot && MONSTERS[slot.id];
-            if (!slot || !monster || monster.tier !== 'common') return;
-            if (state.farm.length <= 1) {
-                toast(t('merchant.lastEagleBlocked'));
-                haptic.notify('warning');
-                return;
+            const input = document.getElementById('merchantMeatAmount');
+            const amount = Math.floor(Number(input && input.value) || 0);
+            if (amount <= 0) { toast(t('merchant.enterAmount')); return; }
+
+            try {
+                const response = await fetch('api/merchant/buy_meat', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, amount })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не удалось купить');
+                    haptic.notify('warning');
+                    if (data.detail) renderMerchantShop();
+                    return;
+                }
+                state.gold = data.gold;
+                state.mnstr = data.mnstr;
+                state.merchant = { meatBought: data.merchant.meat_bought || 0, eaglesSold: data.merchant.eagles_sold || 0 };
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('merchant.meatBought', { amount: fmtToken(data.amount) }));
+                renderHeader();
+                renderMerchantShop();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
             }
+        }
 
-            const price = Number(CONFIG.merchant.eagle_gram_price) || 0;
-            state.farm.splice(idx, 1);
-            state.activeSlot = Math.min(state.activeSlot, state.farm.length - 1);
-            earn(price);
-            state.merchantEaglesSold = (state.merchantEaglesSold || 0) + 1;
-            drainFarmQueue();
-            haptic.notify('success');
-            toast(t('merchant.eagleSold', { amount: fmtGram(price) }));
-            renderAll();
-            renderMerchantShop();
-            saveNow();
+        async function sellEagleToMerchant(idx) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+
+            try {
+                const response = await fetch('api/merchant/sell_eagle', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: idx })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не удалось продать');
+                    haptic.notify('warning');
+                    return;
+                }
+                state.coins = data.coins;
+                state.totalEarned = data.total_earned;
+                state.farm = readFarm(data.monsters);
+                state.activeSlot = data.active_slot || 0;
+                normalizeFarmCapacity();
+                drainFarmQueue();
+                state.merchant = { meatBought: data.merchant.meat_bought || 0, eaglesSold: data.merchant.eagles_sold || 0 };
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                const price = Number(CONFIG.merchant.eagle_gram_price) || 0;
+                toast(t('merchant.eagleSold', { amount: fmtGram(price) }));
+                renderAll();
+                renderMerchantShop();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            }
         }
 
         function renderMerchantShop() {
+            const body = document.getElementById('merchantBody');
+            if (!body) return;
+            if (offlineOnly || !state.userId) {
+                body.innerHTML = `<p class="market-section-empty">${t('merchant.onlineOnly')}</p>`;
+                return;
+            }
+
             const cfg = CONFIG.merchant;
             const rate = Number(cfg.meat_per_gold) || 5;
-            const meatRemaining = merchantMeatRemaining();
-            const maxPerPurchase = merchantMeatMaxPerPurchase();
-            const eaglesSold = state.merchantEaglesSold || 0;
-            const eaglesRemaining = merchantEaglesRemaining();
+            const meatBought = state.merchant.meatBought || 0;
+            const meatRemaining = Math.max(0, cfg.meat_buy_limit - meatBought);
+            const maxPerPurchase = Math.max(0, Math.min(Number(cfg.meat_buy_max_per_purchase) || 5, meatRemaining));
+            const eaglesSold = state.merchant.eaglesSold || 0;
+            const eaglesRemaining = Math.max(0, cfg.eagle_sell_limit - eaglesSold);
             const eaglePrice = Number(cfg.eagle_gram_price) || 0;
             const eligibleEagles = eligibleMerchantEagles();
 
-            document.getElementById('merchantBody').innerHTML = `
+            body.innerHTML = `
                 <div class="exchange-section-title">${t('merchant.meatSectionTitle')}</div>
                 <div class="exchange-rate-line">${t('merchant.meatRateLabel', { rate: Number.isInteger(rate) ? rate : rate.toFixed(2) })}</div>
-                <div class="exchange-rate-line">${t('merchant.meatLimitLabel', { bought: fmtToken(state.merchantMeatBought || 0), limit: fmtToken(cfg.meat_buy_limit) })}</div>
+                <div class="exchange-rate-line">${t('merchant.meatLimitLabel', { bought: fmtToken(meatBought), limit: fmtToken(cfg.meat_buy_limit) })}</div>
                 ${meatRemaining > 0 ? `
                     <div class="exchange-rate-line">${t('merchant.meatMaxPerPurchaseLabel', { max: fmtToken(maxPerPurchase) })}</div>
                     <div class="pay-label">${t('merchant.meatAmountLabel')}</div>
@@ -4003,7 +4033,7 @@
             if (tabId === 'collection') renderEggs();
             if (tabId === 'missions') renderMissions();
             if (tabId === 'market') loadMarketListings();
-            if (tabId === 'merchant') renderMerchantShop();
+            if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -4451,9 +4481,7 @@
                 ops: state.ops,
                 vip_tier: (state.vip && state.vip.tier) || '',
                 vip_expires_at: (state.vip && state.vip.expiresAt) || 0,
-                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0,
-                merchant_meat_bought: state.merchantMeatBought || 0,
-                merchant_eagles_sold: state.merchantEaglesSold || 0
+                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0
             };
             fetch('api/save', {
                 method: 'POST',
@@ -4480,8 +4508,7 @@
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
-            state.merchantMeatBought = data.merchant_meat_bought || 0;
-            state.merchantEaglesSold = data.merchant_eagles_sold || 0;
+            state.merchant = { meatBought: (data.merchant && data.merchant.meat_bought) || 0, eaglesSold: (data.merchant && data.merchant.eagles_sold) || 0 };
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.farmQueue = readFarm(data.farm_queue);
@@ -4566,8 +4593,7 @@
             state.gold = Number(state.gold) || 0;
             if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
             if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
-            state.merchantMeatBought = Number(state.merchantMeatBought) || 0;
-            state.merchantEaglesSold = Number(state.merchantEaglesSold) || 0;
+            if (!state.merchant || typeof state.merchant !== 'object') state.merchant = { meatBought: 0, eaglesSold: 0 };
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];

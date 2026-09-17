@@ -394,8 +394,6 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "vip_tier": "",
             "vip_expires_at": 0,
             "vip_last_meat_at": 0,
-            "merchant_meat_bought": 0,
-            "merchant_eagles_sold": 0,
         }
     )
 
@@ -550,8 +548,6 @@ class FarmState(BaseModel):
     vip_tier: str = ""
     vip_expires_at: float = 0
     vip_last_meat_at: float = 0
-    merchant_meat_bought: float = 0
-    merchant_eagles_sold: int = 0
 
 
 class MissionClaim(BaseModel):
@@ -565,6 +561,16 @@ class DailyClaim(BaseModel):
 
 class WheelSpin(BaseModel):
     user_id: int
+
+
+class MerchantBuyMeat(BaseModel):
+    user_id: int
+    amount: float
+
+
+class MerchantSellEagle(BaseModel):
+    user_id: int
+    slot_index: int
 
 
 class MarketListRequest(BaseModel):
@@ -682,8 +688,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "vip_tier": row.get("vip_tier") or "",
         "vip_expires_at": float(row.get("vip_expires_at") or 0),
         "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
-        "merchant_meat_bought": float(row.get("merchant_meat_bought") or 0),
-        "merchant_eagles_sold": int(row.get("merchant_eagles_sold") or 0),
+        "merchant": await store.get_merchant_state(),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -724,8 +729,6 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "vip_tier": state.vip_tier,
             "vip_expires_at": max(0.0, state.vip_expires_at),
             "vip_last_meat_at": max(0.0, state.vip_last_meat_at),
-            "merchant_meat_bought": max(0.0, state.merchant_meat_bought),
-            "merchant_eagles_sold": max(0, state.merchant_eagles_sold),
             "last_seen": int(time.time()),
         },
     )
@@ -875,6 +878,83 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "total_earned": float(fresh.get("total_earned") or 0.0),
         "monsters": read_farm(fresh["monsters"]),
         "slots": int(fresh.get("slots") or START_SLOTS),
+        "ops": int(fresh.get("ops") or 0),
+    }
+
+
+@app.get("/api/merchant/state")
+async def merchant_state():
+    """Общий (один на всех игроков) остаток лимитов лавки купца — публичный,
+    без привязки к конкретному пользователю."""
+    return await store.get_merchant_state()
+
+
+@app.post("/api/merchant/buy_meat")
+async def merchant_buy_meat(request: MerchantBuyMeat, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупка Meat за золото по фиксированному курсу — лимит общий на всех
+    игроков (а не персональный), поэтому считает и проверяет его сервер."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    await ensure_user(user_id)
+
+    cfg = CONFIG.get("merchant") or {}
+    limit = float(cfg.get("meat_buy_limit", 1000))
+    max_per_purchase = float(cfg.get("meat_buy_max_per_purchase", 5))
+    rate = float(cfg.get("meat_per_gold", 5)) or 5.0
+
+    requested = float(request.amount)
+    if requested <= 0:
+        raise HTTPException(status_code=400, detail="Укажи количество Meat")
+
+    result = await store.buy_merchant_meat(user_id, requested, limit, max_per_purchase, rate)
+    if result["status"] == "limit_reached":
+        raise HTTPException(status_code=409, detail="Лимит покупки Meat исчерпан")
+    if result["status"] == "insufficient_gold":
+        raise HTTPException(status_code=400, detail="Недостаточно золота")
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "amount": result["amount"],
+        "cost": result["cost"],
+        "gold": float(fresh.get("gold") or 0.0),
+        "mnstr": float(fresh.get("mnstr") or 0.0),
+        "merchant": await store.get_merchant_state(),
+        "ops": int(fresh.get("ops") or 0),
+    }
+
+
+@app.post("/api/merchant/sell_eagle")
+async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: Optional[str] = Header(None)):
+    """Продажа обычного (серого) орла за GRAM — лимит общий на всех игроков,
+    поэтому и он, и сама ферма продавца проверяются/меняются на сервере."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    await ensure_user(user_id)
+
+    cfg = CONFIG.get("merchant") or {}
+    limit = int(cfg.get("eagle_sell_limit", 10))
+    price = float(cfg.get("eagle_gram_price", 0.2))
+    common_ids = {m_id for m_id, tier in MONSTER_TIER.items() if tier == "common"}
+
+    result = await store.sell_merchant_eagle(user_id, request.slot_index, limit, price, common_ids)
+    if result["status"] == "limit_reached":
+        raise HTTPException(status_code=409, detail="Лимит продажи орлов исчерпан")
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=400, detail="Орёл не найден")
+    if result["status"] == "wrong_tier":
+        raise HTTPException(status_code=400, detail="Купец берёт только обычных орлов")
+    if result["status"] == "last_eagle":
+        raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
+    if result["status"] == "conflict":
+        raise HTTPException(status_code=409, detail="Ферма изменилась — попробуй ещё раз")
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "coins": float(fresh.get("coins") or 0.0),
+        "total_earned": float(fresh.get("total_earned") or 0.0),
+        "monsters": read_farm(fresh["monsters"]),
+        "active_slot": int(fresh.get("active_slot") or 0),
+        "merchant": await store.get_merchant_state(),
         "ops": int(fresh.get("ops") or 0),
     }
 

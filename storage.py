@@ -4,11 +4,12 @@
     user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
-    vip_tier, vip_expires_at, vip_last_meat_at, merchant_meat_bought, merchant_eagles_sold
+    vip_tier, vip_expires_at, vip_last_meat_at
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
-заявки на вывод (withdrawals) и лоты рынка (market_listings — P2P-торговля
-орлами между игроками).
+заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
+орлами между игроками) и общий (один на всех игроков, не по-пользовательски)
+счётчик лавки купца — merchant_state: {meat_bought, eagles_sold}.
 """
 
 import json
@@ -21,7 +22,7 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters", "farm_queue",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
-    "vip_tier", "vip_expires_at", "vip_last_meat_at", "merchant_meat_bought", "merchant_eagles_sold",
+    "vip_tier", "vip_expires_at", "vip_last_meat_at",
 )
 JSON_FIELDS = ("monsters", "farm_queue", "missions", "eggs_board", "eggs_queue")
 
@@ -67,12 +68,22 @@ class SqliteStore:
                 ops            INTEGER DEFAULT 0,
                 vip_tier       TEXT    DEFAULT '',
                 vip_expires_at REAL    DEFAULT 0,
-                vip_last_meat_at REAL  DEFAULT 0,
-                merchant_meat_bought REAL DEFAULT 0,
-                merchant_eagles_sold INTEGER DEFAULT 0
+                vip_last_meat_at REAL  DEFAULT 0
             )
             """
         )
+        # Купец — общая на всех игроков лавка с разовыми лимитами; строка одна
+        # (id = 1), никак не привязана к конкретному user_id.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS merchant_state (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                meat_bought  REAL    DEFAULT 0,
+                eagles_sold  INTEGER DEFAULT 0
+            )
+            """
+        )
+        cur.execute("INSERT OR IGNORE INTO merchant_state (id, meat_bought, eagles_sold) VALUES (1, 0, 0)")
         # Кошелёк: пополнения (ключ — хэш транзакции) и заявки на вывод.
         cur.execute(
             """
@@ -131,8 +142,6 @@ class SqliteStore:
             ("vip_tier", "TEXT DEFAULT ''"),
             ("vip_expires_at", "REAL DEFAULT 0"),
             ("vip_last_meat_at", "REAL DEFAULT 0"),
-            ("merchant_meat_bought", "REAL DEFAULT 0"),
-            ("merchant_eagles_sold", "INTEGER DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
@@ -304,6 +313,89 @@ class SqliteStore:
             values.append(user_id)
             cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", tuple(values))
             conn.commit()
+        finally:
+            conn.close()
+
+    async def get_merchant_state(self) -> dict:
+        conn = self._connect()
+        row = conn.execute("SELECT meat_bought, eagles_sold FROM merchant_state WHERE id = 1").fetchone()
+        conn.close()
+        if not row:
+            return {"meat_bought": 0.0, "eagles_sold": 0}
+        return {"meat_bought": float(row["meat_bought"] or 0), "eagles_sold": int(row["eagles_sold"] or 0)}
+
+    async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
+                                 max_per_purchase: float, rate: float) -> dict:
+        """Общий (на всех игроков) лимит Meat — проверяем и списываем его в той же
+        транзакции, что и золото игрока, чтобы два одновременных запроса не
+        продавили лимит суммарно больше положенного."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute("SELECT meat_bought FROM merchant_state WHERE id = 1").fetchone()
+            bought = float(row["meat_bought"] or 0) if row else 0.0
+            remaining = max(0.0, limit - bought)
+            amount = min(max(0.0, requested), remaining, max_per_purchase)
+            if amount <= 0:
+                conn.rollback()
+                return {"status": "limit_reached"}
+
+            cost = amount / rate
+            urow = cur.execute("SELECT gold FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            gold = float(urow["gold"] or 0) if urow else 0.0
+            if gold < cost:
+                conn.rollback()
+                return {"status": "insufficient_gold"}
+
+            cur.execute("UPDATE merchant_state SET meat_bought = meat_bought + ? WHERE id = 1", (amount,))
+            cur.execute(
+                "UPDATE users SET gold = gold - ?, mnstr = mnstr + ?, ops = ops + 1 WHERE user_id = ?",
+                (cost, amount, user_id),
+            )
+            conn.commit()
+            return {"status": "ok", "amount": amount, "cost": cost}
+        finally:
+            conn.close()
+
+    async def sell_merchant_eagle(self, user_id: int, slot_index: int, limit: int,
+                                   price: float, common_ids) -> dict:
+        """Общий (на всех игроков) лимит проданных орлов — как и с Meat, лимит и
+        ферма продавца меняются в одной транзакции."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute("SELECT eagles_sold FROM merchant_state WHERE id = 1").fetchone()
+            sold = int(row["eagles_sold"] or 0) if row else 0
+            if sold >= limit:
+                conn.rollback()
+                return {"status": "limit_reached"}
+
+            urow = cur.execute("SELECT monsters FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            try:
+                farm = json.loads(urow["monsters"] or "[]") if urow else []
+            except (TypeError, ValueError):
+                farm = []
+            if not (0 <= slot_index < len(farm)):
+                conn.rollback()
+                return {"status": "not_found"}
+            if farm[slot_index].get("id") not in common_ids:
+                conn.rollback()
+                return {"status": "wrong_tier"}
+            if len(farm) <= 1:
+                conn.rollback()
+                return {"status": "last_eagle"}
+
+            farm.pop(slot_index)
+            cur.execute("UPDATE merchant_state SET eagles_sold = eagles_sold + 1 WHERE id = 1")
+            cur.execute(
+                "UPDATE users SET coins = coins + ?, total_earned = total_earned + ?, "
+                "monsters = ?, active_slot = MIN(active_slot, ?), ops = ops + 1 WHERE user_id = ?",
+                (price, price, json.dumps(farm), len(farm) - 1, user_id),
+            )
+            conn.commit()
+            return {"status": "ok"}
         finally:
             conn.close()
 
@@ -648,12 +740,18 @@ class MongoStore:
         self.deposits = client[db_name]["deposits"]
         self.withdrawals = client[db_name]["withdrawals"]
         self.market = client[db_name]["market_listings"]
+        self.merchant = client[db_name]["merchant_state"]
 
     async def init(self):
         await self.users.create_index("referred_by")
         await self.deposits.create_index("user_id")
         await self.withdrawals.create_index("user_id")
         await self.market.create_index("seller_id")
+        # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
+        # (_id = "global"), никак не привязан к конкретному user_id.
+        await self.merchant.update_one(
+            {"_id": "global"}, {"$setOnInsert": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
+        )
 
     async def get(self, user_id: int) -> Optional[dict]:
         doc = await self.users.find_one({"_id": user_id})
@@ -727,6 +825,81 @@ class MongoStore:
             changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
 
         await self.users.update_one({"_id": user_id}, changes)
+
+    async def get_merchant_state(self) -> dict:
+        doc = await self.merchant.find_one({"_id": "global"}) or {}
+        return {"meat_bought": float(doc.get("meat_bought") or 0), "eagles_sold": int(doc.get("eagles_sold") or 0)}
+
+    async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
+                                 max_per_purchase: float, rate: float) -> dict:
+        """Общий (на всех игроков) лимит Meat: сперва атомарно резервируем место
+        в лимите, затем списываем золото игрока; если золота не хватило —
+        возвращаем резерв обратно (двухфазный подход, раз Mongo здесь без
+        многодокументных транзакций, как и в buy_listing)."""
+        state = await self.merchant.find_one({"_id": "global"}) or {}
+        bought = float(state.get("meat_bought") or 0)
+        remaining = max(0.0, limit - bought)
+        amount = min(max(0.0, requested), remaining, max_per_purchase)
+        if amount <= 0:
+            return {"status": "limit_reached"}
+
+        reserve = await self.merchant.update_one(
+            {"_id": "global", "meat_bought": {"$lte": limit - amount}},
+            {"$inc": {"meat_bought": amount}},
+        )
+        if reserve.modified_count == 0:
+            return {"status": "limit_reached"}
+
+        cost = amount / rate
+        charge = await self.users.update_one(
+            {"_id": user_id, "gold": {"$gte": cost}},
+            {"$inc": {"gold": -cost, "mnstr": amount, "ops": 1}},
+        )
+        if charge.modified_count == 0:
+            await self.merchant.update_one({"_id": "global"}, {"$inc": {"meat_bought": -amount}})
+            return {"status": "insufficient_gold"}
+        return {"status": "ok", "amount": amount, "cost": cost}
+
+    async def sell_merchant_eagle(self, user_id: int, slot_index: int, limit: int,
+                                   price: float, common_ids) -> dict:
+        """Общий (на всех игроков) лимит проданных орлов — тот же двухфазный
+        подход: резерв лимита, потом ферма продавца по оптимистичной блокировке
+        (полное совпадение monsters), с откатом резерва при конфликте."""
+        state = await self.merchant.find_one({"_id": "global"}) or {}
+        sold = int(state.get("eagles_sold") or 0)
+        if sold >= limit:
+            return {"status": "limit_reached"}
+
+        doc = await self.users.find_one({"_id": user_id}, {"monsters": 1, "active_slot": 1})
+        farm = list((doc or {}).get("monsters") or [])
+        active_slot = int((doc or {}).get("active_slot") or 0)
+        if not (0 <= slot_index < len(farm)):
+            return {"status": "not_found"}
+        if farm[slot_index].get("id") not in common_ids:
+            return {"status": "wrong_tier"}
+        if len(farm) <= 1:
+            return {"status": "last_eagle"}
+
+        reserve = await self.merchant.update_one(
+            {"_id": "global", "eagles_sold": {"$lte": limit - 1}},
+            {"$inc": {"eagles_sold": 1}},
+        )
+        if reserve.modified_count == 0:
+            return {"status": "limit_reached"}
+
+        original = farm[:]
+        new_farm = farm[:slot_index] + farm[slot_index + 1:]
+        result = await self.users.update_one(
+            {"_id": user_id, "monsters": original},
+            {
+                "$set": {"monsters": new_farm, "active_slot": min(active_slot, len(new_farm) - 1)},
+                "$inc": {"coins": price, "total_earned": price, "ops": 1},
+            },
+        )
+        if result.modified_count == 0:
+            await self.merchant.update_one({"_id": "global"}, {"$inc": {"eagles_sold": -1}})
+            return {"status": "conflict"}
+        return {"status": "ok"}
 
     async def create_listing(self, seller_id: int, seller_name: str, monster_id: str,
                               feed_levels: int, price_gram: float, ts: int) -> Optional[str]:
