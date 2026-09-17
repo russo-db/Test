@@ -301,6 +301,8 @@
         .farm-queue-item img { width: 84%; height: 84%; object-fit: contain; }
         .farm-queue-item:first-child { opacity: 0.8; filter: grayscale(0.1); }
 
+        .exchange-section-title { font-size: 15px; font-weight: 900; margin: 18px 2px 6px; }
+        .exchange-section-title:first-child { margin-top: 0; }
         .exchange-rate-line { font-size: 13px; font-weight: 800; color: var(--accent-emerald); margin: 0 2px 8px; text-align: center; }
         .exchange-receive-line { font-size: 14px; font-weight: 800; margin: 10px 2px; text-align: center; }
 
@@ -789,11 +791,10 @@
             <div id="marketBody"></div>
         </div>
 
-        <!-- EXCHANGE TAB -->
-        <div id="exchange" class="content">
-            <h1 data-i18n="exchange.heading">Купец</h1>
-            <p class="subtitle" data-i18n="exchange.subtitle">Меняй Meat на Золото по фиксированному курсу</p>
-            <div class="glass-panel" id="exchangeBody" style="padding:16px"></div>
+        <!-- MERCHANT TAB -->
+        <div id="merchant" class="content">
+            <h1 data-i18n="merchant.heading">Купец</h1>
+            <div class="glass-panel" id="merchantBody" style="padding:16px"></div>
         </div>
 
         <!-- PROFILE TAB -->
@@ -950,9 +951,9 @@
                 <div class="nav-icon nav-icon-emoji">🛒</div>
                 <span data-i18n="nav.market">Рынок</span>
             </div>
-            <div class="nav-item" onclick="switchTab('exchange', this)">
+            <div class="nav-item" onclick="switchTab('merchant', this)">
                 <div class="nav-icon nav-icon-emoji">🧑‍💼</div>
-                <span data-i18n="nav.exchange">Купец</span>
+                <span data-i18n="nav.merchant">Купец</span>
             </div>
             <div class="nav-item" onclick="switchTab('profile', this)">
                 <div class="nav-icon nav-icon-emoji">👨‍🎓</div>
@@ -1149,15 +1150,25 @@
                 'farm.expeditionToast': 'Орёл в экспедиции — вернётся через {time}',
                 'farm.eggCookingToast': 'Яйцо ещё варится — {time}',
                 'farm.queueLabel': 'Не поместились — ждут своей очереди',
-                'nav.exchange': 'Купец',
-                'exchange.heading': 'Купец', 'exchange.subtitle': 'Меняй Meat на Золото по фиксированному курсу',
-                'exchange.rateLabel': 'Курс: 1 золото = {rate} Meat',
-                'exchange.amountLabel': 'Сколько Meat обменять',
-                'exchange.receiveLabel': 'Получишь: {amount} золота',
-                'exchange.exchangeBtn': 'Обменять',
-                'exchange.enterAmount': 'Укажи количество Meat',
-                'exchange.notEnoughMeat': 'Недостаточно Meat',
-                'exchange.goldReceived': 'Получено {amount} золота',
+                'nav.merchant': 'Купец',
+                'merchant.heading': 'Купец',
+                'merchant.meatSectionTitle': 'Купить Meat',
+                'merchant.meatRateLabel': 'Курс: 1 золото = {rate} Meat',
+                'merchant.meatLimitLabel': 'Куплено {bought} из {limit} Meat',
+                'merchant.meatAmountLabel': 'Сколько Meat купить',
+                'merchant.meatCostLabel': 'Стоимость: {amount} золота',
+                'merchant.buyMeatBtn': 'Купить',
+                'merchant.meatLimitReached': 'Лимит покупки Meat исчерпан',
+                'merchant.enterAmount': 'Укажи количество Meat',
+                'merchant.notEnoughGold': 'Недостаточно золота',
+                'merchant.meatBought': 'Куплено {amount} Meat',
+                'merchant.eagleSectionTitle': 'Купить орла',
+                'merchant.eaglePriceLabel': 'Цена: {price} GRAM за орла',
+                'merchant.eagleLimitLabel': 'Куплено {bought} из {limit} орлов',
+                'merchant.buyEagleBtn': 'Купить орла',
+                'merchant.eagleLimitReached': 'Лимит покупки орлов исчерпан',
+                'merchant.notEnoughGram': 'Недостаточно GRAM',
+                'merchant.eagleBought': 'Куплен новый орёл!',
                 'eggs.heading': 'Яйца',
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
@@ -1288,15 +1299,25 @@
                 'farm.expeditionToast': 'Eagle is on expedition — back in {time}',
                 'farm.eggCookingToast': 'Egg is still cooking — {time}',
                 'farm.queueLabel': "Didn't fit — waiting in line",
-                'nav.exchange': 'Merchant',
-                'exchange.heading': 'Merchant', 'exchange.subtitle': 'Trade Meat for Gold at a fixed rate',
-                'exchange.rateLabel': 'Rate: 1 gold = {rate} Meat',
-                'exchange.amountLabel': 'How much Meat to exchange',
-                'exchange.receiveLabel': "You'll get: {amount} gold",
-                'exchange.exchangeBtn': 'Exchange',
-                'exchange.enterAmount': 'Enter a Meat amount',
-                'exchange.notEnoughMeat': 'Not enough Meat',
-                'exchange.goldReceived': 'Received {amount} gold',
+                'nav.merchant': 'Merchant',
+                'merchant.heading': 'Merchant',
+                'merchant.meatSectionTitle': 'Buy Meat',
+                'merchant.meatRateLabel': 'Rate: 1 gold = {rate} Meat',
+                'merchant.meatLimitLabel': 'Bought {bought} of {limit} Meat',
+                'merchant.meatAmountLabel': 'How much Meat to buy',
+                'merchant.meatCostLabel': 'Cost: {amount} gold',
+                'merchant.buyMeatBtn': 'Buy',
+                'merchant.meatLimitReached': 'Meat purchase limit reached',
+                'merchant.enterAmount': 'Enter a Meat amount',
+                'merchant.notEnoughGold': 'Not enough gold',
+                'merchant.meatBought': 'Bought {amount} Meat',
+                'merchant.eagleSectionTitle': 'Buy an eagle',
+                'merchant.eaglePriceLabel': 'Price: {price} GRAM per eagle',
+                'merchant.eagleLimitLabel': 'Bought {bought} of {limit} eagles',
+                'merchant.buyEagleBtn': 'Buy an eagle',
+                'merchant.eagleLimitReached': 'Eagle purchase limit reached',
+                'merchant.notEnoughGram': 'Not enough GRAM',
+                'merchant.eagleBought': 'New eagle bought!',
                 'eggs.heading': 'Eggs',
                 'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
                 'eggs.openAll': 'Open all',
@@ -1489,7 +1510,9 @@
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
-            vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }  // текущий VIP-тариф (см. buyVip/collectVipDailyMeat)
+            vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip/collectVipDailyMeat)
+            merchantMeatBought: 0,    // сколько Meat уже куплено у купца (лимит merchant.meat_buy_limit)
+            merchantEaglesBought: 0   // сколько орлов уже куплено у купца (лимит merchant.eagle_buy_limit)
         };
 
         let botUsername = '';
@@ -2799,59 +2822,102 @@
             saveNow();
         }
 
-        /* ---------- обмен: Meat на золото по фиксированному курсу ---------- */
+        /* ---------- купец: покупка Meat за золото и орлов за GRAM, с лимитами ---------- */
 
-        function exchangeGoldRate() {
-            return Number(CONFIG.exchange.meat_per_gold) || 5;
+        function merchantMeatRemaining() {
+            const cfg = CONFIG.merchant;
+            return Math.max(0, cfg.meat_buy_limit - (state.merchantMeatBought || 0));
         }
 
-        function setExchangeMeat(amount) {
-            const input = document.getElementById('exchangeMeatAmount');
-            if (input) input.value = Math.max(0, Math.floor(amount));
-            updateExchangePreview();
+        function merchantEaglesRemaining() {
+            const cfg = CONFIG.merchant;
+            return Math.max(0, cfg.eagle_buy_limit - (state.merchantEaglesBought || 0));
         }
 
-        function updateExchangePreview() {
-            const input = document.getElementById('exchangeMeatAmount');
-            const line = document.getElementById('exchangeReceiveLine');
+        function setMerchantMeatAmount(amount) {
+            const input = document.getElementById('merchantMeatAmount');
+            if (input) input.value = Math.max(0, Math.min(merchantMeatRemaining(), Math.floor(amount)));
+            updateMerchantMeatPreview();
+        }
+
+        function updateMerchantMeatPreview() {
+            const input = document.getElementById('merchantMeatAmount');
+            const line = document.getElementById('merchantMeatCostLine');
             if (!input || !line) return;
             const amount = Math.max(0, Math.floor(Number(input.value) || 0));
-            const gold = amount / exchangeGoldRate();
-            line.innerText = t('exchange.receiveLabel', { amount: fmtToken(gold) });
+            const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
+            line.innerText = t('merchant.meatCostLabel', { amount: fmtToken(cost) });
         }
 
-        function exchangeMeatForGold() {
-            const input = document.getElementById('exchangeMeatAmount');
-            const amount = Math.floor(Number(input && input.value) || 0);
-            if (amount <= 0) { toast(t('exchange.enterAmount')); return; }
-            if (amount > state.mnstr) { toast(t('exchange.notEnoughMeat')); haptic.notify('warning'); return; }
+        function buyMeatFromMerchant() {
+            const remaining = merchantMeatRemaining();
+            if (remaining <= 0) { toast(t('merchant.meatLimitReached')); return; }
 
-            const gold = amount / exchangeGoldRate();
-            state.mnstr -= amount;
-            state.gold = (state.gold || 0) + gold;
+            const input = document.getElementById('merchantMeatAmount');
+            let amount = Math.floor(Number(input && input.value) || 0);
+            if (amount <= 0) { toast(t('merchant.enterAmount')); return; }
+            amount = Math.min(amount, remaining);
+
+            const cost = amount / (Number(CONFIG.merchant.meat_per_gold) || 5);
+            if (cost > (state.gold || 0)) { toast(t('merchant.notEnoughGold')); haptic.notify('warning'); return; }
+
+            state.gold -= cost;
+            state.mnstr += amount;
+            state.merchantMeatBought = (state.merchantMeatBought || 0) + amount;
             haptic.notify('success');
-            toast(t('exchange.goldReceived', { amount: fmtToken(gold) }));
+            toast(t('merchant.meatBought', { amount: fmtToken(amount) }));
             renderHeader();
-            renderExchange();
+            renderMerchantShop();
             saveNow();
         }
 
-        function renderExchange() {
-            const rate = exchangeGoldRate();
-            const meatAmount = Math.min(Math.floor(state.mnstr), 1000) || 0;
+        function buyEagleFromMerchant() {
+            if (merchantEaglesRemaining() <= 0) { toast(t('merchant.eagleLimitReached')); return; }
 
-            document.getElementById('exchangeBody').innerHTML = `
-                <div class="exchange-rate-line">${t('exchange.rateLabel', { rate: Number.isInteger(rate) ? rate : rate.toFixed(2) })}</div>
-                <div class="pay-label">${t('exchange.amountLabel')}</div>
-                <input class="pay-input" id="exchangeMeatAmount" type="number" inputmode="decimal"
-                       min="0" step="1" value="${meatAmount}" oninput="updateExchangePreview()">
-                <div class="pay-chips">
-                    <button onclick="setExchangeMeat(100)">100</button>
-                    <button onclick="setExchangeMeat(1000)">1000</button>
-                    <button onclick="setExchangeMeat(state.mnstr)">${t('withdraw.all')}</button>
-                </div>
-                <div class="exchange-receive-line" id="exchangeReceiveLine">${t('exchange.receiveLabel', { amount: fmtToken(meatAmount / rate) })}</div>
-                <button class="btn-primary" style="margin-top:6px" onclick="exchangeMeatForGold()">${t('exchange.exchangeBtn')}</button>
+            const price = Number(CONFIG.merchant.eagle_gram_price) || 0;
+            if (state.coins < price) { toast(t('merchant.notEnoughGram')); haptic.notify('warning'); return; }
+
+            state.coins -= price;
+            addFarmSlot('common');
+            state.merchantEaglesBought = (state.merchantEaglesBought || 0) + 1;
+            haptic.notify('success');
+            toast(t('merchant.eagleBought'));
+            renderAll();
+            renderMerchantShop();
+            saveNow();
+        }
+
+        function renderMerchantShop() {
+            const cfg = CONFIG.merchant;
+            const rate = Number(cfg.meat_per_gold) || 5;
+            const meatRemaining = merchantMeatRemaining();
+            const meatDefault = Math.min(meatRemaining, 100);
+            const eaglesBought = state.merchantEaglesBought || 0;
+            const eaglesRemaining = merchantEaglesRemaining();
+
+            document.getElementById('merchantBody').innerHTML = `
+                <div class="exchange-section-title">${t('merchant.meatSectionTitle')}</div>
+                <div class="exchange-rate-line">${t('merchant.meatRateLabel', { rate: Number.isInteger(rate) ? rate : rate.toFixed(2) })}</div>
+                <div class="exchange-rate-line">${t('merchant.meatLimitLabel', { bought: fmtToken(state.merchantMeatBought || 0), limit: fmtToken(cfg.meat_buy_limit) })}</div>
+                ${meatRemaining > 0 ? `
+                    <div class="pay-label">${t('merchant.meatAmountLabel')}</div>
+                    <input class="pay-input" id="merchantMeatAmount" type="number" inputmode="decimal"
+                           min="0" max="${meatRemaining}" step="1" value="${meatDefault}" oninput="updateMerchantMeatPreview()">
+                    <div class="pay-chips">
+                        <button onclick="setMerchantMeatAmount(100)">100</button>
+                        <button onclick="setMerchantMeatAmount(500)">500</button>
+                        <button onclick="setMerchantMeatAmount(${meatRemaining})">${t('withdraw.all')}</button>
+                    </div>
+                    <div class="exchange-receive-line" id="merchantMeatCostLine">${t('merchant.meatCostLabel', { amount: fmtToken(meatDefault / rate) })}</div>
+                    <button class="btn-primary" style="margin-top:6px" onclick="buyMeatFromMerchant()">${t('merchant.buyMeatBtn')}</button>
+                ` : `<p class="market-section-empty">${t('merchant.meatLimitReached')}</p>`}
+
+                <div class="exchange-section-title">${t('merchant.eagleSectionTitle')}</div>
+                <div class="exchange-rate-line">${t('merchant.eaglePriceLabel', { price: fmtGram(cfg.eagle_gram_price) })}</div>
+                <div class="exchange-rate-line">${t('merchant.eagleLimitLabel', { bought: eaglesBought, limit: cfg.eagle_buy_limit })}</div>
+                ${eaglesRemaining > 0
+                    ? `<button class="btn-primary" style="margin-top:6px" onclick="buyEagleFromMerchant()">${t('merchant.buyEagleBtn')} — ${fmtGram(cfg.eagle_gram_price)} GRAM</button>`
+                    : `<p class="market-section-empty">${t('merchant.eagleLimitReached')}</p>`}
             `;
         }
 
@@ -3898,7 +3964,7 @@
             if (tabId === 'collection') renderEggs();
             if (tabId === 'missions') renderMissions();
             if (tabId === 'market') loadMarketListings();
-            if (tabId === 'exchange') renderExchange();
+            if (tabId === 'merchant') renderMerchantShop();
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -4346,7 +4412,9 @@
                 ops: state.ops,
                 vip_tier: (state.vip && state.vip.tier) || '',
                 vip_expires_at: (state.vip && state.vip.expiresAt) || 0,
-                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0
+                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0,
+                merchant_meat_bought: state.merchantMeatBought || 0,
+                merchant_eagles_bought: state.merchantEaglesBought || 0
             };
             fetch('api/save', {
                 method: 'POST',
@@ -4373,6 +4441,8 @@
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
+            state.merchantMeatBought = data.merchant_meat_bought || 0;
+            state.merchantEaglesBought = data.merchant_eagles_bought || 0;
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.farmQueue = readFarm(data.farm_queue);
@@ -4457,6 +4527,8 @@
             state.gold = Number(state.gold) || 0;
             if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
             if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
+            state.merchantMeatBought = Number(state.merchantMeatBought) || 0;
+            state.merchantEaglesBought = Number(state.merchantEaglesBought) || 0;
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -4553,8 +4625,8 @@
         // Резервные минимальные цены по редкости на P2P-рынке (максимум не ограничен).
         const DEFAULT_MARKET_MIN_PRICE = { uncommon: 2, rare: 4, epic: 8, legendary: 16, mythical: 32 };
 
-        // Резервный курс обмена Meat на золото (фиксированный).
-        const DEFAULT_EXCHANGE = { meat_per_gold: 5 };
+        // Резервные настройки лавки купца (покупка Meat за золото и орлов за GRAM).
+        const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, eagle_gram_price: 0.2, eagle_buy_limit: 10 };
 
         // Резервная таблица цен слотов фермы (индекс 0 = слот №1, GRAM).
         const DEFAULT_SLOT_PRICES = [
@@ -4628,7 +4700,7 @@
             }
             cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
             if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
-            cfg.exchange = Object.assign({}, DEFAULT_EXCHANGE, cfg.exchange);
+            cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);
             return cfg;
         }
 

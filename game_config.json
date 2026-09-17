@@ -341,8 +341,11 @@
       "mythical": 32
     }
   },
-  "exchange": {
-    "meat_per_gold": 5
+  "merchant": {
+    "meat_per_gold": 5,
+    "meat_buy_limit": 1000,
+    "eagle_gram_price": 0.2,
+    "eagle_buy_limit": 10
   },
   "vip": {
     "tiers": [
