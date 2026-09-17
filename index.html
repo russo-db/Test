@@ -455,6 +455,8 @@
         .btn-buy { background: linear-gradient(180deg, var(--gold-lt), #e08c00); color: #fff; box-shadow: 0 4px 0 var(--gold-dk), inset 0 3px 0 rgba(255,255,255,0.45); text-shadow: -1.5px -1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px 1.5px 0 var(--ink); }
         .btn-buy:active { box-shadow: 0 0 0 var(--gold-dk); }
         .btn-locked { background: var(--panel-soft); color: var(--text-muted); }
+        .btn-danger { background: linear-gradient(180deg, #f87171, #b91c1c); box-shadow: 0 4px 0 #7f1d1d, inset 0 3px 0 rgba(255, 255, 255, 0.25); }
+        .btn-danger:active { box-shadow: 0 0 0 #7f1d1d; }
 
         .slot-cell { background: var(--panel-soft); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,0.1); }
         .slot-cell.selected { border-color: var(--gold); box-shadow: 0 4px 0 var(--ink), 0 0 18px rgba(247,181,0,0.5), inset 0 3px 0 rgba(255,255,255,0.14); }
@@ -1219,6 +1221,12 @@
                 'slot.fusionHint': 'Тапни другого откормленного орла «{name}» на ферме, чтобы получить {nextName}',
                 'slot.expeditionBtn': 'Экспедиция за {cost} Meat — {amount} золота за {time}',
                 'slot.slotNumber': 'слот {n}',
+                'slot.deleteBtn': 'Удалить орла',
+                'slot.deleteConfirm': 'Точно хочешь удалить {name}? Отменить будет нельзя.',
+                'slot.deleteReward': 'Взамен получишь {amount} Meat.',
+                'slot.deleteConfirmBtn': 'Да, удалить',
+                'slot.deleted': '{name} удалён — +{amount} Meat',
+                'slot.deleteLastBlocked': 'Нельзя удалить последнего орла',
                 'slotBuy.allOpen': 'Все слоты открыты', 'slotBuy.locked': 'Слот {n} заперт',
                 'slotBuy.maxReached': 'Больше {max} слотов на ферме не бывает.',
                 'slotBuy.openHint': 'Открой его, чтобы поселить ещё одного орла.',
@@ -1343,6 +1351,12 @@
                 'slot.fusionHint': 'Tap another fully-fed "{name}" on the farm to get {nextName}',
                 'slot.expeditionBtn': 'Expedition for {cost} Meat — {amount} gold in {time}',
                 'slot.slotNumber': 'slot {n}',
+                'slot.deleteBtn': 'Delete eagle',
+                'slot.deleteConfirm': 'Delete {name} for good? This can\'t be undone.',
+                'slot.deleteReward': "You'll get {amount} Meat in return.",
+                'slot.deleteConfirmBtn': 'Yes, delete',
+                'slot.deleted': '{name} deleted — +{amount} Meat',
+                'slot.deleteLastBlocked': "Can't delete your last eagle",
                 'slotBuy.allOpen': 'All slots open', 'slotBuy.locked': 'Slot {n} is locked',
                 'slotBuy.maxReached': "The farm can't hold more than {max} slots.",
                 'slotBuy.openHint': 'Open it to settle another eagle.',
@@ -3516,10 +3530,12 @@
         }
 
         let modalSlot = 0;
+        let slotDeleteConfirm = false;
 
         function openSlotModal(index) {
             if (!state.farm[index]) return;
             modalSlot = index;
+            slotDeleteConfirm = false;
             haptic.impact('light');
             renderSlotModal();
             document.getElementById('slotModal').classList.add('open');
@@ -3527,6 +3543,44 @@
 
         function closeSlotModal() {
             document.getElementById('slotModal').classList.remove('open');
+            slotDeleteConfirm = false;
+        }
+
+        function askDeleteEagle() {
+            slotDeleteConfirm = true;
+            haptic.notify('warning');
+            renderSlotModal();
+        }
+
+        function cancelDeleteEagle() {
+            slotDeleteConfirm = false;
+            renderSlotModal();
+        }
+
+        // Удаляет орла любого уровня насовсем — только после подтверждения
+        // во втором экране модалки. Взамен игрок получает 10 Meat. Последнего
+        // орла на ферме удалить нельзя — сцене нужен хотя бы один активный.
+        function confirmDeleteEagle() {
+            const slot = state.farm[modalSlot];
+            if (!slot) { closeSlotModal(); return; }
+            if (state.farm.length <= 1) {
+                toast(t('slot.deleteLastBlocked'));
+                haptic.notify('warning');
+                slotDeleteConfirm = false;
+                renderSlotModal();
+                return;
+            }
+            const monster = MONSTERS[slot.id];
+            state.farm.splice(modalSlot, 1);
+            state.activeSlot = Math.min(state.activeSlot, state.farm.length - 1);
+            state.mnstr += 10;
+            drainFarmQueue();
+            slotDeleteConfirm = false;
+            closeSlotModal();
+            haptic.notify('success');
+            toast(t('slot.deleted', { name: monster.name, amount: 10 }));
+            renderAll();
+            saveNow();
         }
 
         function renderSlotModal() {
@@ -3534,6 +3588,19 @@
             if (!slot) { closeSlotModal(); return; }
 
             const monster = MONSTERS[slot.id];
+
+            if (slotDeleteConfirm) {
+                document.getElementById('slotModalBody').innerHTML = `
+                    <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    <h2 style="color:${monster.color}">${monster.name}</h2>
+                    <p class="slot-modal-sub">${t('slot.deleteConfirm', { name: monster.name })}</p>
+                    <p class="slot-modal-sub">${t('slot.deleteReward', { amount: 10 })}</p>
+                    <button class="btn-action btn-danger" style="margin-top:10px; width:100%" onclick="confirmDeleteEagle()">🗑 ${t('slot.deleteConfirmBtn')}</button>
+                    <button class="btn-action roll-close" onclick="cancelDeleteEagle()">${t('common.cancel')}</button>
+                `;
+                return;
+            }
+
             const tier = tierById(monster.tier);
             const onExpedition = isOnExpedition(slot);
             const expReady = expeditionReady(slot);
@@ -3591,6 +3658,7 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
+                <button class="btn-action btn-danger" style="margin-top:8px; width:100%" onclick="askDeleteEagle()">🗑 ${t('slot.deleteBtn')}</button>
                 <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
             `;
         }
