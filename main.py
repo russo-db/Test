@@ -27,6 +27,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
 EGG_BOARD_SIZE = 16  # 4×4
 EGG_QUEUE_MAX = 300  # защитный предел на длину очереди яиц, не помещающихся на доску
+FARM_QUEUE_MAX = 300  # защитный предел на длину очереди орлов, не помещающихся в открытые слоты
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -368,6 +369,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "mnstr": 0.0,
             "gold": 0.0,
             "monsters": [{"id": STARTER_MONSTER, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}],
+            "farm_queue": [],
             "active_slot": 0,
             "missions": [],
             "slots": START_SLOTS,
@@ -527,6 +529,7 @@ class FarmState(BaseModel):
     mnstr: float = 0.0
     gold: float = 0.0
     monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps", "expedition_until"}
+    farm_queue: List[dict] = []
     active_slot: int = 0
     missions: list = []
     slots: int = START_SLOTS
@@ -651,6 +654,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "mnstr": float(row.get("mnstr") or 0.0),
         "gold": float(row.get("gold") or 0.0),
         "monsters": farm,
+        "farm_queue": read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX],
         "active_slot": int(row.get("active_slot") or 0),
         "missions": row.get("missions") or [],
         "slots": int(row.get("slots") or START_SLOTS),
@@ -697,6 +701,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
             "mnstr": state.mnstr,
             "gold": max(0.0, state.gold),
             "monsters": read_farm(state.monsters),
+            "farm_queue": read_farm(state.farm_queue)[:FARM_QUEUE_MAX],
             "active_slot": state.active_slot,
             "slots": state.slots,
             "eggs_board": eggs_board,
@@ -1106,6 +1111,7 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     if not doc:
         raise HTTPException(status_code=404, detail="Игрок не найден")
     doc["monsters"] = read_farm(doc.get("monsters"))
+    doc["farm_queue"] = read_farm(doc.get("farm_queue"))[:FARM_QUEUE_MAX]
     doc["eggs_board"] = normalize_eggs_board(doc.get("eggs_board"))
     doc["eggs_queue"] = normalize_eggs_queue(doc.get("eggs_queue"))
     return doc

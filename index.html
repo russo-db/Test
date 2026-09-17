@@ -292,6 +292,15 @@
         .egg-queue-item .egg-shape { width: 100%; height: 100%; font-size: 14px; }
         .egg-queue-item:first-child { opacity: 0.75; filter: grayscale(0.15); }
 
+        /* ---------- Орлы: очередь тех, что не поместились в открытые слоты ---------- */
+        .farm-queue-wrap { margin: 10px 0 0; }
+        .farm-queue-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; margin: 0 0 8px; }
+        .farm-queue { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; -webkit-overflow-scrolling: touch; scrollbar-width: none; justify-content: flex-start; }
+        .farm-queue::-webkit-scrollbar { display: none; }
+        .farm-queue-item { flex: 0 0 auto; width: 46px; height: 46px; opacity: 0.5; filter: grayscale(0.4); border-radius: 14px; background: var(--panel-soft); border: 3px solid var(--ink); display: flex; align-items: center; justify-content: center; }
+        .farm-queue-item img { width: 84%; height: 84%; object-fit: contain; }
+        .farm-queue-item:first-child { opacity: 0.8; filter: grayscale(0.1); }
+
         .tier-heading { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 2px 10px 2px; text-shadow: 0 2px 0 var(--ink); }
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
 
@@ -739,6 +748,10 @@
                 </button>
 
                 <div class="slot-grid" id="slotGrid"></div>
+                <div class="farm-queue-wrap" id="farmQueueWrap" style="display:none;">
+                    <p class="farm-queue-label" data-i18n="farm.queueLabel">Не поместились — ждут своей очереди</p>
+                    <div class="farm-queue" id="farmQueue"></div>
+                </div>
             </div>
         </div>
 
@@ -1125,6 +1138,7 @@
                 'farm.slotStatus': 'Слот {n} • {status}',
                 'farm.expeditionToast': 'Орёл в экспедиции — вернётся через {time}',
                 'farm.eggCookingToast': 'Яйцо ещё варится — {time}',
+                'farm.queueLabel': 'Не поместились — ждут своей очереди',
                 'eggs.heading': 'Яйца',
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
@@ -1248,6 +1262,7 @@
                 'farm.slotStatus': 'Slot {n} • {status}',
                 'farm.expeditionToast': 'Eagle is on expedition — back in {time}',
                 'farm.eggCookingToast': 'Egg is still cooking — {time}',
+                'farm.queueLabel': "Didn't fit — waiting in line",
                 'eggs.heading': 'Eggs',
                 'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
                 'eggs.openAll': 'Open all',
@@ -1417,6 +1432,7 @@
             mnstr: 0,
             gold: 0,             // добывается только экспедициями (см. sendExpedition/collectExpedition)
             farm: [],            // one slot per eagle: { id, nextEggAt, feedLevel, feedTaps }
+            farmQueue: [],       // орлы, не поместившиеся в открытые слоты — ждут своей очереди по порядку
             activeSlot: 0,       // which slot is shown on stage
             missions: [],        // забранные задания, источник истины — сервер
             slots: 3,
@@ -1652,10 +1668,38 @@
             return state.farm.filter(eggReady).length;
         }
 
-        // Adds a fresh, level-1 eagle to the farm, opening a new slot if every one is full.
+        // Сажает свежего орла в первый свободный открытый слот; если открытых
+        // слотов не осталось (usedSlots === state.slots), орёл встаёт в конец
+        // очереди — она не пропадает, а ждёт под сеткой слотов, пока игрок не
+        // купит новый слот или не освободит один слиянием (см. drainFarmQueue).
         function addFarmSlot(monsterId) {
-            if (usedSlots() >= state.slots) state.slots = Math.min(CONFIG.slots.max, state.slots + 1);
-            state.farm.push(newSlot(monsterId));
+            const slot = newSlot(monsterId);
+            if (usedSlots() < state.slots) {
+                state.farm.push(slot);
+            } else {
+                state.farmQueue.push(slot);
+            }
+        }
+
+        // Переносит орлов из очереди в открытые слоты, пока есть место —
+        // вызывается после любого действия, освобождающего слот (слияние,
+        // покупка нового слота).
+        function drainFarmQueue() {
+            let moved = false;
+            while (usedSlots() < state.slots && state.farmQueue.length) {
+                state.farm.push(state.farmQueue.shift());
+                moved = true;
+            }
+            return moved;
+        }
+
+        // Подстраховка для мест, где вся ферма перезаписывается ответом сервера
+        // (задание, колесо) — если после этого она вдруг больше, чем открытых
+        // слотов, лишнее уходит в очередь, а не пропадает молча за пределами сетки.
+        function normalizeFarmCapacity() {
+            if (state.farm.length > state.slots) {
+                state.farmQueue = state.farm.splice(state.slots).concat(state.farmQueue);
+            }
         }
 
         function tierById(id) {
@@ -1748,7 +1792,22 @@
             });
         }
 
+        function renderFarmQueueTray() {
+            const wrap = document.getElementById('farmQueueWrap');
+            const track = document.getElementById('farmQueue');
+            if (!wrap || !track) return;
+            const queue = state.farmQueue || [];
+            wrap.style.display = queue.length ? '' : 'none';
+            if (!queue.length) { track.innerHTML = ''; return; }
+            track.innerHTML = queue.map(slot => {
+                const monster = MONSTERS[slot.id];
+                if (!monster) return '';
+                return `<div class="farm-queue-item"><img src="${framePath(monster.sprite, 0)}" alt="${monster.name}"></div>`;
+            }).join('');
+        }
+
         function renderSlotGrid() {
+            renderFarmQueueTray();
             const grid = document.getElementById('slotGrid');
             const signature = [state.slots, state.activeSlot, state.farm.map(s => s.id).join(',')].join('|');
             if (signature === slotGridSignature) {
@@ -2084,10 +2143,6 @@
             renderEggBoard(); // разные уровни — перетаскивание отменяется
         }
 
-        function canHatch() {
-            return usedSlots() < state.slots || state.slots < CONFIG.slots.max;
-        }
-
         // Базовый разброс Meat, удвоенный за каждый уровень яйца выше первого.
         function eggMeatReward(level) {
             const cfg = CONFIG.eggs;
@@ -2173,17 +2228,11 @@
         }
 
         // Вскрывает яйцо по таблице уровня: джекпот / обычный орёл / Meat.
-        // Орла некуда селить — яйцо не трогаем, шанс не сгорает.
+        // Орёл, если слоты заняты, встаёт в очередь — шанс не сгорает.
         function openEgg(i) {
             const level = state.eggBoard[i];
             if (!level) return;
             const outcome = rollEggOutcome(level);
-            if (outcome.kind === 'eagle' && !canHatch()) {
-                toast('На ферме нет места — освободи слот');
-                haptic.notify('warning');
-                renderEggBoard();
-                return;
-            }
 
             state.eggBoard[i] = 0;
             drainEggQueue();
@@ -2210,13 +2259,11 @@
             let jackpotTotal = 0;
             let eagleCount = 0;
             let opened = 0;
-            let blocked = false;
 
             for (let i = 0; i < board.length; i++) {
                 const level = board[i];
                 if (!level) continue;
                 const outcome = rollEggOutcome(level);
-                if (outcome.kind === 'eagle' && !canHatch()) { blocked = true; continue; }
                 board[i] = 0;
                 opened++;
                 if (outcome.kind === 'jackpot') {
@@ -2230,8 +2277,7 @@
             }
 
             if (!opened) {
-                if (blocked) { toast('На ферме нет места — освободи слот'); haptic.notify('warning'); }
-                else toast('Нечего вскрывать');
+                toast('Нечего вскрывать');
                 renderEggBoard();
                 return;
             }
@@ -2355,6 +2401,7 @@
             state.farm.splice(keep, 1);
             state.farm.push(newSlot(nextMonster.id));
             state.activeSlot = state.farm.length - 1;
+            drainFarmQueue();
 
             toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
             haptic.notify('success');
@@ -2510,12 +2557,6 @@
             if (!segments.length) return;
             const index = pickFusionIndex(segments);
             const outcome = segments[index];
-
-            if (outcome.type === 'eagle' && !canHatch()) {
-                toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');
-                haptic.notify('warning');
-                return;
-            }
 
             if (useGram) state.coins -= cost; else state.mnstr -= cost;
             renderHeader();
@@ -2877,13 +2918,7 @@
         // Без бэкенда (статический хостинг) серию ведёт сам клиент.
         function claimDailyLocal(day) {
             const reward = dailyReward(day);
-            if (reward.monster) {
-                if (usedSlots() >= state.slots && state.slots >= CONFIG.slots.max) {
-                    toast('Все слоты заняты — освободи один');
-                    return;
-                }
-                addFarmSlot(reward.monster);
-            }
+            if (reward.monster) addFarmSlot(reward.monster);
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
 
@@ -2920,6 +2955,8 @@
                 state.totalEarned = data.total_earned;
                 state.farm = readFarm(data.monsters);
                 state.slots = data.slots || state.slots;
+                normalizeFarmCapacity();
+                drainFarmQueue();
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 applyDaily(data.daily);
                 finishDaily(data.reward, data.day);
@@ -3071,12 +3108,6 @@
             const seg = CONFIG.wheel.segments[index];
             const reward = { gram: Number(seg.gram) || 0, mnstr: Number(seg.mnstr) || 0, monster: seg.monster || null };
 
-            if (reward.monster && !canHatch()) {
-                toast('Приз — орёл, но на ферме нет места. Освободи слот и крути снова');
-                haptic.notify('warning');
-                return;
-            }
-
             if (reward.gram) earn(reward.gram);
             if (reward.mnstr) state.mnstr += reward.mnstr;
             if (reward.monster) addFarmSlot(reward.monster);
@@ -3119,6 +3150,8 @@
                 state.totalEarned = data.total_earned;
                 if (data.monsters) state.farm = readFarm(data.monsters);
                 if (data.slots) state.slots = data.slots;
+                normalizeFarmCapacity();
+                drainFarmQueue();
                 if (typeof data.ops === 'number') state.ops = data.ops;
 
                 const reward = data.reward;
@@ -3612,6 +3645,7 @@
 
             state.coins -= cost;
             state.slots += 1;
+            drainFarmQueue();
 
             haptic.notify('success');
             toast(`Слот ${state.slots} открыт`);
@@ -4135,6 +4169,13 @@
                     feed_taps: slot.feedTaps || 0,
                     expedition_until: slot.expeditionUntil || 0,
                 })),
+                farm_queue: state.farmQueue.map(slot => ({
+                    id: slot.id,
+                    next_egg_at: slot.nextEggAt,
+                    feed_level: slot.feedLevel || 1,
+                    feed_taps: slot.feedTaps || 0,
+                    expedition_until: slot.expeditionUntil || 0,
+                })),
                 active_slot: state.activeSlot,
                 missions: state.missions,
                 slots: state.slots,
@@ -4173,9 +4214,12 @@
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
+            state.farmQueue = readFarm(data.farm_queue);
             state.activeSlot = data.active_slot || 0;
             state.missions = data.missions || [];
             state.slots = data.slots || CONFIG.slots.start;
+            normalizeFarmCapacity();
+            drainFarmQueue();
             state.referrals = data.referrals || 0;
             state.referralsQualified = data.referrals_qualified || 0;
             state.invitedBy = data.invited_by || '';
@@ -4254,9 +4298,11 @@
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
+            state.farmQueue = readFarm(state.farmQueue);
             if (!(state.activeSlot >= 0 && state.activeSlot < state.farm.length)) state.activeSlot = 0;
-            // Never leave a farm holding more monsters than it has slots for.
-            state.slots = Math.min(CONFIG.slots.max, Math.max(state.slots, usedSlots()));
+            state.slots = Math.min(CONFIG.slots.max, state.slots);
+            normalizeFarmCapacity();
+            drainFarmQueue();
 
             state.eggBoard = normalizeEggBoard(state.eggBoard);
             if (typeof state.eggBoardUnlocked !== 'number') state.eggBoardUnlocked = 1;

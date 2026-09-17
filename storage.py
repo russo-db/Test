@@ -1,7 +1,7 @@
 """Хранилище фермы: MongoDB в проде, SQLite для локальной разработки.
 
 Оба бэкенда работают с одним и тем же словарём:
-    user_id, coins, total_earned, mnstr, gold, monsters, active_slot,
+    user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
     vip_tier, vip_expires_at, vip_last_meat_at
@@ -18,12 +18,12 @@ import sqlite3
 from typing import Optional
 
 FIELDS = (
-    "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters",
+    "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters", "farm_queue",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at",
 )
-JSON_FIELDS = ("monsters", "missions", "eggs_board", "eggs_queue")
+JSON_FIELDS = ("monsters", "farm_queue", "missions", "eggs_board", "eggs_queue")
 
 
 class SqliteStore:
@@ -50,6 +50,7 @@ class SqliteStore:
                 mnstr          REAL    DEFAULT 0.0,
                 gold           REAL    DEFAULT 0.0,
                 monsters       TEXT    DEFAULT '[]',
+                farm_queue     TEXT    DEFAULT '[]',
                 active_slot    INTEGER DEFAULT 0,
                 missions       TEXT    DEFAULT '[]',
                 slots          INTEGER DEFAULT 3,
@@ -120,6 +121,7 @@ class SqliteStore:
             ("eggs_board", "TEXT DEFAULT '[]'"),
             ("eggs_board_unlocked", "INTEGER DEFAULT 1"),
             ("eggs_queue", "TEXT DEFAULT '[]'"),
+            ("farm_queue", "TEXT DEFAULT '[]'"),
             ("wallet", "TEXT DEFAULT ''"),
             ("ops", "INTEGER DEFAULT 0"),
             ("vip_tier", "TEXT DEFAULT ''"),
