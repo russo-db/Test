@@ -2843,12 +2843,6 @@
             return Math.max(0, cfg.eagle_buy_limit - (state.merchantEaglesBought || 0));
         }
 
-        function setMerchantMeatAmount(amount) {
-            const input = document.getElementById('merchantMeatAmount');
-            if (input) input.value = Math.max(0, Math.min(merchantMeatMaxPerPurchase(), Math.floor(amount)));
-            updateMerchantMeatPreview();
-        }
-
         function updateMerchantMeatPreview() {
             const input = document.getElementById('merchantMeatAmount');
             const line = document.getElementById('merchantMeatCostLine');
@@ -2913,10 +2907,6 @@
                     <div class="pay-label">${t('merchant.meatAmountLabel')}</div>
                     <input class="pay-input" id="merchantMeatAmount" type="number" inputmode="decimal"
                            min="0" max="${maxPerPurchase}" step="1" value="${maxPerPurchase}" oninput="updateMerchantMeatPreview()">
-                    <div class="pay-chips">
-                        <button onclick="setMerchantMeatAmount(1)">1</button>
-                        <button onclick="setMerchantMeatAmount(${maxPerPurchase})">${t('withdraw.all')}</button>
-                    </div>
                     <div class="exchange-receive-line" id="merchantMeatCostLine">${t('merchant.meatCostLabel', { amount: fmtToken(maxPerPurchase / rate) })}</div>
                     <button class="btn-primary" style="margin-top:6px" onclick="buyMeatFromMerchant()">${t('merchant.buyMeatBtn')}</button>
                 ` : `<p class="market-section-empty">${t('merchant.meatLimitReached')}</p>`}
