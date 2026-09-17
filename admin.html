@@ -188,6 +188,10 @@
             <h2>Обзор</h2>
             <div class="card-grid" id="statsGrid"></div>
             <button id="refreshStats">Обновить</button>
+
+            <h2 style="margin-top:32px;">Купец</h2>
+            <div class="card-grid" id="merchantGrid"></div>
+            <button id="resetMerchantBtn">Обнулить купца</button>
         </div>
 
         <div class="page" id="page-players">
@@ -367,8 +371,35 @@ async function loadOverview() {
             </div>
         `).join('');
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    loadMerchant();
 }
 document.getElementById('refreshStats').onclick = loadOverview;
+
+/* ---------- купец ---------- */
+async function loadMerchant() {
+    try {
+        const st = await api('/api/merchant/state');
+        const grid = document.getElementById('merchantGrid');
+        grid.innerHTML = `
+            <div class="stat-card">
+                <div class="label">Meat куплено</div>
+                <div class="value">${fmtNum(st.meat_bought)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Орлов продано</div>
+                <div class="value">${fmtNum(st.eagles_sold)}</div>
+            </div>
+        `;
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('resetMerchantBtn').onclick = async () => {
+    if (!confirm('Обнулить лимиты купца (Meat куплено и орлов продано) до нуля?')) return;
+    try {
+        await api('/admin/api/merchant/reset', { method: 'POST' });
+        toast('Купец обнулён');
+        loadMerchant();
+    } catch (e) { toast(e.message, true); }
+};
 
 /* ---------- игроки ---------- */
 async function loadPlayers() {

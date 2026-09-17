@@ -324,6 +324,13 @@ class SqliteStore:
             return {"meat_bought": 0.0, "eagles_sold": 0}
         return {"meat_bought": float(row["meat_bought"] or 0), "eagles_sold": int(row["eagles_sold"] or 0)}
 
+    async def reset_merchant_state(self) -> dict:
+        conn = self._connect()
+        conn.execute("UPDATE merchant_state SET meat_bought = 0, eagles_sold = 0 WHERE id = 1")
+        conn.commit()
+        conn.close()
+        return {"meat_bought": 0.0, "eagles_sold": 0}
+
     async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
                                  max_per_purchase: float, rate: float) -> dict:
         """Общий (на всех игроков) лимит Meat — проверяем и списываем его в той же
@@ -833,6 +840,12 @@ class MongoStore:
     async def get_merchant_state(self) -> dict:
         doc = await self.merchant.find_one({"_id": "global"}) or {}
         return {"meat_bought": float(doc.get("meat_bought") or 0), "eagles_sold": int(doc.get("eagles_sold") or 0)}
+
+    async def reset_merchant_state(self) -> dict:
+        await self.merchant.update_one(
+            {"_id": "global"}, {"$set": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
+        )
+        return {"meat_bought": 0.0, "eagles_sold": 0}
 
     async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
                                  max_per_purchase: float, rate: float) -> dict:

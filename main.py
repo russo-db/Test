@@ -1300,6 +1300,11 @@ async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require
     return {"status": "success"}
 
 
+@app.post("/admin/api/merchant/reset")
+async def admin_reset_merchant(_: None = Depends(require_admin)):
+    return await store.reset_merchant_state()
+
+
 # --- TELEGRAM BOT LOGIC ---
 def display_name(user) -> str:
     """Имя для показа: @username, иначе имя и фамилия."""
