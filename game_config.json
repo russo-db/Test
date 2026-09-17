@@ -119,36 +119,29 @@
   "missions": [
     {
       "id": "ref1",
-      "gram": 0.1,
-      "mnstr": 100,
+      "gram": 0,
+      "mnstr": 10,
       "type": "referrals",
       "need": 1
     },
     {
       "id": "ref10",
-      "gram": 0.5,
-      "mnstr": 1000,
+      "gram": 0,
+      "mnstr": 100,
       "type": "referrals",
       "need": 10
     },
     {
       "id": "ref30",
-      "gram": 1.0,
-      "mnstr": 3000,
+      "gram": 0,
+      "mnstr": 300,
       "type": "referrals",
       "need": 30
     },
     {
-      "id": "ref50",
-      "gram": 3.0,
-      "mnstr": 6000,
-      "type": "referrals",
-      "need": 50
-    },
-    {
       "id": "ref100",
-      "gram": 10.0,
-      "mnstr": 10000,
+      "gram": 0,
+      "mnstr": 1000,
       "type": "referrals",
       "need": 100
     },

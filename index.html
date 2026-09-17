@@ -3217,7 +3217,7 @@
                 <div class="card-info">
                     <h3>${missionTitle(mission)}</h3>
                     <div class="mission-reward">
-                        <span class="roll-num"><b>${fmtGram(mission.gram)}</b><img src="assets/coin.png" alt=""></span>
+                        ${mission.gram ? `<span class="roll-num"><b>${fmtGram(mission.gram)}</b><img src="assets/coin.png" alt=""></span>` : ''}
                         ${mission.mnstr ? `<span class="roll-num token"><b>${mission.mnstr}</b><img src="assets/mnstr.png" alt=""></span>` : ''}
                     </div>
                     ${progress}
@@ -3511,10 +3511,10 @@
             animation.onfinish = () => particle.remove();
         }
 
-        function spawnBurst(count) {
+        function spawnBurst(count, isToken = false) {
             let spawned = 0;
             const timer = setInterval(() => {
-                spawnParticle();
+                spawnParticle(isToken);
                 if (++spawned >= count) clearInterval(timer);
             }, 30);
         }
@@ -3759,8 +3759,11 @@
                 if (typeof data.ops === 'number') state.ops = data.ops;
 
                 haptic.notify('success');
-                toast(`Награда получена: ${fmtGram(mission.gram)} GRAM`);
-                spawnBurst(12);
+                const rewardParts = [];
+                if (mission.gram) rewardParts.push(`${fmtGram(mission.gram)} GRAM`);
+                if (mission.mnstr) rewardParts.push(`${fmtToken(mission.mnstr)} Meat`);
+                toast(`Награда получена: ${rewardParts.join(' и ')}`);
+                spawnBurst(12, !mission.gram);
                 renderAll();
             } catch (error) {
                 toast('Сервер недоступен');
