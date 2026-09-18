@@ -104,6 +104,7 @@ class SqliteStore:
                 user_id  INTEGER,
                 address  TEXT,
                 amount   REAL,
+                payout   REAL    DEFAULT 0,
                 status   TEXT,
                 ts       INTEGER
             )
@@ -149,6 +150,11 @@ class SqliteStore:
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
+
+        wd_columns = {row["name"] for row in cur.execute("PRAGMA table_info(withdrawals)")}
+        if "payout" not in wd_columns:
+            cur.execute("ALTER TABLE withdrawals ADD COLUMN payout REAL DEFAULT 0")
+
         conn.commit()
         conn.close()
 
@@ -605,8 +611,11 @@ class SqliteStore:
         finally:
             conn.close()
 
-    async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
-        """Зачисляет пополнение. False — если эта транзакция уже была учтена."""
+    async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int,
+                              referrer_id: Optional[int] = None, referral_gram: float = 0.0) -> bool:
+        """Зачисляет пополнение и (если есть пригласивший) реферальный процент с
+        него — в той же транзакции, что и сама вставка хэша, чтобы дублирующий
+        скан транзакции не смог начислить бонус дважды."""
         conn = self._connect()
         cur = conn.cursor()
         try:
@@ -622,13 +631,20 @@ class SqliteStore:
                 "UPDATE users SET coins = coins + ?, ops = ops + 1 WHERE user_id = ?",
                 (gram, user_id),
             )
+            if referrer_id and referral_gram > 0:
+                cur.execute(
+                    "UPDATE users SET coins = coins + ?, ops = ops + 1 WHERE user_id = ?",
+                    (referral_gram, referrer_id),
+                )
             conn.commit()
             return True
         finally:
             conn.close()
 
-    async def request_withdraw(self, user_id: int, address: str, gram: float, ts: int) -> bool:
-        """Списывает GRAM и записывает заявку. False — если не хватило баланса."""
+    async def request_withdraw(self, user_id: int, address: str, gram: float,
+                                payout: float, ts: int) -> bool:
+        """Списывает GRAM и записывает заявку. payout — сколько TON реально
+        уйдёт игроку после комиссии за вывод. False — если не хватило баланса."""
         conn = self._connect()
         cur = conn.cursor()
         try:
@@ -641,8 +657,8 @@ class SqliteStore:
                 conn.rollback()
                 return False
             cur.execute(
-                "INSERT INTO withdrawals (user_id, address, amount, status, ts) VALUES (?, ?, ?, ?, ?)",
-                (user_id, address, gram, "pending", ts),
+                "INSERT INTO withdrawals (user_id, address, amount, payout, status, ts) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, address, gram, payout, "pending", ts),
             )
             conn.commit()
             return True
@@ -1116,8 +1132,11 @@ class MongoStore:
         await self.users.update_one({"_id": seller_id}, {"$set": {"monsters": farm, "slots": slots}})
         return "ok"
 
-    async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int) -> bool:
-        """Хэш транзакции — это _id, поэтому одно пополнение зачислится только раз."""
+    async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int,
+                              referrer_id: Optional[int] = None, referral_gram: float = 0.0) -> bool:
+        """Хэш транзакции — это _id, поэтому одно пополнение зачислится только раз.
+        Реферальный процент начисляется после — дубликат транзакции отсекается
+        ещё на insert_one, так что бонус тоже не задвоится."""
         from pymongo.errors import DuplicateKeyError
 
         try:
@@ -1127,10 +1146,16 @@ class MongoStore:
         except DuplicateKeyError:
             return False
         await self.users.update_one({"_id": user_id}, {"$inc": {"coins": gram, "ops": 1}})
+        if referrer_id and referral_gram > 0:
+            await self.users.update_one(
+                {"_id": referrer_id}, {"$inc": {"coins": referral_gram, "ops": 1}}
+            )
         return True
 
-    async def request_withdraw(self, user_id: int, address: str, gram: float, ts: int) -> bool:
-        """Условие coins >= gram не даст увести больше, чем есть на балансе."""
+    async def request_withdraw(self, user_id: int, address: str, gram: float,
+                                payout: float, ts: int) -> bool:
+        """Условие coins >= gram не даст увести больше, чем есть на балансе.
+        payout — сколько TON реально уйдёт игроку после комиссии за вывод."""
         result = await self.users.update_one(
             {"_id": user_id, "coins": {"$gte": gram}},
             {"$inc": {"coins": -gram, "ops": 1}},
@@ -1138,7 +1163,7 @@ class MongoStore:
         if result.modified_count == 0:
             return False
         await self.withdrawals.insert_one(
-            {"user_id": user_id, "address": address, "amount": gram,
+            {"user_id": user_id, "address": address, "amount": gram, "payout": payout,
              "status": "pending", "ts": ts}
         )
         return True

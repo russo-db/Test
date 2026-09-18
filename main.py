@@ -48,12 +48,14 @@ def apply_config(cfg: dict):
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
     global WHEEL, WHEEL_SEGMENTS, WHEEL_ENABLED, WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST
     global MISSIONS_ENABLED
-    global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
+    global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX, WITHDRAW_COMMISSION
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
+    global REFERRAL_SHARE
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
     QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
+    REFERRAL_SHARE = float(CONFIG["referral"].get("share", 0.05))
     MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
     MONSTER_TIER = {m["id"]: tier["id"] for tier in CONFIG["tiers"] for m in tier["monsters"]}
     TIER_INDEX = {tier["id"]: i for i, tier in enumerate(CONFIG["tiers"])}
@@ -85,6 +87,7 @@ def apply_config(cfg: dict):
     MIN_DEPOSIT = float(TON.get("min_deposit", 1))
     MIN_WITHDRAW = float(TON.get("min_withdraw", 1))
     MEMO_PREFIX = str(TON.get("memo_prefix", "MG"))
+    WITHDRAW_COMMISSION = float(TON.get("withdraw_commission", 0.10))
 
 
 apply_config(load_config())
@@ -459,6 +462,7 @@ def ton_info(user_id: int) -> dict:
         "rate": TON_RATE,
         "min_deposit": MIN_DEPOSIT,
         "min_withdraw": MIN_WITHDRAW,
+        "withdraw_commission": WITHDRAW_COMMISSION,
     }
 
 
@@ -538,13 +542,24 @@ async def _scan_deposits() -> int:
         if gram <= 0:
             continue
         await ensure_user(item["user_id"])
-        if await store.credit_deposit(item["hash"], item["user_id"], gram, item["ts"]):
+        row = await store.get(item["user_id"])
+        referrer_id = (row or {}).get("referred_by")
+        referral_gram = round(gram * REFERRAL_SHARE, 9) if referrer_id else 0.0
+        if await store.credit_deposit(
+            item["hash"], item["user_id"], gram, item["ts"], referrer_id, referral_gram,
+        ):
             credited += 1
             await tg_send(
                 item["user_id"],
                 f"✅ Пополнение зачислено: <b>{gram:g} GRAM</b> "
                 f"({item['ton']:g} TON).",
             )
+            if referrer_id and referral_gram > 0:
+                await tg_send(
+                    referrer_id,
+                    f"🤝 Реферальный бонус: <b>{referral_gram:g} GRAM</b> "
+                    f"— друг пополнил баланс.",
+                )
     return credited
 
 
@@ -1159,7 +1174,8 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
     if float(row.get("coins") or 0.0) < amount:
         raise HTTPException(status_code=400, detail="Недостаточно GRAM на балансе")
 
-    if not await store.request_withdraw(user_id, address, amount, int(time.time())):
+    payout = round(amount * (1 - WITHDRAW_COMMISSION) / TON_RATE, 9)
+    if not await store.request_withdraw(user_id, address, amount, payout, int(time.time())):
         raise HTTPException(status_code=400, detail="Недостаточно GRAM на балансе")
 
     await store.update(user_id, {"wallet": address})
@@ -1167,12 +1183,14 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
     await tg_send(
         ADMIN_CHAT_ID,
         f"💸 Заявка на вывод\n\nИгрок: <b>{name}</b> (<code>{user_id}</code>)\n"
-        f"Сумма: <b>{amount:g} GRAM</b> = {amount / TON_RATE:g} TON\n"
+        f"Сумма: <b>{amount:g} GRAM</b>\n"
+        f"К выплате (комиссия {WITHDRAW_COMMISSION * 100:g}%): <b>{payout:g} TON</b>\n"
         f"Адрес: <code>{address}</code>",
     )
     await tg_send(
         user_id,
         f"📨 Заявка на вывод <b>{amount:g} GRAM</b> принята.\n"
+        f"На кошелёк придёт ≈ <b>{payout:g} TON</b> (комиссия {WITHDRAW_COMMISSION * 100:g}%).\n"
         f"Выплата придёт на <code>{address}</code> после проверки.",
     )
 
@@ -1182,6 +1200,7 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
         "coins": float(fresh.get("coins") or 0.0),
         "ops": int(fresh.get("ops") or 0),
         "operations": await store.recent_operations(user_id),
+        "payout": payout,
     }
 
 

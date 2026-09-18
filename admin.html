@@ -233,7 +233,7 @@
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>ID</th><th>Игрок</th><th>Сумма GRAM</th><th>Адрес</th>
+                        <th>ID</th><th>Игрок</th><th>Сумма GRAM</th><th>Выплата TON</th><th>Адрес</th>
                         <th>Статус</th><th>Дата</th><th></th>
                     </tr></thead>
                     <tbody id="wdBody"></tbody>
@@ -652,6 +652,7 @@ async function loadWithdrawals() {
                 <td data-label="ID">${w.id}</td>
                 <td data-label="Игрок">${w.user_id}</td>
                 <td data-label="Сумма GRAM">${fmtNum(w.amount)}</td>
+                <td data-label="Выплата TON">${fmtNum(w.payout || w.amount)}</td>
                 <td data-label="Адрес" title="${w.address}">${w.address.slice(0, 14)}…</td>
                 <td data-label="Статус">${w.status}</td>
                 <td data-label="Дата">${new Date(w.ts * 1000).toLocaleString('ru-RU')}</td>
@@ -662,7 +663,7 @@ async function loadWithdrawals() {
                     ` : ''}
                 </td>
             </tr>
-        `).join('') || '<tr><td colspan="7" class="muted">Заявок нет</td></tr>';
+        `).join('') || '<tr><td colspan="8" class="muted">Заявок нет</td></tr>';
         document.querySelectorAll('[data-approve]').forEach(btn => {
             btn.onclick = () => actWithdrawal(btn.dataset.approve, 'approve');
         });

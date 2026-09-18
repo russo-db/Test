@@ -636,6 +636,7 @@
         .pay-copy .icon-md { flex: 0 0 auto; color: var(--gold); }
         .pay-memo span { font-size: 15px; font-weight: 900; color: var(--gold); letter-spacing: 0.5px; }
         .pay-warning { font-size: 12px; font-weight: 800; color: var(--accent-rose, #fb7185); margin-top: 10px; line-height: 1.4; }
+        .pay-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
         .pay-actions { margin-top: 16px; }
         .pay-actions .btn-primary, .pay-actions .btn-action { width: 100%; justify-content: center; }
         .pay-actions .btn-action { margin-top: 9px; }
@@ -1225,7 +1226,7 @@
                 'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
                 'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
                 'friends.rewardsHeading': 'Награды за друзей',
-                'friends.qualifyHint': 'Друг засчитывается, когда намайнит {mnstr} Meat',
+                'friends.qualifyHint': 'Получай {share}% с пополнений друга. Бонус за приглашение — когда он намайнит {mnstr} Meat',
                 'lang.heading': 'Язык интерфейса',
                 'sound.heading': 'Звук в игре', 'sound.effectsLabel': 'Звуковые эффекты',
                 'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
@@ -1288,6 +1289,7 @@
                 'withdraw.title': 'Вывод', 'withdraw.available': 'Доступно {amount} GRAM',
                 'withdraw.half': 'Половина', 'withdraw.all': 'Всё', 'withdraw.addressLabel': 'Адрес TON',
                 'withdraw.warning': 'Минимум {min} GRAM. Выплату отправляет владелец проекта после проверки заявки.',
+                'withdraw.feeHint': 'Комиссия {pct}% — на кошелёк придёт ≈ {payout} TON',
                 'withdraw.submit': 'Вывести', 'withdraw.telegramOnly': 'Вывод работает только в Telegram',
                 'withdraw.minToast': 'Минимум для вывода — {min} GRAM',
                 'withdraw.insufficientBalance': 'Недостаточно GRAM на балансе', 'withdraw.needAddress': 'Укажи адрес кошелька',
@@ -1377,7 +1379,7 @@
                 'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
                 'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
                 'friends.rewardsHeading': 'Referral rewards',
-                'friends.qualifyHint': 'A friend counts once they mine {mnstr} Meat',
+                'friends.qualifyHint': 'Earn {share}% of your friend’s deposits. Invite bonus unlocks once they mine {mnstr} Meat',
                 'lang.heading': 'Interface language',
                 'sound.heading': 'In-game sound', 'sound.effectsLabel': 'Sound effects',
                 'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
@@ -1440,6 +1442,7 @@
                 'withdraw.title': 'Withdraw', 'withdraw.available': '{amount} GRAM available',
                 'withdraw.half': 'Half', 'withdraw.all': 'All', 'withdraw.addressLabel': 'TON address',
                 'withdraw.warning': 'Minimum {min} GRAM. The project owner sends the payout after reviewing the request.',
+                'withdraw.feeHint': 'Fee {pct}% — your wallet gets ≈ {payout} TON',
                 'withdraw.submit': 'Withdraw', 'withdraw.telegramOnly': 'Withdrawals only work inside Telegram',
                 'withdraw.minToast': 'Minimum withdrawal — {min} GRAM',
                 'withdraw.insufficientBalance': 'Not enough GRAM on balance', 'withdraw.needAddress': 'Enter a wallet address',
@@ -4088,7 +4091,7 @@
 
         /* ---------- кошелёк TON ---------- */
 
-        let TON_CFG = { enabled: false, wallet: '', memo: '', rate: 1, min_deposit: 1, min_withdraw: 1 };
+        let TON_CFG = { enabled: false, wallet: '', memo: '', rate: 1, min_deposit: 1, min_withdraw: 1, withdraw_commission: 0.10 };
         let tonUI = null;          // TonConnectUI, если SDK загрузился
         let tonAddress = '';       // адрес подключённого кошелька
         let depositTimer = null;
@@ -4405,6 +4408,7 @@
                     <button onclick="setWithdraw(${state.coins / 2})">${t('withdraw.half')}</button>
                     <button onclick="setWithdraw(${state.coins})">${t('withdraw.all')}</button>
                 </div>
+                <p class="pay-hint" id="withdrawFeeHint"></p>
 
                 <div class="pay-label">${t('withdraw.addressLabel')}</div>
                 <input class="pay-input address" id="withdrawAddress" type="text"
@@ -4417,11 +4421,25 @@
                     <button class="btn-action" onclick="closeWithdraw()">${t('common.close')}</button>
                 </div>
             `;
+            document.getElementById('withdrawAmount').addEventListener('input', updateWithdrawFeeHint);
+            updateWithdrawFeeHint();
+        }
+
+        function updateWithdrawFeeHint() {
+            const hint = document.getElementById('withdrawFeeHint');
+            if (!hint) return;
+            const amount = Number(document.getElementById('withdrawAmount').value) || 0;
+            const payout = Math.max(0, amount * (1 - TON_CFG.withdraw_commission)) / TON_CFG.rate;
+            hint.textContent = t('withdraw.feeHint', {
+                pct: (TON_CFG.withdraw_commission * 100).toFixed(0),
+                payout: fmtGram(payout),
+            });
         }
 
         function setWithdraw(amount) {
             const input = document.getElementById('withdrawAmount');
             if (input) input.value = fmtGram(Math.max(0, amount));
+            updateWithdrawFeeHint();
         }
 
         async function submitWithdraw() {
@@ -4768,7 +4786,7 @@
                 cfg.slots.prices = DEFAULT_SLOT_PRICES;
             }
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
-            cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
+            cfg.referral = Object.assign({ bonus: 2500, share: 0.05 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
             cfg.missions_enabled = cfg.missions_enabled !== false;
             cfg.daily = Object.assign({ days: 10, mnstr_step: 1, special: DEFAULT_DAILY_SPECIAL }, cfg.daily);
@@ -4818,7 +4836,10 @@
 
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
-                t('friends.qualifyHint', { mnstr: CONFIG.referral.qualify_mnstr });
+                t('friends.qualifyHint', {
+                    mnstr: CONFIG.referral.qualify_mnstr,
+                    share: Math.round((CONFIG.referral.share || 0) * 100),
+                });
             document.getElementById('wheelOpenBtn').style.display =
                 (CONFIG.wheel.segments.length && CONFIG.wheel.enabled) ? '' : 'none';
 

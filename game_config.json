@@ -167,7 +167,7 @@
   "referral": {
     "qualify_mnstr": 100,
     "bonus": 0,
-    "share": 0.1
+    "share": 0.05
   },
   "daily": {
     "days": 10,
@@ -188,8 +188,9 @@
   "ton": {
     "rate": 1,
     "min_deposit": 1,
-    "min_withdraw": 1,
-    "memo_prefix": "MG"
+    "min_withdraw": 5,
+    "memo_prefix": "MG",
+    "withdraw_commission": 0.10
   },
   "wheel": {
     "enabled": true,
