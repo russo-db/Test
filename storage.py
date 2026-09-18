@@ -215,15 +215,6 @@ class SqliteStore:
         conn.commit()
         conn.close()
 
-    async def count_referrals(self, user_id: int, min_mnstr: float) -> int:
-        """Сколько приглашённых уже намайнили нужный минимум Meat."""
-        conn = self._connect()
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM users WHERE referred_by = ? AND mnstr >= ?",
-            (user_id, min_mnstr),
-        ).fetchone()
-        conn.close()
-        return int(row["n"])
 
     async def claim_mission(self, user_id: int, mission_id: str, gram: float, mnstr: float) -> bool:
         """Отмечает задание и начисляет награду. False — если уже было забрано."""
@@ -843,11 +834,6 @@ class MongoStore:
     async def increment(self, user_id: int, fields: dict):
         await self.users.update_one({"_id": user_id}, {"$inc": fields})
 
-    async def count_referrals(self, user_id: int, min_mnstr: float) -> int:
-        """Сколько приглашённых уже намайнили нужный минимум Meat."""
-        return await self.users.count_documents(
-            {"referred_by": user_id, "mnstr": {"$gte": min_mnstr}}
-        )
 
     async def claim_mission(self, user_id: int, mission_id: str, gram: float, mnstr: float) -> bool:
         """Одна атомарная операция: задание засчитывается только если его там ещё нет,

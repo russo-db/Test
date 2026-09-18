@@ -926,8 +926,6 @@
                     <div class="icon-lg" style="color: var(--accent-cyan);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
                 </div>
 
-                <div class="tier-heading"><span data-i18n="friends.rewardsHeading">Награды за друзей</span></div>
-                <div id="friendMissionList"></div>
             </div>
 
             <!-- Подвкладка: Язык -->
@@ -1253,8 +1251,7 @@
                 'wallet.credited': 'Зачислено', 'wallet.sent': 'Отправлено', 'wallet.processing': 'В обработке',
                 'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
                 'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
-                'friends.rewardsHeading': 'Награды за друзей',
-                'friends.qualifyHint': 'Получай {share}% с пополнений друга. Бонус за приглашение — когда он намайнит {mnstr} Meat',
+                'friends.qualifyHint': 'Получай {share}% GRAM с каждого пополнения приглашённого друга',
                 'lang.heading': 'Язык интерфейса',
                 'sound.heading': 'Звук в игре', 'sound.effectsLabel': 'Звуковые эффекты',
                 'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
@@ -1304,10 +1301,7 @@
                 'daily.claim': 'Забрать', 'daily.comeTomorrow': 'Приходи завтра',
                 'daily.tomorrowPrefix': 'завтра: ', 'daily.open': 'Открыть',
                 'daily.cardStreak': 'День {day} из {days} • серия {count} {word}',
-                'missions.claim': 'Забрать', 'missions.done': 'Готово', 'missions.notReady': 'Не готово',
-                'missions.friendsWord': 'друзей',
-                'missions.inviteOne': 'Пригласить друга, который заработает {q} Meat',
-                'missions.inviteMany': 'Пригласить {need} {word}, которые заработают {q} Meat',
+                'missions.claim': 'Забрать', 'missions.done': 'Готово',
                 'deposit.title': 'Пополнение', 'deposit.amountLabel': 'Сумма, GRAM',
                 'deposit.addressLabel': 'Адрес проекта', 'deposit.addressCopied': 'Адрес скопирован',
                 'deposit.memoLabel': 'Комментарий к переводу (мемо)', 'deposit.memoCopied': 'Мемо скопировано',
@@ -1407,8 +1401,7 @@
                 'wallet.credited': 'Credited', 'wallet.sent': 'Sent', 'wallet.processing': 'Processing',
                 'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
                 'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
-                'friends.rewardsHeading': 'Referral rewards',
-                'friends.qualifyHint': 'Earn {share}% of your friend’s deposits. Invite bonus unlocks once they mine {mnstr} Meat',
+                'friends.qualifyHint': 'Earn {share}% GRAM from every deposit your invited friend makes',
                 'lang.heading': 'Interface language',
                 'sound.heading': 'In-game sound', 'sound.effectsLabel': 'Sound effects',
                 'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
@@ -1458,10 +1451,7 @@
                 'daily.claim': 'Claim', 'daily.comeTomorrow': 'Come back tomorrow',
                 'daily.tomorrowPrefix': 'tomorrow: ', 'daily.open': 'Open',
                 'daily.cardStreak': 'Day {day} of {days} • streak {count} {word}',
-                'missions.claim': 'Claim', 'missions.done': 'Done', 'missions.notReady': 'Not ready',
-                'missions.friendsWord': 'friends',
-                'missions.inviteOne': 'Invite a friend who earns {q} Meat',
-                'missions.inviteMany': 'Invite {need} {word} who earn {q} Meat',
+                'missions.claim': 'Claim', 'missions.done': 'Done',
                 'deposit.title': 'Deposit', 'deposit.amountLabel': 'Amount, GRAM',
                 'deposit.addressLabel': 'Project address', 'deposit.addressCopied': 'Address copied',
                 'deposit.memoLabel': 'Transfer comment (memo)', 'deposit.memoCopied': 'Memo copied',
@@ -1542,7 +1532,6 @@
             missions: [],        // забранные задания, источник истины — сервер
             slots: 3,
             referrals: 0,
-            referralsQualified: 0,
             invitedBy: '',
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
@@ -3487,43 +3476,22 @@
             }
         }
 
-        function missionReady(mission) {
-            if (mission.type === 'referrals') return state.referralsQualified >= mission.need;
-            return true;   // подписку на канал проверяет сервер
-        }
-
-        function missionTitle(mission) {
-            if (mission.type !== 'referrals') return mission.title;
-            const need = mission.need;
-            const q = CONFIG.referral.qualify_mnstr;
-            return need === 1
-                ? t('missions.inviteOne', { q })
-                : t('missions.inviteMany', { need, word: LANG === 'en' ? 'friends' : plural(need, 'друга', 'друзей', 'друзей'), q });
-        }
-
         function renderMissionCard(mission, list) {
             const done = state.missions.includes(mission.id);
-            const ready = missionReady(mission);
             const card = document.createElement('div');
             card.className = 'card glass-panel mission-card';
-
-            const progress = mission.type === 'referrals'
-                ? `<div class="mission-progress">${Math.min(state.referralsQualified, mission.need)} / ${mission.need} ${t('missions.friendsWord')}</div>`
-                : '';
 
             let label = t('missions.claim');
             let style = 'btn-buy';
             if (done) { label = t('missions.done'); style = ''; }
-            else if (!ready) { label = t('missions.notReady'); style = 'btn-locked'; }
 
             card.innerHTML = `
                 <div class="card-info">
-                    <h3>${missionTitle(mission)}</h3>
+                    <h3>${mission.title}</h3>
                     <div class="mission-reward">
                         ${mission.gram ? `<span class="roll-num"><b>${fmtGram(mission.gram)}</b><img src="assets/coin.png" alt=""></span>` : ''}
                         ${mission.mnstr ? `<span class="roll-num token"><b>${mission.mnstr}</b><img src="assets/mnstr.png" alt=""></span>` : ''}
                     </div>
-                    ${progress}
                 </div>
                 <button class="btn-action ${style}" ${done ? 'disabled' : ''} data-mission="${mission.id}">${label}</button>
             `;
@@ -3542,11 +3510,8 @@
         function renderMissions() {
             const list = document.getElementById('missionList');
             const missionsOn = CONFIG.missions_enabled !== false;
-            fillMissionList(list, missionsOn ? CONFIG.missions.filter(m => m.type !== 'referrals') : []);
+            fillMissionList(list, missionsOn ? CONFIG.missions : []);
             renderDailyCard(list);   // ежедневный вход — первой карточкой, задания можно выключить отдельно
-            fillMissionList(
-                document.getElementById('friendMissionList'),
-                missionsOn ? CONFIG.missions.filter(m => m.type === 'referrals') : []);
         }
 
         // P2P-рынок: игроки торгуют друг с другом прокачанными (макс. уровень)
@@ -4615,7 +4580,6 @@
             normalizeFarmCapacity();
             drainFarmQueue();
             state.referrals = data.referrals || 0;
-            state.referralsQualified = data.referrals_qualified || 0;
             state.invitedBy = data.invited_by || '';
             state.wallet = data.wallet || '';
             state.operations = data.operations || [];
@@ -4858,7 +4822,7 @@
                 cfg.slots.prices = DEFAULT_SLOT_PRICES;
             }
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
-            cfg.referral = Object.assign({ bonus: 2500, share: 0.05 }, cfg.referral);
+            cfg.referral = Object.assign({ share: 0.05 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
             cfg.missions_enabled = cfg.missions_enabled !== false;
             cfg.daily = Object.assign({ days: 10, mnstr_step: 1, special: DEFAULT_DAILY_SPECIAL }, cfg.daily);
@@ -4910,10 +4874,7 @@
 
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
-                t('friends.qualifyHint', {
-                    mnstr: CONFIG.referral.qualify_mnstr,
-                    share: Math.round((CONFIG.referral.share || 0) * 100),
-                });
+                t('friends.qualifyHint', { share: Math.round((CONFIG.referral.share || 0) * 100) });
             document.getElementById('wheelOpenBtn').style.display =
                 (CONFIG.wheel.segments.length && CONFIG.wheel.enabled) ? '' : 'none';
 

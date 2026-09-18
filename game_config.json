@@ -124,34 +124,6 @@
   "missions_enabled": true,
   "missions": [
     {
-      "id": "ref1",
-      "gram": 0,
-      "mnstr": 10,
-      "type": "referrals",
-      "need": 1
-    },
-    {
-      "id": "ref10",
-      "gram": 0,
-      "mnstr": 100,
-      "type": "referrals",
-      "need": 10
-    },
-    {
-      "id": "ref30",
-      "gram": 0,
-      "mnstr": 300,
-      "type": "referrals",
-      "need": 30
-    },
-    {
-      "id": "ref100",
-      "gram": 0,
-      "mnstr": 1000,
-      "type": "referrals",
-      "need": 100
-    },
-    {
       "id": "channel",
       "title": "Подписаться на канал",
       "gram": 0,
@@ -170,8 +142,6 @@
     }
   ],
   "referral": {
-    "qualify_mnstr": 100,
-    "bonus": 0,
     "share": 0.05
   },
   "daily": {

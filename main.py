@@ -43,7 +43,7 @@ def load_config() -> dict:
 def apply_config(cfg: dict):
     """Пересчитывает все производные от game_config.json глобальные переменные.
     Позволяет админ-панели менять баланс без перезапуска сервера."""
-    global CONFIG, MISSIONS, QUALIFY_MNSTR, MONSTERS, STARTER_MONSTER
+    global CONFIG, MISSIONS, MONSTERS, STARTER_MONSTER
     global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
     global WHEEL, WHEEL_SEGMENTS, WHEEL_ENABLED, WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST
@@ -55,7 +55,6 @@ def apply_config(cfg: dict):
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
-    QUALIFY_MNSTR = CONFIG["referral"].get("qualify_mnstr", 10)
     REFERRAL_SHARE = float(CONFIG["referral"].get("share", 0.05))
     MONSTERS = {m["id"]: m for tier in CONFIG["tiers"] for m in tier["monsters"]}
     MONSTER_TIER = {m["id"]: tier["id"] for tier in CONFIG["tiers"] for m in tier["monsters"]}
@@ -177,11 +176,7 @@ async def attach_referrer(user_id: int, name: str, start_param: str) -> bool:
         return False
 
     await ensure_user(referrer)
-    bonus = CONFIG["referral"].get("bonus", 0)
-    fields = {"referrals": 1}
-    if bonus:
-        fields.update({"coins": bonus, "total_earned": bonus})
-    await store.increment(referrer, fields)
+    await store.increment(referrer, {"referrals": 1})
     await notify_referrer(referrer, name)
     return True
 
@@ -211,10 +206,11 @@ async def tg_send(chat_id, text: str):
 
 async def notify_referrer(referrer: int, friend_name: str):
     """Сообщает пригласившему, что друг пришёл."""
+    pct = round(REFERRAL_SHARE * 100)
     await tg_send(
         referrer,
         f"🎉 К тебе присоединился <b>{friend_name}</b>!\n\n"
-        f"Друг засчитается в награды, когда намайнит {QUALIFY_MNSTR} Meat.",
+        f"Теперь ты будешь получать {pct}% GRAM с каждого его пополнения.",
     )
 
 
@@ -759,7 +755,6 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "missions": row.get("missions") or [],
         "slots": int(row.get("slots") or START_SLOTS),
         "referrals": int(row.get("referrals") or 0),
-        "referrals_qualified": await store.count_referrals(user_id, QUALIFY_MNSTR),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
@@ -847,14 +842,7 @@ async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[st
     if request.mission_id in (row.get("missions") or []):
         raise HTTPException(status_code=409, detail="Награда уже получена")
 
-    if mission["type"] == "referrals":
-        have = await store.count_referrals(user_id, QUALIFY_MNSTR)
-        if have < mission["need"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Засчитано друзей: {have} из {mission['need']}",
-            )
-    elif mission["type"] == "channel":
+    if mission["type"] == "channel":
         if not await channel_subscribed(user_id, mission["chat"]):
             raise HTTPException(status_code=400, detail="Подписка на канал не найдена")
 
@@ -1458,11 +1446,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_new and referrer:
         await ensure_user(referrer)
-        bonus = CONFIG["referral"].get("bonus", 0)
-        fields = {"referrals": 1}
-        if bonus:
-            fields.update({"coins": bonus, "total_earned": bonus})
-        await store.increment(referrer, fields)
+        await store.increment(referrer, {"referrals": 1})
         await notify_referrer(referrer, name)
 
     row = await store.get(user_id)
@@ -1476,12 +1460,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif invited_by:
         text = (
             f"🤝 <b>{invited_by}</b> позвал тебя в <b>SkyLords GRAMM</b>!\n\n"
-            f"Теперь ты в его команде: как только намайнишь {QUALIFY_MNSTR} Meat, "
-            "друг получит за тебя награду.\n\n"
+            "Теперь друг будет получать процент GRAM с твоих пополнений.\n\n"
             f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
             "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
-            "👥 Зови своих друзей — за них тоже платят.\n\n"
+            f"👥 Зови своих друзей — получай {round(REFERRAL_SHARE * 100)}% GRAM с их пополнений.\n\n"
             "Ферма ждёт 👇"
         )
     else:
@@ -1490,7 +1473,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
             "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
-            "👥 Зови друзей — за каждого дают награду.\n\n"
+            f"👥 Зови друзей — получай {round(REFERRAL_SHARE * 100)}% GRAM с их пополнений.\n\n"
             "Ферма ждёт 👇"
         )
 
