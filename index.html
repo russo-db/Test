@@ -1245,6 +1245,7 @@
                 'egg.title': 'Яйцо {level} уровня', 'egg.onlyOneOutcome': 'Выпадет только один из вариантов',
                 'egg.jackpot': 'Джекпот', 'egg.commonEagle': 'Обычный орёл',
                 'egg.open': 'Вскрыть яйцо', 'egg.selectForUpgrade': 'Выбрать для улучшения',
+                'egg.maxLevel': 'Максимальный уровень яйца — {max}',
                 'fusion.title': 'Улучшение орлов', 'fusion.attemptFor': 'Попытка за', 'fusion.upgradeWord': 'Улучшение',
                 'slot.expedition': 'Экспедиция', 'slot.ready': 'Готово!',
                 'slot.expeditionMining': 'Орёл добывает золото — принесёт {amount} золота',
@@ -1398,6 +1399,7 @@
                 'egg.title': 'Level {level} egg', 'egg.onlyOneOutcome': 'Only one outcome will drop',
                 'egg.jackpot': 'Jackpot', 'egg.commonEagle': 'Common eagle',
                 'egg.open': 'Open egg', 'egg.selectForUpgrade': 'Select for upgrade',
+                'egg.maxLevel': 'Egg is already at max level ({max})',
                 'fusion.title': 'Upgrade eagles', 'fusion.attemptFor': 'Attempt for', 'fusion.upgradeWord': 'Upgrade',
                 'slot.expedition': 'Expedition', 'slot.ready': 'Ready!',
                 'slot.expeditionMining': 'Eagle is mining gold — will bring {amount} gold',
@@ -2086,7 +2088,11 @@
                     return;
                 }
                 if (board[i] === board[from]) {
-                    mergeEggsAt(from, i);
+                    if (!mergeEggsAt(from, i)) {
+                        toast(t('egg.maxLevel', { max: eggMaxLevel() }));
+                        renderEggBoard();
+                        return;
+                    }
                     renderEggBoard();
                     saveNow();
                     return;
@@ -2105,10 +2111,14 @@
             renderEggBoard();
         }
 
+        // Возвращает false и ничего не делает, если целевое яйцо уже максимального
+        // уровня — иначе слияние двух одинаковых яиц дало бы уровень выше eggMaxLevel().
         function mergeEggsAt(from, into) {
+            if (state.eggBoard[into] >= eggMaxLevel()) return false;
             state.eggBoard[from] = 0;
             state.eggBoard[into] += 1;
             drainEggQueue();
+            return true;
         }
 
         /* ---------- перетаскивание яиц (слияние наведением одного на другое) ---------- */
@@ -2171,7 +2181,8 @@
             const cellEl = document.querySelector(`.egg-cell[data-i="${targetIndex}"]`);
             if (!cellEl) return;
             const targetLevel = state.eggBoard[targetIndex];
-            cellEl.classList.add(!targetLevel || targetLevel === eggDrag.level ? 'drop-ok' : 'drop-bad');
+            const sameLevelMergeable = targetLevel === eggDrag.level && targetLevel < eggMaxLevel();
+            cellEl.classList.add(!targetLevel || sameLevelMergeable ? 'drop-ok' : 'drop-bad');
         }
 
         function eggPointerUp(e) {
@@ -2211,7 +2222,11 @@
                 return;
             }
             if (board[targetIndex] === level) {
-                mergeEggsAt(from, targetIndex);
+                if (!mergeEggsAt(from, targetIndex)) {
+                    toast(t('egg.maxLevel', { max: eggMaxLevel() }));
+                    renderEggBoard();
+                    return;
+                }
                 haptic.notify('success');
                 toast(`Яйца слиты — новый уровень ${board[targetIndex]}!`);
                 renderEggBoard();

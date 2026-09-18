@@ -50,7 +50,7 @@ def apply_config(cfg: dict):
     global MISSIONS_ENABLED
     global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX, WITHDRAW_COMMISSION
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
-    global REFERRAL_SHARE
+    global REFERRAL_SHARE, MAX_EGG_LEVEL
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -60,6 +60,7 @@ def apply_config(cfg: dict):
     MONSTER_TIER = {m["id"]: tier["id"] for tier in CONFIG["tiers"] for m in tier["monsters"]}
     TIER_INDEX = {tier["id"]: i for i, tier in enumerate(CONFIG["tiers"])}
     STARTER_MONSTER = CONFIG["tiers"][0]["monsters"][0]["id"]
+    MAX_EGG_LEVEL = len(CONFIG["tiers"])  # уровень яйца = редкость орла (1..N тиров, сейчас 6)
     START_SLOTS = CONFIG["slots"]["start"]
     MAX_SLOTS = CONFIG["slots"]["max"]
     FUSION_CFG = CONFIG.get("fusion") or {}
@@ -279,8 +280,10 @@ def normalize_eggs_board(raw) -> List[int]:
     """Доска — EGG_BOARD_SIZE ячеек (4×4). Приводит любые старые сохранения
     (доску 3×3 или 5×5) к текущему размеру. Если старая доска была больше и
     яйца лежали за пределами новой сетки, переносим их в свободные ячейки
-    внутри неё вместо того, чтобы просто их терять."""
-    source = [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in raw] if isinstance(raw, list) else []
+    внутри неё вместо того, чтобы просто их терять. Уровень яйца сверху
+    ограничен MAX_EGG_LEVEL — иначе подделанный /api/save мог бы протащить
+    яйцо выше любого тира и вскрыть его на нереальную награду."""
+    source = [min(MAX_EGG_LEVEL, max(0, int(v) if isinstance(v, (int, float)) else 0)) for v in raw] if isinstance(raw, list) else []
     board = source[:EGG_BOARD_SIZE]
     board += [0] * (EGG_BOARD_SIZE - len(board))
     for value in source[EGG_BOARD_SIZE:]:
@@ -296,8 +299,9 @@ def normalize_eggs_board(raw) -> List[int]:
 
 def normalize_eggs_queue(raw) -> List[int]:
     """Очередь яиц, не поместившихся на доску, — список уровней по порядку
-    (первое положенное — первое, что займёт освободившуюся ячейку)."""
-    source = [max(0, int(v) if isinstance(v, (int, float)) else 0) for v in raw] if isinstance(raw, list) else []
+    (первое положенное — первое, что займёт освободившуюся ячейку). Уровень
+    так же ограничен MAX_EGG_LEVEL, см. normalize_eggs_board."""
+    source = [min(MAX_EGG_LEVEL, max(0, int(v) if isinstance(v, (int, float)) else 0)) for v in raw] if isinstance(raw, list) else []
     return [v for v in source if v][:EGG_QUEUE_MAX]
 
 
