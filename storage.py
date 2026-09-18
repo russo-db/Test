@@ -1259,14 +1259,16 @@ def _mask_uri(uri: str) -> str:
 
 
 def make_store(client=None):
-    """MongoDB, если задан MONGODB_URI, иначе файловый SQLite."""
+    """MongoDB — единственный бэкенд. MONGODB_URI (или MONGO_URL) обязателен,
+    чтобы данные никогда молча не уезжали в локальный (эфемерный на хостинге)
+    SQLite-файл при неверно настроенном окружении."""
     uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URL")
-    if uri or client is not None:
-        db_name = os.getenv("MONGODB_DB", "monstergram")
-        print(f"[storage] backend = MongoDB, db = {db_name!r}, uri = {_mask_uri(uri) if uri else '(client passed in)'}")
-        return MongoStore(uri, db_name, client=client)
+    if not uri and client is None:
+        raise RuntimeError(
+            "MONGODB_URI (или MONGO_URL) не задан. Хранилище — только MongoDB, "
+            "локального SQLite-фолбэка больше нет."
+        )
 
-    base = os.path.dirname(os.path.abspath(__file__))
-    path = os.getenv("DB_PATH") or os.path.join(base, "monster_database.db")
-    print(f"[storage] backend = SQLite, path = {path!r} (MONGODB_URI/MONGO_URL не заданы)")
-    return SqliteStore(path)
+    db_name = os.getenv("MONGODB_DB", "monstergram")
+    print(f"[storage] backend = MongoDB, db = {db_name!r}, uri = {_mask_uri(uri) if uri else '(client passed in)'}")
+    return MongoStore(uri, db_name, client=client)
