@@ -377,10 +377,17 @@
         .nav-icon-emoji { width: auto; height: auto; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 
         /* ---------- Boot ---------- */
-        #boot { position: fixed; inset: 0; z-index: 800; background: radial-gradient(120% 80% at 50% 0%, #3b2280 0%, var(--bg-base) 45%, var(--bg-deep) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-        #boot .spinner { width: 46px; height: 46px; border-radius: 50%; border: 5px solid var(--ink); border-top-color: var(--accent-slime); animation: spin 0.9s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #boot p { color: var(--text-muted); font-weight: 800; font-size: 14px; text-align: center; padding: 0 30px; }
+        #boot {
+            position: fixed; inset: 0; z-index: 800;
+            background: url('assets/loading-screen.jpg') center/cover no-repeat;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+            padding: 0 30px calc(64px + env(safe-area-inset-bottom, 0px));
+        }
+        #boot p {
+            color: #fff; font-weight: 800; font-size: 14px; text-align: center;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8); background: rgba(0,0,0,0.45);
+            border-radius: 10px; padding: 10px 16px;
+        }
 
         /* ---------- Maintenance ---------- */
         #maintenanceScreen {
@@ -428,7 +435,6 @@
                 radial-gradient(ellipse 120% 60% at 50% 6%, rgba(241,237,226,0.16) 0%, transparent 62%),
                 linear-gradient(180deg, #4a5464 0%, #39414e 38%, #262c36 74%, #171b22 100%);
         }
-        #boot { background: linear-gradient(180deg, #4a5464, #171b22); }
         .ambient-orb { opacity: 0.22; }
         .orb-1 { background: #f7b500; } .orb-2 { background: #38a8f0; } .orb-3 { background: rgba(74,222,128,0.5); }
 
@@ -1059,10 +1065,7 @@
 
     <div id="toast"></div>
 
-    <div id="boot">
-        <div class="spinner"></div>
-        <p>SkyLords GRAMM загружается…</p>
-    </div>
+    <div id="boot"></div>
 
     <div id="maintenanceScreen">
         <div class="maintenance-body">
