@@ -1548,7 +1548,7 @@
             dailyLast: 0,        // номер суток последнего забора
             dailyFirstLap: true, // первый круг ежедневных наград ещё не пройден
             eggBoard: Array(16).fill(0),   // 4×4, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
-            eggBoardUnlocked: 1,           // сколько ячеек поля открыто (1..16)
+            eggBoardUnlocked: 2,           // сколько ячеек поля открыто (2..16, первые 2 бесплатны)
             eggQueue: [],                  // яйца, не поместившиеся на доску, ждут своей очереди по порядку
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
@@ -4623,7 +4623,7 @@
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
             state.eggBoard = normalizeEggBoard(data.eggs_board);
-            state.eggBoardUnlocked = Math.max(1, Math.min(16, Number(data.eggs_board_unlocked) || 1));
+            state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);
             drainEggQueue();
             botUsername = data.bot_username || botUsername;
@@ -4702,7 +4702,7 @@
             drainFarmQueue();
 
             state.eggBoard = normalizeEggBoard(state.eggBoard);
-            if (typeof state.eggBoardUnlocked !== 'number') state.eggBoardUnlocked = 1;
+            state.eggBoardUnlocked = Math.max(2, Number(state.eggBoardUnlocked) || 2);
             state.eggQueue = normalizeEggQueue(state.eggQueue);
             drainEggQueue();
             return 0;

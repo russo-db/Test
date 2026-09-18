@@ -424,7 +424,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "daily_last": 0,
             "daily_cycles": 0,
             "eggs_board": [0] * EGG_BOARD_SIZE,
-            "eggs_board_unlocked": 1,
+            "eggs_board_unlocked": 2,
             "eggs_queue": [],
             "wallet": "",
             "ops": 0,
@@ -593,7 +593,7 @@ class FarmState(BaseModel):
     missions: list = []
     slots: int = START_SLOTS
     eggs_board: List[int] = []
-    eggs_board_unlocked: int = 1
+    eggs_board_unlocked: int = 2
     eggs_queue: List[int] = []
     ops: int = -1              # версия баланса, полученная при последней загрузке
     vip_tier: str = ""
@@ -763,7 +763,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
-        "eggs_board_unlocked": max(1, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 1))),
+        "eggs_board_unlocked": max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2))),
         "eggs_queue": normalize_eggs_queue(row.get("eggs_queue")),
         "wallet": row.get("wallet") or "",
         "ops": int(row.get("ops") or 0),
@@ -792,7 +792,7 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
         return {"status": "stale", "ops": server_ops}
 
     eggs_board = normalize_eggs_board(state.eggs_board)
-    eggs_board_unlocked = max(1, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 1)))
+    eggs_board_unlocked = max(2, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 2)))
     eggs_queue = normalize_eggs_queue(state.eggs_queue)
 
     await store.update(
@@ -1346,7 +1346,7 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
         board = normalize_eggs_board(fields["eggs_board"])
         fields["eggs_board"] = [min(max_level, v) for v in board]
     if "eggs_board_unlocked" in fields:
-        fields["eggs_board_unlocked"] = max(1, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
+        fields["eggs_board_unlocked"] = max(2, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
 
     await store.update(user_id, fields)
     fresh = await store.get(user_id)
