@@ -322,72 +322,47 @@
         .egg-cell:active { transform: scale(0.94); box-shadow: none; }
         .egg-cell.selected { border-color: var(--gold); box-shadow: var(--glow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.14); transform: translateY(-3px) scale(1.04); }
         .egg-cell.locked { flex-direction: column; gap: 4px; background: rgba(5, 3, 16, 0.4); border-color: rgba(165, 160, 207, 0.16); box-shadow: none; }
-        .egg-shape { position: relative; width: 76%; height: 84%; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.25); display: flex; align-items: center; justify-content: center; }
-        .egg-modal-badge { position: relative; width: 78px; height: 88px; margin: 0 auto 14px; border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%; box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.25); display: flex; align-items: center; justify-content: center; }
-        .egg-art-frame { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
-        .egg-art { width: 100%; height: 100%; display: block; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35)); }
+        .egg-shape { position: relative; width: 82%; height: 90%; display: flex; align-items: center; justify-content: center; }
+        .egg-modal-badge { position: relative; width: 88px; height: 96px; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; }
+        .egg-art-frame { position: relative; width: 100%; height: 100%; }
+        .egg-art { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)); }
         .egg-level-badge {
-            position: absolute; bottom: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 4px;
+            position: absolute; bottom: 2px; right: 2px; min-width: 18px; height: 18px; padding: 0 4px;
             border-radius: 9px; background: rgba(5, 3, 16, 0.78); border: 1px solid rgba(255, 255, 255, 0.35);
             font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 10px; font-weight: 800; color: #fff;
             display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
             z-index: 2;
         }
-        .egg-modal-badge .egg-level-badge { min-width: 22px; height: 22px; font-size: 12px; bottom: -2px; right: -2px; }
+        .egg-modal-badge .egg-level-badge { min-width: 22px; height: 22px; font-size: 12px; bottom: 4px; right: 4px; }
         .egg-auto { width: 100%; justify-content: center; margin-bottom: 4px; }
         .egg-cell.hatch-ready { animation: hatchGlow 1.1s ease-in-out infinite; }
-        .egg-cell.hatch-ready .egg-shape { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), var(--glow-gold); }
+        .egg-cell.hatch-ready .egg-art { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(var(--glow-gold)); }
         @keyframes hatchGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
         .nest-lock { width: 30%; height: 30%; color: rgba(165, 160, 207, 0.4); }
         .nest-cost { font-size: 10px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
         .nest-cost img { width: 11px; height: 11px; object-fit: contain; }
 
-        /* ---------- Яйца: кастомный вид по уровню/грейду (иллюстрация — в eggArt(), JS) ---------- */
-
-        /* 1 — Обычное: холодный платиновый металлик */
-        .egg-tier-1 { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.5), 0 4px 10px rgba(0, 0, 0, 0.3); }
+        /* ---------- Яйца: свечение по грейду поверх готовой иллюстрации (см. eggArt() в JS) ---------- */
 
         /* 2 — Необычное: мягкое изумрудное неоновое свечение */
-        .egg-tier-2 { animation: eggGlowEmerald 2.4s ease-in-out infinite; }
+        .egg-tier-2 .egg-art { animation: eggGlowEmerald 2.4s ease-in-out infinite; }
         @keyframes eggGlowEmerald {
-            0%, 100% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 14px rgba(16, 185, 129, 0.5), 0 0 26px rgba(16, 185, 129, 0.22); }
-            50% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 22px rgba(16, 185, 129, 0.85), 0 0 42px rgba(16, 185, 129, 0.4); }
-        }
-
-        /* 3 — Редкое: глубокий сапфир + бегущий кристальный блик */
-        .egg-tier-3 { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 16px rgba(14, 165, 233, 0.5); }
-        .egg-tier-3 .egg-art-frame::before {
-            content: ''; position: absolute; top: -60%; left: -40%; width: 35%; height: 220%;
-            background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.85), transparent);
-            transform: rotate(20deg);
-            animation: eggShineSweep 3.2s ease-in-out infinite;
-        }
-        @keyframes eggShineSweep {
-            0% { left: -40%; }
-            45%, 100% { left: 130%; }
+            0%, 100% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 8px rgba(16, 185, 129, 0.5)); }
+            50% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 16px rgba(16, 185, 129, 0.9)); }
         }
 
         /* 4 — Эпическое: мистическая фиолетовая аура, медленное дыхание */
-        .egg-tier-4 { animation: eggBreatheViolet 3.6s ease-in-out infinite; }
+        .egg-tier-4 .egg-art { animation: eggBreatheViolet 3.6s ease-in-out infinite; }
         @keyframes eggBreatheViolet {
-            0%, 100% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 14px rgba(168, 85, 247, 0.45); transform: scale(1); }
-            50% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.3), 0 0 30px rgba(168, 85, 247, 0.85); transform: scale(1.045); }
+            0%, 100% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 8px rgba(168, 85, 247, 0.45)); transform: scale(1); }
+            50% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.9)); transform: scale(1.045); }
         }
 
-        /* 5 — Легендарное: переливающееся глянцевое золото */
-        .egg-tier-5 { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.4), 0 0 18px rgba(245, 158, 11, 0.55); }
-        .egg-tier-5 .egg-art-frame::before {
-            content: ''; position: absolute; top: -60%; left: -45%; width: 30%; height: 220%;
-            background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.9), transparent);
-            transform: rotate(20deg);
-            animation: eggShineSweep 2.4s ease-in-out infinite;
-        }
-
-        /* 6 — Мифическое: огненно-рубиновое, агрессивная пульсация + покачивание */
-        .egg-tier-6 { animation: eggInfernoPulse 1.1s ease-in-out infinite; }
+        /* 6 — Мифическое: огненно-рубиновая пульсация + покачивание, как заряженное энергией */
+        .egg-tier-6 .egg-art { animation: eggInfernoPulse 1.1s ease-in-out infinite; }
         @keyframes eggInfernoPulse {
-            0%, 100% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.25), 0 0 16px rgba(239, 68, 68, 0.55); transform: rotate(-2deg) scale(1); }
-            50% { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.25), 0 0 34px rgba(239, 68, 68, 0.95), 0 0 54px rgba(249, 115, 22, 0.45); transform: rotate(2deg) scale(1.05); }
+            0%, 100% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 8px rgba(239, 68, 68, 0.55)); transform: rotate(-2deg) scale(1); }
+            50% { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 20px rgba(239, 68, 68, 0.95)); transform: rotate(2deg) scale(1.05); }
         }
 
         /* Активная ячейка во время перетаскивания и подсветка цели сброса. */
@@ -397,10 +372,9 @@
         .egg-cell.drop-bad { border-color: #ef4444; box-shadow: 0 0 16px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
         .egg-ghost {
             position: fixed; left: 0; top: 0; width: 54px; height: 60px; z-index: 999; pointer-events: none;
-            border-radius: 50% 50% 45% 45% / 62% 62% 38% 38%;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), inset 0 3px 0 rgba(255, 255, 255, 0.3);
-            display: flex; align-items: center; justify-content: center; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
         }
+        .egg-ghost .egg-art { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
 
         /* ---------- Яйца: очередь тех, что не поместились на доску ---------- */
         .egg-queue-wrap { margin: 0 0 16px; }
@@ -694,13 +668,9 @@
 </head>
 <body>
 
-    <!-- Общие градиенты/клип для SVG-иллюстраций яиц, иконок меню и значков редкости орлов -->
+    <!-- Общие градиенты для иконок нижнего меню и значков редкости орлов -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
         <defs>
-            <clipPath id="eggClip" clipPathUnits="userSpaceOnUse">
-                <path d="M32 4C45 4 55 25 55 45C55 63 45 77 32 77C19 77 9 63 9 45C9 25 19 4 32 4Z" />
-            </clipPath>
-
             <linearGradient id="eggGrad1" x1="15%" y1="0%" x2="85%" y2="100%">
                 <stop offset="0%" stop-color="#f8fafc" />
                 <stop offset="45%" stop-color="#cbd5e1" />
@@ -2029,95 +1999,16 @@
             return tier ? tier.color : '#94a3b8';
         }
 
-        // Контур яйца — общий для всех уровней; заливка идёт градиентом
-        // eggGrad1..6 из общего <defs> в начале <body>, а поверх — своя
-        // декорация под грейд (металл, листья, лёд, руны, слиток, огонь).
-        const EGG_OUTLINE_D = 'M32 4C45 4 55 25 55 45C55 63 45 77 32 77C19 77 9 63 9 45C9 25 19 4 32 4Z';
-
-        const EGG_DECOR = {
-            // 1 — платиновый металлик: клёпаные швы + яркий блик
-            1: `
-                <g clip-path="url(#eggClip)" stroke="rgba(30,41,59,0.35)" stroke-width="1.4" fill="none">
-                    <path d="M9 38 Q32 32 55 38" />
-                    <path d="M9 54 Q32 49 55 54" />
-                </g>
-                <g clip-path="url(#eggClip)" fill="rgba(30,41,59,0.4)">
-                    <circle cx="16" cy="38" r="1.5" /><circle cx="48" cy="38" r="1.5" />
-                    <circle cx="16" cy="54" r="1.5" /><circle cx="48" cy="54" r="1.5" />
-                </g>
-                <ellipse cx="23" cy="17" rx="10" ry="6" fill="rgba(255,255,255,0.6)" />`,
-            // 2 — изумруд: пара листьев с прожилками + капли росы
-            2: `
-                <g clip-path="url(#eggClip)">
-                    <g transform="translate(25,50) rotate(-15)">
-                        <path d="M0 0C-5 6 -5 18 0 24C5 18 5 6 0 0Z" fill="#047857" opacity="0.55" />
-                        <line x1="0" y1="1" x2="0" y2="23" stroke="#065f46" stroke-width="1" />
-                    </g>
-                    <g transform="translate(40,55) rotate(18)">
-                        <path d="M0 0C-4 5 -4 15 0 20C4 15 4 5 0 0Z" fill="#065f46" opacity="0.55" />
-                        <line x1="0" y1="1" x2="0" y2="19" stroke="#064e3b" stroke-width="1" />
-                    </g>
-                </g>
-                <circle cx="22" cy="19" r="2" fill="rgba(255,255,255,0.75)" />
-                <circle cx="28" cy="14" r="1.1" fill="rgba(255,255,255,0.5)" />`,
-            // 3 — сапфир: гранёные ледяные фасеты + искры
-            3: `
-                <g clip-path="url(#eggClip)" stroke="rgba(255,255,255,0.55)" stroke-width="1" opacity="0.85" fill="none">
-                    <line x1="9" y1="34" x2="34" y2="19" /><line x1="34" y1="19" x2="55" y2="37" />
-                    <line x1="9" y1="55" x2="29" y2="45" /><line x1="29" y1="45" x2="55" y2="58" />
-                    <line x1="20" y1="19" x2="20" y2="61" /><line x1="42" y1="24" x2="42" y2="63" />
-                </g>
-                <g fill="#f0f9ff">
-                    <path d="M18 24l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" opacity="0.9" />
-                    <path d="M44 46l0.8 2.4 2.4 0.8-2.4 0.8-0.8 2.4-0.8-2.4-2.4-0.8 2.4-0.8z" opacity="0.8" />
-                    <path d="M27 60l0.6 2 2 0.6-2 0.6-0.6 2-0.6-2-2-0.6 2-0.6z" opacity="0.7" />
-                </g>`,
-            // 4 — космос: звёздная пыль + светящаяся руна в центре
-            4: `
-                <g clip-path="url(#eggClip)" fill="#f5f3ff">
-                    <circle cx="16" cy="22" r="0.9" opacity="0.85" /><circle cx="45" cy="27" r="0.7" opacity="0.7" />
-                    <circle cx="19" cy="61" r="0.8" opacity="0.6" /><circle cx="42" cy="56" r="1" opacity="0.8" />
-                    <circle cx="30" cy="14" r="0.6" opacity="0.6" /><circle cx="12" cy="47" r="0.6" opacity="0.6" />
-                </g>
-                <g transform="translate(32,46)" fill="none" stroke="#e9d5ff" opacity="0.85">
-                    <circle r="10" stroke-width="1.2" /><circle r="6.2" stroke-width="0.8" opacity="0.7" />
-                    <path d="M0 -10L0 -7M0 7L0 10M-10 0L-7 0M7 0L10 0" stroke-width="1" />
-                    <path d="M-3 -3L3 -3L0 3Z" fill="#e9d5ff" stroke="none" opacity="0.9" />
-                </g>`,
-            // 5 — золотой слиток: рельефные полосы + гранёный самоцвет
-            5: `
-                <g clip-path="url(#eggClip)">
-                    <rect x="9" y="37" width="46" height="6" fill="#b45309" opacity="0.35" />
-                    <rect x="9" y="51" width="46" height="6" fill="#92400e" opacity="0.3" />
-                </g>
-                <path d="M32 8L37.5 16 32 24 26.5 16Z" fill="#fff6d5" stroke="#b45309" stroke-width="0.6" opacity="0.9" />
-                <ellipse cx="22" cy="16" rx="9" ry="5" fill="rgba(255,255,255,0.55)" />`,
-            // 6 — драконье пламя: чешуя + языки огня на макушке
-            6: `
-                <g clip-path="url(#eggClip)" fill="none" stroke="#7f1d1d" stroke-width="1.4" opacity="0.85">
-                    <path d="M13 60a4 4 0 0 1 8 0" /><path d="M21 60a4 4 0 0 1 8 0" />
-                    <path d="M29 60a4 4 0 0 1 8 0" /><path d="M37 60a4 4 0 0 1 8 0" /><path d="M45 60a4 4 0 0 1 8 0" />
-                </g>
-                <g clip-path="url(#eggClip)" fill="none" stroke="#991b1b" stroke-width="1.2" opacity="0.8">
-                    <path d="M17 67a4 4 0 0 1 8 0" /><path d="M25 67a4 4 0 0 1 8 0" />
-                    <path d="M33 67a4 4 0 0 1 8 0" /><path d="M41 67a4 4 0 0 1 8 0" />
-                </g>
-                <g transform="translate(32,9)">
-                    <path d="M0 0C-3 4 -3 9 0 12C3 9 3 4 0 0Z" fill="#fb923c" />
-                    <path d="M0 3C-1.5 5.5 -1.5 8.5 0 10.5C1.5 8.5 1.5 5.5 0 3Z" fill="#fde68a" />
-                </g>
-                <circle cx="19" cy="21" r="1.3" fill="#fde68a" opacity="0.85" />
-                <circle cx="45" cy="25" r="1" fill="#fb923c" opacity="0.7" />`,
+        // Готовые рисованные иллюстрации яйца на каждый грейд (assets/egg_*.png).
+        const EGG_ART_FILE = {
+            1: 'egg_common', 2: 'egg_uncommon', 3: 'egg_rare',
+            4: 'egg_epic', 5: 'egg_legendary', 6: 'egg_mythical',
         };
 
-        // Полная SVG-иллюстрация яйца уровня level: контур + градиент грейда + декор.
+        // Картинка яйца уровня level.
         function eggArt(level) {
-            const grad = `url(#eggGrad${Math.min(6, Math.max(1, level))})`;
-            const decor = EGG_DECOR[level] || '';
-            return `<svg class="egg-art" viewBox="0 0 64 82" preserveAspectRatio="xMidYMid meet">
-                <path d="${EGG_OUTLINE_D}" fill="${grad}" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
-                ${decor}
-            </svg>`;
+            const file = EGG_ART_FILE[level] || EGG_ART_FILE[1];
+            return `<img class="egg-art" src="assets/${file}.png" alt="">`;
         }
 
         // Полная разметка ячейки/значка яйца: рамка с иллюстрацией + бейдж уровня.
