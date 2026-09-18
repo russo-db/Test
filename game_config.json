@@ -183,6 +183,9 @@
     "memo_prefix": "MG"
   },
   "wheel": {
+    "cheap_spins": 3,
+    "cheap_cost": 0.5,
+    "expensive_cost": 1,
     "segments": [
       {
         "gram": 0,

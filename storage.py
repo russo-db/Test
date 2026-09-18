@@ -4,7 +4,7 @@
     user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
-    vip_tier, vip_expires_at, vip_last_meat_at
+    vip_tier, vip_expires_at, vip_last_meat_at, wheel_day, wheel_spins_today
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
@@ -22,7 +22,7 @@ FIELDS = (
     "user_id", "name", "coins", "total_earned", "mnstr", "gold", "monsters", "farm_queue",
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
-    "vip_tier", "vip_expires_at", "vip_last_meat_at",
+    "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
 )
 JSON_FIELDS = ("monsters", "farm_queue", "missions", "eggs_board", "eggs_queue")
 
@@ -68,7 +68,9 @@ class SqliteStore:
                 ops            INTEGER DEFAULT 0,
                 vip_tier       TEXT    DEFAULT '',
                 vip_expires_at REAL    DEFAULT 0,
-                vip_last_meat_at REAL  DEFAULT 0
+                vip_last_meat_at REAL  DEFAULT 0,
+                wheel_day      INTEGER DEFAULT 0,
+                wheel_spins_today INTEGER DEFAULT 0
             )
             """
         )
@@ -142,6 +144,8 @@ class SqliteStore:
             ("vip_tier", "TEXT DEFAULT ''"),
             ("vip_expires_at", "REAL DEFAULT 0"),
             ("vip_last_meat_at", "REAL DEFAULT 0"),
+            ("wheel_day", "INTEGER DEFAULT 0"),
+            ("wheel_spins_today", "INTEGER DEFAULT 0"),
         ):
             if name not in columns:
                 cur.execute(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
@@ -287,7 +291,8 @@ class SqliteStore:
 
     async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
                           monster: Optional[str] = None, extra_slot: bool = False):
-        """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
+        """Начисляет приз колеса фортуны (стоимость прокрута списывается отдельно,
+        см. spend_wheel_spin)."""
         conn = self._connect()
         cur = conn.cursor()
         try:
@@ -313,6 +318,42 @@ class SqliteStore:
             values.append(user_id)
             cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", tuple(values))
             conn.commit()
+        finally:
+            conn.close()
+
+    async def spend_wheel_spin(self, user_id: int, today: int, cheap_spins: int,
+                                cheap_cost: float, expensive_cost: float) -> dict:
+        """Списывает стоимость прокрута колеса перед выдачей приза: первые
+        cheap_spins прокрутов за сутки стоят cheap_cost GRAM, дальше —
+        expensive_cost. Счётчик прокрутов за сутки сбрасывается по UTC-дню
+        (day_index на стороне main.py), как и серия ежедневного входа."""
+        conn = self._connect()
+        cur = conn.cursor()
+        try:
+            cur.execute("BEGIN IMMEDIATE")
+            row = cur.execute(
+                "SELECT coins, wheel_day, wheel_spins_today FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            if not row:
+                conn.rollback()
+                return {"status": "not_found"}
+
+            coins = float(row["coins"] or 0)
+            stored_day = int(row["wheel_day"] or 0)
+            spins_today = int(row["wheel_spins_today"] or 0) if stored_day == today else 0
+            attempt = spins_today + 1
+            cost = cheap_cost if attempt <= cheap_spins else expensive_cost
+            if coins < cost:
+                conn.rollback()
+                return {"status": "insufficient_gram", "cost": cost}
+
+            cur.execute(
+                "UPDATE users SET coins = coins - ?, wheel_day = ?, wheel_spins_today = ?, "
+                "ops = ops + 1 WHERE user_id = ?",
+                (cost, today, attempt, user_id),
+            )
+            conn.commit()
+            return {"status": "ok", "cost": cost, "attempt": attempt}
         finally:
             conn.close()
 
@@ -827,7 +868,8 @@ class MongoStore:
 
     async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
                           monster: Optional[str] = None, extra_slot: bool = False):
-        """Начисляет приз колеса фортуны — спин всегда бесплатный и без лимита."""
+        """Начисляет приз колеса фортуны (стоимость прокрута списывается отдельно,
+        см. spend_wheel_spin)."""
         inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
         if extra_slot:
             inc["slots"] = 1
@@ -836,6 +878,37 @@ class MongoStore:
             changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
 
         await self.users.update_one({"_id": user_id}, changes)
+
+    async def spend_wheel_spin(self, user_id: int, today: int, cheap_spins: int,
+                                cheap_cost: float, expensive_cost: float) -> dict:
+        """Списывает стоимость прокрута колеса — двухфазный подход (сперва читаем
+        состояние, потом обновляем с проверкой в фильтре), как и в мерчанте:
+        два одновременных прокрута не смогут списать по заниженной (устаревшей)
+        цене одновременно."""
+        doc = await self.users.find_one({"_id": user_id}, {"coins": 1, "wheel_day": 1, "wheel_spins_today": 1})
+        if not doc:
+            return {"status": "not_found"}
+
+        coins = float(doc.get("coins") or 0)
+        stored_day = int(doc.get("wheel_day") or 0)
+        stored_spins = int(doc.get("wheel_spins_today") or 0)
+        spins_today = stored_spins if stored_day == today else 0
+        attempt = spins_today + 1
+        cost = cheap_cost if attempt <= cheap_spins else expensive_cost
+        if coins < cost:
+            return {"status": "insufficient_gram", "cost": cost}
+
+        if stored_day == today:
+            filt = {"_id": user_id, "coins": {"$gte": cost}, "wheel_day": today, "wheel_spins_today": stored_spins}
+            update = {"$inc": {"coins": -cost, "wheel_spins_today": 1, "ops": 1}}
+        else:
+            filt = {"_id": user_id, "coins": {"$gte": cost}, "wheel_day": {"$ne": today}}
+            update = {"$set": {"wheel_day": today, "wheel_spins_today": 1}, "$inc": {"coins": -cost, "ops": 1}}
+
+        result = await self.users.update_one(filt, update)
+        if result.modified_count == 0:
+            return {"status": "conflict"}
+        return {"status": "ok", "cost": cost, "attempt": attempt}
 
     async def get_merchant_state(self) -> dict:
         doc = await self.merchant.find_one({"_id": "global"}) or {}

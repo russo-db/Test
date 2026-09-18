@@ -46,7 +46,8 @@ def apply_config(cfg: dict):
     global CONFIG, MISSIONS, QUALIFY_MNSTR, MONSTERS, STARTER_MONSTER
     global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
-    global WHEEL, WHEEL_SEGMENTS, TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
+    global WHEEL, WHEEL_SEGMENTS, WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST
+    global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
 
     CONFIG = cfg
@@ -71,6 +72,9 @@ def apply_config(cfg: dict):
 
     WHEEL = CONFIG.get("wheel") or {}
     WHEEL_SEGMENTS = WHEEL.get("segments") or []
+    WHEEL_CHEAP_SPINS = int(WHEEL.get("cheap_spins", 3))
+    WHEEL_CHEAP_COST = float(WHEEL.get("cheap_cost", 0.5))
+    WHEEL_EXPENSIVE_COST = float(WHEEL.get("expensive_cost", 1))
 
     TON = CONFIG.get("ton") or {}
     TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
@@ -334,6 +338,22 @@ def daily_state(row: dict) -> dict:
 
 
 # --- КОЛЕСО ФОРТУНЫ ---
+def wheel_state(row: dict) -> dict:
+    """Что показать игроку: сколько прокрутов уже сделано сегодня и сколько
+    будет стоить следующий (первые wheel.cheap_spins в сутки — дешевле)."""
+    today = day_index()
+    stored_day = int(row.get("wheel_day") or 0)
+    spins_today = int(row.get("wheel_spins_today") or 0) if stored_day == today else 0
+    next_cost = WHEEL_CHEAP_COST if spins_today < WHEEL_CHEAP_SPINS else WHEEL_EXPENSIVE_COST
+    return {
+        "spins_today": spins_today,
+        "cheap_spins": WHEEL_CHEAP_SPINS,
+        "cheap_cost": WHEEL_CHEAP_COST,
+        "expensive_cost": WHEEL_EXPENSIVE_COST,
+        "next_cost": next_cost,
+    }
+
+
 def _wheel_reward(index: int) -> dict:
     """gram/mnstr/monster сервер начисляет сам. egg_level/egg_count — не
     деньги и не орёл: это яйца, которые нужно положить на доску яиц, а её
@@ -394,6 +414,8 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "vip_tier": "",
             "vip_expires_at": 0,
             "vip_last_meat_at": 0,
+            "wheel_day": 0,
+            "wheel_spins_today": 0,
         }
     )
 
@@ -689,6 +711,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "vip_expires_at": float(row.get("vip_expires_at") or 0),
         "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
         "merchant": await store.get_merchant_state(),
+        "wheel": wheel_state(row),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -839,13 +862,22 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
 
 @app.post("/api/wheel/spin")
 async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = Header(None)):
-    """Крутит колесо фортуны — бесплатно и без ограничений по частоте.
-    Сектор выбирает сервер, чтобы клиент не мог подделать результат."""
+    """Крутит колесо фортуны за GRAM: первые wheel.cheap_spins прокрутов в
+    сутки — по cheap_cost, дальше — по expensive_cost. Сектор выбирает
+    сервер, чтобы клиент не мог подделать результат."""
     if not WHEEL_SEGMENTS:
         raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
     row = await fetch_user(user_id)
+
+    spend = await store.spend_wheel_spin(
+        user_id, day_index(), WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST,
+    )
+    if spend["status"] == "insufficient_gram":
+        raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {spend['cost']}")
+    if spend["status"] != "ok":
+        raise HTTPException(status_code=409, detail="Не удалось списать GRAM за прокрут, попробуй ещё раз")
 
     reward = wheel_pick()
 
@@ -869,6 +901,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
     return {
         "status": "success",
         "segment": reward["index"],
+        "spin_cost": spend["cost"],
         "reward": {
             "gram": reward["gram"], "mnstr": reward["mnstr"], "monster": reward["monster"],
             "egg_level": reward["egg_level"], "egg_count": reward["egg_count"],
@@ -879,6 +912,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "monsters": read_farm(fresh["monsters"]),
         "slots": int(fresh.get("slots") or START_SLOTS),
         "ops": int(fresh.get("ops") or 0),
+        "wheel": wheel_state(fresh),
     }
 
 

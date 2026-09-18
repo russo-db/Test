@@ -994,13 +994,13 @@
     <div class="modal-backdrop" id="wheelModal" onclick="if (event.target === this) closeWheel()">
         <div class="modal-box glass-panel wheel-box">
             <h2 data-i18n="wheel.title">Колесо фортуны</h2>
-            <p class="wheel-sub" id="wheelSub" data-i18n="wheel.subtitle">Крути сколько угодно — совсем бесплатно</p>
+            <p class="wheel-sub" id="wheelSub">Крути сколько угодно — совсем бесплатно</p>
             <div class="wheel-stage">
                 <div class="wheel-pointer"></div>
                 <div class="wheel-dial" id="wheelDial"></div>
                 <div class="wheel-hub"></div>
             </div>
-            <button class="btn-primary" id="wheelSpinBtn" onclick="spinWheel()" data-i18n="wheel.spin">Крутить</button>
+            <button class="btn-primary" id="wheelSpinBtn" onclick="spinWheel()">Крутить</button>
             <button class="btn-action wheel-close" onclick="closeWheel()" data-i18n="common.close">Закрыть</button>
         </div>
     </div>
@@ -1231,7 +1231,9 @@
                 'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
                 'wheel.title': 'Колесо фортуны', 'wheel.spin': 'Крутить',
                 'wheel.subtitle': 'Крути сколько угодно — совсем бесплатно', 'wheel.eggsWord': 'яиц',
+                'wheel.subtitlePaid': 'Первые {cheap} в сутки — по {cheapCost} GRAM, дальше — по {expensiveCost} GRAM',
                 'wheel.spinning': 'Крутится…', 'wheel.spinFree': 'Крутить бесплатно',
+                'wheel.spinFor': 'Крутить за {cost} GRAM', 'wheel.insufficientGram': 'Не хватает GRAM',
                 'token.title': 'Что такое $Meat',
                 'token.whatLabel': 'Что это', 'token.whatText': 'Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.',
                 'token.howMuchLabel': 'Сколько дают', 'token.howMuchText': 'Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.',
@@ -1381,7 +1383,9 @@
                 'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
                 'wheel.title': 'Wheel of fortune', 'wheel.spin': 'Spin',
                 'wheel.subtitle': 'Spin as much as you like — completely free', 'wheel.eggsWord': 'eggs',
+                'wheel.subtitlePaid': 'First {cheap} per day — {cheapCost} GRAM each, then {expensiveCost} GRAM',
                 'wheel.spinning': 'Spinning…', 'wheel.spinFree': 'Spin for free',
+                'wheel.spinFor': 'Spin for {cost} GRAM', 'wheel.insufficientGram': 'Not enough GRAM',
                 'token.title': 'What is $Meat',
                 'token.whatLabel': 'What it is', 'token.whatText': "The game's token. Drops from farm eggs — open them and some will give Meat instead of an eagle.",
                 'token.howMuchLabel': 'How much', 'token.howMuchText': 'A random reward per opened egg — either Meat or a new common eagle.',
@@ -1460,6 +1464,7 @@
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 el.innerText = t(el.getAttribute('data-i18n'));
             });
+            updateWheelButton();
         }
 
         function loadLanguagePref() {
@@ -3253,15 +3258,39 @@
             }).join('');
         }
 
+        function applyWheelState(data) {
+            const cfg = CONFIG.wheel || {};
+            state.wheel = {
+                spinsToday: (data && Number(data.spins_today)) || 0,
+                cheapSpins: (data && Number(data.cheap_spins)) || Number(cfg.cheap_spins) || 3,
+                cheapCost: (data && Number(data.cheap_cost)) || Number(cfg.cheap_cost) || 0.5,
+                expensiveCost: (data && Number(data.expensive_cost)) || Number(cfg.expensive_cost) || 1,
+                nextCost: (data && Number(data.next_cost)) || Number(cfg.cheap_cost) || 0.5,
+            };
+        }
+
         function updateWheelButton() {
             const btn = document.getElementById('wheelSpinBtn');
+            const sub = document.getElementById('wheelSub');
+            if (!state.wheel) applyWheelState(null);
+            const cost = state.wheel.nextCost;
+            if (sub) {
+                sub.textContent = t('wheel.subtitlePaid', {
+                    cheap: state.wheel.cheapSpins,
+                    cheapCost: fmtGram(state.wheel.cheapCost),
+                    expensiveCost: fmtGram(state.wheel.expensiveCost),
+                });
+            }
             if (!btn) return;
             if (wheelSpinning) {
                 btn.disabled = true;
                 btn.innerHTML = t('wheel.spinning');
+            } else if ((state.coins || 0) < cost) {
+                btn.disabled = true;
+                btn.innerHTML = t('wheel.insufficientGram');
             } else {
                 btn.disabled = false;
-                btn.innerHTML = t('wheel.spinFree');
+                btn.innerHTML = t('wheel.spinFor', { cost: fmtGram(cost) });
             }
         }
 
@@ -3395,6 +3424,7 @@
                 normalizeFarmCapacity();
                 drainFarmQueue();
                 if (typeof data.ops === 'number') state.ops = data.ops;
+                applyWheelState(data.wheel);
 
                 const reward = data.reward;
                 if (reward.egg_level && reward.egg_count) {
@@ -4513,6 +4543,7 @@
             state.gold = data.gold || 0;
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
             state.merchant = { meatBought: (data.merchant && data.merchant.meat_bought) || 0, eaglesSold: (data.merchant && data.merchant.eagles_sold) || 0 };
+            applyWheelState(data.wheel);
             state.farm = readFarm(data.monsters);
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.farmQueue = readFarm(data.farm_queue);
@@ -4598,6 +4629,7 @@
             if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
             if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
             if (!state.merchant || typeof state.merchant !== 'object') state.merchant = { meatBought: 0, eaglesSold: 0 };
+            applyWheelState(state.wheel);
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
@@ -4741,7 +4773,7 @@
             cfg.daily.days = Number(cfg.daily.days) || 10;
             cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 1;
             if (!Array.isArray(cfg.daily.special) || !cfg.daily.special.length) cfg.daily.special = DEFAULT_DAILY_SPECIAL;
-            cfg.wheel = Object.assign({ segments: [] }, cfg.wheel);
+            cfg.wheel = Object.assign({ segments: [], cheap_spins: 3, cheap_cost: 0.5, expensive_cost: 1 }, cfg.wheel);
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
                 { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 1 / 3600,
