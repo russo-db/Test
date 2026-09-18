@@ -189,6 +189,9 @@
             <div class="card-grid" id="statsGrid"></div>
             <button id="refreshStats">Обновить</button>
 
+            <h2 style="margin-top:32px;">Функции</h2>
+            <div class="card-grid" id="featuresGrid"></div>
+
             <h2 style="margin-top:32px;">Купец</h2>
             <div class="card-grid" id="merchantGrid"></div>
             <button id="resetMerchantBtn">Обнулить купца</button>
@@ -372,8 +375,55 @@ async function loadOverview() {
         `).join('');
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     loadMerchant();
+    loadFeatures();
 }
 document.getElementById('refreshStats').onclick = loadOverview;
+
+/* ---------- функции (вкл/выкл) ---------- */
+let featuresState = { wheel_enabled: true, missions_enabled: true };
+
+async function loadFeatures() {
+    try {
+        const cfg = await api('/admin/api/config');
+        featuresState.wheel_enabled = (cfg.wheel && cfg.wheel.enabled) !== false;
+        featuresState.missions_enabled = cfg.missions_enabled !== false;
+        renderFeatures();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+function renderFeatures() {
+    const grid = document.getElementById('featuresGrid');
+    grid.innerHTML = `
+        <div class="stat-card">
+            <div class="label">Колесо фортуны</div>
+            <div class="value">${featuresState.wheel_enabled ? 'Включено' : 'Выключено'}</div>
+            <button id="wheelFeatureToggle" style="margin-top:10px; width:100%;">
+                ${featuresState.wheel_enabled ? 'Выключить' : 'Включить'}
+            </button>
+        </div>
+        <div class="stat-card">
+            <div class="label">Задания</div>
+            <div class="value">${featuresState.missions_enabled ? 'Включены' : 'Выключены'}</div>
+            <button id="missionsFeatureToggle" style="margin-top:10px; width:100%;">
+                ${featuresState.missions_enabled ? 'Выключить' : 'Включить'}
+            </button>
+        </div>
+    `;
+    document.getElementById('wheelFeatureToggle').onclick = () => toggleFeature('wheel_enabled');
+    document.getElementById('missionsFeatureToggle').onclick = () => toggleFeature('missions_enabled');
+}
+
+async function toggleFeature(key) {
+    const next = Object.assign({}, featuresState, { [key]: !featuresState[key] });
+    try {
+        featuresState = await api('/admin/api/features', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(next),
+        });
+        renderFeatures();
+        toast('Сохранено');
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
 
 /* ---------- купец ---------- */
 async function loadMerchant() {

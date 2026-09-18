@@ -46,7 +46,8 @@ def apply_config(cfg: dict):
     global CONFIG, MISSIONS, QUALIFY_MNSTR, MONSTERS, STARTER_MONSTER
     global START_SLOTS, MAX_SLOTS
     global FUSION_CFG, FEED_LEVELS, DAILY, DAILY_DAYS, DAILY_STEP, DAILY_SPECIAL
-    global WHEEL, WHEEL_SEGMENTS, WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST
+    global WHEEL, WHEEL_SEGMENTS, WHEEL_ENABLED, WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST
+    global MISSIONS_ENABLED
     global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
 
@@ -72,9 +73,12 @@ def apply_config(cfg: dict):
 
     WHEEL = CONFIG.get("wheel") or {}
     WHEEL_SEGMENTS = WHEEL.get("segments") or []
+    WHEEL_ENABLED = bool(WHEEL.get("enabled", True))
     WHEEL_CHEAP_SPINS = int(WHEEL.get("cheap_spins", 3))
     WHEEL_CHEAP_COST = float(WHEEL.get("cheap_cost", 0.5))
     WHEEL_EXPENSIVE_COST = float(WHEEL.get("expensive_cost", 1))
+
+    MISSIONS_ENABLED = bool(CONFIG.get("missions_enabled", True))
 
     TON = CONFIG.get("ton") or {}
     TON_RATE = float(TON.get("rate", 1))          # сколько GRAM даёт 1 TON
@@ -649,6 +653,11 @@ class AdminConfigUpdate(BaseModel):
     config: dict
 
 
+class AdminFeatureToggle(BaseModel):
+    wheel_enabled: bool
+    missions_enabled: bool
+
+
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
@@ -775,6 +784,9 @@ async def channel_subscribed(user_id: int, chat: str) -> bool:
 @app.post("/api/mission/claim")
 async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[str] = Header(None)):
     """Проверяет условие задания и начисляет награду. Сервер — единственный источник наград."""
+    if not MISSIONS_ENABLED:
+        raise HTTPException(status_code=404, detail="Задания временно отключены")
+
     user_id = authenticate(x_telegram_init_data, request.user_id)
     mission = MISSIONS.get(request.mission_id)
     if not mission:
@@ -865,7 +877,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
     """Крутит колесо фортуны за GRAM: первые wheel.cheap_spins прокрутов в
     сутки — по cheap_cost, дальше — по expensive_cost. Сектор выбирает
     сервер, чтобы клиент не мог подделать результат."""
-    if not WHEEL_SEGMENTS:
+    if not WHEEL_ENABLED or not WHEEL_SEGMENTS:
         raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
@@ -1337,6 +1349,21 @@ async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require
 @app.post("/admin/api/merchant/reset")
 async def admin_reset_merchant(_: None = Depends(require_admin)):
     return await store.reset_merchant_state()
+
+
+@app.post("/admin/api/features")
+async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require_admin)):
+    """Включает/выключает колесо фортуны и задания без правки сырого конфига."""
+    cfg = dict(CONFIG)
+    cfg["wheel"] = dict(cfg.get("wheel") or {})
+    cfg["wheel"]["enabled"] = body.wheel_enabled
+    cfg["missions_enabled"] = body.missions_enabled
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    apply_config(cfg)
+    return {"wheel_enabled": WHEEL_ENABLED, "missions_enabled": MISSIONS_ENABLED}
 
 
 # --- TELEGRAM BOT LOGIC ---

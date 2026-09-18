@@ -116,6 +116,7 @@
       ]
     }
   ],
+  "missions_enabled": true,
   "missions": [
     {
       "id": "ref1",
@@ -183,6 +184,7 @@
     "memo_prefix": "MG"
   },
   "wheel": {
+    "enabled": true,
     "cheap_spins": 3,
     "cheap_cost": 0.5,
     "expensive_cost": 1,

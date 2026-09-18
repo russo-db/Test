@@ -3495,11 +3495,12 @@
         // Задания про друзей живут на вкладке «Друзья», остальные — в «Заданиях».
         function renderMissions() {
             const list = document.getElementById('missionList');
-            fillMissionList(list, CONFIG.missions.filter(m => m.type !== 'referrals'));
-            renderDailyCard(list);   // ежедневный вход — первой карточкой
+            const missionsOn = CONFIG.missions_enabled !== false;
+            fillMissionList(list, missionsOn ? CONFIG.missions.filter(m => m.type !== 'referrals') : []);
+            renderDailyCard(list);   // ежедневный вход — первой карточкой, задания можно выключить отдельно
             fillMissionList(
                 document.getElementById('friendMissionList'),
-                CONFIG.missions.filter(m => m.type === 'referrals'));
+                missionsOn ? CONFIG.missions.filter(m => m.type === 'referrals') : []);
         }
 
         // P2P-рынок: игроки торгуют друг с другом прокачанными (макс. уровень)
@@ -4769,11 +4770,13 @@
             cfg.tiers.forEach(tier => { tier.price = Number(tier.price) || 1; });
             cfg.referral = Object.assign({ bonus: 2500, share: 0.1 }, cfg.referral);
             cfg.missions = Array.isArray(cfg.missions) ? cfg.missions : [];
+            cfg.missions_enabled = cfg.missions_enabled !== false;
             cfg.daily = Object.assign({ days: 10, mnstr_step: 1, special: DEFAULT_DAILY_SPECIAL }, cfg.daily);
             cfg.daily.days = Number(cfg.daily.days) || 10;
             cfg.daily.mnstr_step = Number(cfg.daily.mnstr_step) || 1;
             if (!Array.isArray(cfg.daily.special) || !cfg.daily.special.length) cfg.daily.special = DEFAULT_DAILY_SPECIAL;
-            cfg.wheel = Object.assign({ segments: [], cheap_spins: 3, cheap_cost: 0.5, expensive_cost: 1 }, cfg.wheel);
+            cfg.wheel = Object.assign({ segments: [], enabled: true, cheap_spins: 3, cheap_cost: 0.5, expensive_cost: 1 }, cfg.wheel);
+            cfg.wheel.enabled = cfg.wheel.enabled !== false;
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
                 { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 1 / 3600,
@@ -4816,7 +4819,8 @@
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
             document.getElementById('referralTerms').innerText =
                 t('friends.qualifyHint', { mnstr: CONFIG.referral.qualify_mnstr });
-            document.getElementById('wheelOpenBtn').style.display = CONFIG.wheel.segments.length ? '' : 'none';
+            document.getElementById('wheelOpenBtn').style.display =
+                (CONFIG.wheel.segments.length && CONFIG.wheel.enabled) ? '' : 'none';
 
             stageAnimator = new SpriteAnimator(document.getElementById('monsterSprite'));
             initProfile();
