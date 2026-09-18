@@ -1321,6 +1321,7 @@
                 'slot.feedHint': 'Тапни орла на ферме — тап стоит {cost} Meat ({taps}/{max} тапов до яйца)',
                 'slot.fusionHint': 'Тапни другого откормленного орла «{name}» на ферме, чтобы получить {nextName}',
                 'slot.expeditionBtn': 'Экспедиция за {cost} Meat — {amount} золота за {time}',
+                'slot.expeditionNeedsMax': 'Только для прокачанных орлов',
                 'slot.slotNumber': 'слот {n}',
                 'slot.deleteBtn': 'Удалить орла',
                 'slot.deleteConfirm': 'Точно хочешь удалить {name}? Отменить будет нельзя.',
@@ -1471,6 +1472,7 @@
                 'slot.feedHint': 'Tap the eagle on the farm — a tap costs {cost} Meat ({taps}/{max} taps to egg)',
                 'slot.fusionHint': 'Tap another fully-fed "{name}" on the farm to get {nextName}',
                 'slot.expeditionBtn': 'Expedition for {cost} Meat — {amount} gold in {time}',
+                'slot.expeditionNeedsMax': 'Max level eagles only',
                 'slot.slotNumber': 'slot {n}',
                 'slot.deleteBtn': 'Delete eagle',
                 'slot.deleteConfirm': 'Delete {name} for good? This can\'t be undone.',
@@ -2797,10 +2799,12 @@
 
         // Платно отправляет орла в экспедицию за GRAM — на время в пути слот
         // на паузе (см. onFarmSlotTap): кормление и яйца ждут, пока орёл не
-        // вернётся. Возврат собирается тапом или из карточки орла.
+        // вернётся. Возврат собирается тапом или из карточки орла. В экспедицию
+        // берут только полностью прокачанных орлов (feedLevel на максимуме).
         function sendExpedition(i) {
             const slot = state.farm[i];
             if (!slot || isOnExpedition(slot)) return;
+            if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             const cost = Number(CONFIG.expeditions.cost_meat || 1);
             if (state.mnstr < cost) { toast('Не хватает Meat'); haptic.notify('warning'); return; }
             state.mnstr -= cost;
@@ -4035,9 +4039,9 @@
                 ? `<p class="slot-modal-sub">${t('slot.fusionHint', { name: monster.name, nextName: nextTierOf(monster).monsters[0].name })}</p>`
                 : '';
 
-            const expeditionBtnHtml = !onExpedition
+            const expeditionBtnHtml = onExpedition ? '' : fed
                 ? `<button class="btn-action" style="margin-top:8px; width:100%" onclick="sendExpedition(modalSlot); renderSlotModal();">🧭 ${t('slot.expeditionBtn', { cost: fmtToken(expCfg.cost_meat), amount: fmtGram(expeditionGoldReward(monster)), time: formatCountdown(expeditionDurationSeconds()) })}</button>`
-                : '';
+                : `<button class="btn-action" style="margin-top:8px; width:100%" disabled>🧭 ${t('slot.expeditionNeedsMax')}</button>`;
 
             document.getElementById('slotModalBody').innerHTML = `
                 <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
