@@ -132,6 +132,17 @@
                 linear-gradient(180deg, rgba(6, 3, 16, 0.6) 0%, rgba(6, 3, 16, 0.32) 35%, rgba(6, 3, 16, 0.42) 70%, rgba(6, 3, 16, 0.8) 100%),
                 url('assets/farm-bg.jpg') center/cover no-repeat;
         }
+        /* Плашка «орлов/яиц» и кнопка колеса фортуны — прозрачнее, чтобы фон-иллюстрация просвечивала */
+        #farm .stats-panel.glass-panel {
+            background: rgba(147, 92, 255, 0.06);
+            backdrop-filter: blur(3px) saturate(140%);
+            -webkit-backdrop-filter: blur(3px) saturate(140%);
+        }
+        #farm .wheel-open {
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(34, 211, 238, 0.4));
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+        }
         #merchant {
             background:
                 linear-gradient(180deg, rgba(6, 3, 16, 0.55) 0%, rgba(6, 3, 16, 0.22) 35%, rgba(6, 3, 16, 0.3) 65%, rgba(6, 3, 16, 0.7) 100%),
