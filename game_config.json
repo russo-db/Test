@@ -1,5 +1,10 @@
 {
   "currency": "GRAM",
+  "maintenance": {
+    "enabled": false,
+    "message": "Ведутся технические работы. Скоро вернёмся!",
+    "chat_url": "https://t.me/+-i4Zc1Ak5m5iZTZi"
+  },
   "token": {
     "symbol": "Meat",
     "ticker": "$Meat"

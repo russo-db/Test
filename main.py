@@ -13,7 +13,7 @@ from auth import verify_init_data
 from storage import make_store
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -51,6 +51,7 @@ def apply_config(cfg: dict):
     global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX, WITHDRAW_COMMISSION
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
     global REFERRAL_SHARE, MAX_EGG_LEVEL
+    global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -89,6 +90,11 @@ def apply_config(cfg: dict):
     MIN_WITHDRAW = float(TON.get("min_withdraw", 1))
     MEMO_PREFIX = str(TON.get("memo_prefix", "MG"))
     WITHDRAW_COMMISSION = float(TON.get("withdraw_commission", 0.10))
+
+    MAINTENANCE = CONFIG.get("maintenance") or {}
+    MAINTENANCE_ENABLED = bool(MAINTENANCE.get("enabled", False))
+    MAINTENANCE_MESSAGE = str(MAINTENANCE.get("message") or "Ведутся технические работы. Скоро вернёмся!")
+    MAINTENANCE_CHAT_URL = str(MAINTENANCE.get("chat_url") or "")
 
 
 apply_config(load_config())
@@ -675,11 +681,37 @@ class AdminConfigUpdate(BaseModel):
 class AdminFeatureToggle(BaseModel):
     wheel_enabled: bool
     missions_enabled: bool
+    maintenance_enabled: bool
 
 
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
+
+# Пока включены техработы, все /api/* эндпоинты (кроме самой проверки статуса)
+# отвечают 503 — админка и статика (страница, конфиг, ассеты) продолжают
+# работать как обычно, чтобы экран техработ на клиенте мог загрузиться.
+MAINTENANCE_ALLOWED_PATHS = {"/api/maintenance"}
+
+
+@app.middleware("http")
+async def maintenance_gate(request: Request, call_next):
+    if (
+        MAINTENANCE_ENABLED
+        and request.url.path.startswith("/api/")
+        and request.url.path not in MAINTENANCE_ALLOWED_PATHS
+    ):
+        return JSONResponse(status_code=503, content={"detail": MAINTENANCE_MESSAGE})
+    return await call_next(request)
+
+
+@app.get("/api/maintenance")
+async def maintenance_status():
+    return {
+        "enabled": MAINTENANCE_ENABLED,
+        "message": MAINTENANCE_MESSAGE,
+        "chat_url": MAINTENANCE_CHAT_URL,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1376,17 +1408,23 @@ async def admin_reset_merchant(_: None = Depends(require_admin)):
 
 @app.post("/admin/api/features")
 async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require_admin)):
-    """Включает/выключает колесо фортуны и задания без правки сырого конфига."""
+    """Включает/выключает колесо фортуны, задания и режим техработ без правки сырого конфига."""
     cfg = dict(CONFIG)
     cfg["wheel"] = dict(cfg.get("wheel") or {})
     cfg["wheel"]["enabled"] = body.wheel_enabled
     cfg["missions_enabled"] = body.missions_enabled
+    cfg["maintenance"] = dict(cfg.get("maintenance") or {})
+    cfg["maintenance"]["enabled"] = body.maintenance_enabled
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
         f.write("\n")
     apply_config(cfg)
-    return {"wheel_enabled": WHEEL_ENABLED, "missions_enabled": MISSIONS_ENABLED}
+    return {
+        "wheel_enabled": WHEEL_ENABLED,
+        "missions_enabled": MISSIONS_ENABLED,
+        "maintenance_enabled": MAINTENANCE_ENABLED,
+    }
 
 
 # --- TELEGRAM BOT LOGIC ---

@@ -380,13 +380,14 @@ async function loadOverview() {
 document.getElementById('refreshStats').onclick = loadOverview;
 
 /* ---------- функции (вкл/выкл) ---------- */
-let featuresState = { wheel_enabled: true, missions_enabled: true };
+let featuresState = { wheel_enabled: true, missions_enabled: true, maintenance_enabled: false };
 
 async function loadFeatures() {
     try {
         const cfg = await api('/admin/api/config');
         featuresState.wheel_enabled = (cfg.wheel && cfg.wheel.enabled) !== false;
         featuresState.missions_enabled = cfg.missions_enabled !== false;
+        featuresState.maintenance_enabled = !!(cfg.maintenance && cfg.maintenance.enabled);
         renderFeatures();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
@@ -408,12 +409,22 @@ function renderFeatures() {
                 ${featuresState.missions_enabled ? 'Выключить' : 'Включить'}
             </button>
         </div>
+        <div class="stat-card">
+            <div class="label">Технические работы</div>
+            <div class="value">${featuresState.maintenance_enabled ? 'Включены' : 'Выключены'}</div>
+            <button id="maintenanceFeatureToggle" class="${featuresState.maintenance_enabled ? '' : 'danger'}" style="margin-top:10px; width:100%;">
+                ${featuresState.maintenance_enabled ? 'Выключить' : 'Включить'}
+            </button>
+        </div>
     `;
     document.getElementById('wheelFeatureToggle').onclick = () => toggleFeature('wheel_enabled');
     document.getElementById('missionsFeatureToggle').onclick = () => toggleFeature('missions_enabled');
+    document.getElementById('maintenanceFeatureToggle').onclick = () => toggleFeature('maintenance_enabled');
 }
 
 async function toggleFeature(key) {
+    if (key === 'maintenance_enabled' && !featuresState.maintenance_enabled
+        && !confirm('Включить техработы? Игра станет недоступна всем игрокам до выключения.')) return;
     const next = Object.assign({}, featuresState, { [key]: !featuresState[key] });
     try {
         featuresState = await api('/admin/api/features', {
