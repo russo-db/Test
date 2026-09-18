@@ -149,11 +149,19 @@
     {
       "id": "channel",
       "title": "Подписаться на канал",
-      "gram": 0.1,
-      "mnstr": 0,
+      "gram": 0,
+      "mnstr": 3,
       "type": "channel",
-      "chat": "@mnstr_gram",
-      "url": "https://t.me/mnstr_gram"
+      "chat": "@SKYLORDSgramm",
+      "url": "https://t.me/SKYLORDSgramm"
+    },
+    {
+      "id": "chat",
+      "title": "Подписаться на чат",
+      "gram": 0,
+      "mnstr": 3,
+      "type": "chat",
+      "url": "https://t.me/+-i4Zc1Ak5m5iZTZi"
     }
   ],
   "referral": {
