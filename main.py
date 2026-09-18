@@ -1470,7 +1470,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_new:
         text = (
-            f"🐲 С возвращением, {name}!\n\n"
+            f"🦅 С возвращением, {name}!\n\n"
             "Твои орлы несли яйца, пока тебя не было — загляни на ферму."
         )
     elif invited_by:
@@ -1486,7 +1486,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         text = (
-            "🐲 Добро пожаловать в <b>SkyLords GRAMM</b>!\n\n"
+            "🦅 Добро пожаловать в <b>SkyLords GRAMM</b>!\n\n"
             f"🥚 Тебе уже выдан первый орёл — <b>{starter}</b>. Раз в сутки он "
             "приносит яйцо — сливай их на поле и получай Meat или новых орлов.\n"
             f"💎 Открывай слоты, покупай новых и собери всех {total_monsters} существ.\n"
