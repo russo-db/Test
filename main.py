@@ -816,13 +816,17 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
 async def channel_subscribed(user_id: int, chat: str) -> bool:
     """Спрашивает у Telegram, состоит ли игрок в канале."""
     if not BOT_TOKEN:
+        print("[missions] channel_subscribed: BOT_TOKEN не задан")
         return False
     from telegram import Bot
     from telegram.error import TelegramError
 
     try:
         member = await Bot(BOT_TOKEN).get_chat_member(chat_id=chat, user_id=user_id)
-    except TelegramError:
+    except TelegramError as e:
+        # Частая причина: бот не добавлен в канал администратором — тогда
+        # Telegram отказывает в getChatMember даже для реального подписчика.
+        print(f"[missions] getChatMember({chat!r}, {user_id}) FAILED: {type(e).__name__}: {e}")
         return False
     return member.status in ("member", "administrator", "creator")
 
