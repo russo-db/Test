@@ -11,31 +11,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         /* ---------- Neon Glass HUD ----------
-           Deep-space dark theme: frosted glassmorphic panels, neon violet/pink/
-           cyan accent glows, Orbitron display type over Poppins body copy. */
+           Deep-space dark theme: frosted glassmorphic panels, neon amber/red/
+           cyan accent glows, Orbitron display type over Poppins body copy.
+           --accent-violet/--accent-rose/--glow-violet/--glow-pink keep their
+           original names (still the primary two-tone gradient pair used all
+           over the file) but now hold amber→red values instead of violet→pink. */
         :root {
-            --bg-base: #150a33;
-            --bg-deep: #060310;
+            --bg-base: #2a1108;
+            --bg-deep: #0d0503;
             --ink: #05030d;
-            --panel: rgba(147, 92, 255, 0.12);
-            --panel-hi: rgba(147, 92, 255, 0.22);
+            --panel: rgba(245, 158, 11, 0.12);
+            --panel-hi: rgba(245, 158, 11, 0.22);
             --panel-soft: rgba(255, 255, 255, 0.05);
-            --text-main: #f6f4ff;
-            --text-muted: #a5a0cf;
+            --text-main: #fff8f0;
+            --text-muted: #c9a893;
             --accent-slime: #7cff6b;
-            --accent-violet: #a855f7;
+            --accent-violet: #fbbf24;
             --accent-cyan: #22d3ee;
             --accent-emerald: #34e6a8;
             --accent-amber: #ffcc4d;
             --accent-coin: #4fc3ff;
-            --accent-token: #c084fc;
-            --accent-rose: #ff3fa4;
+            --accent-token: #fb7185;
+            --accent-rose: #ef4444;
             --gold: #ffb020;
             --gold-lt: #ffd166;
             --gold-dk: #b8730a;
             --glass-border: rgba(255, 255, 255, 0.14);
-            --glow-violet: 0 0 20px rgba(168, 85, 247, 0.55);
-            --glow-pink: 0 0 20px rgba(255, 63, 164, 0.5);
+            --glow-violet: 0 0 20px rgba(245, 158, 11, 0.55);
+            --glow-pink: 0 0 20px rgba(239, 68, 68, 0.5);
             --glow-cyan: 0 0 18px rgba(34, 211, 238, 0.5);
             --glow-gold: 0 0 18px rgba(255, 176, 32, 0.55);
         }
@@ -44,9 +47,9 @@
 
         body {
             background:
-                radial-gradient(60% 40% at 15% 0%, rgba(168, 85, 247, 0.25) 0%, transparent 60%),
-                radial-gradient(55% 45% at 100% 10%, rgba(34, 211, 238, 0.16) 0%, transparent 65%),
-                radial-gradient(70% 60% at 50% 100%, rgba(255, 63, 164, 0.14) 0%, transparent 60%),
+                radial-gradient(60% 40% at 15% 0%, rgba(245, 158, 11, 0.28) 0%, transparent 60%),
+                radial-gradient(55% 45% at 100% 10%, rgba(34, 211, 238, 0.14) 0%, transparent 65%),
+                radial-gradient(70% 60% at 50% 100%, rgba(239, 68, 68, 0.18) 0%, transparent 60%),
                 linear-gradient(180deg, var(--bg-base) 0%, var(--bg-deep) 100%);
             color: var(--text-main);
             height: 100vh;
@@ -92,7 +95,7 @@
             position: relative; z-index: 20;
             display: flex; justify-content: space-between; align-items: center;
             padding: 14px 12px 13px 12px; gap: 6px;
-            background: linear-gradient(180deg, rgba(147, 92, 255, 0.16), rgba(6, 3, 16, 0.55));
+            background: linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(6, 3, 16, 0.55));
             backdrop-filter: blur(20px) saturate(160%);
             -webkit-backdrop-filter: blur(20px) saturate(160%);
             border-bottom: 1px solid var(--glass-border);
@@ -115,12 +118,12 @@
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
         }
         .top-balance-badge .coin-icon { width: 14px; height: 14px; }
-        .token-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(192, 132, 252, 0.35); }
+        .token-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(251, 113, 133, 0.35); }
         .gold-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(255, 176, 32, 0.35); }
         .gold-coin-icon { flex: 0 0 auto; filter: drop-shadow(0 0 4px rgba(255, 176, 32, 0.6)); }
 
         .coin-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
-        .coin-brand { width: 22px; height: 22px; flex: 0 0 auto; filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.7)); }
+        .coin-brand { width: 22px; height: 22px; flex: 0 0 auto; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.7)); }
         .coin-md { width: 30px; height: 30px; }
         .coin-lg { width: 40px; height: 40px; }
 
@@ -134,12 +137,12 @@
         }
         /* Плашка «орлов/яиц» и кнопка колеса фортуны — прозрачнее, чтобы фон-иллюстрация просвечивала */
         #farm .stats-panel.glass-panel {
-            background: rgba(147, 92, 255, 0.06);
+            background: rgba(245, 158, 11, 0.06);
             backdrop-filter: blur(3px) saturate(140%);
             -webkit-backdrop-filter: blur(3px) saturate(140%);
         }
         #farm .wheel-open {
-            background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(34, 211, 238, 0.4));
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.4), rgba(34, 211, 238, 0.4));
             backdrop-filter: blur(3px);
             -webkit-backdrop-filter: blur(3px);
         }
@@ -150,11 +153,11 @@
         }
         /* Стеклянные панели купца — почти без блюра и без заливки, чтобы иллюстрация была чётко видна */
         #merchant .glass-panel {
-            background: rgba(147, 92, 255, 0.03);
+            background: rgba(245, 158, 11, 0.03);
             backdrop-filter: none;
             -webkit-backdrop-filter: none;
         }
-        #merchant .btn-action { background: rgba(147, 92, 255, 0.12); backdrop-filter: none; -webkit-backdrop-filter: none; }
+        #merchant .btn-action { background: rgba(245, 158, 11, 0.12); backdrop-filter: none; -webkit-backdrop-filter: none; }
         #merchant .pay-input { background: rgba(5, 3, 16, 0.12); }
         @keyframes popIn { from { opacity: 0; transform: scale(0.94) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
@@ -195,7 +198,7 @@
             box-shadow: var(--glow-violet);
         }
 
-        h1 { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 25px; font-weight: 800; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; background: linear-gradient(90deg, #fff, var(--accent-violet)); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 14px rgba(168, 85, 247, 0.35)); }
+        h1 { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 25px; font-weight: 800; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; background: linear-gradient(90deg, #fff, var(--accent-violet)); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 14px rgba(245, 158, 11, 0.35)); }
         p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 18px; font-size: 14px; font-weight: 500; }
 
         /* ---------- Farm stats ---------- */
@@ -230,7 +233,7 @@
             width: 92px; height: 17px; border-radius: 50%; background: rgba(5, 3, 16, 0.6); filter: blur(9px);
         }
         .monster-glow { position: absolute; width: 130px; height: 130px; border-radius: 50%; filter: blur(38px); opacity: 0.65; transition: background 0.4s ease; }
-        .monster-sprite { position: relative; width: 100%; height: 100%; object-fit: contain; z-index: 2; filter: drop-shadow(0 0 22px rgba(168, 85, 247, 0.35)) drop-shadow(0 8px 10px rgba(5, 3, 16, 0.5)); pointer-events: none; transition: transform 0.15s ease; }
+        .monster-sprite { position: relative; width: 100%; height: 100%; object-fit: contain; z-index: 2; filter: drop-shadow(0 0 22px rgba(245, 158, 11, 0.35)) drop-shadow(0 8px 10px rgba(5, 3, 16, 0.5)); pointer-events: none; transition: transform 0.15s ease; }
         .monster-stage:active { transform: scale(0.95); }
         .monster-stage.egg-ready { animation: hatchGlow 1.1s ease-in-out infinite; }
         .monster-stage.spring-pop { animation: eagleSpring 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -254,13 +257,13 @@
             position: fixed; z-index: 460; pointer-events: none;
             font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 18px;
             color: var(--accent-token);
-            text-shadow: 0 0 10px rgba(192, 132, 252, 0.85), 0 1px 3px rgba(0, 0, 0, 0.6);
+            text-shadow: 0 0 10px rgba(251, 113, 133, 0.85), 0 1px 3px rgba(0, 0, 0, 0.6);
         }
         .feed-spark {
             position: fixed; z-index: 460; pointer-events: none;
             width: 7px; height: 7px; border-radius: 50%;
             background: var(--accent-token);
-            box-shadow: 0 0 8px rgba(192, 132, 252, 0.9);
+            box-shadow: 0 0 8px rgba(251, 113, 133, 0.9);
         }
 
         /* ---------- Slot grid ---------- */
@@ -292,7 +295,7 @@
         .slot-progress i { display: block; height: 100%; }
 
         /* Mined coins */
-        .particle-stream { position: fixed; width: 26px; height: 26px; pointer-events: none; z-index: 450; object-fit: contain; filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.6)); }
+        .particle-stream { position: fixed; width: 26px; height: 26px; pointer-events: none; z-index: 450; object-fit: contain; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6)); }
 
         /* ---------- Buttons ---------- */
         .btn-primary {
@@ -300,12 +303,12 @@
             border: 1px solid rgba(255, 255, 255, 0.25); color: white;
             padding: 15px 24px; border-radius: 18px;
             font-size: 15px; font-weight: 700; width: 100%; cursor: pointer;
-            box-shadow: 0 8px 24px rgba(168, 85, 247, 0.4);
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
             text-transform: uppercase; letter-spacing: 0.4px;
             transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
             display: flex; align-items: center; justify-content: center; gap: 9px;
         }
-        .btn-primary:active { transform: scale(0.96); box-shadow: 0 4px 14px rgba(168, 85, 247, 0.35); }
+        .btn-primary:active { transform: scale(0.96); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35); }
         .btn-primary:disabled { filter: grayscale(0.6) brightness(0.7); box-shadow: none; }
 
         .btn-action {
@@ -327,7 +330,7 @@
         /* ---------- Cards ---------- */
         .card { padding: 14px; margin-bottom: 13px; display: flex; justify-content: space-between; align-items: center; gap: 13px; }
         .market-card .card-info { flex: 1; min-width: 0; }
-        .market-eagle { width: 48px; height: 48px; object-fit: contain; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.35)); }
+        .market-eagle { width: 48px; height: 48px; object-fit: contain; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.35)); }
         .market-card .btn-action { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; padding: 10px 14px; }
         .market-card .btn-action .coin-icon { width: 15px; height: 15px; }
         .market-locked { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; gap: 8px; }
@@ -438,7 +441,7 @@
         /* ---------- Meat ---------- */
         .balance-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 13px; }
         .balance-card { padding: 15px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease; }
-        .balance-card img { width: 40px; height: 40px; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.35)); }
+        .balance-card img { width: 40px; height: 40px; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.35)); }
         .balance-card .balance-icon-svg { width: 40px; height: 40px; margin-bottom: 4px; filter: drop-shadow(0 0 8px rgba(255, 176, 32, 0.4)); }
         .balance-card .balance-label { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: var(--text-muted); }
         .balance-card b { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 21px; font-weight: 700; }
@@ -449,7 +452,7 @@
         .balance-hint { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-top: 3px; }
 
         .token-box { max-height: 84vh; overflow-y: auto; }
-        .token-hero { width: 76px; height: 76px; object-fit: contain; display: block; margin: 0 auto 10px auto; filter: drop-shadow(0 0 14px rgba(168, 85, 247, 0.45)); }
+        .token-hero { width: 76px; height: 76px; object-fit: contain; display: block; margin: 0 auto 10px auto; filter: drop-shadow(0 0 14px rgba(245, 158, 11, 0.45)); }
         .token-box h2 { text-align: center; margin-bottom: 14px; }
         .token-table { width: 100%; border-collapse: collapse; }
         .token-table td { padding: 10px 0; vertical-align: top; font-size: 13px; line-height: 1.4; border-top: 1px solid var(--glass-border); font-weight: 500; }
@@ -468,7 +471,7 @@
         .modal-progress i { display: block; height: 100%; transition: width 0.3s ease; }
 
         .roll-close { width: 100%; justify-content: center; margin-top: 10px; }
-        .roll-prize { width: 145px; height: 145px; object-fit: contain; margin: 6px auto; display: block; filter: drop-shadow(0 0 20px rgba(168, 85, 247, 0.45)); }
+        .roll-prize { width: 145px; height: 145px; object-fit: contain; margin: 6px auto; display: block; filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.45)); }
         .roll-num { display: flex; align-items: center; gap: 5px; }
         .roll-num b { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 15px; font-weight: 700; color: var(--accent-coin); }
         .roll-num.token b { color: var(--accent-token); }
@@ -507,7 +510,7 @@
             opacity: 0.85; pointer-events: none; box-shadow: var(--glow-violet);
         }
         .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-muted); font-size: 10px; font-weight: 700; cursor: pointer; gap: 5px; flex: 1; padding: 7px 2px 5px 2px; border-radius: 16px; border: 1px solid transparent; transition: color 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease, box-shadow 0.2s ease; }
-        .nav-item.active { color: #fff; background: linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(255, 63, 164, 0.25)); border-color: var(--glass-border); box-shadow: var(--glow-violet), inset 0 1px 0 rgba(255, 255, 255, 0.2); transform: translateY(-4px); }
+        .nav-item.active { color: #fff; background: linear-gradient(135deg, rgba(245, 158, 11, 0.35), rgba(239, 68, 68, 0.25)); border-color: var(--glass-border); box-shadow: var(--glow-violet), inset 0 1px 0 rgba(255, 255, 255, 0.2); transform: translateY(-4px); }
         .nav-icon { width: 24px; height: 24px; color: currentColor; }
         .nav-icon svg { opacity: 0.62; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .nav-item.active .nav-icon svg { opacity: 1; transform: scale(1.1); }
@@ -541,7 +544,7 @@
             background: linear-gradient(180deg, rgba(6,3,16,0.1) 0%, rgba(6,3,16,0.6) 60%, rgba(6,3,16,0.94) 100%);
         }
         .maintenance-body { position: relative; z-index: 1; text-align: center; max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-        .maintenance-body h2 { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 21px; font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(168, 85, 247, 0.5); margin: 0; }
+        .maintenance-body h2 { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 21px; font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(245, 158, 11, 0.5); margin: 0; }
         .maintenance-body p { color: rgba(255,255,255,0.88); font-size: 14px; line-height: 1.45; margin: 0; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
         .maintenance-body .btn-primary { width: 100%; max-width: 280px; justify-content: center; margin-top: 4px; }
 
@@ -573,7 +576,7 @@
             background: rgba(5, 3, 16, 0.5); border-radius: 11px;
         }
         .daily-cell.today {
-            background: linear-gradient(160deg, rgba(255, 176, 32, 0.25), rgba(147, 92, 255, 0.15));
+            background: linear-gradient(160deg, rgba(255, 176, 32, 0.25), rgba(245, 158, 11, 0.15));
             border-color: var(--gold);
             box-shadow: var(--glow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.16);
             animation: dailyPulse 1.4s ease-in-out infinite;
@@ -687,7 +690,7 @@
 
         /* ---------- Рулетка улучшения орлов ---------- */
         .fusion-pair { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 10px; }
-        .fusion-pair img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.4)); }
+        .fusion-pair img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.4)); }
         .fusion-plus { font-size: 20px; font-weight: 700; color: var(--text-muted); }
         .fusion-arrow { font-size: 18px; color: var(--gold); }
         .fusion-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
@@ -733,8 +736,8 @@
             </linearGradient>
 
             <linearGradient id="navGradFarm" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#b06bff" />
-                <stop offset="100%" stop-color="#ff3fa4" />
+                <stop offset="0%" stop-color="#fbbf24" />
+                <stop offset="100%" stop-color="#ef4444" />
             </linearGradient>
             <linearGradient id="navGradEggs" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#22d3ee" />
@@ -745,16 +748,16 @@
                 <stop offset="100%" stop-color="#ffb020" />
             </linearGradient>
             <linearGradient id="navGradMarket" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#4fc3ff" />
-                <stop offset="100%" stop-color="#a855f7" />
+                <stop offset="0%" stop-color="#facc15" />
+                <stop offset="100%" stop-color="#dc2626" />
             </linearGradient>
             <linearGradient id="navGradMerchant" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#7cff6b" />
                 <stop offset="100%" stop-color="#22d3ee" />
             </linearGradient>
             <linearGradient id="navGradProfile" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ff3fa4" />
-                <stop offset="100%" stop-color="#a855f7" />
+                <stop offset="0%" stop-color="#ef4444" />
+                <stop offset="100%" stop-color="#fbbf24" />
             </linearGradient>
         </defs>
     </svg>
