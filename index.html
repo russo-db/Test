@@ -2015,9 +2015,11 @@
 
         /* ---------- яйца: доска собранных яиц ---------- */
 
+        // Слоты 1-2 бесплатны; цена за слот 3..16 берётся из фиксированного
+        // прайса (eggs.unlock_prices[0] = слот 3, ... [13] = слот 16).
         function boardUnlockCost(index) {
-            const cfg = CONFIG.eggs;
-            return cfg.unlock_base_cost * Math.pow(cfg.unlock_growth, index - 1);
+            const prices = CONFIG.eggs.unlock_prices || [];
+            return Number(prices[index - 2]) || 0;
         }
 
         let eggSelected = -1;
@@ -4972,7 +4974,7 @@
             cfg.wheel.enabled = cfg.wheel.enabled !== false;
             if (!Array.isArray(cfg.wheel.segments)) cfg.wheel.segments = [];
             cfg.eggs = Object.assign(
-                { unlock_base_cost: 0.5, unlock_growth: 1.6, egg_interval_hours: 1 / 3600,
+                { unlock_prices: [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 33, 35, 35], egg_interval_hours: 1 / 3600,
                   hatch_common_chance: 0.01, hatch_meat_min: 7, hatch_meat_max: 13,
                   hatch_common_chance_by_level: null, hatch_jackpot_chance: 0,
                   hatch_jackpot_meat_by_level: null },
