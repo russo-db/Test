@@ -9,6 +9,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Фоны вкладок весят прилично — прелоадим сразу, иначе первое переключение
+         на вкладку тянет и декодирует картинку на лету и экран внизу мерцает,
+         пока навбар с backdrop-filter пересчитывает блюр поверх ещё не готового фона. -->
+    <link rel="preload" as="image" href="assets/farm-bg.jpg">
+    <link rel="preload" as="image" href="assets/eggs-bg.jpg">
+    <link rel="preload" as="image" href="assets/market-bg.jpg">
+    <link rel="preload" as="image" href="assets/merchant-bg.jpg">
     <style>
         /* ---------- Neon Glass HUD ----------
            Deep-space dark theme: frosted glassmorphic panels, neon amber/red/
@@ -5029,7 +5036,19 @@
             return cfg;
         }
 
+        // Фоны вкладок (Орлы/Яйца/Рынок/Купец) декодируются заранее, пока
+        // игрок ещё смотрит на экран загрузки — иначе первое переключение на
+        // вкладку тянет и декодирует картинку на лету, и экран мерцает, пока
+        // навбар с backdrop-filter пересчитывает блюр поверх ещё не готового фона.
+        function preloadTabBackgrounds() {
+            ['farm-bg.jpg', 'eggs-bg.jpg', 'market-bg.jpg', 'merchant-bg.jpg'].forEach(file => {
+                const img = new Image();
+                img.src = `assets/${file}`;
+            });
+        }
+
         async function boot() {
+            preloadTabBackgrounds();
             if (await checkMaintenance()) return;
 
             try {
