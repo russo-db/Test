@@ -1041,6 +1041,19 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
     }
 
 
+@app.get("/api/referrals/{user_id}")
+async def list_referrals(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Список приглашённых друзей и сумма их пополнений — для вкладки
+    «Друзья». Бонус, начисленный с каждого, не хранится отдельной строкой
+    (при пополнении просто прибавляется к балансу рефера, см.
+    credit_deposits), поэтому пересчитывается здесь от той же ставки."""
+    user_id = authenticate(x_telegram_init_data, user_id)
+    friends = await store.list_referrals(user_id)
+    for f in friends:
+        f["bonus_earned"] = round(f["total_deposit"] * REFERRAL_SHARE, 9)
+    return {"referral_share": REFERRAL_SHARE, "friends": friends}
+
+
 @app.post("/api/save")
 async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] = Header(None)):
     """Все балансы и состояние фермы теперь пишет сервер сам, атомарно, по

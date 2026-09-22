@@ -1028,6 +1028,9 @@
                     <div class="icon-lg" style="color: var(--accent-cyan);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
                 </div>
 
+                <div class="tier-heading"><span data-i18n="friends.listTitle">Твои друзья</span></div>
+                <div id="referralsList"></div>
+
             </div>
 
             <!-- Подвкладка: Язык -->
@@ -1354,6 +1357,9 @@
                 'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
                 'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
                 'friends.qualifyHint': 'Получай {share}% GRAM с каждого пополнения приглашённого друга',
+                'friends.listTitle': 'Твои друзья', 'friends.loading': 'Загрузка…',
+                'friends.noneYet': 'Пока никого не пригласил', 'friends.loadError': 'Не удалось загрузить список',
+                'friends.depositTotal': 'Пополнил всего', 'friends.bonusFromFriend': 'тебе +{amount} GRAM',
                 'lang.heading': 'Язык интерфейса',
                 'sound.heading': 'Звук в игре', 'sound.effectsLabel': 'Звуковые эффекты',
                 'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
@@ -1509,6 +1515,9 @@
                 'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
                 'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
                 'friends.qualifyHint': 'Earn {share}% GRAM from every deposit your invited friend makes',
+                'friends.listTitle': 'Your friends', 'friends.loading': 'Loading…',
+                'friends.noneYet': "You haven't invited anyone yet", 'friends.loadError': 'Could not load the list',
+                'friends.depositTotal': 'Total deposited', 'friends.bonusFromFriend': '+{amount} GRAM to you',
                 'lang.heading': 'Interface language',
                 'sound.heading': 'In-game sound', 'sound.effectsLabel': 'Sound effects',
                 'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
@@ -4434,6 +4443,36 @@
                 .catch(() => toast(link));
         }
 
+        // Список приглашённых друзей и сколько каждый из них пополнил (а значит,
+        // сколько GRAM это принесло тебе по реферальному проценту) — считает сервер.
+        async function loadReferrals() {
+            const list = document.getElementById('referralsList');
+            if (!list) return;
+            if (offlineOnly || !state.userId) { list.innerHTML = `<p class="market-section-empty">${t('merchant.onlineOnly')}</p>`; return; }
+            list.innerHTML = `<p class="market-section-empty">${t('friends.loading')}</p>`;
+            try {
+                const response = await fetch(`api/referrals/${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('failed');
+                const data = await response.json();
+                const friends = data.friends || [];
+                if (!friends.length) {
+                    list.innerHTML = `<p class="market-section-empty">${t('friends.noneYet')}</p>`;
+                    return;
+                }
+                list.innerHTML = friends.map(f => `
+                    <div class="stat-row">
+                        <span>${f.name || ('#' + f.user_id)}</span>
+                        <b style="text-align:right">
+                            ${fmtGram(f.total_deposit)} GRAM
+                            ${f.bonus_earned ? `<br><span style="font-size:11px; font-weight:500; color:var(--text-muted)">${t('friends.bonusFromFriend', { amount: fmtGram(f.bonus_earned) })}</span>` : ''}
+                        </b>
+                    </div>
+                `).join('');
+            } catch (error) {
+                list.innerHTML = `<p class="market-section-empty">${t('friends.loadError')}</p>`;
+            }
+        }
+
         function switchTab(tabId, element) {
             haptic.select();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
@@ -4459,7 +4498,7 @@
             document.querySelectorAll('#profile .subtab-panel').forEach(el => el.classList.remove('active'));
             const panelId = 'profileSub' + id.charAt(0).toUpperCase() + id.slice(1);
             document.getElementById(panelId).classList.add('active');
-            if (id === 'friends') renderMissions();
+            if (id === 'friends') { renderMissions(); loadReferrals(); }
         }
 
         /* ---------- кошелёк TON ---------- */

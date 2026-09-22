@@ -418,6 +418,27 @@ class MongoStore:
         rows.sort(key=lambda row: row["ts"], reverse=True)
         return rows[:limit]
 
+    async def list_referrals(self, referrer_id: int) -> list:
+        """Друзья, приглашённые этим игроком, и сумма их пополнений — реальный
+        реферальный бонус считается от неё же (см. REFERRAL_SHARE), поэтому
+        отдельный счётчик бонуса не хранится, а пересчитывается на лету."""
+        friends = []
+        async for doc in self.users.find({"referred_by": referrer_id}, {"name": 1}):
+            friends.append({"user_id": doc["_id"], "name": doc.get("name") or ""})
+        if not friends:
+            return []
+
+        friend_ids = [f["user_id"] for f in friends]
+        pipeline = [
+            {"$match": {"user_id": {"$in": friend_ids}}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}},
+        ]
+        totals = {row["_id"]: float(row["total"] or 0) async for row in self.deposits.aggregate(pipeline)}
+        for f in friends:
+            f["total_deposit"] = totals.get(f["user_id"], 0.0)
+        friends.sort(key=lambda f: f["total_deposit"], reverse=True)
+        return friends
+
     # --- АДМИН-ПАНЕЛЬ ---
 
     def _search_query(self, search: str) -> dict:
