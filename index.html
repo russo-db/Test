@@ -3006,7 +3006,6 @@
                 state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
-                spawnBurst(10);
                 toast(`Экспедиция принесла +${fmtGram(data.reward)} золота!`);
                 renderAll();
                 saveLocally();
