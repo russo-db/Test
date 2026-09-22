@@ -1633,7 +1633,7 @@
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
-            vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip/collectVipDailyMeat)
+            vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, eaglesSold: 0 } // общий (не персональный!) остаток лимитов купца, кэш с сервера
         };
 
@@ -1891,17 +1891,6 @@
 
         function tierById(id) {
             return CONFIG.tiers.find(t => t.id === id) || CONFIG.tiers[0];
-        }
-
-        function rollMonster(tierId) {
-            const pool = tierById(tierId).monsters;
-            const total = pool.reduce((sum, m) => sum + m.chance, 0);
-            let roll = Math.random() * total;
-            for (const monster of pool) {
-                roll -= monster.chance;
-                if (roll < 0) return MONSTERS[monster.id];
-            }
-            return MONSTERS[pool[pool.length - 1].id];
         }
 
         function earn(amount) {
@@ -2197,19 +2186,63 @@
         // окна: она помечает яйцо выбранным, и тап по второму такого же
         // уровня сливает их в уровень выше (тап по пустой ячейке — переносит,
         // по яйцу другого уровня — просто открывает окно уже для него).
-        function onEggCellClick(i) {
-            if (eggDragHandled) { eggDragHandled = false; return; } // клик сразу после драга — игнорируем
-            if (i >= state.eggBoardUnlocked) {
-                if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
-                const cost = boardUnlockCost(i);
-                if (state.coins < cost) { toast('Не хватает GRAM'); return; }
-                state.coins -= cost;
-                state.eggBoardUnlocked += 1;
-                drainEggQueue();
+        // Разблокировка ячейки и слияние/перенос яиц — сервер проверяет цену
+        // и совместимость сам (см. /api/eggs/unlock_slot, /api/eggs/merge).
+        async function requestUnlockEggSlot() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return false; }
+            try {
+                const response = await fetch('api/eggs/unlock_slot', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || 'Не хватает GRAM'); return false; }
+                state.coins = data.coins;
+                state.eggBoardUnlocked = data.eggs_board_unlocked;
+                state.eggBoard = normalizeEggBoard(data.eggs_board);
+                state.eggQueue = normalizeEggQueue(data.eggs_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 renderEggBoard();
                 renderHeader();
-                saveNow();
+                saveLocally();
+                return true;
+            } catch (error) {
+                toast('Сервер недоступен');
+                return false;
+            }
+        }
+
+        async function requestEggMerge(from, into) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return false; }
+            try {
+                const response = await fetch('api/eggs/merge', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, from_index: from, into_index: into })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (data.detail) toast(data.detail);
+                    renderEggBoard();
+                    return false;
+                }
+                state.eggBoard = normalizeEggBoard(data.eggs_board);
+                if (data.eggs_queue) state.eggQueue = normalizeEggQueue(data.eggs_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                renderEggBoard();
+                saveLocally();
+                return true;
+            } catch (error) {
+                toast('Сервер недоступен');
+                return false;
+            }
+        }
+
+        async function onEggCellClick(i) {
+            if (eggDragHandled) { eggDragHandled = false; return; } // клик сразу после драга — игнорируем
+            if (i >= state.eggBoardUnlocked) {
+                if (i !== state.eggBoardUnlocked) return; // разблокировка строго по порядку
+                await requestUnlockEggSlot();
                 return;
             }
 
@@ -2220,20 +2253,16 @@
                 eggSelected = -1;
                 if (from === i) { renderEggBoard(); return; } // повторный тап снимает выбор
                 if (!board[i]) {
-                    board[i] = board[from];
-                    board[from] = 0;
-                    renderEggBoard();
-                    saveNow();
+                    await requestEggMerge(from, i);
                     return;
                 }
                 if (board[i] === board[from]) {
-                    if (!mergeEggsAt(from, i)) {
+                    if (board[i] >= eggMaxLevel()) {
                         toast(t('egg.maxLevel', { max: eggMaxLevel() }));
                         renderEggBoard();
                         return;
                     }
-                    renderEggBoard();
-                    saveNow();
+                    await requestEggMerge(from, i);
                     return;
                 }
                 renderEggBoard();
@@ -2248,16 +2277,6 @@
             eggSelected = i;
             closeEggModal();
             renderEggBoard();
-        }
-
-        // Возвращает false и ничего не делает, если целевое яйцо уже максимального
-        // уровня — иначе слияние двух одинаковых яиц дало бы уровень выше eggMaxLevel().
-        function mergeEggsAt(from, into) {
-            if (state.eggBoard[into] >= eggMaxLevel()) return false;
-            state.eggBoard[from] = 0;
-            state.eggBoard[into] += 1;
-            drainEggQueue();
-            return true;
         }
 
         /* ---------- перетаскивание яиц (слияние наведением одного на другое) ---------- */
@@ -2349,37 +2368,30 @@
             document.querySelectorAll('.egg-cell.drop-ok, .egg-cell.drop-bad').forEach(el => el.classList.remove('drop-ok', 'drop-bad'));
         }
 
-        function applyEggDrop(from, level, targetIndex) {
+        async function applyEggDrop(from, level, targetIndex) {
             if (targetIndex === -1 || targetIndex === from) { renderEggBoard(); return; }
             const board = state.eggBoard;
             if (!board[targetIndex]) {
-                board[targetIndex] = board[from];
-                board[from] = 0;
-                renderEggBoard();
-                saveNow();
+                await requestEggMerge(from, targetIndex);
                 return;
             }
             if (board[targetIndex] === level) {
-                if (!mergeEggsAt(from, targetIndex)) {
+                if (board[targetIndex] >= eggMaxLevel()) {
                     toast(t('egg.maxLevel', { max: eggMaxLevel() }));
                     renderEggBoard();
                     return;
                 }
-                haptic.notify('success');
-                toast(`Яйца слиты — новый уровень ${board[targetIndex]}!`);
-                renderEggBoard();
-                saveNow();
+                const newLevel = board[targetIndex] + 1;
+                const ok = await requestEggMerge(from, targetIndex);
+                if (ok) {
+                    haptic.notify('success');
+                    toast(`Яйца слиты — новый уровень ${newLevel}!`);
+                }
                 return;
             }
             renderEggBoard(); // разные уровни — перетаскивание отменяется
         }
 
-        // Базовый разброс Meat, удвоенный за каждый уровень яйца выше первого.
-        function eggMeatReward(level) {
-            const cfg = CONFIG.eggs;
-            const base = cfg.hatch_meat_min + Math.random() * (cfg.hatch_meat_max - cfg.hatch_meat_min);
-            return Math.round(base * Math.pow(2, level - 1));
-        }
 
         // Шанс обычного орла растёт с уровнем яйца: 15/17/17/18/19/20%.
         function hatchCommonChance(level) {
@@ -2394,18 +2406,8 @@
             return (Array.isArray(arr) && Number(arr[level - 1])) || 0;
         }
 
-        // Один бросок делит 0..1 на три исхода: джекпот, орёл, иначе Meat.
-        function rollEggOutcome(level) {
-            const jackpotMeat = hatchJackpotMeat(level);
-            const jackpotChance = jackpotMeat ? (CONFIG.eggs.hatch_jackpot_chance ?? 0) : 0;
-            const commonChance = hatchCommonChance(level);
-            const roll = Math.random();
-            if (roll < jackpotChance) return { kind: 'jackpot', amount: jackpotMeat };
-            if (roll < jackpotChance + commonChance) return { kind: 'eagle' };
-            return { kind: 'meat', amount: eggMeatReward(level) };
-        }
-
         // Шансы исходов для яйца уровня level — общие для превью и подсказок.
+        // Сам исход при вскрытии считает сервер (/api/eggs/open), не клиент.
         function eggOdds(level) {
             const cfg = CONFIG.eggs;
             const jackpotMeat = hatchJackpotMeat(level);
@@ -2459,90 +2461,130 @@
         }
 
         // Вскрывает яйцо по таблице уровня: джекпот / обычный орёл / Meat.
-        // Орёл, если слоты заняты, встаёт в очередь — шанс не сгорает.
-        function openEgg(i) {
+        // Исход целиком считает и проверяет сервер — клиент только показывает.
+        async function openEgg(i) {
             const level = state.eggBoard[i];
             if (!level) return;
-            const outcome = rollEggOutcome(level);
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'egg-open:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
 
-            state.eggBoard[i] = 0;
-            drainEggQueue();
-            if (outcome.kind === 'jackpot') {
-                state.mnstr += outcome.amount;
-                toast(`Джекпот! +${fmtToken(outcome.amount)} Meat`);
-            } else if (outcome.kind === 'eagle') {
-                const monster = rollMonster('common');
-                addFarmSlot(monster.id);
-                toast(`Вылупился ${monster.name}!`);
-            } else {
-                state.mnstr += outcome.amount;
-                toast(`Яйцо принесло ${fmtToken(outcome.amount)} Meat!`);
+            try {
+                const response = await fetch('api/eggs/open', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, index: i })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Яйцо не найдено');
+                    return;
+                }
+                state.eggBoard = normalizeEggBoard(data.eggs_board);
+                state.eggQueue = normalizeEggQueue(data.eggs_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+
+                if (data.outcome === 'jackpot') {
+                    state.mnstr = data.mnstr;
+                    toast(`Джекпот! +${fmtToken(data.amount)} Meat`);
+                } else if (data.outcome === 'eagle') {
+                    state.farm = readFarm(data.monsters);
+                    state.farmQueue = readFarm(data.farm_queue);
+                    toast(`Вылупился ${MONSTERS[data.monster].name}!`);
+                } else {
+                    state.mnstr = data.mnstr;
+                    toast(`Яйцо принесло ${fmtToken(data.amount)} Meat!`);
+                }
+                haptic.notify('success');
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
             }
-            haptic.notify('success');
-            renderAll();
-            saveNow();
         }
 
         // Одним нажатием вскрывает все яйца на доске, каждое по своему уровню.
-        function openAllEggs() {
-            const board = state.eggBoard;
-            let meatTotal = 0;
-            let jackpotTotal = 0;
-            let eagleCount = 0;
-            let opened = 0;
+        async function openAllEggs() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('egg-open-all')) return;
+            farmActionBusy.add('egg-open-all');
 
-            for (let i = 0; i < board.length; i++) {
-                const level = board[i];
-                if (!level) continue;
-                const outcome = rollEggOutcome(level);
-                board[i] = 0;
-                opened++;
-                if (outcome.kind === 'jackpot') {
-                    jackpotTotal += outcome.amount;
-                } else if (outcome.kind === 'eagle') {
-                    eagleCount++;
-                    addFarmSlot(rollMonster('common').id);
-                } else {
-                    meatTotal += outcome.amount;
+            try {
+                const response = await fetch('api/eggs/open_all', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Нечего вскрывать');
+                    renderEggBoard();
+                    return;
                 }
-            }
+                state.eggBoard = normalizeEggBoard(data.eggs_board);
+                state.eggQueue = normalizeEggQueue(data.eggs_queue);
+                state.mnstr = data.mnstr;
+                state.farm = readFarm(data.monsters);
+                state.farmQueue = readFarm(data.farm_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
 
-            if (!opened) {
-                toast('Нечего вскрывать');
-                renderEggBoard();
-                return;
+                const parts = [];
+                if (data.jackpot_total) parts.push(`джекпот ${fmtToken(data.jackpot_total)} Meat`);
+                if (data.meat_total) parts.push(`${fmtToken(data.meat_total)} Meat`);
+                if (data.eagles && data.eagles.length) parts.push(`${data.eagles.length} ${plural(data.eagles.length, 'орёл', 'орла', 'орлов')}`);
+                toast(`Вскрыто ${data.opened} — выпало: ${parts.join(' и ')}`);
+                haptic.notify('success');
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('egg-open-all');
             }
-            drainEggQueue();
-
-            if (meatTotal || jackpotTotal) state.mnstr += meatTotal + jackpotTotal;
-            const parts = [];
-            if (jackpotTotal) parts.push(`джекпот ${fmtToken(jackpotTotal)} Meat`);
-            if (meatTotal) parts.push(`${fmtToken(meatTotal)} Meat`);
-            if (eagleCount) parts.push(`${eagleCount} ${plural(eagleCount, 'орёл', 'орла', 'орлов')}`);
-            toast(`Вскрыто ${opened} — выпало: ${parts.join(' и ')}`);
-            haptic.notify('success');
-            renderAll();
-            saveNow();
         }
 
         // Собирает яйцо с готового слота фермы и кладёт его на поле. Уровень
         // яйца = редкость орла, поэтому редкие орлы сразу несут более ценные яйца.
         // Сбор яйца поднимает орла на уровень. Дойдя до максимума (feed_levels),
         // орёл больше не просит мяса и не несёт яиц — только ждёт улучшения.
-        function collectEgg(i) {
+        async function collectEgg(i) {
             const slot = state.farm[i];
             if (!slot || !eggReady(slot)) return;
-            const monster = MONSTERS[slot.id];
-            const where = placeEggOnBoardOrQueue(tierIndexOf(monster) + 1);
-            slot.nextEggAt = 0;
-            slot.feedLevel = Math.min(CONFIG.fusion.feed_levels, (slot.feedLevel || 1) + 1);
-            haptic.notify('success');
-            const grewUp = slot.feedLevel >= CONFIG.fusion.feed_levels
-                ? ` ${monster.name} вырос до максимума — готов к улучшению`
-                : ` ${monster.name} — уровень ${slot.feedLevel}`;
-            toast(where === 'queue' ? `Яйцо собрано и встало в очередь! —${grewUp}` : `Яйцо собрано!${grewUp}`);
-            renderAll();
-            saveNow();
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'collect:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+
+            try {
+                const response = await fetch('api/farm/collect_egg', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Яйцо ещё не готово');
+                    haptic.notify('warning');
+                    return;
+                }
+                const monster = MONSTERS[slot.id];
+                state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
+                state.eggBoard = normalizeEggBoard(data.eggs_board);
+                state.eggQueue = normalizeEggQueue(data.eggs_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+
+                haptic.notify('success');
+                const grewUp = state.farm[i].feedLevel >= CONFIG.fusion.feed_levels
+                    ? ` ${monster.name} вырос до максимума — готов к улучшению`
+                    : ` ${monster.name} — уровень ${state.farm[i].feedLevel}`;
+                toast(`Яйцо собрано!${grewUp}`);
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
+            }
         }
 
         /* ---------- кормление тапом и объединение орлов ---------- */
@@ -2565,42 +2607,51 @@
         }
 
         // Один тап = один платёж Meat и +1 к прогрессу текущего уровня кормления.
-        // На feed_taps_per_level тапов орёл начинает нести яйцо (таймер 24ч);
-        // уровень растёт не от тапов, а при сборе готового яйца (см. collectEgg).
-        function feedTap(i, event) {
+        // На feed_taps_per_level тапов орёл начинает нести яйцо; уровень растёт
+        // не от тапов, а при сборе готового яйца (см. collectEgg). Сервер
+        // считает стоимость, прогресс и таймер сам — клиент только шлёт намерение.
+        const farmActionBusy = new Set();
+
+        async function feedTap(i, event) {
             const slot = state.farm[i];
             if (!slot) return;
-            const monster = MONSTERS[slot.id];
-            const cost = feedCost(monster);
-            if (state.mnstr < cost) {
-                toast('Не хватает Meat');
-                haptic.notify('warning');
-                return;
-            }
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'feed:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
 
-            state.mnstr -= cost;
-            slot.feedTaps = (slot.feedTaps || 0) + 1;
             haptic.impact('light');
             spawnFeedFx(event);
 
-            const cfg = CONFIG.fusion;
-            let startedFarming = false;
-            if (slot.feedTaps >= cfg.feed_taps_per_level) {
-                slot.feedTaps = 0;
-                slot.nextEggAt = nowSeconds() + eggIntervalSeconds();
-                startedFarming = true;
-            }
+            try {
+                const response = await fetch('api/farm/feed', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не хватает Meat');
+                    haptic.notify('warning');
+                    return;
+                }
+                state.mnstr = data.mnstr;
+                state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
+                if (typeof data.ops === 'number') state.ops = data.ops;
 
-            renderHeader();
-            updateSlotProgress();
-            if (i === state.activeSlot) renderActiveMonster();
+                renderHeader();
+                updateSlotProgress();
+                if (i === state.activeSlot) renderActiveMonster();
 
-            if (startedFarming) {
-                haptic.notify('success');
-                toast(`${monster.name} несёт яйцо — будет готово через ${formatCountdown(eggIntervalSeconds())}`);
-                saveNow();
-            } else {
-                scheduleSave();
+                if (data.started_farming) {
+                    haptic.notify('success');
+                    const monster = MONSTERS[state.farm[i].id];
+                    toast(`${monster.name} несёт яйцо — будет готово через ${formatCountdown(state.farm[i].nextEggAt - nowSeconds())}`);
+                }
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
             }
         }
 
@@ -2616,30 +2667,6 @@
 
             if (!a || !b || a.id !== b.id || !canFuse(MONSTERS[a.id])) { fusionSelected = i; renderSlotGrid(); return; }
             openFusionModal(from, i);
-        }
-
-        // Сливает двух откормленных орлов одного вида в одного орла следующей
-        // редкости; новый орёл снова начинает кормление с нуля.
-        function fuseEagles(indexA, indexB) {
-            const a = state.farm[indexA];
-            const monster = MONSTERS[a.id];
-            const nextTier = nextTierOf(monster);
-            if (!nextTier) { renderSlotGrid(); return; }
-
-            const nextMonster = MONSTERS[nextTier.monsters[0].id];
-            const keep = Math.min(indexA, indexB);
-            const drop = Math.max(indexA, indexB);
-            state.farm.splice(drop, 1);
-            state.farm.splice(keep, 1);
-            state.farm.push(newSlot(nextMonster.id));
-            state.activeSlot = state.farm.length - 1;
-            drainFarmQueue();
-
-            toast(`${monster.name} + ${monster.name} → ${nextMonster.name}!`);
-            haptic.notify('success');
-            spawnBurst(16);
-            renderAll();
-            saveNow();
         }
 
         /* ---------- рулетка улучшения: платная попытка, 7 призов равной ширины ---------- */
@@ -2675,18 +2702,6 @@
             if (seg.type === 'eagle') return tierById(seg.tier).name;
             if (seg.type === 'success') return t('fusion.upgradeWord');
             return `${seg.amount} Meat`;
-        }
-
-        // Все сектора рисуются одинаковой ширины (360°/7) — размер сектора не
-        // намекает на его реальный шанс, а сами шансы нигде не показываются.
-        function pickFusionIndex(segments) {
-            const total = segments.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
-            let roll = Math.random() * total;
-            for (let i = 0; i < segments.length; i++) {
-                roll -= Number(segments[i].weight) || 0;
-                if (roll <= 0) return i;
-            }
-            return segments.length - 1;
         }
 
         function openFusionModal(a, b) {
@@ -2769,12 +2784,21 @@
         // Одна платная попытка — приз определяет рулетка (сектора равной
         // ширины, шансы нигде не показываются). Улучшение орла — лишь один из
         // призов; остальные — утешительный Meat или бонусный орёл, исходная
-        // пара орлов при этом остаётся на месте.
-        function attemptFusion(useGram) {
+        // пара орлов при этом остаётся на месте. Исход (какой сектор выпал)
+        // считает сервер — клиент только крутит колесо до присланного индекса.
+        function setFusionButtonsDisabled(disabled) {
+            ['fusionMeatBtn', 'fusionGramBtn', 'fusionCancelBtn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = disabled;
+            });
+        }
+
+        async function attemptFusion(useGram) {
             if (fusionSpinning) return;
             const a = state.farm[fusionModalA];
             const b = state.farm[fusionModalB];
             if (!a || !b || a.id !== b.id) { closeFusionModal(); return; }
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const monster = MONSTERS[a.id];
             const cfg = CONFIG.fusion;
             const cost = useGram ? Number(cfg.merge_cost_gram || 1) : Number(cfg.merge_cost_meat || 75);
@@ -2785,41 +2809,67 @@
                 toast('Не хватает Meat'); haptic.notify('warning'); return;
             }
 
-            const segments = fusionSegments(monster);
-            if (!segments.length) return;
-            const index = pickFusionIndex(segments);
-            const outcome = segments[index];
+            fusionSpinning = true;
+            setFusionButtonsDisabled(true);
 
-            if (useGram) state.coins -= cost; else state.mnstr -= cost;
+            let data;
+            try {
+                const response = await fetch('api/farm/fusion_attempt', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({
+                        user_id: state.userId, slot_a: fusionModalA, slot_b: fusionModalB, use_gram: useGram
+                    })
+                });
+                data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не удалось выполнить улучшение');
+                    haptic.notify('warning');
+                    fusionSpinning = false;
+                    setFusionButtonsDisabled(false);
+                    return;
+                }
+            } catch (error) {
+                toast('Сервер недоступен');
+                fusionSpinning = false;
+                setFusionButtonsDisabled(false);
+                return;
+            }
+
+            state.coins = data.coins;
+            state.mnstr = data.mnstr;
+            if (typeof data.ops === 'number') state.ops = data.ops;
             renderHeader();
 
-            fusionSpinning = true;
-            ['fusionMeatBtn', 'fusionGramBtn', 'fusionCancelBtn'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.disabled = true;
-            });
-            spinFusionWheelTo(index, segments.length);
+            const segments = fusionSegments(monster);
+            spinFusionWheelTo(data.segment_index, segments.length);
             haptic.impact('light');
 
             setTimeout(() => {
                 fusionSpinning = false;
-                if (outcome.type === 'success') {
-                    fuseEagles(fusionModalA, fusionModalB);
+                if (data.outcome === 'success') {
+                    state.farm = readFarm(data.monsters);
+                    state.farmQueue = readFarm(data.farm_queue);
+                    state.activeSlot = data.active_slot;
+                    toast(`${monster.name} + ${monster.name} → ${MONSTERS[data.monster].name}!`);
+                    haptic.notify('success');
+                    spawnBurst(16);
                     closeFusionModal();
+                    renderAll();
+                    saveLocally();
                     return;
                 }
-                if (outcome.type === 'eagle') {
-                    const bonus = rollMonster(outcome.tier);
-                    addFarmSlot(bonus.id);
+                if (data.outcome === 'eagle') {
+                    state.farm = readFarm(data.monsters);
+                    state.farmQueue = readFarm(data.farm_queue);
                     haptic.notify('success');
-                    toast(`Бонусный орёл — ${bonus.name}!`);
+                    toast(`Бонусный орёл — ${MONSTERS[data.monster].name}!`);
                 } else {
-                    state.mnstr += outcome.amount;
                     haptic.notify('success');
-                    toast(`+${fmtToken(outcome.amount)} Meat`);
+                    toast(`+${fmtToken(data.amount)} Meat`);
                 }
                 renderHeader();
-                saveNow();
+                renderAll();
+                saveLocally();
                 renderFusionModal();
             }, 4200);
         }
@@ -2852,31 +2902,72 @@
         // на паузе (см. onFarmSlotTap): кормление и яйца ждут, пока орёл не
         // вернётся. Возврат собирается тапом или из карточки орла. В экспедицию
         // берут только полностью прокачанных орлов (feedLevel на максимуме).
-        function sendExpedition(i) {
+        async function sendExpedition(i) {
             const slot = state.farm[i];
             if (!slot || isOnExpedition(slot)) return;
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
-            const cost = Number(CONFIG.expeditions.cost_meat || 1);
-            if (state.mnstr < cost) { toast('Не хватает Meat'); haptic.notify('warning'); return; }
-            state.mnstr -= cost;
-            slot.expeditionUntil = nowSeconds() + expeditionDurationSeconds();
-            haptic.impact('light');
-            toast(`${MONSTERS[slot.id].name} отправился в экспедицию на ${formatCountdown(expeditionDurationSeconds())}`);
-            renderAll();
-            saveNow();
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'expedition-start:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+
+            try {
+                const response = await fetch('api/farm/expedition/start', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не хватает Meat');
+                    haptic.notify('warning');
+                    return;
+                }
+                state.mnstr = data.mnstr;
+                state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.impact('light');
+                const dur = state.farm[i].expeditionUntil - nowSeconds();
+                toast(`${MONSTERS[state.farm[i].id].name} отправился в экспедицию на ${formatCountdown(dur)}`);
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
+            }
         }
 
-        function collectExpedition(i) {
+        async function collectExpedition(i) {
             const slot = state.farm[i];
             if (!slot || !expeditionReady(slot)) return;
-            const reward = expeditionGoldReward(MONSTERS[slot.id]);
-            slot.expeditionUntil = 0;
-            state.gold = (state.gold || 0) + reward;
-            haptic.notify('success');
-            spawnBurst(10);
-            toast(`Экспедиция принесла +${fmtGram(reward)} золота!`);
-            renderAll();
-            saveNow();
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'expedition-collect:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+
+            try {
+                const response = await fetch('api/farm/expedition/collect', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Экспедиция ещё не вернулась');
+                    return;
+                }
+                state.gold = data.gold;
+                state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                spawnBurst(10);
+                toast(`Экспедиция принесла +${fmtGram(data.reward)} золота!`);
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
+            }
         }
 
         /* ---------- VIP-тарифы: ускоряют яйца/экспедиции, дают Meat каждый день ---------- */
@@ -2899,29 +2990,9 @@
             return vipActive() ? vipTierDef(state.vip.tier) : null;
         }
 
-        // Раз в сутки, пока тариф активен, начисляет Meat — с наверстыванием,
-        // если игрок не заходил несколько дней (но не дольше, чем тариф ещё
-        // был активен).
-        function collectVipDailyMeat() {
-            if (!vipActive()) return;
-            const tier = currentVipTier();
-            if (!tier || !tier.meat_per_day) return;
-            const now = nowSeconds();
-            const dayLen = 86400;
-            let days = Math.floor((now - state.vip.lastMeatAt) / dayLen);
-            if (days <= 0) return;
-            const capAt = Math.min(now, state.vip.expiresAt);
-            const maxDays = Math.floor((capAt - state.vip.lastMeatAt) / dayLen);
-            days = Math.min(days, Math.max(0, maxDays));
-            if (days <= 0) return;
-            state.vip.lastMeatAt += days * dayLen;
-            const amount = days * tier.meat_per_day;
-            state.mnstr += amount;
-            haptic.notify('success');
-            toast(t('vip.dailyMeat', { amount: fmtToken(amount) }));
-            renderHeader();
-            saveNow();
-        }
+        // Начисление накопленного VIP-Meat теперь считает и пишет сервер сам
+        // при каждой загрузке фермы (см. accrue_vip_meat в main.py) — офлайн-
+        // время не пропадает зря, а клиенту не нужно ничего досчитывать.
 
         function renderVipRail() {
             const rail = document.getElementById('vipRail');
@@ -2974,22 +3045,43 @@
             `;
         }
 
-        function buyVip(tierId) {
+        async function buyVip(tierId) {
             const tier = vipTierDef(tierId);
             if (!tier) return;
             if (vipActive()) { toast(t(state.vip.tier === tierId ? 'vip.alreadyActive' : 'vip.anotherActive')); haptic.notify('warning'); return; }
             if (state.coins < tier.price_gram) { toast(t('vip.notEnoughGram')); haptic.notify('warning'); return; }
-            state.coins -= tier.price_gram;
-            const now = nowSeconds();
-            state.vip = { tier: tier.id, expiresAt: now + tier.duration_days * 86400, lastMeatAt: now };
-            state.mnstr += tier.meat_per_day;
-            haptic.notify('success');
-            spawnBurst(14);
-            toast(t('vip.activated', { name: tier.name }));
-            closeVipModal();
-            renderHeader();
-            renderVipRail();
-            saveNow();
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('buy-vip')) return;
+            farmActionBusy.add('buy-vip');
+
+            try {
+                const response = await fetch('api/vip/buy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, tier_id: tierId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || t('vip.notEnoughGram'));
+                    haptic.notify('warning');
+                    return;
+                }
+                state.coins = data.coins;
+                state.mnstr = data.mnstr;
+                state.vip = { tier: data.vip_tier, expiresAt: data.vip_expires_at, lastMeatAt: data.vip_last_meat_at };
+                if (typeof data.ops === 'number') state.ops = data.ops;
+
+                haptic.notify('success');
+                spawnBurst(14);
+                toast(t('vip.activated', { name: tier.name }));
+                closeVipModal();
+                renderHeader();
+                renderVipRail();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('buy-vip');
+            }
         }
 
         /* ---------- купец: покупка Meat за золото и продажа орлов за GRAM ----------
@@ -3590,8 +3682,9 @@
                 if (reward.egg_level && reward.egg_count) {
                     reward.eggLevel = Number(reward.egg_level);
                     reward.eggsRequested = Number(reward.egg_count);
-                    reward.eggsResult = grantEggsFromWheel(reward.eggLevel, reward.eggsRequested);
-                    saveNow(); // доска яиц — чисто клиентское состояние, сервер её не сохраняет
+                    reward.eggsResult = reward.eggs_result || { board: 0, queue: 0 };
+                    state.eggBoard = normalizeEggBoard(data.eggs_board);
+                    state.eggQueue = normalizeEggQueue(data.eggs_queue);
                 }
                 finishWheelSpin(data.segment, reward);
             } catch (error) {
@@ -4152,20 +4245,38 @@
             document.getElementById('tokenModal').classList.remove('open');
         }
 
-        function buySlot() {
+        async function buySlot() {
             if (slotsMaxed()) return;
-            const cost = slotCost();
-            if (state.coins < cost) return;
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('buy-slot')) return;
+            farmActionBusy.add('buy-slot');
 
-            state.coins -= cost;
-            state.slots += 1;
-            drainFarmQueue();
+            try {
+                const response = await fetch('api/farm/buy_slot', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не хватает GRAM');
+                    return;
+                }
+                state.coins = data.coins;
+                state.slots = data.slots;
+                state.farm = readFarm(data.monsters);
+                state.farmQueue = readFarm(data.farm_queue);
+                if (typeof data.ops === 'number') state.ops = data.ops;
 
-            haptic.notify('success');
-            toast(`Слот ${state.slots} открыт`);
-            renderAll();
-            renderSlotBuy();
-            saveNow();
+                haptic.notify('success');
+                toast(`Слот ${state.slots} открыт`);
+                renderAll();
+                renderSlotBuy();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('buy-slot');
+            }
         }
 
         async function claimMission(missionId) {
@@ -4684,6 +4795,10 @@
             };
         }
 
+        // Балансы и состояние фермы теперь пишет сервер сам, атомарно, по месту
+        // действия (см. /api/farm/*, /api/eggs/*, /api/vip/*). Здесь сохраняется
+        // только active_slot — какой орёл показан на сцене, чисто визуальный
+        // выбор без влияния на баланс.
         function saveNow() {
             if (offlineOnly || !state.userId) {
                 saveLocally();
@@ -4691,34 +4806,8 @@
             }
             const payload = {
                 user_id: state.userId,
-                coins: state.coins,
-                total_earned: state.totalEarned,
-                mnstr: state.mnstr,
-                gold: state.gold || 0,
-                monsters: state.farm.map(slot => ({
-                    id: slot.id,
-                    next_egg_at: slot.nextEggAt,
-                    feed_level: slot.feedLevel || 1,
-                    feed_taps: slot.feedTaps || 0,
-                    expedition_until: slot.expeditionUntil || 0,
-                })),
-                farm_queue: state.farmQueue.map(slot => ({
-                    id: slot.id,
-                    next_egg_at: slot.nextEggAt,
-                    feed_level: slot.feedLevel || 1,
-                    feed_taps: slot.feedTaps || 0,
-                    expedition_until: slot.expeditionUntil || 0,
-                })),
                 active_slot: state.activeSlot,
-                missions: state.missions,
-                slots: state.slots,
-                eggs_board: state.eggBoard,
-                eggs_board_unlocked: state.eggBoardUnlocked,
-                eggs_queue: state.eggQueue,
                 ops: state.ops,
-                vip_tier: (state.vip && state.vip.tier) || '',
-                vip_expires_at: (state.vip && state.vip.expiresAt) || 0,
-                vip_last_meat_at: (state.vip && state.vip.lastMeatAt) || 0
             };
             fetch('api/save', {
                 method: 'POST',
@@ -4864,7 +4953,6 @@
             setInterval(() => {
                 renderHeader();
                 updateSlotProgress();
-                collectVipDailyMeat();
                 if (document.getElementById('farm').classList.contains('active')) {
                     renderActiveMonster();
                 }

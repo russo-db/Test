@@ -52,6 +52,12 @@ def apply_config(cfg: dict):
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
+    global EGGS_CFG, EGG_INTERVAL_HOURS, UNLOCK_PRICES
+    global HATCH_COMMON_BY_LEVEL, HATCH_COMMON_DEFAULT, HATCH_MEAT_MIN, HATCH_MEAT_MAX
+    global HATCH_JACKPOT_CHANCE, HATCH_JACKPOT_MEAT_BY_LEVEL
+    global FEED_BASE_COST, FEED_GROWTH, FEED_TAPS_PER_LEVEL, MERGE_COST_MEAT, MERGE_COST_GRAM, ROULETTE_BY_TIER
+    global EXPEDITIONS_CFG, EXPEDITION_DURATION_HOURS, EXPEDITION_COST_MEAT, EXPEDITION_GOLD_BY_TIER
+    global SLOTS_PRICES, VIP_TIERS
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -65,6 +71,27 @@ def apply_config(cfg: dict):
     MAX_SLOTS = CONFIG["slots"]["max"]
     FUSION_CFG = CONFIG.get("fusion") or {}
     FEED_LEVELS = int(FUSION_CFG.get("feed_levels", 7))
+    FEED_BASE_COST = float(FUSION_CFG.get("feed_base_cost", 1))
+    FEED_GROWTH = float(FUSION_CFG.get("feed_growth", 2))
+    FEED_TAPS_PER_LEVEL = int(FUSION_CFG.get("feed_taps_per_level", 10))
+    MERGE_COST_MEAT = float(FUSION_CFG.get("merge_cost_meat", 75))
+    MERGE_COST_GRAM = float(FUSION_CFG.get("merge_cost_gram", 1))
+    ROULETTE_BY_TIER = FUSION_CFG.get("roulette_by_tier") or []
+    EGGS_CFG = CONFIG.get("eggs") or {}
+    EGG_INTERVAL_HOURS = float(EGGS_CFG.get("egg_interval_hours", 24))
+    UNLOCK_PRICES = [float(v) for v in (EGGS_CFG.get("unlock_prices") or [])]
+    HATCH_COMMON_BY_LEVEL = [float(v) for v in (EGGS_CFG.get("hatch_common_chance_by_level") or [])]
+    HATCH_COMMON_DEFAULT = float(EGGS_CFG.get("hatch_common_chance", 0.01))
+    HATCH_MEAT_MIN = float(EGGS_CFG.get("hatch_meat_min", 7))
+    HATCH_MEAT_MAX = float(EGGS_CFG.get("hatch_meat_max", 13))
+    HATCH_JACKPOT_CHANCE = float(EGGS_CFG.get("hatch_jackpot_chance", 0.0))
+    HATCH_JACKPOT_MEAT_BY_LEVEL = [float(v) for v in (EGGS_CFG.get("hatch_jackpot_meat_by_level") or [])]
+    EXPEDITIONS_CFG = CONFIG.get("expeditions") or {}
+    EXPEDITION_DURATION_HOURS = float(EXPEDITIONS_CFG.get("duration_hours", 4))
+    EXPEDITION_COST_MEAT = float(EXPEDITIONS_CFG.get("cost_meat", 1))
+    EXPEDITION_GOLD_BY_TIER = [float(v) for v in (EXPEDITIONS_CFG.get("gold_by_tier") or [])]
+    SLOTS_PRICES = [float(v) for v in (CONFIG["slots"].get("prices") or [])]
+    VIP_TIERS = {t["id"]: t for t in (CONFIG.get("vip") or {}).get("tiers", [])}
     MARKET_CFG = CONFIG.get("market") or {}
     MARKET_MIN_TIER_INDEX = 1  # обычная (индекс 0) редкость на P2P-рынке не продаётся
     MARKET_COMMISSION = float(MARKET_CFG.get("commission", 0.10))
@@ -305,6 +332,209 @@ def normalize_eggs_queue(raw) -> List[int]:
     так же ограничен MAX_EGG_LEVEL, см. normalize_eggs_board."""
     source = [min(MAX_EGG_LEVEL, max(0, int(v) if isinstance(v, (int, float)) else 0)) for v in raw] if isinstance(raw, list) else []
     return [v for v in source if v][:EGG_QUEUE_MAX]
+
+
+# --- FARM ACTIONS: game math ported from index.html so every server-side
+# action produces exactly the same numbers the client used to compute itself.
+# Every function here is pure (no I/O) — the calling endpoint reads the row,
+# calls these to compute the new fields, then writes with store.cas_update().
+def tier_index(monster_id: str) -> int:
+    return TIER_INDEX.get(MONSTER_TIER.get(monster_id), 0)
+
+
+def new_slot(monster_id: str) -> dict:
+    return {"id": monster_id, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0, "expedition_until": 0}
+
+
+def feed_cost(monster_id: str) -> float:
+    return FEED_BASE_COST * (FEED_GROWTH ** tier_index(monster_id))
+
+
+def vip_active(row: dict) -> bool:
+    tier = row.get("vip_tier")
+    return bool(tier) and tier in VIP_TIERS and float(row.get("vip_expires_at") or 0) > time.time()
+
+
+def current_vip_tier(row: dict) -> Optional[dict]:
+    return VIP_TIERS.get(row.get("vip_tier")) if vip_active(row) else None
+
+
+def egg_interval_seconds(row: dict) -> float:
+    vip = current_vip_tier(row)
+    base = EGG_INTERVAL_HOURS * 3600
+    return max(0.0, base - (float(vip.get("egg_reduction_hours") or 0) * 3600 if vip else 0.0))
+
+
+def expedition_duration_seconds(row: dict) -> float:
+    vip = current_vip_tier(row)
+    base = EXPEDITION_DURATION_HOURS * 3600
+    return max(0.0, base - (float(vip.get("expedition_reduction_hours") or 0) * 3600 if vip else 0.0))
+
+
+def expedition_gold_reward(monster_id: str) -> float:
+    idx = tier_index(monster_id)
+    return EXPEDITION_GOLD_BY_TIER[idx] if idx < len(EXPEDITION_GOLD_BY_TIER) else 0.0
+
+
+def board_unlock_cost(unlocked_count: int) -> Optional[float]:
+    """None — уже разблокировано всё, что есть в прайсе (защита от деления
+    за пределами таблицы; ситуация не должна происходить при unlocked_count
+    < EGG_BOARD_SIZE, но лучше явно отказать, чем открыть бесплатно)."""
+    idx = unlocked_count - 2
+    if 0 <= idx < len(UNLOCK_PRICES):
+        return UNLOCK_PRICES[idx]
+    return None
+
+
+def pick_weighted_index(segments: List[dict]) -> int:
+    total = sum(float(s.get("weight") or 0) for s in segments) or 1.0
+    roll = random.uniform(0, total)
+    upto = 0.0
+    for i, seg in enumerate(segments):
+        upto += float(seg.get("weight") or 0)
+        if roll <= upto:
+            return i
+    return len(segments) - 1
+
+
+def roll_monster(tier_id: str) -> str:
+    tier = next((t for t in CONFIG["tiers"] if t["id"] == tier_id), CONFIG["tiers"][0])
+    pool = tier["monsters"]
+    total = sum(float(m.get("chance") or 0) for m in pool) or 1.0
+    roll = random.uniform(0, total)
+    upto = 0.0
+    for m in pool:
+        upto += float(m.get("chance") or 0)
+        if roll <= upto:
+            return m["id"]
+    return pool[-1]["id"]
+
+
+def roll_egg_outcome(level: int) -> dict:
+    jackpot_meat = HATCH_JACKPOT_MEAT_BY_LEVEL[level - 1] if level - 1 < len(HATCH_JACKPOT_MEAT_BY_LEVEL) else 0.0
+    jackpot_chance = HATCH_JACKPOT_CHANCE if jackpot_meat else 0.0
+    common_chance = HATCH_COMMON_BY_LEVEL[level - 1] if level - 1 < len(HATCH_COMMON_BY_LEVEL) else HATCH_COMMON_DEFAULT
+    roll = random.random()
+    if roll < jackpot_chance:
+        return {"kind": "jackpot", "amount": jackpot_meat}
+    if roll < jackpot_chance + common_chance:
+        return {"kind": "eagle"}
+    base = HATCH_MEAT_MIN + random.random() * (HATCH_MEAT_MAX - HATCH_MEAT_MIN)
+    return {"kind": "meat", "amount": round(base * (2 ** (level - 1)))}
+
+
+def place_egg_on_board_or_queue(board: List[int], queue: List[int], unlocked: int, level: int):
+    for i in range(unlocked):
+        if not board[i]:
+            board[i] = level
+            return
+    queue.append(level)
+
+
+def drain_egg_queue(board: List[int], queue: List[int], unlocked: int):
+    for i in range(unlocked):
+        if not queue:
+            break
+        if not board[i]:
+            board[i] = queue.pop(0)
+
+
+def add_farm_slot(farm: List[dict], farm_queue: List[dict], slots_count: int, monster_id: str):
+    slot = new_slot(monster_id)
+    if len(farm) < slots_count:
+        farm.append(slot)
+    else:
+        farm_queue.append(slot)
+
+
+def drain_farm_queue(farm: List[dict], farm_queue: List[dict], slots_count: int):
+    while len(farm) < slots_count and farm_queue:
+        farm.append(farm_queue.pop(0))
+
+
+async def grant_wheel_eggs(user_id: int, level: int, count: int) -> dict:
+    """Кладёт count яиц уровня level на доску (или в очередь, если места нет)
+    — приз колеса фортуны за яйца. Раньше доска яиц была чисто клиентским
+    состоянием и это делал клиент сам, локально; теперь доска — серверное
+    состояние (см. /api/eggs/*), поэтому и этот приз кладёт сервер."""
+    board, queue = [], []
+    for _ in range(3):
+        row = await fetch_user(user_id)
+        ops = int(row.get("ops") or 0)
+        board = normalize_eggs_board(row.get("eggs_board"))
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        board_count = 0
+        queue_count = 0
+        for _ in range(count):
+            placed = False
+            for i in range(unlocked):
+                if not board[i]:
+                    board[i] = level
+                    placed = True
+                    break
+            if placed:
+                board_count += 1
+            else:
+                queue.append(level)
+                queue_count += 1
+        if await store.cas_update(user_id, {"eggs_board": board, "eggs_queue": queue}, ops):
+            return {"board": board_count, "queue": queue_count, "eggs_board": board, "eggs_queue": queue}
+    return {"board": 0, "queue": 0, "eggs_board": board, "eggs_queue": queue}
+
+
+async def accrue_vip_meat(user_id: int, row: dict) -> dict:
+    """Начисляет накопленный VIP-Meat (раз в сутки, с наверстыванием за
+    время офлайн, но не дольше, чем тариф был активен) — раньше это делал
+    клиент в collectVipDailyMeat() при каждом заходе. Вызывается из
+    /api/load, чтобы офлайн-время не пропадало зря."""
+    if not vip_active(row):
+        return row
+    tier = current_vip_tier(row)
+    if not tier or not tier.get("meat_per_day"):
+        return row
+    now = time.time()
+    day_len = 86400
+    last = float(row.get("vip_last_meat_at") or 0)
+    days = int((now - last) // day_len)
+    if days <= 0:
+        return row
+    cap_at = min(now, float(row.get("vip_expires_at") or 0))
+    days = min(days, max(0, int((cap_at - last) // day_len)))
+    if days <= 0:
+        return row
+
+    for _ in range(3):
+        ops = int(row.get("ops") or 0)
+        new_last = last + days * day_len
+        amount = days * float(tier["meat_per_day"])
+        mnstr = float(row.get("mnstr") or 0) + amount
+        fields = {"vip_last_meat_at": new_last, "mnstr": mnstr}
+        if await store.cas_update(user_id, fields, ops):
+            row = dict(row)
+            row.update(fields)
+            row["ops"] = ops + 1
+            return row
+        row = await fetch_user(user_id)  # гонка с другим действием — перечитать и попробовать снова
+    return row
+
+
+async def run_farm_action(user_id: int, compute) -> dict:
+    """Общий цикл для всех действий фермы/яиц/VIP: читает документ, зовёт
+    compute(row) -> (fields для $set, доп. поля ответа) и пишет через
+    cas_update по прочитанному ops. compute может кинуть HTTPException —
+    тогда действие отклоняется без записи. Конфликт (параллельное действие
+    того же игрока сдвинуло ops между чтением и записью) — не ошибка
+    игрока, а гонка тапов; перечитываем документ и пробуем снова."""
+    for _ in range(5):
+        row = await fetch_user(user_id)
+        ops = int(row.get("ops") or 0)
+        fields, extra = compute(row)
+        if await store.cas_update(user_id, fields, ops):
+            extra["status"] = "success"
+            extra["ops"] = ops + 1
+            return extra
+    raise HTTPException(status_code=409, detail="Не удалось выполнить — попробуй ещё раз")
 
 
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
@@ -578,23 +808,17 @@ async def ton_poller():
 
 # --- API MODELS ---
 class FarmState(BaseModel):
+    """Раньше сюда приходило целиком посчитанное клиентом состояние фермы —
+    теперь каждое действие (кормление, сбор/вскрытие яйца, слияние,
+    экспедиция, покупка слота/ячейки/VIP) атомарно считает и пишет сервер
+    сам, см. /api/farm/*, /api/eggs/*, /api/vip/*. Экономических полей тут
+    больше нет специально — /api/save остался только для active_slot (какой
+    орёл показан на сцене, чисто визуальный выбор без влияния на баланс).
+    Старые поля не объявлены как required, поэтому кэшированный старый
+    клиент, ещё шлющий их, не сломается — Pydantic просто их игнорирует."""
     user_id: int
-    coins: float
-    total_earned: float
-    mnstr: float = 0.0
-    gold: float = 0.0
-    monsters: List[dict]       # one slot per eagle: {"id", "next_egg_at", "feed_level", "feed_taps", "expedition_until"}
-    farm_queue: List[dict] = []
     active_slot: int = 0
-    missions: list = []
-    slots: int = START_SLOTS
-    eggs_board: List[int] = []
-    eggs_board_unlocked: int = 2
-    eggs_queue: List[int] = []
     ops: int = -1              # версия баланса, полученная при последней загрузке
-    vip_tier: str = ""
-    vip_expires_at: float = 0
-    vip_last_meat_at: float = 0
 
 
 class MissionClaim(BaseModel):
@@ -618,6 +842,46 @@ class MerchantBuyMeat(BaseModel):
 class MerchantSellEagle(BaseModel):
     user_id: int
     slot_index: int
+
+
+class FarmSlotAction(BaseModel):
+    user_id: int
+    slot_index: int
+
+
+class FusionAttempt(BaseModel):
+    user_id: int
+    slot_a: int
+    slot_b: int
+    use_gram: bool = False
+
+
+class BuySlot(BaseModel):
+    user_id: int
+
+
+class EggIndexAction(BaseModel):
+    user_id: int
+    index: int
+
+
+class EggMergeAction(BaseModel):
+    user_id: int
+    from_index: int
+    into_index: int
+
+
+class UnlockEggSlot(BaseModel):
+    user_id: int
+
+
+class OpenAllEggs(BaseModel):
+    user_id: int
+
+
+class BuyVip(BaseModel):
+    user_id: int
+    tier_id: str
 
 
 class MarketListRequest(BaseModel):
@@ -739,6 +1003,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         await ensure_user(user_id, name=context["name"])
 
     row = await fetch_user(user_id)
+    row = await accrue_vip_meat(user_id, row)
     farm = read_farm(row["monsters"])
 
     await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
@@ -775,42 +1040,432 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
 
 @app.post("/api/save")
 async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] = Header(None)):
-    """Сохраняет ферму. Награды за задания сюда не приходят — их выдаёт сервер."""
+    """Все балансы и состояние фермы теперь пишет сервер сам, атомарно, по
+    месту действия (см. /api/farm/*, /api/eggs/*, /api/vip/*). Этот эндпоинт
+    сохраняет только active_slot — какой орёл показан на сцене."""
     user_id = authenticate(x_telegram_init_data, state.user_id)
     row = await fetch_user(user_id)
 
-    # Сервер мог начислить награду или пополнение уже после того, как клиент
-    # прочитал баланс. Тогда его копия устарела — сохранять её нельзя, иначе
-    # начисление затрётся. Клиент увидит "stale" и перезагрузит состояние.
     server_ops = int(row.get("ops") or 0)
     if state.ops >= 0 and state.ops != server_ops:
         return {"status": "stale", "ops": server_ops}
 
-    eggs_board = normalize_eggs_board(state.eggs_board)
-    eggs_board_unlocked = max(2, min(EGG_BOARD_SIZE, int(state.eggs_board_unlocked or 2)))
-    eggs_queue = normalize_eggs_queue(state.eggs_queue)
-
-    await store.update(
-        user_id,
-        {
-            "coins": state.coins,
-            "total_earned": state.total_earned,
-            "mnstr": state.mnstr,
-            "gold": max(0.0, state.gold),
-            "monsters": read_farm(state.monsters),
-            "farm_queue": read_farm(state.farm_queue)[:FARM_QUEUE_MAX],
-            "active_slot": state.active_slot,
-            "slots": state.slots,
-            "eggs_board": eggs_board,
-            "eggs_board_unlocked": eggs_board_unlocked,
-            "eggs_queue": eggs_queue,
-            "vip_tier": state.vip_tier,
-            "vip_expires_at": max(0.0, state.vip_expires_at),
-            "vip_last_meat_at": max(0.0, state.vip_last_meat_at),
-            "last_seen": int(time.time()),
-        },
-    )
+    await store.update(user_id, {"active_slot": max(0, state.active_slot), "last_seen": int(time.time())})
     return {"status": "success", "ops": server_ops}
+
+
+# --- FARM/EGGS/VIP ACTIONS: атомарные, сервер сам считает и проверяет всё,
+# клиент только шлёт намерение (какой слот/индекс) и показывает ответ. ---
+
+@app.post("/api/farm/feed")
+async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Тап кормления: списывает Meat, продвигает прогресс тапов; на
+    feed_taps_per_level тапов запускает таймер яйца."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        slot = farm[i]
+        if slot["expedition_until"] > 0:
+            raise HTTPException(status_code=400, detail="Орёл в экспедиции")
+        if slot["feed_level"] >= FEED_LEVELS:
+            raise HTTPException(status_code=400, detail="Орёл уже прокачан до максимума")
+        if slot["next_egg_at"] > 0:
+            raise HTTPException(status_code=400, detail="Яйцо уже варится")
+        cost = feed_cost(slot["id"])
+        mnstr = float(row.get("mnstr") or 0)
+        if mnstr < cost:
+            raise HTTPException(status_code=400, detail="Не хватает Meat")
+
+        slot["feed_taps"] += 1
+        started_farming = False
+        if slot["feed_taps"] >= FEED_TAPS_PER_LEVEL:
+            slot["feed_taps"] = 0
+            slot["next_egg_at"] = int(time.time() + egg_interval_seconds(row))
+            started_farming = True
+
+        mnstr -= cost
+        fields = {"mnstr": mnstr, "monsters": farm}
+        return fields, {"mnstr": mnstr, "slot": slot, "slot_index": i, "started_farming": started_farming}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/collect_egg")
+async def farm_collect_egg(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Собирает готовое яйцо со слота на доску (или в очередь, если доска
+    занята) и поднимает орла на уровень."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        slot = farm[i]
+        if slot["feed_level"] >= FEED_LEVELS or slot["next_egg_at"] <= 0 or time.time() < slot["next_egg_at"]:
+            raise HTTPException(status_code=400, detail="Яйцо ещё не готово")
+
+        level = tier_index(slot["id"]) + 1
+        board = normalize_eggs_board(row.get("eggs_board"))
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        place_egg_on_board_or_queue(board, queue, unlocked, level)
+
+        slot["next_egg_at"] = 0
+        slot["feed_level"] = min(FEED_LEVELS, slot["feed_level"] + 1)
+
+        fields = {"monsters": farm, "eggs_board": board, "eggs_queue": queue}
+        return fields, {"slot": slot, "slot_index": i, "eggs_board": board, "eggs_queue": queue}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/fusion_attempt")
+async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Optional[str] = Header(None)):
+    """Платная попытка улучшения: сервер сам крутит рулетку
+    (fusion.roulette_by_tier), чтобы исход нельзя было подделать. Пара орлов
+    остаётся на месте при любом исходе, кроме success — тогда она сливается
+    в одного орла следующей редкости (fuseEagles на клиенте раньше)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        a_i, b_i = request.slot_a, request.slot_b
+        if a_i == b_i or not (0 <= a_i < len(farm)) or not (0 <= b_i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        a, b = farm[a_i], farm[b_i]
+        if a["id"] != b["id"]:
+            raise HTTPException(status_code=400, detail="Разные виды орлов")
+        if a["feed_level"] < FEED_LEVELS or b["feed_level"] < FEED_LEVELS:
+            raise HTTPException(status_code=400, detail="Орлы должны быть прокачаны до максимума")
+
+        idx = tier_index(a["id"])
+        next_tier = CONFIG["tiers"][idx + 1] if idx + 1 < len(CONFIG["tiers"]) else None
+        if not next_tier:
+            raise HTTPException(status_code=400, detail="Дальше улучшать некуда")
+        segments = ROULETTE_BY_TIER[idx] if idx < len(ROULETTE_BY_TIER) else []
+        if not segments:
+            raise HTTPException(status_code=500, detail="Таблица улучшения не настроена")
+
+        use_gram = request.use_gram
+        cost = MERGE_COST_GRAM if use_gram else MERGE_COST_MEAT
+        coins = float(row.get("coins") or 0)
+        mnstr = float(row.get("mnstr") or 0)
+        if use_gram:
+            if coins < cost:
+                raise HTTPException(status_code=400, detail="Не хватает GRAM")
+            coins -= cost
+        else:
+            if mnstr < cost:
+                raise HTTPException(status_code=400, detail="Не хватает Meat")
+            mnstr -= cost
+
+        seg_i = pick_weighted_index(segments)
+        outcome = segments[seg_i]
+        slots_count = int(row.get("slots") or START_SLOTS)
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+
+        fields = {"coins": coins, "mnstr": mnstr}
+        response = {
+            "outcome": outcome.get("type"), "segment_index": seg_i,
+            "coins": coins, "mnstr": mnstr,
+        }
+
+        if outcome.get("type") == "success":
+            next_monster_id = next_tier["monsters"][0]["id"]
+            keep, drop = sorted((a_i, b_i))
+            del farm[drop]
+            del farm[keep]
+            farm.append(new_slot(next_monster_id))
+            active_slot = len(farm) - 1
+            drain_farm_queue(farm, farm_queue, slots_count)
+            fields.update({"monsters": farm, "farm_queue": farm_queue, "active_slot": active_slot})
+            response.update({"monster": next_monster_id, "active_slot": active_slot})
+        elif outcome.get("type") == "eagle":
+            bonus_id = roll_monster(outcome.get("tier"))
+            add_farm_slot(farm, farm_queue, slots_count, bonus_id)
+            fields.update({"monsters": farm, "farm_queue": farm_queue})
+            response["monster"] = bonus_id
+        else:
+            amount = float(outcome.get("amount") or 0)
+            mnstr += amount
+            fields["mnstr"] = mnstr
+            response["mnstr"] = mnstr
+            response["amount"] = amount
+
+        response["monsters"] = fields.get("monsters", farm)
+        response["farm_queue"] = fields.get("farm_queue", farm_queue)
+        return fields, response
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/expedition/start")
+async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Платно отправляет полностью прокачанного орла добывать золото."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        slot = farm[i]
+        if slot["expedition_until"] > 0:
+            raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
+        if slot["feed_level"] < FEED_LEVELS:
+            raise HTTPException(status_code=400, detail="В экспедицию берут только полностью прокачанных орлов")
+        cost = EXPEDITION_COST_MEAT
+        mnstr = float(row.get("mnstr") or 0)
+        if mnstr < cost:
+            raise HTTPException(status_code=400, detail="Не хватает Meat")
+
+        slot["expedition_until"] = int(time.time() + expedition_duration_seconds(row))
+        mnstr -= cost
+        fields = {"monsters": farm, "mnstr": mnstr}
+        return fields, {"slot": slot, "slot_index": i, "mnstr": mnstr}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/expedition/collect")
+async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Забирает золото у вернувшегося из экспедиции орла."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        slot = farm[i]
+        if slot["expedition_until"] <= 0 or time.time() < slot["expedition_until"]:
+            raise HTTPException(status_code=400, detail="Экспедиция ещё не вернулась")
+
+        reward = expedition_gold_reward(slot["id"])
+        slot["expedition_until"] = 0
+        gold = max(0.0, float(row.get("gold") or 0)) + reward
+        fields = {"monsters": farm, "gold": gold}
+        return fields, {"slot": slot, "slot_index": i, "gold": gold, "reward": reward}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/buy_slot")
+async def farm_buy_slot(request: BuySlot, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупает следующий слот фермы по фиксированной цене (slots.prices)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        slots_count = int(row.get("slots") or START_SLOTS)
+        if slots_count >= MAX_SLOTS:
+            raise HTTPException(status_code=400, detail="Все слоты уже открыты")
+        cost = SLOTS_PRICES[slots_count] if slots_count < len(SLOTS_PRICES) else None
+        if cost is None:
+            raise HTTPException(status_code=500, detail="Цена слота не настроена")
+        coins = float(row.get("coins") or 0)
+        if coins < cost:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+
+        farm = read_farm(row.get("monsters"))
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+        new_slots_count = slots_count + 1
+        drain_farm_queue(farm, farm_queue, new_slots_count)
+
+        coins -= cost
+        fields = {"coins": coins, "slots": new_slots_count, "monsters": farm, "farm_queue": farm_queue}
+        return fields, {"coins": coins, "slots": new_slots_count, "monsters": farm, "farm_queue": farm_queue}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/eggs/unlock_slot")
+async def eggs_unlock_slot(request: UnlockEggSlot, x_telegram_init_data: Optional[str] = Header(None)):
+    """Разблокирует следующую ячейку доски яиц по фиксированной цене
+    (eggs.unlock_prices)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        if unlocked >= EGG_BOARD_SIZE:
+            raise HTTPException(status_code=400, detail="Все ячейки уже открыты")
+        cost = board_unlock_cost(unlocked)
+        if cost is None:
+            raise HTTPException(status_code=500, detail="Цена ячейки не настроена")
+        coins = float(row.get("coins") or 0)
+        if coins < cost:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+
+        board = normalize_eggs_board(row.get("eggs_board"))
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        new_unlocked = unlocked + 1
+        drain_egg_queue(board, queue, new_unlocked)
+
+        coins -= cost
+        fields = {"coins": coins, "eggs_board_unlocked": new_unlocked, "eggs_board": board, "eggs_queue": queue}
+        return fields, {"coins": coins, "eggs_board_unlocked": new_unlocked, "eggs_board": board, "eggs_queue": queue}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/eggs/open")
+async def eggs_open(request: EggIndexAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Вскрывает одно яйцо по таблице его уровня: джекпот / обычный орёл / Meat."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        board = normalize_eggs_board(row.get("eggs_board"))
+        i = request.index
+        if not (0 <= i < unlocked) or not board[i]:
+            raise HTTPException(status_code=400, detail="Яйцо не найдено")
+
+        outcome = roll_egg_outcome(board[i])
+        board[i] = 0
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        drain_egg_queue(board, queue, unlocked)
+
+        fields = {"eggs_board": board, "eggs_queue": queue}
+        response = {"outcome": outcome["kind"], "eggs_board": board, "eggs_queue": queue}
+
+        if outcome["kind"] in ("jackpot", "meat"):
+            mnstr = float(row.get("mnstr") or 0) + outcome["amount"]
+            fields["mnstr"] = mnstr
+            response["mnstr"] = mnstr
+            response["amount"] = outcome["amount"]
+        else:
+            farm = read_farm(row.get("monsters"))
+            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+            slots_count = int(row.get("slots") or START_SLOTS)
+            bonus_id = roll_monster("common")
+            add_farm_slot(farm, farm_queue, slots_count, bonus_id)
+            fields.update({"monsters": farm, "farm_queue": farm_queue})
+            response.update({"monster": bonus_id, "monsters": farm, "farm_queue": farm_queue})
+
+        return fields, response
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/eggs/open_all")
+async def eggs_open_all(request: OpenAllEggs, x_telegram_init_data: Optional[str] = Header(None)):
+    """Вскрывает все яйца на доске одним действием, каждое по своему уровню."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        board = normalize_eggs_board(row.get("eggs_board"))
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        mnstr = float(row.get("mnstr") or 0)
+        farm = read_farm(row.get("monsters"))
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+        slots_count = int(row.get("slots") or START_SLOTS)
+
+        meat_total = 0.0
+        jackpot_total = 0.0
+        eagle_ids = []
+        opened = 0
+        for i in range(unlocked):
+            level = board[i]
+            if not level:
+                continue
+            outcome = roll_egg_outcome(level)
+            board[i] = 0
+            opened += 1
+            if outcome["kind"] == "jackpot":
+                jackpot_total += outcome["amount"]
+            elif outcome["kind"] == "eagle":
+                bonus_id = roll_monster("common")
+                eagle_ids.append(bonus_id)
+                add_farm_slot(farm, farm_queue, slots_count, bonus_id)
+            else:
+                meat_total += outcome["amount"]
+
+        if not opened:
+            raise HTTPException(status_code=400, detail="Нечего вскрывать")
+
+        drain_egg_queue(board, queue, unlocked)
+        mnstr += meat_total + jackpot_total
+
+        fields = {
+            "eggs_board": board, "eggs_queue": queue, "mnstr": mnstr,
+            "monsters": farm, "farm_queue": farm_queue,
+        }
+        response = {
+            "opened": opened, "meat_total": meat_total, "jackpot_total": jackpot_total,
+            "eagles": eagle_ids, "mnstr": mnstr, "eggs_board": board, "eggs_queue": queue,
+            "monsters": farm, "farm_queue": farm_queue,
+        }
+        return fields, response
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/eggs/merge")
+async def eggs_merge(request: EggMergeAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Слияние двух яиц одного уровня в одно яйцо уровнем выше, либо перенос
+    яйца в пустую ячейку — любой другой запрос отклоняется, доску нельзя
+    переписать в произвольное состояние с клиента."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        board = normalize_eggs_board(row.get("eggs_board"))
+        f, t = request.from_index, request.into_index
+        if f == t or not (0 <= f < unlocked) or not (0 <= t < unlocked) or not board[f]:
+            raise HTTPException(status_code=400, detail="Недопустимое перемещение")
+
+        if not board[t]:
+            board[t] = board[f]
+            board[f] = 0
+            return {"eggs_board": board}, {"eggs_board": board}
+
+        if board[t] == board[f] and board[t] < MAX_EGG_LEVEL:
+            board[f] = 0
+            board[t] += 1
+            queue = normalize_eggs_queue(row.get("eggs_queue"))
+            drain_egg_queue(board, queue, unlocked)
+            return {"eggs_board": board, "eggs_queue": queue}, {"eggs_board": board, "eggs_queue": queue}
+
+        raise HTTPException(status_code=400, detail="Нельзя слить эти яйца")
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/vip/buy")
+async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупает VIP-тариф — только когда ни один тариф ещё не активен.
+    Первый день Meat начисляется сразу, как и раньше на клиенте."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    tier = VIP_TIERS.get(request.tier_id)
+    if not tier:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+
+    def compute(row):
+        if vip_active(row):
+            raise HTTPException(status_code=400, detail="VIP уже активен")
+        coins = float(row.get("coins") or 0)
+        price = float(tier.get("price_gram") or 0)
+        if coins < price:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+
+        now = time.time()
+        expires_at = now + float(tier.get("duration_days") or 0) * 86400
+        meat_per_day = float(tier.get("meat_per_day") or 0)
+        mnstr = float(row.get("mnstr") or 0) + meat_per_day
+        coins -= price
+
+        fields = {
+            "coins": coins, "mnstr": mnstr,
+            "vip_tier": tier["id"], "vip_expires_at": expires_at, "vip_last_meat_at": now,
+        }
+        return fields, dict(fields)
+
+    return await run_farm_action(user_id, compute)
 
 
 async def channel_subscribed(user_id: int, chat: str) -> bool:
@@ -952,8 +1607,12 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot,
     )
 
+    eggs_result = None
+    if reward["egg_level"] and reward["egg_count"]:
+        eggs_result = await grant_wheel_eggs(user_id, int(reward["egg_level"]), int(reward["egg_count"]))
+
     fresh = await store.get(user_id)
-    return {
+    response = {
         "status": "success",
         "segment": reward["index"],
         "spin_cost": spend["cost"],
@@ -969,6 +1628,11 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "ops": int(fresh.get("ops") or 0),
         "wheel": wheel_state(fresh),
     }
+    if eggs_result:
+        response["reward"]["eggs_result"] = {"board": eggs_result["board"], "queue": eggs_result["queue"]}
+        response["eggs_board"] = eggs_result["eggs_board"]
+        response["eggs_queue"] = eggs_result["eggs_queue"]
+    return response
 
 
 @app.get("/api/merchant/state")

@@ -71,6 +71,21 @@ class MongoStore:
     async def increment(self, user_id: int, fields: dict):
         await self.users.update_one({"_id": user_id}, {"$inc": fields})
 
+    async def cas_update(self, user_id: int, fields: dict, expected_ops: int) -> bool:
+        """Compare-and-swap: пишет fields (и сам увеличивает ops), только если
+        документ с момента чтения не изменился (ops всё ещё expected_ops).
+        Общий примитив атомарности для всех действий фермы/яиц/VIP — те же
+        гарантии, что и у ops-проверки в /api/save, но применяются к каждому
+        отдельному действию, а не только к целиком клиентскому сохранению.
+        False — параллельное действие уже сдвинуло ops, вызывающая сторона
+        должна перечитать документ и повторить попытку с начала."""
+        fields = dict(fields)
+        fields["ops"] = expected_ops + 1
+        result = await self.users.update_one(
+            {"_id": user_id, "ops": expected_ops}, {"$set": fields}
+        )
+        return result.modified_count > 0
+
 
     async def claim_mission(self, user_id: int, mission_id: str, gram: float, mnstr: float) -> bool:
         """Одна атомарная операция: задание засчитывается только если его там ещё нет,
