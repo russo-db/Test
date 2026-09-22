@@ -749,6 +749,20 @@
 </head>
 <body>
 
+    <!-- Загрузочный экран и экран техработ идут первыми в body, чтобы браузер
+         нарисовал их поверх интерфейса ДО того, как успеет отрисовать сам
+         интерфейс — иначе при постепенной отрисовке большого HTML-файла
+         игрок на миг видит кусок интерфейса раньше загрузочного экрана. -->
+    <div id="boot"></div>
+
+    <div id="maintenanceScreen">
+        <div class="maintenance-body">
+            <h2>Технические работы</h2>
+            <p id="maintenanceMessage">Ведутся технические работы. Скоро вернёмся!</p>
+            <button class="btn-primary" onclick="openMaintenanceChat()">Перейти в чат</button>
+        </div>
+    </div>
+
     <!-- Общие градиенты для иконок нижнего меню и значков редкости орлов -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
         <defs>
@@ -1167,16 +1181,6 @@
     </div>
 
     <div id="toast"></div>
-
-    <div id="boot"></div>
-
-    <div id="maintenanceScreen">
-        <div class="maintenance-body">
-            <h2>Технические работы</h2>
-            <p id="maintenanceMessage">Ведутся технические работы. Скоро вернёмся!</p>
-            <button class="btn-primary" onclick="openMaintenanceChat()">Перейти в чат</button>
-        </div>
-    </div>
 
     <script>
         // Outside Telegram (e.g. a browser tab) the SDK is missing - fall back to a no-op stub.
