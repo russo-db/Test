@@ -441,7 +441,10 @@ class MongoStore:
     async def count_players(self, search: str = "") -> int:
         return await self.users.count_documents(self._search_query(search))
 
-    async def stats(self) -> dict:
+    async def count_online(self, since_ts: float) -> int:
+        return await self.users.count_documents({"last_seen": {"$gte": since_ts}})
+
+    async def stats(self, online_since: Optional[float] = None) -> dict:
         pipeline = [{"$group": {
             "_id": None,
             "players": {"$sum": 1},
@@ -465,9 +468,11 @@ class MongoStore:
         dep = await _sum(self.deposits)
         wd_pending = await _sum(self.withdrawals, {"status": "pending"})
         wd_paid = await _sum(self.withdrawals, {"status": "approved"})
+        online = await self.count_online(online_since) if online_since is not None else 0
 
         return {
             "players": int(base.get("players", 0)),
+            "online": online,
             "coins": float(base.get("coins", 0) or 0),
             "mnstr": float(base.get("mnstr", 0) or 0),
             "gold": float(base.get("gold", 0) or 0),

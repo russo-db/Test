@@ -97,6 +97,8 @@
     .farm-row button { padding: 4px 9px; font-size: 12px; }
     .eggs-grid { display: grid; grid-template-columns: repeat(4, 50px); gap: 6px; margin: 10px 0; }
     .eggs-grid input { width: 50px; text-align: center; padding: 6px 3px; }
+    .online-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #4a5578; }
+    .online-dot.is-online { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.8); }
     .add-eagle-row { display: flex; gap: 8px; margin-top: 6px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
@@ -206,7 +208,7 @@
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>ID</th><th>Имя</th><th>GRAM</th><th>Meat</th><th>Золото</th><th>Слоты</th>
+                        <th>Онлайн</th><th>ID</th><th>Имя</th><th>GRAM</th><th>Meat</th><th>Золото</th><th>Слоты</th>
                         <th>Орлы</th><th>Рефералы</th><th>Кошелёк</th><th></th>
                     </tr></thead>
                     <tbody id="playersBody"></tbody>
@@ -344,6 +346,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
 /* ---------- обзор ---------- */
 const STAT_LABELS = [
     ['players', 'Игроков'],
+    ['online', 'Онлайн сейчас'],
     ['coins', 'GRAM на балансах'],
     ['mnstr', 'Meat на балансах'],
     ['gold', 'Золото на балансах'],
@@ -472,6 +475,7 @@ async function loadPlayers() {
         state.playersTotal = data.total;
         document.getElementById('playersBody').innerHTML = data.items.map(p => `
             <tr>
+                <td data-label="Онлайн"><span class="online-dot ${p.online ? 'is-online' : ''}" title="${p.online ? 'Онлайн' : 'Офлайн'}"></span></td>
                 <td data-label="ID">${p.user_id}</td>
                 <td data-label="Имя">${p.name || '—'}</td>
                 <td data-label="GRAM">${fmtNum(p.coins)}</td>
@@ -483,7 +487,7 @@ async function loadPlayers() {
                 <td data-label="Кошелёк">${p.wallet ? p.wallet.slice(0, 8) + '…' : '—'}</td>
                 <td class="td-action"><button data-open="${p.user_id}">Открыть</button></td>
             </tr>
-        `).join('') || '<tr><td colspan="9" class="muted">Никого не найдено</td></tr>';
+        `).join('') || '<tr><td colspan="10" class="muted">Никого не найдено</td></tr>';
         document.querySelectorAll('[data-open]').forEach(btn => {
             btn.onclick = () => openPlayerModal(Number(btn.dataset.open));
         });
@@ -513,13 +517,23 @@ document.getElementById('playersNext').onclick = () => {
 
 let editingPlayer = null;
 let monsterCatalog = null;
+let fusionFeedLevels = 7;
 
 async function getMonsterCatalog() {
     if (monsterCatalog) return monsterCatalog;
     const cfg = await fetch('/game_config.json').then(r => r.json());
     monsterCatalog = [];
     cfg.tiers.forEach(tier => tier.monsters.forEach(m => monsterCatalog.push({ id: m.id, name: `${m.name} (${tier.name})` })));
+    fusionFeedLevels = Number(cfg.fusion && cfg.fusion.feed_levels) || 7;
     return monsterCatalog;
+}
+
+function levelOptions(max) {
+    let opts = '';
+    for (let lvl = 1; lvl <= max; lvl++) {
+        opts += `<option value="${lvl}" ${lvl === 1 ? 'selected' : ''}>${lvl}${lvl === max ? ' (макс.)' : ''}</option>`;
+    }
+    return opts;
 }
 
 async function openPlayerModal(userId) {
@@ -560,6 +574,7 @@ async function openPlayerModal(userId) {
                 <div class="farm-list" id="farmList"></div>
                 <div class="add-eagle-row">
                     <select id="addMonsterSelect">${catalog.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select>
+                    <label>Уровень <select id="addMonsterLevel">${levelOptions(fusionFeedLevels)}</select></label>
                     <button id="addMonsterBtn">+ Добавить орла</button>
                 </div>
 
@@ -580,7 +595,8 @@ async function openPlayerModal(userId) {
 
     document.getElementById('addMonsterBtn').onclick = () => {
         const id = document.getElementById('addMonsterSelect').value;
-        editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: 1, feed_taps: 0 });
+        const level = Math.max(1, Math.min(fusionFeedLevels, Number(document.getElementById('addMonsterLevel').value) || 1));
+        editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: level, feed_taps: 0 });
         renderFarmList();
     };
     document.getElementById('playerModalClose').onclick = closePlayerModal;
@@ -601,10 +617,10 @@ function renderFarmList() {
         const level = m.feed_level || 1;
         const ready = m.next_egg_at && m.next_egg_at * 1000 <= Date.now();
         let status;
-        if (level >= 7) status = 'максимум — готов к улучшению';
-        else if (ready) status = `уровень ${level}/7 — яйцо готово`;
-        else if (m.next_egg_at) status = `уровень ${level}/7 — яйцо варится`;
-        else status = `уровень ${level}/7 — кормление ${m.feed_taps || 0}/10`;
+        if (level >= fusionFeedLevels) status = 'максимум — готов к улучшению';
+        else if (ready) status = `уровень ${level}/${fusionFeedLevels} — яйцо готово`;
+        else if (m.next_egg_at) status = `уровень ${level}/${fusionFeedLevels} — яйцо варится`;
+        else status = `уровень ${level}/${fusionFeedLevels} — кормление ${m.feed_taps || 0}/10`;
         return `
             <div class="farm-row">
                 <span class="grow">#${i} — <b>${m.id}</b> — ${status}</span>

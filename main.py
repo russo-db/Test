@@ -27,6 +27,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
 EGG_BOARD_SIZE = 16  # 4×4
 EGG_QUEUE_MAX = 300  # защитный предел на длину очереди яиц, не помещающихся на доску
+# Клиент обновляет last_seen каждые 10с, пока приложение открыто (см. setInterval(saveNow, 10000)
+# в index.html) — порог с запасом на сетевые задержки/уход в фон, чтобы игрок не мигал офлайн зря.
+ONLINE_THRESHOLD_SECONDS = 60
 FARM_QUEUE_MAX = 300  # защитный предел на длину очереди орлов, не помещающихся в открытые слоты
 
 load_dotenv()
@@ -1901,6 +1904,7 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
 
 def player_summary(doc: dict) -> dict:
     farm = read_farm(doc.get("monsters"))
+    last_seen = int(doc.get("last_seen") or 0)
     return {
         "user_id": doc.get("user_id"),
         "name": doc.get("name") or "",
@@ -1912,7 +1916,8 @@ def player_summary(doc: dict) -> dict:
         "farm_count": len(farm),
         "referrals": int(doc.get("referrals") or 0),
         "wallet": doc.get("wallet") or "",
-        "last_seen": int(doc.get("last_seen") or 0),
+        "last_seen": last_seen,
+        "online": (time.time() - last_seen) <= ONLINE_THRESHOLD_SECONDS,
         "vip_tier": doc.get("vip_tier") or "",
         "vip_expires_at": float(doc.get("vip_expires_at") or 0),
     }
@@ -1948,7 +1953,7 @@ async def admin_me(_: None = Depends(require_admin)):
 
 @app.get("/admin/api/stats")
 async def admin_stats(_: None = Depends(require_admin)):
-    return await store.stats()
+    return await store.stats(online_since=time.time() - ONLINE_THRESHOLD_SECONDS)
 
 
 @app.get("/admin/api/players")
