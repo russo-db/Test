@@ -196,16 +196,23 @@ class MongoStore:
                                    price: float, common_ids, feed_levels: int) -> dict:
         """Общий (на всех игроков) лимит проданных орлов — тот же двухфазный
         подход: резерв лимита, потом ферма продавца по оптимистичной блокировке
-        (полное совпадение monsters), с откатом резерва при конфликте. Купец
-        берёт только полностью откормленных (feed_level >= feed_levels) обычных орлов."""
+        (полное совпадение monsters И farm_queue), с откатом резерва при
+        конфликте. Купец берёт только полностью откормленных (feed_level >=
+        feed_levels) обычных орлов. Освободившийся слот сразу добирает орла
+        из очереди (farm_queue) — иначе слот пустует, пока клиент не
+        перезагрузит ферму."""
         state = await self.merchant.find_one({"_id": "global"}) or {}
         sold = int(state.get("eagles_sold") or 0)
         if sold >= limit:
             return {"status": "limit_reached"}
 
-        doc = await self.users.find_one({"_id": user_id}, {"monsters": 1, "active_slot": 1})
+        doc = await self.users.find_one(
+            {"_id": user_id}, {"monsters": 1, "active_slot": 1, "farm_queue": 1, "slots": 1}
+        )
         farm = list((doc or {}).get("monsters") or [])
         active_slot = int((doc or {}).get("active_slot") or 0)
+        original_queue = list((doc or {}).get("farm_queue") or [])
+        slots_count = int((doc or {}).get("slots") or 0)
         if not (0 <= slot_index < len(farm)):
             return {"status": "not_found"}
         if farm[slot_index].get("id") not in common_ids:
@@ -224,10 +231,16 @@ class MongoStore:
 
         original = farm[:]
         new_farm = farm[:slot_index] + farm[slot_index + 1:]
+        new_queue = original_queue[:]
+        while len(new_farm) < slots_count and new_queue:
+            new_farm.append(new_queue.pop(0))
         result = await self.users.update_one(
-            {"_id": user_id, "monsters": original},
+            {"_id": user_id, "monsters": original, "farm_queue": original_queue},
             {
-                "$set": {"monsters": new_farm, "active_slot": min(active_slot, len(new_farm) - 1)},
+                "$set": {
+                    "monsters": new_farm, "farm_queue": new_queue,
+                    "active_slot": min(active_slot, len(new_farm) - 1),
+                },
                 "$inc": {"coins": price, "total_earned": price, "ops": 1},
             },
         )

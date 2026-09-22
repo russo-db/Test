@@ -3240,9 +3240,8 @@
                 state.coins = data.coins;
                 state.totalEarned = data.total_earned;
                 state.farm = readFarm(data.monsters);
+                state.farmQueue = readFarm(data.farm_queue);
                 state.activeSlot = data.active_slot || 0;
-                normalizeFarmCapacity();
-                drainFarmQueue();
                 state.merchant = { meatBought: data.merchant.meat_bought || 0, eaglesSold: data.merchant.eagles_sold || 0 };
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
@@ -4154,9 +4153,10 @@
         }
 
         // Удаляет орла любого уровня насовсем — только после подтверждения
-        // во втором экране модалки. Взамен игрок получает 10 Meat. Последнего
-        // орла на ферме удалить нельзя — сцене нужен хотя бы один активный.
-        function confirmDeleteEagle() {
+        // во втором экране модалки. Взамен игрок получает фиксированную
+        // компенсацию Meat. Последнего орла на ферме удалить нельзя — сцене
+        // нужен хотя бы один активный. Сервер сам проверяет и списывает.
+        async function confirmDeleteEagle() {
             const slot = state.farm[modalSlot];
             if (!slot) { closeSlotModal(); return; }
             if (state.farm.length <= 1) {
@@ -4166,17 +4166,40 @@
                 renderSlotModal();
                 return;
             }
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'delete-eagle:' + modalSlot;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+
             const monster = MONSTERS[slot.id];
-            state.farm.splice(modalSlot, 1);
-            state.activeSlot = Math.min(state.activeSlot, state.farm.length - 1);
-            state.mnstr += 10;
-            drainFarmQueue();
-            slotDeleteConfirm = false;
-            closeSlotModal();
-            haptic.notify('success');
-            toast(t('slot.deleted', { name: monster.name, amount: 10 }));
-            renderAll();
-            saveNow();
+            try {
+                const response = await fetch('api/farm/delete_eagle', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: modalSlot })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не удалось удалить орла');
+                    haptic.notify('warning');
+                    return;
+                }
+                state.mnstr = data.mnstr;
+                state.farm = readFarm(data.monsters);
+                state.farmQueue = readFarm(data.farm_queue);
+                state.activeSlot = data.active_slot || 0;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+
+                slotDeleteConfirm = false;
+                closeSlotModal();
+                haptic.notify('success');
+                toast(t('slot.deleted', { name: monster.name, amount: data.reward }));
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
+            }
         }
 
         function renderSlotModal() {
@@ -4962,7 +4985,6 @@
             state.missions = data.missions || [];
             state.slots = data.slots || CONFIG.slots.start;
             normalizeFarmCapacity();
-            drainFarmQueue();
             state.referrals = data.referrals || 0;
             state.invitedBy = data.invited_by || '';
             state.wallet = data.wallet || '';
@@ -4973,7 +4995,6 @@
             state.eggBoard = normalizeEggBoard(data.eggs_board);
             state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);
-            drainEggQueue();
             botUsername = data.bot_username || botUsername;
 
             renderAll();

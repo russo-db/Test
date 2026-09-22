@@ -31,6 +31,7 @@ EGG_QUEUE_MAX = 300  # защитный предел на длину очере�
 # в index.html) — порог с запасом на сетевые задержки/уход в фон, чтобы игрок не мигал офлайн зря.
 ONLINE_THRESHOLD_SECONDS = 60
 FARM_QUEUE_MAX = 300  # защитный предел на длину очереди орлов, не помещающихся в открытые слоты
+EAGLE_DELETE_MEAT_REWARD = 10  # фиксированная компенсация Meat за безвозвратное удаление орла
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -512,6 +513,42 @@ async def apply_wheel_reward(user_id: int, reward: dict) -> dict:
             fresh["ops"] = ops + 1
             return fresh
     raise HTTPException(status_code=409, detail="Не удалось начислить приз — попробуй ещё раз")
+
+
+async def reconcile_queues(user_id: int, row: dict) -> dict:
+    """Разбирает очередь орлов и очередь яиц при каждой загрузке фермы: если
+    в открытых слотах или на разблокированных ячейках доски есть место, а
+    в очереди кто-то ждёт — сразу переносит и сохраняет. Раньше это делал
+    только клиент, локально и молча — до следующей загрузки перенос
+    существовал лишь на экране и никогда не попадал на сервер, поэтому
+    "переехавший" орёл/яйцо откатывались назад и переставали открываться."""
+    for _ in range(3):
+        farm = read_farm(row.get("monsters"))
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+        slots_count = int(row.get("slots") or START_SLOTS)
+        farm_len_before = len(farm)
+        drain_farm_queue(farm, farm_queue, slots_count)
+        farm_changed = len(farm) != farm_len_before
+
+        board = normalize_eggs_board(row.get("eggs_board"))
+        queue = normalize_eggs_queue(row.get("eggs_queue"))
+        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        board_before = board[:]
+        drain_egg_queue(board, queue, unlocked)
+        board_changed = board != board_before
+
+        if not farm_changed and not board_changed:
+            return row
+
+        ops = int(row.get("ops") or 0)
+        fields = {"monsters": farm, "farm_queue": farm_queue, "eggs_board": board, "eggs_queue": queue}
+        if await store.cas_update(user_id, fields, ops):
+            row = dict(row)
+            row.update(fields)
+            row["ops"] = ops + 1
+            return row
+        row = await fetch_user(user_id)  # гонка с другим действием — перечитать и попробовать снова
+    return row
 
 
 async def accrue_vip_meat(user_id: int, row: dict) -> dict:
@@ -1035,6 +1072,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
 
     row = await fetch_user(user_id)
     row = await accrue_vip_meat(user_id, row)
+    row = await reconcile_queues(user_id, row)
     farm = read_farm(row["monsters"])
 
     await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
@@ -1323,6 +1361,38 @@ async def farm_buy_slot(request: BuySlot, x_telegram_init_data: Optional[str] = 
         coins -= cost
         fields = {"coins": coins, "slots": new_slots_count, "monsters": farm, "farm_queue": farm_queue}
         return fields, {"coins": coins, "slots": new_slots_count, "monsters": farm, "farm_queue": farm_queue}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/farm/delete_eagle")
+async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Удаляет орла любого уровня насовсем взамен на фиксированную компенсацию
+    Meat — последнего орла на ферме удалить нельзя, сцене нужен хотя бы один
+    активный. Освободившийся слот сразу добирает орла из очереди."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        if len(farm) <= 1:
+            raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
+
+        monster_id = farm[i]["id"]
+        del farm[i]
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+        slots_count = int(row.get("slots") or START_SLOTS)
+        drain_farm_queue(farm, farm_queue, slots_count)
+        active_slot = min(int(row.get("active_slot") or 0), len(farm) - 1)
+        mnstr = float(row.get("mnstr") or 0) + EAGLE_DELETE_MEAT_REWARD
+
+        fields = {"monsters": farm, "farm_queue": farm_queue, "active_slot": active_slot, "mnstr": mnstr}
+        return fields, {
+            "monster": monster_id, "mnstr": mnstr, "monsters": farm,
+            "farm_queue": farm_queue, "active_slot": active_slot, "reward": EAGLE_DELETE_MEAT_REWARD,
+        }
 
     return await run_farm_action(user_id, compute)
 
@@ -1741,6 +1811,7 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
         "coins": float(fresh.get("coins") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
         "monsters": read_farm(fresh["monsters"]),
+        "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "active_slot": int(fresh.get("active_slot") or 0),
         "merchant": await store.get_merchant_state(),
         "ops": int(fresh.get("ops") or 0),
