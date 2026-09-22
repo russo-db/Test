@@ -1383,6 +1383,8 @@
                 'slotBuy.openHint': 'Открой его, чтобы поселить ещё одного орла.',
                 'slotBuy.price': 'Цена', 'slotBuy.opened': 'Открыто слотов',
                 'slotBuy.buyFor': 'Купить за {cost}', 'slotBuy.needMore': 'Нужно {cost} GRAM',
+                'slotBuy.confirmTitle': 'Открыть слот {n} за {cost} GRAM?',
+                'slotBuy.confirmBtn': 'Да, купить',
                 'daily.title': 'Ежедневный вход',
                 'daily.availableToday': 'Сегодня доступен день {day} из {days}',
                 'daily.claimedFor': 'Награда за день {day} забрана',
@@ -1534,6 +1536,8 @@
                 'slotBuy.openHint': 'Open it to settle another eagle.',
                 'slotBuy.price': 'Price', 'slotBuy.opened': 'Slots opened',
                 'slotBuy.buyFor': 'Buy for {cost}', 'slotBuy.needMore': 'Need {cost} GRAM',
+                'slotBuy.confirmTitle': 'Open slot {n} for {cost} GRAM?',
+                'slotBuy.confirmBtn': 'Yes, buy',
                 'daily.title': 'Daily check-in',
                 'daily.availableToday': 'Day {day} of {days} is available today',
                 'daily.claimedFor': 'Day {day} reward already claimed',
@@ -4202,20 +4206,48 @@
             `;
         }
 
+        let slotBuyConfirm = false;
+
         function openSlotBuy() {
             haptic.impact('light');
+            slotBuyConfirm = false;
             renderSlotBuy();
             document.getElementById('slotBuyModal').classList.add('open');
         }
 
         function closeSlotBuy() {
             document.getElementById('slotBuyModal').classList.remove('open');
+            slotBuyConfirm = false;
+        }
+
+        // Покупка слота платная и необратимая — второй экран с явным
+        // подтверждением, как и удаление орла (см. askDeleteEagle).
+        function askBuySlot() {
+            if (slotsMaxed() || state.coins < slotCost()) return;
+            slotBuyConfirm = true;
+            haptic.notify('warning');
+            renderSlotBuy();
+        }
+
+        function cancelBuySlot() {
+            slotBuyConfirm = false;
+            renderSlotBuy();
         }
 
         function renderSlotBuy() {
             const maxed = slotsMaxed();
             const cost = slotCost();
             const affordable = state.coins >= cost;
+
+            if (!maxed && slotBuyConfirm) {
+                document.getElementById('slotBuyBody').innerHTML = `
+                    <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                    <h2>${t('slotBuy.confirmTitle', { n: state.slots + 1, cost: fmtGram(cost) })}</h2>
+                    <button class="btn-primary" style="margin-top:18px" onclick="buySlot()">${t('slotBuy.confirmBtn')}</button>
+                    <button class="btn-action roll-close" onclick="cancelBuySlot()">${t('common.cancel')}</button>
+                `;
+                return;
+            }
 
             document.getElementById('slotBuyBody').innerHTML = `
                 <svg class="lock-hero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
@@ -4229,7 +4261,7 @@
                 <div class="stat-row"><span>${t('slotBuy.opened')}</span><b>${state.slots} / ${CONFIG.slots.max}</b></div>`}
 
                 ${maxed ? '' : `
-                <button class="btn-primary" style="margin-top:18px" ${affordable ? '' : 'disabled'} onclick="buySlot()">
+                <button class="btn-primary" style="margin-top:18px" ${affordable ? '' : 'disabled'} onclick="askBuySlot()">
                     ${affordable ? t('slotBuy.buyFor', { cost: fmtGram(cost) }) : t('slotBuy.needMore', { cost: fmtGram(cost) })}
                 </button>`}
                 <button class="btn-action roll-close" onclick="closeSlotBuy()">${t('common.close')}</button>
@@ -4257,8 +4289,10 @@
                     body: JSON.stringify({ user_id: state.userId })
                 });
                 const data = await response.json();
+                slotBuyConfirm = false;
                 if (!response.ok) {
                     toast(data.detail || 'Не хватает GRAM');
+                    renderSlotBuy();
                     return;
                 }
                 state.coins = data.coins;
@@ -4273,7 +4307,9 @@
                 renderSlotBuy();
                 saveLocally();
             } catch (error) {
+                slotBuyConfirm = false;
                 toast('Сервер недоступен');
+                renderSlotBuy();
             } finally {
                 farmActionBusy.delete('buy-slot');
             }
