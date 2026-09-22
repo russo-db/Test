@@ -120,18 +120,6 @@ class MongoStore:
         return result.modified_count > 0
 
 
-    async def claim_wheel(self, user_id: int, gram: float, mnstr: float,
-                          monster: Optional[str] = None, extra_slot: bool = False):
-        """Начисляет приз колеса фортуны (стоимость прокрута списывается отдельно,
-        см. spend_wheel_spin)."""
-        inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
-        if extra_slot:
-            inc["slots"] = 1
-        changes = {"$inc": inc}
-        if monster:
-            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
-
-        await self.users.update_one({"_id": user_id}, changes)
 
     async def spend_wheel_spin(self, user_id: int, today: int, cheap_spins: int,
                                 cheap_cost: float, expensive_cost: float) -> dict:

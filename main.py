@@ -486,6 +486,37 @@ async def grant_wheel_eggs(user_id: int, level: int, count: int) -> dict:
     return {"board": 0, "queue": 0, "eggs_board": board, "eggs_queue": queue}
 
 
+async def apply_wheel_reward(user_id: int, reward: dict) -> dict:
+    """Начисляет GRAM/Meat приза колеса сразу; орла кладёт в свободный
+    открытый слот, а если все заняты — в очередь (farm_queue), точно как
+    любой другой источник орлов (вскрытие яйца, бонус слияния). Бесплатный
+    слот сверх купленных больше не выдаётся — раньше при полной ферме на
+    максимуме слотов приз-орёл вообще терялся (запрос отклонялся с 400
+    уже ПОСЛЕ списания стоимости прокрута)."""
+    for _ in range(5):
+        row = await fetch_user(user_id)
+        ops = int(row.get("ops") or 0)
+        coins = float(row.get("coins") or 0) + reward["gram"]
+        total_earned = float(row.get("total_earned") or 0) + reward["gram"]
+        mnstr = float(row.get("mnstr") or 0) + reward["mnstr"]
+        fields = {"coins": coins, "total_earned": total_earned, "mnstr": mnstr}
+
+        if reward["monster"]:
+            farm = read_farm(row.get("monsters"))
+            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+            slots_count = int(row.get("slots") or START_SLOTS)
+            add_farm_slot(farm, farm_queue, slots_count, reward["monster"])
+            fields["monsters"] = farm
+            fields["farm_queue"] = farm_queue
+
+        if await store.cas_update(user_id, fields, ops):
+            fresh = dict(row)
+            fresh.update(fields)
+            fresh["ops"] = ops + 1
+            return fresh
+    raise HTTPException(status_code=409, detail="Не удалось начислить приз — попробуй ещё раз")
+
+
 async def accrue_vip_meat(user_id: int, row: dict) -> dict:
     """Начисляет накопленный VIP-Meat (раз в сутки, с наверстыванием за
     время офлайн, но не дольше, чем тариф был активен) — раньше это делал
@@ -1595,7 +1626,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    row = await fetch_user(user_id)
+    await fetch_user(user_id)
 
     spend = await store.spend_wheel_spin(
         user_id, day_index(), WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST,
@@ -1606,28 +1637,16 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         raise HTTPException(status_code=409, detail="Не удалось списать GRAM за прокрут, попробуй ещё раз")
 
     reward = wheel_pick()
-
-    # Приз-орёл: сажаем в свободный слот, а если ферма заполнена — открываем
-    # ещё один (как и в ежедневном входе), чтобы приз не пропал зря.
-    extra_slot = False
-    if reward["monster"]:
-        if reward["monster"] not in MONSTERS:
-            raise HTTPException(status_code=500, detail="Орёл приза не найден")
-        slots = int(row.get("slots") or START_SLOTS)
-        if len(read_farm(row["monsters"])) >= slots:
-            if slots >= MAX_SLOTS:
-                raise HTTPException(status_code=400, detail="Все слоты заняты — освободи один")
-            extra_slot = True
-
-    await store.claim_wheel(
-        user_id, reward["gram"], reward["mnstr"], reward["monster"], extra_slot,
-    )
+    if reward["monster"] and reward["monster"] not in MONSTERS:
+        raise HTTPException(status_code=500, detail="Орёл приза не найден")
 
     eggs_result = None
     if reward["egg_level"] and reward["egg_count"]:
         eggs_result = await grant_wheel_eggs(user_id, int(reward["egg_level"]), int(reward["egg_count"]))
 
-    fresh = await store.get(user_id)
+    # Приз-орёл: сажаем в свободный открытый слот, а если ферма заполнена —
+    # в очередь (см. apply_wheel_reward) — без бесплатного слота сверх купленных.
+    fresh = await apply_wheel_reward(user_id, reward)
     response = {
         "status": "success",
         "segment": reward["index"],
@@ -1640,6 +1659,7 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
         "monsters": read_farm(fresh["monsters"]),
+        "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "slots": int(fresh.get("slots") or START_SLOTS),
         "ops": int(fresh.get("ops") or 0),
         "wheel": wheel_state(fresh),
