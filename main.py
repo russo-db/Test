@@ -487,12 +487,12 @@ async def grant_wheel_eggs(user_id: int, level: int, count: int) -> dict:
 
 
 async def apply_wheel_reward(user_id: int, reward: dict) -> dict:
-    """Начисляет GRAM/Meat приза колеса сразу; орла кладёт в свободный
-    открытый слот, а если все заняты — в очередь (farm_queue), точно как
-    любой другой источник орлов (вскрытие яйца, бонус слияния). Бесплатный
-    слот сверх купленных больше не выдаётся — раньше при полной ферме на
-    максимуме слотов приз-орёл вообще терялся (запрос отклонялся с 400
-    уже ПОСЛЕ списания стоимости прокрута)."""
+    """Начисляет GRAM/Meat приза колеса сразу; орла-приз всегда кладёт в
+    очередь (farm_queue) — не в открытый слот фермы, даже если там есть
+    место. Игрок сам разбирает очередь по ходу игры (покупка слота,
+    удачное слияние и т.д.). Бесплатный слот сверх купленных не выдаётся —
+    раньше при полной ферме на максимуме слотов приз-орёл вообще терялся
+    (запрос отклонялся с 400 уже ПОСЛЕ списания стоимости прокрута)."""
     for _ in range(5):
         row = await fetch_user(user_id)
         ops = int(row.get("ops") or 0)
@@ -502,12 +502,9 @@ async def apply_wheel_reward(user_id: int, reward: dict) -> dict:
         fields = {"coins": coins, "total_earned": total_earned, "mnstr": mnstr}
 
         if reward["monster"]:
-            farm = read_farm(row.get("monsters"))
             farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
-            slots_count = int(row.get("slots") or START_SLOTS)
-            add_farm_slot(farm, farm_queue, slots_count, reward["monster"])
-            fields["monsters"] = farm
-            fields["farm_queue"] = farm_queue
+            farm_queue.append(new_slot(reward["monster"]))
+            fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
 
         if await store.cas_update(user_id, fields, ops):
             fresh = dict(row)
