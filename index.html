@@ -502,7 +502,6 @@
         .token-table td:first-child { width: 40%; padding-right: 12px; font-weight: 700; color: var(--accent-token); }
         .token-table td:last-child { color: var(--text-muted); }
         .token-table td b { color: var(--text-main); font-weight: 700; }
-        .token-note { font-size: 12px; color: var(--text-muted); font-weight: 500; margin-top: 12px; font-style: italic; text-align: center; }
 
         /* ---------- Monster info card ---------- */
         .stat-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 13px; border-radius: 14px; background: var(--panel-soft); border: 1px solid var(--glass-border); margin-bottom: 8px; }
@@ -1155,12 +1154,9 @@
             <img class="token-hero" src="assets/mnstr.png" alt="">
             <h2 data-i18n="token.title">Что такое $Meat</h2>
             <table class="token-table">
-                <tr><td data-i18n="token.whatLabel">Что это</td><td data-i18n="token.whatText">Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.</td></tr>
-                <tr><td data-i18n="token.howMuchLabel">Сколько дают</td><td data-i18n="token.howMuchText">Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.</td></tr>
-                <tr><td data-i18n="token.nowLabel">Сейчас</td><td data-i18n="token.nowText">Токен просто копится на балансе. Потратить его пока нельзя.</td></tr>
-                <tr><td data-i18n="token.afterLabel">После листинга</td><td data-i18n="token.afterText">Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.</td></tr>
+                <tr><td data-i18n="token.whatLabel">Что это</td><td data-i18n="token.whatText">Внутриигровая валюта — трать её на кормление орлов, попытки слияния и экспедиции.</td></tr>
+                <tr><td data-i18n="token.howToGetLabel">Как получить</td><td data-i18n="token.howToGetText">Вскрытие яиц (шанс вместо орла), ежедневный вход, задания, колесо фортуны, утешительный приз при слиянии орлов, покупка у купца за золото, VIP-тариф — Meat каждый день.</td></tr>
             </table>
-            <p class="token-note" data-i18n="token.note">Курс и дата листинга не определены. Копи заранее.</p>
             <button class="btn-primary" style="margin-top:18px" onclick="closeTokenInfo()" data-i18n="common.gotIt">Понятно</button>
         </div>
     </div>
@@ -1373,11 +1369,8 @@
                 'wheel.spinning': 'Крутится…', 'wheel.spinFree': 'Крутить бесплатно',
                 'wheel.spinFor': 'Крутить за {cost} GRAM', 'wheel.insufficientGram': 'Не хватает GRAM',
                 'token.title': 'Что такое $Meat',
-                'token.whatLabel': 'Что это', 'token.whatText': 'Токен игры. Выпадает из яиц на ферме — вскрывай их, и часть принесёт Meat вместо орла.',
-                'token.howMuchLabel': 'Сколько дают', 'token.howMuchText': 'Случайная награда за вскрытое яйцо — либо Meat, либо новый обычный орёл.',
-                'token.nowLabel': 'Сейчас', 'token.nowText': 'Токен просто копится на балансе. Потратить его пока нельзя.',
-                'token.afterLabel': 'После листинга', 'token.afterText': 'Накопленный $Meat станет основной валютой игры — за него откроются покупки и обмен.',
-                'token.note': 'Курс и дата листинга не определены. Копи заранее.',
+                'token.whatLabel': 'Что это', 'token.whatText': 'Внутриигровая валюта — трать её на кормление орлов, попытки слияния и экспедиции.',
+                'token.howToGetLabel': 'Как получить', 'token.howToGetText': 'Вскрытие яиц (шанс вместо орла), ежедневный вход, задания, колесо фортуны, утешительный приз при слиянии орлов, покупка у купца за золото, VIP-тариф — Meat каждый день.',
                 'common.close': 'Закрыть', 'common.cancel': 'Отмена', 'common.gotIt': 'Понятно',
                 'egg.title': 'Яйцо {level} уровня', 'egg.onlyOneOutcome': 'Выпадет только один из вариантов',
                 'egg.jackpot': 'Джекпот', 'egg.commonEagle': 'Обычный орёл',
@@ -1531,11 +1524,8 @@
                 'wheel.spinning': 'Spinning…', 'wheel.spinFree': 'Spin for free',
                 'wheel.spinFor': 'Spin for {cost} GRAM', 'wheel.insufficientGram': 'Not enough GRAM',
                 'token.title': 'What is $Meat',
-                'token.whatLabel': 'What it is', 'token.whatText': "The game's token. Drops from farm eggs — open them and some will give Meat instead of an eagle.",
-                'token.howMuchLabel': 'How much', 'token.howMuchText': 'A random reward per opened egg — either Meat or a new common eagle.',
-                'token.nowLabel': 'Right now', 'token.nowText': "The token just accumulates on your balance. It can't be spent yet.",
-                'token.afterLabel': 'After listing', 'token.afterText': 'Accumulated $Meat will become the main in-game currency — unlocking purchases and exchange.',
-                'token.note': 'Rate and listing date are not set yet. Stack up early.',
+                'token.whatLabel': 'What it is', 'token.whatText': "The game's in-game currency — spend it on feeding eagles, fusion attempts, and expeditions.",
+                'token.howToGetLabel': 'How to get it', 'token.howToGetText': 'Opening eggs (a chance instead of an eagle), daily check-in, missions, the wheel of fortune, a consolation prize from fusion, buying it from the merchant with gold, and a VIP tier — Meat every day.',
                 'common.close': 'Close', 'common.cancel': 'Cancel', 'common.gotIt': 'Got it',
                 'egg.title': 'Level {level} egg', 'egg.onlyOneOutcome': 'Only one outcome will drop',
                 'egg.jackpot': 'Jackpot', 'egg.commonEagle': 'Common eagle',
