@@ -102,10 +102,11 @@
             position: relative; z-index: 20;
             display: flex; justify-content: space-between; align-items: center;
             padding: 14px 12px 13px 12px; gap: 6px;
-            background: linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(6, 3, 16, 0.55));
-            backdrop-filter: blur(20px) saturate(160%);
-            -webkit-backdrop-filter: blur(20px) saturate(160%);
+            background: linear-gradient(180deg, rgba(245, 158, 11, 0.22), rgba(6, 3, 16, 0.72));
+            backdrop-filter: blur(10px) saturate(130%);
+            -webkit-backdrop-filter: blur(10px) saturate(130%);
             border-bottom: 1px solid var(--glass-border);
+            transform: translateZ(0); will-change: transform;
         }
         .top-header::after {
             content: ''; position: absolute; left: 10%; right: 10%; bottom: 0; height: 2px;
@@ -136,7 +137,7 @@
 
         /* ---------- Content ---------- */
         .content { flex: 1; padding: 12px 16px 20px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: none; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
-        .content.active { display: block; animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .content.active { display: block; animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); transform: translateZ(0); }
         #farm {
             background:
                 linear-gradient(180deg, rgba(6, 3, 16, 0.6) 0%, rgba(6, 3, 16, 0.32) 35%, rgba(6, 3, 16, 0.42) 70%, rgba(6, 3, 16, 0.8) 100%),
@@ -532,10 +533,11 @@
             position: fixed; bottom: 0; width: 100%; z-index: 100;
             display: flex; justify-content: space-between; padding: 11px 10px;
             padding-bottom: calc(11px + env(safe-area-inset-bottom));
-            background: linear-gradient(0deg, rgba(6, 3, 16, 0.85), rgba(21, 10, 51, 0.55));
-            backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%);
+            background: linear-gradient(0deg, rgba(6, 3, 16, 0.92), rgba(21, 10, 51, 0.75));
+            backdrop-filter: blur(12px) saturate(130%); -webkit-backdrop-filter: blur(12px) saturate(130%);
             border-top: 1px solid var(--glass-border);
             box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.45);
+            transform: translateZ(0); will-change: transform;
         }
         .navbar::before {
             content: ''; position: absolute; left: 16%; right: 16%; top: 0; height: 2px;
