@@ -619,7 +619,7 @@ function renderFarmList() {
         let status;
         if (level >= fusionFeedLevels) status = 'максимум — готов к улучшению';
         else if (ready) status = `уровень ${level}/${fusionFeedLevels} — яйцо готово`;
-        else if (m.next_egg_at) status = `уровень ${level}/${fusionFeedLevels} — яйцо варится`;
+        else if (m.next_egg_at) status = `уровень ${level}/${fusionFeedLevels} — яйцо ещё не готово`;
         else status = `уровень ${level}/${fusionFeedLevels} — кормление ${m.feed_taps || 0}/10`;
         return `
             <div class="farm-row">

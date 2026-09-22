@@ -1156,7 +1156,7 @@ async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str]
         if slot["feed_level"] >= FEED_LEVELS:
             raise HTTPException(status_code=400, detail="Орёл уже прокачан до максимума")
         if slot["next_egg_at"] > 0:
-            raise HTTPException(status_code=400, detail="Яйцо уже варится")
+            raise HTTPException(status_code=400, detail="Яйцо ещё не готово")
         cost = feed_cost(slot["id"])
         mnstr = float(row.get("mnstr") or 0)
         if mnstr < cost:
