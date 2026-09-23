@@ -320,6 +320,10 @@
         "names": {
           "grey": "Железные Шпоры", "green": "Когти Дикого Леса", "blue": "Сапфировые Серпы",
           "purple": "Лезвия Бездны", "gold": "Когти Солнечного Всплеска", "mythic": "Раздиратели Небосвода"
+        },
+        "icons": {
+          "grey": "assets/claws-grey.jpg", "green": "assets/claws-green.jpg", "blue": "assets/claws-blue.jpg",
+          "purple": "assets/claws-purple.jpg", "gold": "assets/claws-gold.jpg", "mythic": "assets/claws-mythic.jpg"
         }
       },
       "armor": {
