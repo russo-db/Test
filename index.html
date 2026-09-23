@@ -184,6 +184,16 @@
         }
         #market .btn-action { background: rgba(245, 158, 11, 0.12); backdrop-filter: none; -webkit-backdrop-filter: none; }
         #market .pay-input { background: rgba(5, 3, 16, 0.12); }
+        /* Цены лотов рынка — плотная тёмная подкладка (а у кнопки покупки — своя
+           зелёная), иначе цифры сливаются с фоновой иллюстрацией (см. правило
+           #market .btn-action выше, которое иначе делает эти кнопки прозрачными). */
+        #market .market-card .btn-action {
+            background: rgba(6, 3, 16, 0.78); border-color: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+        }
+        #market .market-card .btn-action.btn-buy {
+            background: linear-gradient(135deg, var(--accent-slime), #22a559);
+        }
         #collection {
             background:
                 linear-gradient(180deg, rgba(6, 3, 16, 0.55) 0%, rgba(6, 3, 16, 0.22) 35%, rgba(6, 3, 16, 0.3) 65%, rgba(6, 3, 16, 0.7) 100%),
