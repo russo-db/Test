@@ -331,6 +331,10 @@
         "names": {
           "grey": "Стёганый Нагрудник", "green": "Панцирь Дубрав", "blue": "Ледяная Кольчуга",
           "purple": "Накидка Звёздной Пыли", "gold": "Императорская Кираса", "mythic": "Эгида Пернатого Титана"
+        },
+        "icons": {
+          "grey": "assets/armor-grey.jpg", "green": "assets/armor-green.jpg", "blue": "assets/armor-blue.jpg",
+          "purple": "assets/armor-purple.jpg", "gold": "assets/armor-gold.jpg", "mythic": "assets/armor-mythic.jpg"
         }
       },
       "mask": {
@@ -338,13 +342,21 @@
         "names": {
           "grey": "Кожаный Наглазник", "green": "Маска Охотника", "blue": "Шлем Розы Ветров",
           "purple": "Забрало Иллюзий", "gold": "Корона Солнцеликого", "mythic": "Око Вечного Грома"
+        },
+        "icons": {
+          "grey": "assets/mask-grey.jpg", "green": "assets/mask-green.jpg", "blue": "assets/mask-blue.jpg",
+          "purple": "assets/mask-purple.jpg", "gold": "assets/mask-gold.jpg", "mythic": "assets/mask-mythic.jpg"
         }
       },
       "ring": {
-        "label": "Кольцо", "sub": "ХП/Скорость", "icon": "💍", "stat": "hpspd",
+        "label": "Амулет", "sub": "ХП/Скорость", "icon": "💍", "stat": "hpspd",
         "names": {
-          "grey": "Медное Кольцо", "green": "Амулет Травника", "blue": "Печать Бури",
-          "purple": "Перстень Миражей", "gold": "Драгоценная Метрика", "mythic": "Реликвия Начала Времён"
+          "grey": "Медный Амулет", "green": "Амулет Травника", "blue": "Печать Бури",
+          "purple": "Амулет Миражей", "gold": "Драгоценная Метрика", "mythic": "Реликвия Начала Времён"
+        },
+        "icons": {
+          "grey": "assets/ring-grey.jpg", "green": "assets/ring-green.jpg", "blue": "assets/ring-blue.jpg",
+          "purple": "assets/ring-purple.jpg", "gold": "assets/ring-gold.jpg", "mythic": "assets/ring-mythic.jpg"
         }
       }
     }
