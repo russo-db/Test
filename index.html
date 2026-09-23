@@ -778,6 +778,9 @@
         @keyframes nestShardGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
         .nest-shard-title { font-weight: 800; font-size: 15px; }
         .nest-shard-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+        .nest-particle-timer { margin-left: auto; flex: none; text-align: right; }
+        .nest-particle-timer-label { font-size: 9.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+        .nest-particle-timer-val { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13.5px; color: var(--accent-violet); margin-top: 2px; }
         .nest-shard-daily { margin-top: 10px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; }
         .nest-countdown-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
         .nest-countdown-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -1451,6 +1454,7 @@
                 'nest.shardCooldownLabel': 'Следующий осколок через',
                 'nest.shardPurchased': 'Небесный Осколок куплен — отправлен в Кузницу',
                 'nest.shardBoughtToday': 'Сегодня куплено: {count} / {limit} (лимит один на всех игроков)',
+                'nest.nextParticleLabel': 'Частичка через',
                 'nest.shardDailyLimitReached': 'Суточный лимит осколков исчерпан — приходи завтра',
                 'nest.minersInWork': 'Осколков в работе', 'nest.noMiners': 'нет осколков',
                 'nest.readyToCollect': 'Готово к сбору', 'nest.collectBtn': 'Собрать частички',
@@ -1634,6 +1638,7 @@
                 'nest.shardCooldownLabel': 'Next shard in',
                 'nest.shardPurchased': 'Sky Shard purchased — sent to the Forge',
                 'nest.shardBoughtToday': 'Bought today: {count} / {limit} (shared limit for all players)',
+                'nest.nextParticleLabel': 'Next particle in',
                 'nest.shardDailyLimitReached': "Today's shard limit is reached — come back tomorrow",
                 'nest.minersInWork': 'Shards at work', 'nest.noMiners': 'no shards',
                 'nest.readyToCollect': 'Ready to collect', 'nest.collectBtn': 'Collect particles',
@@ -4845,6 +4850,18 @@
             return state.nest.miners.reduce((sum, m) => sum + nestMinerPending(m, nowSec), 0);
         }
 
+        // Сколько секунд осталось до ближайшей следующей частички среди всех
+        // осколков игрока (независимо от того, сколько уже накопилось и
+        // ждёт сбора) — null, если осколков ещё нет вовсе.
+        function nestNextParticleSeconds(nowSec) {
+            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
+            if (!state.nest.miners.length || interval <= 0) return null;
+            return Math.min(...state.nest.miners.map(m => {
+                const elapsed = (nowSec - (m.lastCollectAt || 0)) % interval;
+                return interval - elapsed;
+            }));
+        }
+
         function renderNest() {
             renderNestShard();
             renderNestForge();
@@ -4877,6 +4894,14 @@
             const el = document.getElementById('nestShardCard');
             if (!el) return;
             const now = Date.now() / 1000;
+            // Таймер до следующей частички не завязан на сигнатуру покупки
+            // осколка (та ловит только куплен/лимит/кулдаун) — тикает всегда,
+            // пока есть хоть один осколок.
+            const timerValEl = document.getElementById('nestParticleTimerVal');
+            if (timerValEl) {
+                const nextParticle = nestNextParticleSeconds(now);
+                timerValEl.textContent = nextParticle == null ? '—' : formatCountdown(nextParticle);
+            }
             if (nestShardSignature(now) !== nestShardSig) { renderNestShard(); return; }
             const limitReached = (state.nest.shardBoughtToday || 0) >= (state.nest.shardDailyLimit || 4);
             const ready = now >= (state.nest.shardCooldownUntil || 0);
@@ -4899,12 +4924,17 @@
             const limit = state.nest.shardDailyLimit || 4;
             const boughtToday = state.nest.shardBoughtToday || 0;
             const limitReached = boughtToday >= limit;
+            const nextParticle = nestNextParticleSeconds(now);
             const header = `
                 <div class="nest-shard-top">
                     <div class="nest-shard-icon"><img src="assets/nest-shard.jpg" alt=""></div>
                     <div>
                         <div class="nest-shard-title">${t('nest.shardTitle')}</div>
                         <div class="nest-shard-sub">${t('nest.shardSub', { price: fmtGram(price) })}</div>
+                    </div>
+                    <div class="nest-particle-timer">
+                        <div class="nest-particle-timer-label">${t('nest.nextParticleLabel')}</div>
+                        <div class="nest-particle-timer-val" id="nestParticleTimerVal">${nextParticle == null ? '—' : formatCountdown(nextParticle)}</div>
                     </div>
                 </div>
                 <div class="nest-shard-daily">${t('nest.shardBoughtToday', { count: boughtToday, limit })}</div>`;
