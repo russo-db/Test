@@ -770,11 +770,11 @@
         }
         .nest-shard-top { display: flex; gap: 12px; align-items: center; }
         .nest-shard-icon {
-            width: 52px; height: 52px; flex: none; border-radius: 16px;
-            background: radial-gradient(circle at 30% 25%, #fff7dd, var(--accent-violet) 45%, var(--accent-rose) 100%);
-            display: flex; align-items: center; justify-content: center; font-size: 25px;
-            box-shadow: 0 0 22px rgba(251, 191, 36, 0.5); animation: nestShardGlow 2.4s ease-in-out infinite;
+            width: 68px; height: 68px; flex: none; border-radius: 16px; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 22px rgba(56, 130, 246, 0.55); animation: nestShardGlow 2.4s ease-in-out infinite;
         }
+        .nest-shard-icon img { width: 100%; height: 100%; object-fit: cover; }
         @keyframes nestShardGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
         .nest-shard-title { font-weight: 800; font-size: 15px; }
         .nest-shard-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
@@ -4888,7 +4888,7 @@
             const limitReached = boughtToday >= limit;
             const header = `
                 <div class="nest-shard-top">
-                    <div class="nest-shard-icon">💎</div>
+                    <div class="nest-shard-icon"><img src="assets/nest-shard.jpg" alt=""></div>
                     <div>
                         <div class="nest-shard-title">${t('nest.shardTitle')}</div>
                         <div class="nest-shard-sub">${t('nest.shardSub', { price: fmtGram(price) })}</div>
