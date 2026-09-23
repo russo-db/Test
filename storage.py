@@ -5,13 +5,16 @@
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
     vip_tier, vip_expires_at, vip_last_meat_at, wheel_day, wheel_spins_today,
-    shard_cooldown_until, nest_miners, nest_particles, nest_inventory, nest_equipped
-    (Гнездо Воинов: Небесные Осколки, добыча частичек, крафт/улучшение снаряжения, экипировка)
+    nest_miners, nest_particles, nest_inventory, nest_equipped
+    (Гнездо Воинов: добыча частичек, крафт/улучшение снаряжения, экипировка —
+    личные для каждого игрока)
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
-орлами между игроками) и общий (один на всех игроков, не по-пользовательски)
-счётчик лавки купца — merchant_state: {meat_bought, eagles_sold}.
+орлами между игроками), общий (один на всех игроков, не по-пользовательски)
+счётчик лавки купца — merchant_state: {meat_bought, eagles_sold} — и точно
+так же общий кулдаун/суточный лимит покупки Небесного Осколка —
+nest_state: {cooldown_until, day, bought_today}.
 """
 
 import os
@@ -23,7 +26,7 @@ FIELDS = (
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
-    "shard_cooldown_until", "nest_miners", "nest_particles", "nest_inventory", "nest_equipped",
+    "nest_miners", "nest_particles", "nest_inventory", "nest_equipped",
 )
 
 
@@ -40,6 +43,7 @@ class MongoStore:
         self.withdrawals = client[db_name]["withdrawals"]
         self.market = client[db_name]["market_listings"]
         self.merchant = client[db_name]["merchant_state"]
+        self.nest_global = client[db_name]["nest_state"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -50,6 +54,11 @@ class MongoStore:
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
             {"_id": "global"}, {"$setOnInsert": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
+        )
+        # Небесный Осколок — тот же принцип: один общий документ на всех
+        # игроков сразу (кулдаун и суточный лимит покупки не персональные).
+        await self.nest_global.update_one(
+            {"_id": "global"}, {"$setOnInsert": {"cooldown_until": 0, "day": 0, "bought_today": 0}}, upsert=True
         )
 
     async def get(self, user_id: int) -> Optional[dict]:
@@ -164,6 +173,61 @@ class MongoStore:
             {"_id": "global"}, {"$set": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
         )
         return {"meat_bought": 0.0, "eagles_sold": 0}
+
+    async def get_nest_state(self, today: int, daily_limit: int) -> dict:
+        doc = await self.nest_global.find_one({"_id": "global"}) or {}
+        stored_day = int(doc.get("day") or 0)
+        bought_today = int(doc.get("bought_today") or 0) if stored_day == today else 0
+        return {
+            "cooldown_until": float(doc.get("cooldown_until") or 0),
+            "bought_today": bought_today,
+            "daily_limit": daily_limit,
+        }
+
+    async def buy_nest_shard(self, user_id: int, now: float, today: int, price_gram: float,
+                              cooldown_seconds: float, daily_limit: int) -> dict:
+        """Небесный Осколок — общий (не персональный) ресурс: доступен строго
+        1 за раз НА ВСЕХ игроков, а суточный лимит покупок тоже один общий
+        счётчик (обнуляется по UTC-суткам). Двухфазный подход, как и у
+        лимитов купца: сперва атомарно резервируем покупку в общем
+        состоянии (кулдаун сдвигается для всех сразу), потом списываем GRAM
+        у покупателя и добавляем ЕМУ ОДНОМУ новый осколок в Кузницу; при
+        нехватке средств — откатываем резерв, чтобы не сжигать чужой
+        кулдаун и лимит впустую."""
+        state = await self.nest_global.find_one({"_id": "global"}) or {}
+        cooldown_until = float(state.get("cooldown_until") or 0)
+        if now < cooldown_until:
+            return {"status": "cooldown", "cooldown_until": cooldown_until}
+
+        stored_day = int(state.get("day") or 0)
+        bought_today = int(state.get("bought_today") or 0) if stored_day == today else 0
+        if bought_today >= daily_limit:
+            return {"status": "daily_limit"}
+
+        new_cooldown = now + cooldown_seconds
+        reserve = await self.nest_global.update_one(
+            {"_id": "global", "cooldown_until": cooldown_until},
+            {"$set": {"cooldown_until": new_cooldown, "day": today, "bought_today": bought_today + 1}},
+        )
+        if reserve.modified_count == 0:
+            return {"status": "conflict"}
+
+        miner = {"id": f"{user_id}-{int(now * 1000)}", "last_collect_at": now}
+        charge = await self.users.update_one(
+            {"_id": user_id, "coins": {"$gte": price_gram}},
+            {"$inc": {"coins": -price_gram, "ops": 1}, "$push": {"nest_miners": miner}},
+        )
+        if charge.modified_count == 0:
+            # Откат безопасен: пока наш резерв держит общий кулдаун, никто
+            # другой купить не мог — конкурентных изменений между резервом
+            # и этим откатом быть не может.
+            await self.nest_global.update_one(
+                {"_id": "global"},
+                {"$set": {"cooldown_until": cooldown_until, "day": stored_day, "bought_today": bought_today}},
+            )
+            return {"status": "insufficient_gram"}
+
+        return {"status": "ok", "cooldown_until": new_cooldown, "bought_today": bought_today + 1}
 
     async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
                                  max_per_purchase: float, rate: float) -> dict:

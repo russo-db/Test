@@ -778,6 +778,7 @@
         @keyframes nestShardGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
         .nest-shard-title { font-weight: 800; font-size: 15px; }
         .nest-shard-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+        .nest-shard-daily { margin-top: 10px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; }
         .nest-countdown-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
         .nest-countdown-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
         .nest-countdown { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px; color: var(--accent-violet); }
@@ -1445,6 +1446,8 @@
                 'nest.shardBuy': 'Купить за {price} GRAM', 'nest.shardNotEnough': 'Не хватает GRAM',
                 'nest.shardCooldownLabel': 'Следующий осколок через',
                 'nest.shardPurchased': 'Небесный Осколок куплен — отправлен в Кузницу',
+                'nest.shardBoughtToday': 'Сегодня куплено: {count} / {limit} (лимит один на всех игроков)',
+                'nest.shardDailyLimitReached': 'Суточный лимит осколков исчерпан — приходи завтра',
                 'nest.minersInWork': 'Осколков в работе', 'nest.noMiners': 'нет осколков',
                 'nest.readyToCollect': 'Готово к сбору', 'nest.collectBtn': 'Собрать частички',
                 'nest.nothingToCollect': 'Пока нечего собирать', 'nest.collected': 'Собрано {amount} ⚙️',
@@ -1626,6 +1629,8 @@
                 'nest.shardBuy': 'Buy for {price} GRAM', 'nest.shardNotEnough': 'Not enough GRAM',
                 'nest.shardCooldownLabel': 'Next shard in',
                 'nest.shardPurchased': 'Sky Shard purchased — sent to the Forge',
+                'nest.shardBoughtToday': 'Bought today: {count} / {limit} (shared limit for all players)',
+                'nest.shardDailyLimitReached': "Today's shard limit is reached — come back tomorrow",
                 'nest.minersInWork': 'Shards at work', 'nest.noMiners': 'no shards',
                 'nest.readyToCollect': 'Ready to collect', 'nest.collectBtn': 'Collect particles',
                 'nest.nothingToCollect': 'Nothing to collect yet', 'nest.collected': 'Collected {amount} ⚙️',
@@ -1861,7 +1866,7 @@
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, eaglesSold: 0 }, // общий (не персональный!) остаток лимитов купца, кэш с сервера
-            nest: { shardCooldownUntil: 0, particles: 0, miners: [], inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки, снаряжение, экипировка
+            nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, miners: [], inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка
         };
 
         let botUsername = '';
@@ -4705,7 +4710,7 @@
             if (tabId === 'missions') renderMissions();
             if (tabId === 'market') loadMarketListings();
             if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
-            if (tabId === 'nest') renderNest();
+            if (tabId === 'nest') { renderNest(); refreshNestShardState(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -4778,6 +4783,9 @@
             if (!el) return;
             const now = Date.now() / 1000;
             const price = CONFIG.nest.shard_price_gram;
+            const limit = state.nest.shardDailyLimit || 4;
+            const boughtToday = state.nest.shardBoughtToday || 0;
+            const limitReached = boughtToday >= limit;
             const header = `
                 <div class="nest-shard-top">
                     <div class="nest-shard-icon">💎</div>
@@ -4785,8 +4793,12 @@
                         <div class="nest-shard-title">${t('nest.shardTitle')}</div>
                         <div class="nest-shard-sub">${t('nest.shardSub', { price: fmtGram(price) })}</div>
                     </div>
-                </div>`;
-            if (now >= (state.nest.shardCooldownUntil || 0)) {
+                </div>
+                <div class="nest-shard-daily">${t('nest.shardBoughtToday', { count: boughtToday, limit })}</div>`;
+            if (limitReached) {
+                el.innerHTML = header + `
+                    <button class="btn-primary" style="margin-top:12px; width:100%" disabled>${t('nest.shardDailyLimitReached')}</button>`;
+            } else if (now >= (state.nest.shardCooldownUntil || 0)) {
                 const affordable = state.coins >= price;
                 el.innerHTML = header + `
                     <button class="btn-primary" style="margin-top:12px; width:100%" ${affordable ? '' : 'disabled'} onclick="nestBuyShard()">
@@ -4969,9 +4981,11 @@
                     body: JSON.stringify({ user_id: state.userId })
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('nest.shardNotEnough')); return; }
+                if (!response.ok) { toast(data.detail || t('nest.shardNotEnough')); await refreshNestShardState(); return; }
                 state.coins = data.coins;
                 state.nest.shardCooldownUntil = data.shard_cooldown_until;
+                state.nest.shardBoughtToday = data.shard_bought_today || 0;
+                state.nest.shardDailyLimit = data.shard_daily_limit || state.nest.shardDailyLimit;
                 state.nest.miners = (data.nest_miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at }));
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
@@ -4982,6 +4996,25 @@
                 toast('Сервер недоступен');
             } finally {
                 farmActionBusy.delete('nest-buy-shard');
+            }
+        }
+
+        // Кулдаун и суточный лимит Небесного Осколка общие на всех игроков —
+        // обновляем их при каждом открытии вкладки, как и refreshMerchantState()
+        // для лавки купца, чтобы видеть покупки других игроков без полной
+        // пересинхронизации аккаунта.
+        async function refreshNestShardState() {
+            if (offlineOnly || !state.userId) return;
+            try {
+                const response = await fetch('api/nest/shard/state', { headers: apiHeaders() });
+                if (!response.ok) return;
+                const data = await response.json();
+                state.nest.shardCooldownUntil = data.cooldown_until || 0;
+                state.nest.shardBoughtToday = data.bought_today || 0;
+                state.nest.shardDailyLimit = data.daily_limit || state.nest.shardDailyLimit;
+                renderNestShard();
+            } catch (error) {
+                // офлайн — оставляем то, что уже знаем
             }
         }
 
@@ -5587,6 +5620,8 @@
             botUsername = data.bot_username || botUsername;
             if (data.nest) {
                 state.nest.shardCooldownUntil = data.nest.shard_cooldown_until || 0;
+                state.nest.shardBoughtToday = data.nest.shard_bought_today || 0;
+                state.nest.shardDailyLimit = data.nest.shard_daily_limit || state.nest.shardDailyLimit;
                 state.nest.particles = data.nest.particles || 0;
                 state.nest.miners = (data.nest.miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at || 0 }));
                 state.nest.inventory = data.nest.inventory || {};

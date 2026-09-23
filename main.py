@@ -64,7 +64,7 @@ def apply_config(cfg: dict):
     global SLOTS_PRICES, VIP_TIERS
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
     global NEST_CRAFT_COST_PARTICLES, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
-    global NEST_ITEM_TYPES, NEST_TYPE_ORDER
+    global NEST_ITEM_TYPES, NEST_TYPE_ORDER, NEST_SHARD_DAILY_LIMIT
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -135,6 +135,7 @@ def apply_config(cfg: dict):
     NEST_CFG = CONFIG.get("nest") or {}
     NEST_SHARD_PRICE_GRAM = float(NEST_CFG.get("shard_price_gram", 3))
     NEST_SHARD_COOLDOWN_HOURS = float(NEST_CFG.get("shard_cooldown_hours", 6))
+    NEST_SHARD_DAILY_LIMIT = int(NEST_CFG.get("shard_daily_limit", 4))
     NEST_PARTICLE_INTERVAL_HOURS = float(NEST_CFG.get("particle_interval_hours", 24))
     NEST_CRAFT_COST_PARTICLES = int(NEST_CFG.get("craft_cost_particles", 20))
     NEST_UPGRADE_GROUP = int(NEST_CFG.get("upgrade_group", 4))
@@ -634,13 +635,19 @@ def nest_next_grade(grade: str) -> Optional[str]:
     return NEST_GRADES[i + 1] if 0 <= i < len(NEST_GRADES) - 1 else None
 
 
-def nest_state_view(row: dict) -> dict:
-    """Личное состояние Гнезда Воинов для /api/load — то же, что возвращают
-    и все /api/nest/* эндпоинты, чтобы клиент обновлял его одинаково что
-    после загрузки, что после действия."""
+async def nest_state_view(row: dict) -> dict:
+    """Состояние Гнезда Воинов для /api/load — то же, что возвращают и все
+    /api/nest/* эндпоинты, чтобы клиент обновлял его одинаково что после
+    загрузки, что после действия. Кулдаун и суточный лимит покупки
+    Небесного Осколка — общий (не персональный) ресурс на всех игроков
+    сразу, см. store.buy_nest_shard/get_nest_state; частички, инвентарь и
+    экипировка остаются личными для каждого игрока."""
+    shard = await store.get_nest_state(day_index(), NEST_SHARD_DAILY_LIMIT)
     return {
         "shard_price_gram": NEST_SHARD_PRICE_GRAM,
-        "shard_cooldown_until": float(row.get("shard_cooldown_until") or 0),
+        "shard_cooldown_until": shard["cooldown_until"],
+        "shard_bought_today": shard["bought_today"],
+        "shard_daily_limit": shard["daily_limit"],
         "particles": float(row.get("nest_particles") or 0),
         "miners": normalize_nest_miners(row.get("nest_miners")),
         "inventory": normalize_nest_inventory(row.get("nest_inventory")),
@@ -824,7 +831,6 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "vip_last_meat_at": 0,
             "wheel_day": 0,
             "wheel_spins_today": 0,
-            "shard_cooldown_until": 0,
             "nest_miners": [],
             "nest_particles": 0.0,
             "nest_inventory": {},
@@ -1226,7 +1232,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
         "merchant": await store.get_merchant_state(),
         "wheel": wheel_state(row),
-        "nest": nest_state_view(row),
+        "nest": await nest_state_view(row),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -1523,32 +1529,57 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
     return await run_farm_action(user_id, compute)
 
 
-# --- ГНЕЗДО ВОИНОВ: Небесный Осколок (покупка, 6ч кулдаун), пассивная
-# добыча частичек, крафт и улучшение снаряжения, экипировка орлов. ---
+# --- ГНЕЗДО ВОИНОВ: Небесный Осколок (покупка, общий кулдаун и суточный
+# лимит на всех игроков), пассивная добыча частичек, крафт и улучшение
+# снаряжения, экипировка орлов. ---
+
+@app.get("/api/nest/shard/state")
+async def nest_shard_state():
+    """Общий (не персональный) кулдаун и счётчик покупок Небесного Осколка —
+    обновляется у всех игроков сразу после чьей-либо покупки. Клиент дёргает
+    это при каждом открытии вкладки «Гнездо», как и /api/merchant/state для
+    лавки купца, чтобы не ждать полной пересинхронизации аккаунта."""
+    return await store.get_nest_state(day_index(), NEST_SHARD_DAILY_LIMIT)
+
 
 @app.post("/api/nest/shard/buy")
 async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Небесный Осколок: доступен строго 1 за раз, следующий — через 6ч
-    кулдауна после покупки. Каждый купленный осколок навсегда остаётся в
-    Кузнице и пассивно майнит частички (см. nest_miner_pending) — он не
-    расходуется."""
+    """Небесный Осколок — общий (не персональный) ресурс: доступен строго 1
+    за раз НА ВСЕХ игроков сразу, а не по одному на каждого — купил кто-то
+    один, кулдаун встал для всех. Плюс суточный лимит в NEST_SHARD_DAILY_LIMIT
+    покупок на всех игроков вместе (обнуляется по UTC-суткам, как daily/
+    wheel). Купленный осколок достаётся только самому покупателю и навсегда
+    остаётся в его Кузнице, пассивно добывая частички (см.
+    nest_miner_pending) — он не расходуется."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    await fetch_user(user_id)
 
-    def compute(row):
-        now = time.time()
-        if now < float(row.get("shard_cooldown_until") or 0):
-            raise HTTPException(status_code=400, detail="Осколок ещё не готов")
-        coins = float(row.get("coins") or 0)
-        if coins < NEST_SHARD_PRICE_GRAM:
-            raise HTTPException(status_code=400, detail="Не хватает GRAM")
-        coins -= NEST_SHARD_PRICE_GRAM
-        miners = normalize_nest_miners(row.get("nest_miners"))
-        miners.append({"id": f"{user_id}-{int(now * 1000)}-{len(miners)}", "last_collect_at": now})
-        cooldown_until = now + NEST_SHARD_COOLDOWN_HOURS * 3600
-        fields = {"coins": coins, "shard_cooldown_until": cooldown_until, "nest_miners": miners}
-        return fields, {"coins": coins, "shard_cooldown_until": cooldown_until, "nest_miners": miners}
+    now = time.time()
+    result = await store.buy_nest_shard(
+        user_id, now, day_index(now), NEST_SHARD_PRICE_GRAM,
+        NEST_SHARD_COOLDOWN_HOURS * 3600, NEST_SHARD_DAILY_LIMIT,
+    )
+    if result["status"] == "cooldown":
+        raise HTTPException(status_code=400, detail="Осколок ещё не готов")
+    if result["status"] == "daily_limit":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Сегодня уже куплено {NEST_SHARD_DAILY_LIMIT} осколков — суточный лимит на всех игроков исчерпан",
+        )
+    if result["status"] == "insufficient_gram":
+        raise HTTPException(status_code=400, detail="Не хватает GRAM")
+    if result["status"] != "ok":
+        raise HTTPException(status_code=409, detail="Осколок уже купили — попробуй ещё раз")
 
-    return await run_farm_action(user_id, compute)
+    row = await fetch_user(user_id)
+    return {
+        "status": "success",
+        "coins": float(row.get("coins") or 0),
+        "shard_cooldown_until": result["cooldown_until"],
+        "shard_bought_today": result["bought_today"],
+        "shard_daily_limit": NEST_SHARD_DAILY_LIMIT,
+        "nest_miners": normalize_nest_miners(row.get("nest_miners")),
+    }
 
 
 @app.post("/api/nest/particles/collect")

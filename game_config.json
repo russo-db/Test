@@ -308,6 +308,7 @@
   "nest": {
     "shard_price_gram": 3,
     "shard_cooldown_hours": 6,
+    "shard_daily_limit": 4,
     "particle_interval_hours": 24,
     "craft_cost_particles": 20,
     "upgrade_group": 4,
