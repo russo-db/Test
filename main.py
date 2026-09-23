@@ -62,6 +62,9 @@ def apply_config(cfg: dict):
     global FEED_BASE_COST, FEED_GROWTH, FEED_TAPS_PER_LEVEL, MERGE_COST_MEAT, MERGE_COST_GRAM, ROULETTE_BY_TIER
     global EXPEDITIONS_CFG, EXPEDITION_DURATION_HOURS, EXPEDITION_COST_MEAT, EXPEDITION_GOLD_BY_TIER
     global SLOTS_PRICES, VIP_TIERS
+    global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
+    global NEST_CRAFT_COST_PARTICLES, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
+    global NEST_ITEM_TYPES, NEST_TYPE_ORDER
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -125,6 +128,20 @@ def apply_config(cfg: dict):
     MAINTENANCE_ENABLED = bool(MAINTENANCE.get("enabled", False))
     MAINTENANCE_MESSAGE = str(MAINTENANCE.get("message") or "Ведутся технические работы. Скоро вернёмся!")
     MAINTENANCE_CHAT_URL = str(MAINTENANCE.get("chat_url") or "")
+
+    # Гнездо Воинов: Небесные Осколки (пассивная добыча частичек), крафт и
+    # улучшение снаряжения (4 одного грейда -> 1 следующего), экипировка
+    # орлов по редкости (тир орла = "боевой орёл", один на редкость).
+    NEST_CFG = CONFIG.get("nest") or {}
+    NEST_SHARD_PRICE_GRAM = float(NEST_CFG.get("shard_price_gram", 3))
+    NEST_SHARD_COOLDOWN_HOURS = float(NEST_CFG.get("shard_cooldown_hours", 6))
+    NEST_PARTICLE_INTERVAL_HOURS = float(NEST_CFG.get("particle_interval_hours", 24))
+    NEST_CRAFT_COST_PARTICLES = int(NEST_CFG.get("craft_cost_particles", 20))
+    NEST_UPGRADE_GROUP = int(NEST_CFG.get("upgrade_group", 4))
+    NEST_GRADES = list(NEST_CFG.get("grades") or ["grey", "green", "blue", "purple", "gold", "mythic"])
+    NEST_GRADE_BONUS = {k: float(v) for k, v in (NEST_CFG.get("grade_bonus_pct") or {}).items()}
+    NEST_ITEM_TYPES = NEST_CFG.get("item_types") or {}
+    NEST_TYPE_ORDER = list(NEST_ITEM_TYPES.keys()) or ["claws", "armor", "mask", "ring"]
 
 
 apply_config(load_config())
@@ -551,6 +568,86 @@ async def reconcile_queues(user_id: int, row: dict) -> dict:
     return row
 
 
+# --- ГНЕЗДО ВОИНОВ: Небесные Осколки, добыча частичек, крафт/улучшение
+# снаряжения, экипировка. Боевой орёл один на редкость (тир = "боевой
+# орёл", как и вид орла на ферме) — экипировка не привязана к конкретному
+# слоту фермы, который может быть продан/слит/удалён. ---
+
+def nest_empty_inventory() -> dict:
+    return {t: {g: 0 for g in NEST_GRADES} for t in NEST_TYPE_ORDER}
+
+
+def normalize_nest_inventory(raw) -> dict:
+    inventory = nest_empty_inventory()
+    if isinstance(raw, dict):
+        for item_type in NEST_TYPE_ORDER:
+            sub = raw.get(item_type)
+            if not isinstance(sub, dict):
+                continue
+            for grade in NEST_GRADES:
+                try:
+                    inventory[item_type][grade] = max(0, int(sub.get(grade) or 0))
+                except (TypeError, ValueError):
+                    pass
+    return inventory
+
+
+def normalize_nest_equipped(raw) -> dict:
+    equipped = {tier_id: {t: None for t in NEST_TYPE_ORDER} for tier_id in TIER_INDEX}
+    if isinstance(raw, dict):
+        for tier_id in TIER_INDEX:
+            sub = raw.get(tier_id)
+            if not isinstance(sub, dict):
+                continue
+            for item_type in NEST_TYPE_ORDER:
+                grade = sub.get(item_type)
+                if grade in NEST_GRADES:
+                    equipped[tier_id][item_type] = grade
+    return equipped
+
+
+def normalize_nest_miners(raw) -> List[dict]:
+    miners = []
+    if isinstance(raw, list):
+        for m in raw:
+            if isinstance(m, dict) and m.get("id"):
+                try:
+                    miners.append({"id": str(m["id"]), "last_collect_at": float(m.get("last_collect_at") or 0)})
+                except (TypeError, ValueError):
+                    pass
+    return miners
+
+
+def nest_miner_pending(miner: dict, now: float) -> int:
+    interval = NEST_PARTICLE_INTERVAL_HOURS * 3600
+    if interval <= 0:
+        return 0
+    return int((now - float(miner.get("last_collect_at") or 0)) // interval)
+
+
+def nest_total_pending(miners: List[dict], now: float) -> int:
+    return sum(nest_miner_pending(m, now) for m in miners)
+
+
+def nest_next_grade(grade: str) -> Optional[str]:
+    i = NEST_GRADES.index(grade) if grade in NEST_GRADES else -1
+    return NEST_GRADES[i + 1] if 0 <= i < len(NEST_GRADES) - 1 else None
+
+
+def nest_state_view(row: dict) -> dict:
+    """Личное состояние Гнезда Воинов для /api/load — то же, что возвращают
+    и все /api/nest/* эндпоинты, чтобы клиент обновлял его одинаково что
+    после загрузки, что после действия."""
+    return {
+        "shard_price_gram": NEST_SHARD_PRICE_GRAM,
+        "shard_cooldown_until": float(row.get("shard_cooldown_until") or 0),
+        "particles": float(row.get("nest_particles") or 0),
+        "miners": normalize_nest_miners(row.get("nest_miners")),
+        "inventory": normalize_nest_inventory(row.get("nest_inventory")),
+        "equipped": normalize_nest_equipped(row.get("nest_equipped")),
+    }
+
+
 async def accrue_vip_meat(user_id: int, row: dict) -> dict:
     """Начисляет накопленный VIP-Meat (раз в сутки, с наверстыванием за
     время офлайн, но не дольше, чем тариф был активен) — раньше это делал
@@ -727,6 +824,11 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "vip_last_meat_at": 0,
             "wheel_day": 0,
             "wheel_spins_today": 0,
+            "shard_cooldown_until": 0,
+            "nest_miners": [],
+            "nest_particles": 0.0,
+            "nest_inventory": {},
+            "nest_equipped": {},
         }
     )
 
@@ -952,6 +1054,29 @@ class BuyVip(BaseModel):
     tier_id: str
 
 
+class NestAction(BaseModel):
+    user_id: int
+
+
+class NestUpgradeAction(BaseModel):
+    user_id: int
+    item_type: str
+    grade: str
+
+
+class NestEquipAction(BaseModel):
+    user_id: int
+    tier_id: str
+    item_type: str
+    grade: str
+
+
+class NestUnequipAction(BaseModel):
+    user_id: int
+    tier_id: str
+    item_type: str
+
+
 class MarketListRequest(BaseModel):
     user_id: int
     monster_id: str
@@ -1101,6 +1226,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "vip_last_meat_at": float(row.get("vip_last_meat_at") or 0),
         "merchant": await store.get_merchant_state(),
         "wheel": wheel_state(row),
+        "nest": nest_state_view(row),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -1393,6 +1519,157 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
             "monster": monster_id, "mnstr": mnstr, "monsters": farm,
             "farm_queue": farm_queue, "active_slot": active_slot, "reward": EAGLE_DELETE_MEAT_REWARD,
         }
+
+    return await run_farm_action(user_id, compute)
+
+
+# --- ГНЕЗДО ВОИНОВ: Небесный Осколок (покупка, 6ч кулдаун), пассивная
+# добыча частичек, крафт и улучшение снаряжения, экипировка орлов. ---
+
+@app.post("/api/nest/shard/buy")
+async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Небесный Осколок: доступен строго 1 за раз, следующий — через 6ч
+    кулдауна после покупки. Каждый купленный осколок навсегда остаётся в
+    Кузнице и пассивно майнит частички (см. nest_miner_pending) — он не
+    расходуется."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        if now < float(row.get("shard_cooldown_until") or 0):
+            raise HTTPException(status_code=400, detail="Осколок ещё не готов")
+        coins = float(row.get("coins") or 0)
+        if coins < NEST_SHARD_PRICE_GRAM:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+        coins -= NEST_SHARD_PRICE_GRAM
+        miners = normalize_nest_miners(row.get("nest_miners"))
+        miners.append({"id": f"{user_id}-{int(now * 1000)}-{len(miners)}", "last_collect_at": now})
+        cooldown_until = now + NEST_SHARD_COOLDOWN_HOURS * 3600
+        fields = {"coins": coins, "shard_cooldown_until": cooldown_until, "nest_miners": miners}
+        return fields, {"coins": coins, "shard_cooldown_until": cooldown_until, "nest_miners": miners}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/particles/collect")
+async def nest_particles_collect(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Собирает накопленные частички со всех осколков — офлайн-safe: время,
+    не кратное 24ч на осколок, не сгорает (last_collect_at сдвигается только
+    на целое число уже собранных интервалов, как и в reconcile_queues)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        miners = normalize_nest_miners(row.get("nest_miners"))
+        collected = 0
+        for m in miners:
+            pending = nest_miner_pending(m, now)
+            if pending > 0:
+                collected += pending
+                m["last_collect_at"] += pending * NEST_PARTICLE_INTERVAL_HOURS * 3600
+        if collected <= 0:
+            raise HTTPException(status_code=400, detail="Пока нечего собирать")
+        particles = float(row.get("nest_particles") or 0) + collected
+        fields = {"nest_miners": miners, "nest_particles": particles}
+        return fields, {"collected": collected, "particles": particles, "nest_miners": miners}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/craft")
+async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Крафт серого предмета за частички — случайный тип снаряжения
+    (когти/броня/маска/кольцо) с равным шансом."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        particles = float(row.get("nest_particles") or 0)
+        if particles < NEST_CRAFT_COST_PARTICLES:
+            raise HTTPException(status_code=400, detail=f"Нужно {NEST_CRAFT_COST_PARTICLES} частичек")
+        particles -= NEST_CRAFT_COST_PARTICLES
+        item_type = random.choice(NEST_TYPE_ORDER)
+        grade = NEST_GRADES[0]
+        inventory = normalize_nest_inventory(row.get("nest_inventory"))
+        inventory[item_type][grade] += 1
+        fields = {"nest_particles": particles, "nest_inventory": inventory}
+        return fields, {"particles": particles, "inventory": inventory, "item_type": item_type, "grade": grade}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/upgrade")
+async def nest_upgrade(request: NestUpgradeAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Улучшение: NEST_UPGRADE_GROUP предметов одного грейда -> 1 предмет
+    следующего, успех 100% (никакого шанса на неудачу, в отличие от слияния
+    орлов)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.item_type not in NEST_TYPE_ORDER:
+        raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
+    next_grade = nest_next_grade(request.grade)
+    if not next_grade:
+        raise HTTPException(status_code=400, detail="Максимальный грейд уже достигнут")
+
+    def compute(row):
+        inventory = normalize_nest_inventory(row.get("nest_inventory"))
+        if inventory[request.item_type][request.grade] < NEST_UPGRADE_GROUP:
+            raise HTTPException(status_code=400, detail=f"Нужно {NEST_UPGRADE_GROUP} предмета этого грейда")
+        inventory[request.item_type][request.grade] -= NEST_UPGRADE_GROUP
+        inventory[request.item_type][next_grade] += 1
+        fields = {"nest_inventory": inventory}
+        return fields, {"inventory": inventory, "item_type": request.item_type, "grade": next_grade}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/equip")
+async def nest_equip(request: NestEquipAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Экипирует предмет инвентаря на боевого орла указанной редкости —
+    один орёл на редкость (как и вид орла на ферме), поэтому экипировка не
+    привязана к конкретному слоту фермы. Ранее надетый в этот слот предмет
+    возвращается в инвентарь."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.item_type not in NEST_TYPE_ORDER:
+        raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
+    if request.tier_id not in TIER_INDEX:
+        raise HTTPException(status_code=400, detail="Неизвестная редкость орла")
+    if request.grade not in NEST_GRADES:
+        raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
+
+    def compute(row):
+        inventory = normalize_nest_inventory(row.get("nest_inventory"))
+        if inventory[request.item_type][request.grade] <= 0:
+            raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
+        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        prev = equipped[request.tier_id][request.item_type]
+        inventory[request.item_type][request.grade] -= 1
+        if prev:
+            inventory[request.item_type][prev] += 1
+        equipped[request.tier_id][request.item_type] = request.grade
+        fields = {"nest_inventory": inventory, "nest_equipped": equipped}
+        return fields, {"inventory": inventory, "equipped": equipped}
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/unequip")
+async def nest_unequip(request: NestUnequipAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Снимает предмет с боевого орла указанной редкости обратно в инвентарь."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.item_type not in NEST_TYPE_ORDER:
+        raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
+    if request.tier_id not in TIER_INDEX:
+        raise HTTPException(status_code=400, detail="Неизвестная редкость орла")
+
+    def compute(row):
+        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        prev = equipped[request.tier_id][request.item_type]
+        if not prev:
+            raise HTTPException(status_code=400, detail="Слот уже пуст")
+        inventory = normalize_nest_inventory(row.get("nest_inventory"))
+        inventory[request.item_type][prev] += 1
+        equipped[request.tier_id][request.item_type] = None
+        fields = {"nest_inventory": inventory, "nest_equipped": equipped}
+        return fields, {"inventory": inventory, "equipped": equipped}
 
     return await run_farm_action(user_id, compute)
 

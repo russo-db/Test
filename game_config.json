@@ -305,6 +305,45 @@
     "eagle_gram_price": 0.2,
     "eagle_sell_limit": 10
   },
+  "nest": {
+    "shard_price_gram": 3,
+    "shard_cooldown_hours": 6,
+    "particle_interval_hours": 24,
+    "craft_cost_particles": 20,
+    "upgrade_group": 4,
+    "grades": ["grey", "green", "blue", "purple", "gold", "mythic"],
+    "grade_bonus_pct": { "grey": 2, "green": 4, "blue": 8, "purple": 16, "gold": 32, "mythic": 64 },
+    "item_types": {
+      "claws": {
+        "label": "Когти", "sub": "Атака", "icon": "🗡️", "stat": "atk",
+        "names": {
+          "grey": "Железные Шпоры", "green": "Когти Дикого Леса", "blue": "Сапфировые Серпы",
+          "purple": "Лезвия Бездны", "gold": "Когти Солнечного Всплеска", "mythic": "Раздиратели Небосвода"
+        }
+      },
+      "armor": {
+        "label": "Броня", "sub": "Защита", "icon": "🛡️", "stat": "def",
+        "names": {
+          "grey": "Стёганый Нагрудник", "green": "Панцирь Дубрав", "blue": "Ледяная Кольчуга",
+          "purple": "Накидка Звёздной Пыли", "gold": "Императорская Кираса", "mythic": "Эгида Пернатого Титана"
+        }
+      },
+      "mask": {
+        "label": "Маска", "sub": "Меткость/Крит", "icon": "🎭", "stat": "crit",
+        "names": {
+          "grey": "Кожаный Наглазник", "green": "Маска Охотника", "blue": "Шлем Розы Ветров",
+          "purple": "Забрало Иллюзий", "gold": "Корона Солнцеликого", "mythic": "Око Вечного Грома"
+        }
+      },
+      "ring": {
+        "label": "Кольцо", "sub": "ХП/Скорость", "icon": "💍", "stat": "hpspd",
+        "names": {
+          "grey": "Медное Кольцо", "green": "Амулет Травника", "blue": "Печать Бури",
+          "purple": "Перстень Миражей", "gold": "Драгоценная Метрика", "mythic": "Реликвия Начала Времён"
+        }
+      }
+    }
+  },
   "vip": {
     "tiers": [
       {

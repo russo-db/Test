@@ -751,6 +751,84 @@
         .fusion-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
         .fusion-actions .btn-primary, .fusion-actions .btn-action { width: 100%; justify-content: center; }
 
+        /* ---------- Гнездо Воинов ---------- */
+        .nest-card { margin-top: 12px; padding: 14px; }
+        .nest-shard-card {
+            margin-top: 12px; padding: 14px;
+            background: linear-gradient(160deg, rgba(251, 191, 36, 0.16), rgba(15, 9, 26, 0.6));
+            border: 1px solid rgba(251, 191, 36, 0.35);
+        }
+        .nest-shard-top { display: flex; gap: 12px; align-items: center; }
+        .nest-shard-icon {
+            width: 52px; height: 52px; flex: none; border-radius: 16px;
+            background: radial-gradient(circle at 30% 25%, #fff7dd, var(--accent-violet) 45%, var(--accent-rose) 100%);
+            display: flex; align-items: center; justify-content: center; font-size: 25px;
+            box-shadow: 0 0 22px rgba(251, 191, 36, 0.5); animation: nestShardGlow 2.4s ease-in-out infinite;
+        }
+        @keyframes nestShardGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+        .nest-shard-title { font-weight: 800; font-size: 15px; }
+        .nest-shard-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+        .nest-countdown-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+        .nest-countdown-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+        .nest-countdown { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px; color: var(--accent-violet); }
+        .nest-track { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin-top: 8px; }
+        .nest-track > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-violet), var(--accent-rose)); border-radius: 999px; transition: width 0.3s linear; }
+        .nest-section-heading { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 18px 4px 8px; }
+
+        .nest-miners-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .nest-miner {
+            width: 44px; height: 44px; border-radius: 12px; background: var(--panel-soft);
+            border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center;
+            font-size: 18px; position: relative; overflow: hidden;
+        }
+        .nest-miner .nest-miner-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, rgba(251, 191, 36, 0.55), rgba(251, 191, 36, 0.05)); transition: height 0.3s ease; }
+        .nest-miner span { position: relative; z-index: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+        .nest-miner-empty { border-style: dashed; opacity: 0.55; font-size: 10px; color: var(--text-muted); text-align: center; padding: 0 4px; }
+
+        .nest-ladder { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; margin-bottom: 4px; }
+        .nest-ladder-row { display: flex; align-items: center; gap: 10px; background: var(--panel-soft); border: 1px solid var(--glass-border); border-radius: 14px; padding: 9px 11px; }
+        .nest-ladder-icon { width: 34px; height: 34px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .nest-ladder-info { flex: 1; min-width: 0; }
+        .nest-ladder-name { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nest-ladder-count { color: var(--text-muted); font-size: 10.5px; margin-top: 1px; }
+        .nest-ladder-row .btn-action { padding: 8px 12px; font-size: 12px; }
+        .nest-grade-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+        .nest-type-head { display: flex; align-items: center; gap: 8px; margin: 14px 4px 6px; }
+        .nest-type-head .nest-type-ic { font-size: 15px; }
+        .nest-type-head b { font-size: 12.5px; }
+        .nest-type-head small { color: var(--text-muted); font-size: 10px; }
+
+        .nest-eagle-card { margin-bottom: 12px; padding: 14px; }
+        .nest-eagle-head { display: flex; align-items: center; gap: 10px; }
+        .nest-eagle-avatar { width: 44px; height: 44px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 21px; flex: none; border: 2px solid rgba(255, 255, 255, 0.15); }
+        .nest-eagle-name { font-weight: 800; font-size: 14px; }
+        .nest-eagle-tier { font-size: 10.5px; font-weight: 700; margin-top: 1px; }
+        .nest-stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 12px; }
+        .nest-stat-tile { background: rgba(255, 255, 255, 0.045); border-radius: 10px; padding: 6px 3px; text-align: center; }
+        .nest-stat-tile .nest-stat-v { font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; }
+        .nest-stat-tile .nest-stat-b { font-size: 8.5px; color: var(--accent-slime); font-weight: 700; min-height: 11px; }
+        .nest-stat-tile .nest-stat-k { font-size: 8.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+        .nest-slots-row { display: flex; gap: 8px; margin-top: 12px; }
+        .nest-slot {
+            flex: 1; aspect-ratio: 1; border-radius: 13px; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 2px; cursor: pointer; border: 1.5px dashed var(--glass-border);
+            background: rgba(255, 255, 255, 0.03); font-size: 17px; position: relative;
+        }
+        .nest-slot.nest-slot-filled { border-style: solid; }
+        .nest-slot .nest-slot-name { font-size: 7.5px; font-weight: 700; text-align: center; padding: 0 3px; line-height: 1.15; }
+        .nest-slot .nest-slot-type { position: absolute; top: 3px; left: 5px; font-size: 7.5px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
+
+        .nest-equip-box { max-height: 78vh; overflow-y: auto; }
+        .nest-equip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .nest-equip-head h3 { margin: 0; font-size: 15px; }
+        .nest-modal-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 4px; }
+        .nest-equip-option { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: var(--panel-soft); border: 1px solid var(--glass-border); margin-bottom: 8px; }
+        .nest-equip-option .nest-equip-ic { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; }
+        .nest-equip-option .nest-equip-info { flex: 1; min-width: 0; }
+        .nest-equip-option .nest-equip-info .nest-equip-n { font-weight: 700; font-size: 12.5px; }
+        .nest-equip-option .nest-equip-info .nest-equip-g { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+        .nest-empty-note { color: var(--text-muted); font-size: 12.5px; text-align: center; padding: 24px 10px; }
+
     </style>
 </head>
 <body>
@@ -827,6 +905,10 @@
             <linearGradient id="navGradProfile" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#ef4444" />
                 <stop offset="100%" stop-color="#fbbf24" />
+            </linearGradient>
+            <linearGradient id="navGradNest" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#a855f7" />
+                <stop offset="100%" stop-color="#f59e0b" />
             </linearGradient>
         </defs>
     </svg>
@@ -945,6 +1027,41 @@
         <div id="merchant" class="content">
             <h1 data-i18n="merchant.heading">Купец</h1>
             <div class="glass-panel" id="merchantBody" style="padding:16px"></div>
+        </div>
+
+        <!-- WARRIORS' NEST TAB -->
+        <div id="nest" class="content">
+            <h1 data-i18n="nest.heading">Гнездо Воинов</h1>
+            <p class="subtitle" data-i18n="nest.subtitle">Небесные Осколки, частички и снаряжение для твоих орлов</p>
+
+            <div class="subtab-bar">
+                <div class="subtab-item active" data-subtab="forge" onclick="switchNestSubtab('forge')" data-i18n="nest.subtabForge">🔨 Кузница</div>
+                <div class="subtab-item" data-subtab="eagle" onclick="switchNestSubtab('eagle')" data-i18n="nest.subtabEagle">🦅 Боевой Орёл</div>
+            </div>
+
+            <div class="subtab-panel active" id="nestSubForge">
+                <div class="glass-panel nest-shard-card" id="nestShardCard"></div>
+
+                <div class="glass-panel nest-card">
+                    <div class="stat-row"><span data-i18n="nest.minersInWork">Осколков в работе</span><b id="nestMinerCount">0</b></div>
+                    <div class="nest-miners-row" id="nestMinersRow"></div>
+                    <div class="stat-row"><span data-i18n="nest.readyToCollect">Готово к сбору</span><b id="nestPendingParticles">0 ⚙️</b></div>
+                    <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCollectBtn" onclick="nestCollectParticles()" data-i18n="nest.collectBtn">Собрать частички</button>
+                </div>
+
+                <div class="glass-panel nest-card">
+                    <div class="stat-row"><span data-i18n="nest.particlesInInventory">Частичек в инвентаре</span><b id="nestCraftParticles">0 / 20 ⚙️</b></div>
+                    <div class="nest-track"><i id="nestCraftTrack" style="width:0%"></i></div>
+                    <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCraftBtn" onclick="nestCraft()">Скрафтить серый предмет</button>
+                </div>
+
+                <h2 class="nest-section-heading" data-i18n="nest.upgradeHeading">Улучшение снаряжения (4 → 1, успех 100%)</h2>
+                <div id="nestUpgradeBlocks"></div>
+            </div>
+
+            <div class="subtab-panel" id="nestSubEagle">
+                <div id="nestEagleList"></div>
+            </div>
         </div>
 
         <!-- PROFILE TAB -->
@@ -1106,6 +1223,10 @@
                 <div class="nav-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="3" fill="url(#navGradMerchant)"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.6" stroke-linecap="round"></path><rect x="2" y="12" width="20" height="2.2" fill="rgba(0,0,0,0.18)"></rect></svg></div>
                 <span data-i18n="nav.merchant">Купец</span>
             </div>
+            <div class="nav-item" onclick="switchTab('nest', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5Z" fill="url(#navGradNest)"></path><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+                <span data-i18n="nav.nest">Гнездо</span>
+            </div>
             <div class="nav-item" onclick="switchTab('profile', this)">
                 <div class="nav-icon" id="navProfileIcon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2Z" fill="url(#navGradProfile)"></path><circle cx="12" cy="7" r="4" fill="url(#navGradProfile)"></circle><ellipse cx="10.5" cy="5.6" rx="1.3" ry="0.9" fill="rgba(255,255,255,0.55)"></ellipse></svg></div>
                 <span data-i18n="nav.profile">Профиль</span>
@@ -1181,6 +1302,17 @@
     <!-- FUSION ATTEMPT MODAL -->
     <div class="modal-backdrop" id="fusionModal" onclick="if (event.target === this) closeFusionModal()">
         <div class="modal-box glass-panel" id="fusionModalBody"></div>
+    </div>
+
+    <!-- WARRIORS' NEST EQUIP MODAL -->
+    <div class="modal-backdrop" id="nestEquipModal" onclick="if (event.target === this) nestCloseEquipModal()">
+        <div class="modal-box glass-panel nest-equip-box">
+            <div class="nest-equip-head">
+                <h3 id="nestEquipModalTitle">Выбор снаряжения</h3>
+                <button class="nest-modal-close" onclick="nestCloseEquipModal()">✕</button>
+            </div>
+            <div id="nestEquipModalBody"></div>
+        </div>
     </div>
 
     <div id="toast"></div>
@@ -1294,6 +1426,32 @@
                 'farm.eggCookingToast': 'Яйцо ещё не готово — {time}',
                 'farm.queueLabel': 'Не поместились — ждут своей очереди',
                 'nav.merchant': 'Купец',
+                'nav.nest': 'Гнездо',
+                'nest.heading': 'Гнездо Воинов',
+                'nest.subtitle': 'Небесные Осколки, частички и снаряжение для твоих орлов',
+                'nest.subtabForge': '🔨 Кузница', 'nest.subtabEagle': '🦅 Боевой Орёл',
+                'nest.shardTitle': 'Небесный Осколок',
+                'nest.shardSub': 'Цена {price} GRAM · доступно строго 1 шт. за раз',
+                'nest.shardBuy': 'Купить за {price} GRAM', 'nest.shardNotEnough': 'Не хватает GRAM',
+                'nest.shardCooldownLabel': 'Следующий осколок через',
+                'nest.shardPurchased': 'Небесный Осколок куплен — отправлен в Кузницу',
+                'nest.minersInWork': 'Осколков в работе', 'nest.noMiners': 'нет осколков',
+                'nest.readyToCollect': 'Готово к сбору', 'nest.collectBtn': 'Собрать частички',
+                'nest.nothingToCollect': 'Пока нечего собирать', 'nest.collected': 'Собрано {amount} ⚙️',
+                'nest.particlesInInventory': 'Частичек в инвентаре',
+                'nest.craftBtn': 'Скрафтить серый предмет ({cost} ⚙️)',
+                'nest.craftNeedMore': 'Нужно {cost} частичек', 'nest.crafted': 'Получен предмет: {name}',
+                'nest.upgradeHeading': 'Улучшение снаряжения (4 → 1, успех 100%)',
+                'nest.upgradeBtn': 'Улучшить', 'nest.upgradeNeedMore': 'Нужно 4 предмета этого грейда',
+                'nest.upgraded': 'Улучшено до: {name}', 'nest.needFour': 'нужно 4', 'nest.maxGrade': 'максимум',
+                'nest.gradeGrey': 'Серый', 'nest.gradeGreen': 'Зелёный', 'nest.gradeBlue': 'Синий',
+                'nest.gradePurple': 'Фиолетовый', 'nest.gradeGold': 'Золотой', 'nest.gradeMythic': 'Мифический',
+                'nest.yourEagles': 'Твои орлы', 'nest.equipTitle': 'Выбор снаряжения',
+                'nest.currentlyEquipped': 'Сейчас надето', 'nest.equipBtn': 'Надеть', 'nest.unequipBtn': 'Снять',
+                'nest.equipped': 'Надето: {name}', 'nest.unequipped': 'Снято: {name}',
+                'nest.emptyInventoryNote': 'В инвентаре нет предметов этого типа. Скрафти или улучши снаряжение в Кузнице.',
+                'nest.statHp': 'ХП', 'nest.statAtk': 'Атака', 'nest.statDef': 'Защита',
+                'nest.statCrit': 'Крит', 'nest.statSpd': 'Скор.',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1449,6 +1607,32 @@
                 'farm.eggCookingToast': 'Egg is still cooking — {time}',
                 'farm.queueLabel': "Didn't fit — waiting in line",
                 'nav.merchant': 'Merchant',
+                'nav.nest': 'Nest',
+                'nest.heading': "Warriors' Nest",
+                'nest.subtitle': 'Sky Shards, particles and gear for your eagles',
+                'nest.subtabForge': '🔨 Forge', 'nest.subtabEagle': '🦅 Battle Eagle',
+                'nest.shardTitle': 'Sky Shard',
+                'nest.shardSub': 'Price {price} GRAM · only 1 available at a time',
+                'nest.shardBuy': 'Buy for {price} GRAM', 'nest.shardNotEnough': 'Not enough GRAM',
+                'nest.shardCooldownLabel': 'Next shard in',
+                'nest.shardPurchased': 'Sky Shard purchased — sent to the Forge',
+                'nest.minersInWork': 'Shards at work', 'nest.noMiners': 'no shards',
+                'nest.readyToCollect': 'Ready to collect', 'nest.collectBtn': 'Collect particles',
+                'nest.nothingToCollect': 'Nothing to collect yet', 'nest.collected': 'Collected {amount} ⚙️',
+                'nest.particlesInInventory': 'Particles in inventory',
+                'nest.craftBtn': 'Craft a grey item ({cost} ⚙️)',
+                'nest.craftNeedMore': 'Need {cost} particles', 'nest.crafted': 'Item obtained: {name}',
+                'nest.upgradeHeading': 'Gear upgrade (4 → 1, 100% success)',
+                'nest.upgradeBtn': 'Upgrade', 'nest.upgradeNeedMore': 'Need 4 items of this grade',
+                'nest.upgraded': 'Upgraded to: {name}', 'nest.needFour': 'need 4', 'nest.maxGrade': 'max',
+                'nest.gradeGrey': 'Grey', 'nest.gradeGreen': 'Green', 'nest.gradeBlue': 'Blue',
+                'nest.gradePurple': 'Purple', 'nest.gradeGold': 'Gold', 'nest.gradeMythic': 'Mythic',
+                'nest.yourEagles': 'Your eagles', 'nest.equipTitle': 'Gear selection',
+                'nest.currentlyEquipped': 'Currently equipped', 'nest.equipBtn': 'Equip', 'nest.unequipBtn': 'Unequip',
+                'nest.equipped': 'Equipped: {name}', 'nest.unequipped': 'Unequipped: {name}',
+                'nest.emptyInventoryNote': 'No items of this type yet. Craft or upgrade gear in the Forge.',
+                'nest.statHp': 'HP', 'nest.statAtk': 'ATK', 'nest.statDef': 'DEF',
+                'nest.statCrit': 'Crit', 'nest.statSpd': 'SPD',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -1666,7 +1850,8 @@
             ops: 0,              // версия баланса на сервере
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
-            merchant: { meatBought: 0, eaglesSold: 0 } // общий (не персональный!) остаток лимитов купца, кэш с сервера
+            merchant: { meatBought: 0, eaglesSold: 0 }, // общий (не персональный!) остаток лимитов купца, кэш с сервера
+            nest: { shardCooldownUntil: 0, particles: 0, miners: [], inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки, снаряжение, экипировка
         };
 
         let botUsername = '';
@@ -4024,6 +4209,7 @@
             renderMissions();
             renderMarket();
             renderVipRail();
+            renderNest();
             updateWheelButton();
         }
 
@@ -4509,6 +4695,7 @@
             if (tabId === 'missions') renderMissions();
             if (tabId === 'market') loadMarketListings();
             if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
+            if (tabId === 'nest') renderNest();
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -4524,6 +4711,398 @@
             const panelId = 'profileSub' + id.charAt(0).toUpperCase() + id.slice(1);
             document.getElementById(panelId).classList.add('active');
             if (id === 'friends') { renderMissions(); loadReferrals(); }
+        }
+
+        /* ---------- Гнездо Воинов ---------- */
+
+        function switchNestSubtab(id) {
+            haptic.select();
+            document.querySelectorAll('#nest .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.subtab === id));
+            document.querySelectorAll('#nest .subtab-panel').forEach(el => el.classList.remove('active'));
+            document.getElementById(id === 'forge' ? 'nestSubForge' : 'nestSubEagle').classList.add('active');
+        }
+
+        function nestGradeIndex(grade) { return (CONFIG.nest.grades || []).indexOf(grade); }
+
+        // Грейды снаряжения используют ту же палитру, что и редкости орлов
+        // (совпадают один в один — common..mythical == grey..mythic по цвету).
+        function nestGradeColor(grade) {
+            const idx = nestGradeIndex(grade);
+            return (CONFIG.tiers[idx] || {}).color || '#94a3b8';
+        }
+
+        function nestGradeLabel(grade) {
+            return t('nest.grade' + grade.charAt(0).toUpperCase() + grade.slice(1));
+        }
+
+        function nestNextGrade(grade) {
+            const grades = CONFIG.nest.grades || [];
+            const idx = grades.indexOf(grade);
+            return (idx >= 0 && idx < grades.length - 1) ? grades[idx + 1] : null;
+        }
+
+        function nestTypeOrder() { return Object.keys(CONFIG.nest.item_types || {}); }
+
+        function nestInventoryCount(type, grade) {
+            return ((state.nest.inventory[type] || {})[grade]) || 0;
+        }
+
+        function nestMinerPending(miner, nowSec) {
+            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
+            if (interval <= 0) return 0;
+            return Math.floor((nowSec - (miner.lastCollectAt || 0)) / interval);
+        }
+
+        function nestTotalPending(nowSec) {
+            return state.nest.miners.reduce((sum, m) => sum + nestMinerPending(m, nowSec), 0);
+        }
+
+        function renderNest() {
+            renderNestShard();
+            renderNestForge();
+            renderNestEagles();
+        }
+
+        function renderNestShard() {
+            const el = document.getElementById('nestShardCard');
+            if (!el) return;
+            const now = Date.now() / 1000;
+            const price = CONFIG.nest.shard_price_gram;
+            const header = `
+                <div class="nest-shard-top">
+                    <div class="nest-shard-icon">💎</div>
+                    <div>
+                        <div class="nest-shard-title">${t('nest.shardTitle')}</div>
+                        <div class="nest-shard-sub">${t('nest.shardSub', { price: fmtGram(price) })}</div>
+                    </div>
+                </div>`;
+            if (now >= (state.nest.shardCooldownUntil || 0)) {
+                const affordable = state.coins >= price;
+                el.innerHTML = header + `
+                    <button class="btn-primary" style="margin-top:12px; width:100%" ${affordable ? '' : 'disabled'} onclick="nestBuyShard()">
+                        ${affordable ? t('nest.shardBuy', { price: fmtGram(price) }) : t('nest.shardNotEnough')}
+                    </button>`;
+            } else {
+                const remaining = Math.max(0, state.nest.shardCooldownUntil - now);
+                const total = (CONFIG.nest.shard_cooldown_hours || 6) * 3600;
+                const pct = 100 - Math.min(100, (remaining / total) * 100);
+                el.innerHTML = header + `
+                    <div class="nest-countdown-wrap">
+                        <div class="nest-countdown-label">${t('nest.shardCooldownLabel')}</div>
+                        <div class="nest-countdown">${formatCountdown(remaining)}</div>
+                        <div class="nest-track"><i style="width:${pct}%"></i></div>
+                    </div>`;
+            }
+        }
+
+        function renderNestForge() {
+            const minerCountEl = document.getElementById('nestMinerCount');
+            if (!minerCountEl) return;
+            const now = Date.now() / 1000;
+            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
+            const miners = state.nest.miners;
+            minerCountEl.textContent = miners.length;
+
+            let rows = miners.map(m => {
+                const pending = nestMinerPending(m, now);
+                const progress = interval > 0 ? ((now - m.lastCollectAt) % interval) / interval : 0;
+                const pct = pending > 0 ? 100 : Math.round(progress * 100);
+                return `<div class="nest-miner"><div class="nest-miner-fill" style="height:${pct}%"></div><span>${pending > 0 ? '✨' : '💎'}</span></div>`;
+            }).join('');
+            if (!miners.length) rows = `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
+            document.getElementById('nestMinersRow').innerHTML = rows;
+            document.getElementById('nestPendingParticles').textContent = nestTotalPending(now) + ' ⚙️';
+
+            const craftCost = CONFIG.nest.craft_cost_particles || 20;
+            const have = state.nest.particles;
+            document.getElementById('nestCraftParticles').textContent = `${fmt(have)} / ${craftCost} ⚙️`;
+            document.getElementById('nestCraftTrack').style.width = Math.min(100, (have / craftCost) * 100) + '%';
+            const craftBtn = document.getElementById('nestCraftBtn');
+            craftBtn.textContent = t('nest.craftBtn', { cost: craftCost });
+            craftBtn.disabled = have < craftCost;
+
+            const grades = CONFIG.nest.grades || [];
+            const types = nestTypeOrder();
+            let html = '';
+            types.forEach(type => {
+                const meta = CONFIG.nest.item_types[type];
+                html += `<div class="nest-type-head"><span class="nest-type-ic">${meta.icon}</span><b>${meta.label}</b><small>${meta.sub}</small></div><div class="nest-ladder">`;
+                grades.forEach(grade => {
+                    const count = nestInventoryCount(type, grade);
+                    const next = nestNextGrade(grade);
+                    const color = nestGradeColor(grade);
+                    const upgradeGroup = CONFIG.nest.upgrade_group || 4;
+                    html += `<div class="nest-ladder-row">
+                        <div class="nest-ladder-icon" style="background:${color}33">${meta.icon}</div>
+                        <div class="nest-ladder-info">
+                            <div class="nest-ladder-name">${meta.names[grade]}</div>
+                            <div class="nest-ladder-count">${nestGradeLabel(grade)} · x${count}${next ? ' · ' + t('nest.needFour') : ' · ' + t('nest.maxGrade')}</div>
+                        </div>
+                        ${next
+                            ? `<button class="btn-action" ${count < upgradeGroup ? 'disabled' : ''} onclick="nestUpgrade('${type}','${grade}')">${t('nest.upgradeBtn')}</button>`
+                            : `<span class="nest-grade-pill" style="background:${color}22; color:${color}">${t('nest.maxGrade')}</span>`}
+                    </div>`;
+                });
+                html += '</div>';
+            });
+            document.getElementById('nestUpgradeBlocks').innerHTML = html;
+        }
+
+        function renderNestEagles() {
+            const list = document.getElementById('nestEagleList');
+            if (!list) return;
+            const types = nestTypeOrder();
+            list.innerHTML = CONFIG.tiers.map(tier => {
+                const monster = tier.monsters[0];
+                const equipped = state.nest.equipped[tier.id] || {};
+                const bonus = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
+                types.forEach(type => {
+                    const grade = equipped[type];
+                    if (!grade) return;
+                    const pct = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
+                    const stat = CONFIG.nest.item_types[type].stat;
+                    if (stat === 'atk') bonus.atk += pct;
+                    if (stat === 'def') bonus.def += pct;
+                    if (stat === 'crit') bonus.crit += pct;
+                    if (stat === 'hpspd') { bonus.hp += pct; bonus.spd += pct; }
+                });
+                const base = NEST_EAGLE_BASE_STATS[tier.id] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
+                function statCell(key, label) {
+                    const b = bonus[key] || 0;
+                    const val = key === 'crit' ? (base[key] * (1 + b / 100)).toFixed(1) + '%' : Math.round(base[key] * (1 + b / 100));
+                    return `<div class="nest-stat-tile"><div class="nest-stat-v">${val}</div><div class="nest-stat-b">${b > 0 ? '+' + b + '%' : ''}</div><div class="nest-stat-k">${label}</div></div>`;
+                }
+                const slotsHtml = types.map(type => {
+                    const meta = CONFIG.nest.item_types[type];
+                    const grade = equipped[type];
+                    if (grade) {
+                        const color = nestGradeColor(grade);
+                        return `<div class="nest-slot nest-slot-filled" style="border-color:${color}; background:${color}22" onclick="nestOpenEquipModal('${tier.id}','${type}')">
+                            <span class="nest-slot-type">${meta.label}</span><span>${meta.icon}</span>
+                            <span class="nest-slot-name">${meta.names[grade]}</span></div>`;
+                    }
+                    return `<div class="nest-slot" onclick="nestOpenEquipModal('${tier.id}','${type}')">
+                        <span class="nest-slot-type">${meta.label}</span><span style="opacity:.4">${meta.icon}</span></div>`;
+                }).join('');
+                return `<div class="glass-panel nest-eagle-card">
+                    <div class="nest-eagle-head">
+                        <div class="nest-eagle-avatar" style="background:${tier.color}33; color:${tier.color}">🦅</div>
+                        <div><div class="nest-eagle-name">${monster.name}</div><div class="nest-eagle-tier" style="color:${tier.color}">${tier.name}</div></div>
+                    </div>
+                    <div class="nest-stat-grid">
+                        ${statCell('hp', t('nest.statHp'))}
+                        ${statCell('atk', t('nest.statAtk'))}
+                        ${statCell('def', t('nest.statDef'))}
+                        ${statCell('crit', t('nest.statCrit'))}
+                        ${statCell('spd', t('nest.statSpd'))}
+                    </div>
+                    <div class="nest-slots-row">${slotsHtml}</div>
+                </div>`;
+            }).join('');
+        }
+
+        let nestEquipCtx = null; // { tierId, type }
+
+        function nestOpenEquipModal(tierId, type) {
+            haptic.impact('light');
+            nestEquipCtx = { tierId, type };
+            renderNestEquipModal();
+            document.getElementById('nestEquipModal').classList.add('open');
+        }
+
+        function nestCloseEquipModal() {
+            document.getElementById('nestEquipModal').classList.remove('open');
+            nestEquipCtx = null;
+        }
+
+        function renderNestEquipModal() {
+            if (!nestEquipCtx) return;
+            const { tierId, type } = nestEquipCtx;
+            const meta = CONFIG.nest.item_types[type];
+            document.getElementById('nestEquipModalTitle').textContent = `${meta.label} · ${meta.sub}`;
+            const equipped = (state.nest.equipped[tierId] || {})[type];
+            let body = '';
+            if (equipped) {
+                const color = nestGradeColor(equipped);
+                body += `<div class="nest-equip-option" style="border-color:${color}66">
+                    <div class="nest-equip-ic" style="background:${color}33">${meta.icon}</div>
+                    <div class="nest-equip-info"><div class="nest-equip-n">${meta.names[equipped]}</div><div class="nest-equip-g">${t('nest.currentlyEquipped')} · ${nestGradeLabel(equipped)}</div></div>
+                    <button class="btn-action" onclick="nestUnequip()">${t('nest.unequipBtn')}</button>
+                </div>`;
+            }
+            let any = false;
+            (CONFIG.nest.grades || []).forEach(grade => {
+                const count = nestInventoryCount(type, grade);
+                if (count <= 0) return;
+                any = true;
+                const color = nestGradeColor(grade);
+                const bonus = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
+                body += `<div class="nest-equip-option">
+                    <div class="nest-equip-ic" style="background:${color}33">${meta.icon}</div>
+                    <div class="nest-equip-info"><div class="nest-equip-n">${meta.names[grade]}</div><div class="nest-equip-g">${nestGradeLabel(grade)} · +${bonus}% · x${count}</div></div>
+                    <button class="btn-primary" style="padding:8px 14px" onclick="nestEquip('${grade}')">${t('nest.equipBtn')}</button>
+                </div>`;
+            });
+            if (!any && !equipped) {
+                body += `<p class="nest-empty-note">${t('nest.emptyInventoryNote')}</p>`;
+            }
+            document.getElementById('nestEquipModalBody').innerHTML = body;
+        }
+
+        async function nestBuyShard() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('nest-buy-shard')) return;
+            farmActionBusy.add('nest-buy-shard');
+            try {
+                const response = await fetch('api/nest/shard/buy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('nest.shardNotEnough')); return; }
+                state.coins = data.coins;
+                state.nest.shardCooldownUntil = data.shard_cooldown_until;
+                state.nest.miners = (data.nest_miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at }));
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('nest.shardPurchased'));
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('nest-buy-shard');
+            }
+        }
+
+        async function nestCollectParticles() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('nest-collect')) return;
+            farmActionBusy.add('nest-collect');
+            try {
+                const response = await fetch('api/nest/particles/collect', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('nest.nothingToCollect')); return; }
+                state.nest.particles = data.particles;
+                state.nest.miners = (data.nest_miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at }));
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('nest.collected', { amount: data.collected }));
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('nest-collect');
+            }
+        }
+
+        async function nestCraft() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            if (farmActionBusy.has('nest-craft')) return;
+            farmActionBusy.add('nest-craft');
+            try {
+                const response = await fetch('api/nest/craft', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('nest.craftNeedMore', { cost: CONFIG.nest.craft_cost_particles })); return; }
+                state.nest.particles = data.particles;
+                state.nest.inventory = data.inventory;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('nest.crafted', { name: CONFIG.nest.item_types[data.item_type].names[data.grade] }));
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('nest-craft');
+            }
+        }
+
+        async function nestUpgrade(type, grade) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'nest-upgrade:' + type + ':' + grade;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+            try {
+                const response = await fetch('api/nest/upgrade', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, item_type: type, grade })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('nest.upgradeNeedMore')); return; }
+                state.nest.inventory = data.inventory;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('nest.upgraded', { name: CONFIG.nest.item_types[data.item_type].names[data.grade] }));
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete(key);
+            }
+        }
+
+        async function nestEquip(grade) {
+            if (offlineOnly || !state.userId || !nestEquipCtx) { toast(t('merchant.onlineOnly')); return; }
+            const { tierId, type } = nestEquipCtx;
+            if (farmActionBusy.has('nest-equip')) return;
+            farmActionBusy.add('nest-equip');
+            try {
+                const response = await fetch('api/nest/equip', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, tier_id: tierId, item_type: type, grade })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || 'Ошибка'); return; }
+                state.nest.inventory = data.inventory;
+                state.nest.equipped = data.equipped;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('nest.equipped', { name: CONFIG.nest.item_types[type].names[grade] }));
+                nestCloseEquipModal();
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('nest-equip');
+            }
+        }
+
+        async function nestUnequip() {
+            if (offlineOnly || !state.userId || !nestEquipCtx) { toast(t('merchant.onlineOnly')); return; }
+            const { tierId, type } = nestEquipCtx;
+            const prevGrade = (state.nest.equipped[tierId] || {})[type];
+            if (farmActionBusy.has('nest-equip')) return;
+            farmActionBusy.add('nest-equip');
+            try {
+                const response = await fetch('api/nest/unequip', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, tier_id: tierId, item_type: type })
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || 'Ошибка'); return; }
+                state.nest.inventory = data.inventory;
+                state.nest.equipped = data.equipped;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                if (prevGrade) toast(t('nest.unequipped', { name: CONFIG.nest.item_types[type].names[prevGrade] }));
+                nestCloseEquipModal();
+                renderAll();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('nest-equip');
+            }
         }
 
         /* ---------- кошелёк TON ---------- */
@@ -4996,6 +5575,13 @@
             state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);
             botUsername = data.bot_username || botUsername;
+            if (data.nest) {
+                state.nest.shardCooldownUntil = data.nest.shard_cooldown_until || 0;
+                state.nest.particles = data.nest.particles || 0;
+                state.nest.miners = (data.nest.miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at || 0 }));
+                state.nest.inventory = data.nest.inventory || {};
+                state.nest.equipped = data.nest.equipped || {};
+            }
 
             renderAll();
             renderWallet();
@@ -5116,6 +5702,12 @@
                 if (document.getElementById('vipModal').classList.contains('open')) {
                     renderVipModal();
                 }
+                if (document.getElementById('nest').classList.contains('active')) {
+                    renderNest();
+                }
+                if (document.getElementById('nestEquipModal').classList.contains('open')) {
+                    renderNestEquipModal();
+                }
             }, 1000);
 
             setInterval(saveNow, 10000);
@@ -5202,6 +5794,29 @@
         // Резервные настройки лавки купца (покупка Meat за золото и орлов за GRAM).
         const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, meat_buy_max_per_purchase: 5, eagle_gram_price: 0.2, eagle_sell_limit: 10 };
 
+        // Резервная база предметов Гнезда Воинов (на случай, если сервер не прислал свою).
+        const DEFAULT_NEST_ITEM_TYPES = {
+            claws: { label: 'Когти', sub: 'Атака', icon: '🗡️', stat: 'atk',
+                names: { grey: 'Железные Шпоры', green: 'Когти Дикого Леса', blue: 'Сапфировые Серпы', purple: 'Лезвия Бездны', gold: 'Когти Солнечного Всплеска', mythic: 'Раздиратели Небосвода' } },
+            armor: { label: 'Броня', sub: 'Защита', icon: '🛡️', stat: 'def',
+                names: { grey: 'Стёганый Нагрудник', green: 'Панцирь Дубрав', blue: 'Ледяная Кольчуга', purple: 'Накидка Звёздной Пыли', gold: 'Императорская Кираса', mythic: 'Эгида Пернатого Титана' } },
+            mask: { label: 'Маска', sub: 'Меткость/Крит', icon: '🎭', stat: 'crit',
+                names: { grey: 'Кожаный Наглазник', green: 'Маска Охотника', blue: 'Шлем Розы Ветров', purple: 'Забрало Иллюзий', gold: 'Корона Солнцеликого', mythic: 'Око Вечного Грома' } },
+            ring: { label: 'Кольцо', sub: 'ХП/Скорость', icon: '💍', stat: 'hpspd',
+                names: { grey: 'Медное Кольцо', green: 'Амулет Травника', blue: 'Печать Бури', purple: 'Перстень Миражей', gold: 'Драгоценная Метрика', mythic: 'Реликвия Начала Времён' } },
+        };
+
+        // Косметические базовые характеристики «боевых орлов» по редкости — витрина
+        // Гнезда Воинов, будущая боевая система игру пока не затрагивает.
+        const NEST_EAGLE_BASE_STATS = {
+            common: { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 },
+            uncommon: { hp: 150, atk: 16, def: 13, crit: 7, spd: 14 },
+            rare: { hp: 220, atk: 25, def: 20, crit: 10, spd: 20 },
+            epic: { hp: 320, atk: 38, def: 32, crit: 14, spd: 26 },
+            legendary: { hp: 460, atk: 56, def: 48, crit: 19, spd: 34 },
+            mythical: { hp: 650, atk: 80, def: 70, crit: 25, spd: 44 },
+        };
+
         // Резервная таблица цен слотов фермы (индекс 0 = слот №1, GRAM).
         const DEFAULT_SLOT_PRICES = [
             0, 0, 1, 1.2, 1.4, 1.6, 1.8, 2, 2.5, 3, 3.5, 4,
@@ -5277,6 +5892,16 @@
             cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
             if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
             cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);
+            cfg.nest = Object.assign({
+                shard_price_gram: 3, shard_cooldown_hours: 6, particle_interval_hours: 24,
+                craft_cost_particles: 20, upgrade_group: 4,
+                grades: ['grey', 'green', 'blue', 'purple', 'gold', 'mythic'],
+                grade_bonus_pct: { grey: 2, green: 4, blue: 8, purple: 16, gold: 32, mythic: 64 },
+                item_types: DEFAULT_NEST_ITEM_TYPES,
+            }, cfg.nest);
+            if (!cfg.nest.item_types || typeof cfg.nest.item_types !== 'object' || !Object.keys(cfg.nest.item_types).length) {
+                cfg.nest.item_types = DEFAULT_NEST_ITEM_TYPES;
+            }
             return cfg;
         }
 

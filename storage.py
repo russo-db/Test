@@ -4,7 +4,9 @@
     user_id, coins, total_earned, mnstr, gold, monsters, farm_queue, active_slot,
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
-    vip_tier, vip_expires_at, vip_last_meat_at, wheel_day, wheel_spins_today
+    vip_tier, vip_expires_at, vip_last_meat_at, wheel_day, wheel_spins_today,
+    shard_cooldown_until, nest_miners, nest_particles, nest_inventory, nest_equipped
+    (Гнездо Воинов: Небесные Осколки, добыча частичек, крафт/улучшение снаряжения, экипировка)
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
@@ -21,6 +23,7 @@ FIELDS = (
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
+    "shard_cooldown_until", "nest_miners", "nest_particles", "nest_inventory", "nest_equipped",
 )
 
 
