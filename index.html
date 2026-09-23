@@ -3272,6 +3272,31 @@
             document.getElementById('vipModal').classList.remove('open');
         }
 
+        // Полная пересборка модалки на каждый секундный тик мигала (см. тот же
+        // приём в updateSlotProgress/tickNest) — сигнатура ловит смену
+        // состояния (активирован/куплен/т.п.), а пока она не изменилась,
+        // tickVipModal() просто обновляет текст с обратным отсчётом.
+        let vipModalSig = null;
+
+        function vipModalSignature(tier) {
+            const isActive = vipActive() && state.vip.tier === tier.id;
+            const blockedByOther = vipActive() && state.vip.tier !== tier.id;
+            const affordable = state.coins >= tier.price_gram;
+            return [vipModalTier, isActive, blockedByOther, affordable].join('|');
+        }
+
+        function tickVipModal() {
+            const tier = vipTierDef(vipModalTier);
+            if (!tier) return;
+            if (vipModalSignature(tier) !== vipModalSig) { renderVipModal(); return; }
+            const isActive = vipActive() && state.vip.tier === tier.id;
+            const blockedByOther = vipActive() && state.vip.tier !== tier.id;
+            const line = document.getElementById('vipModalTimeLine');
+            if (!line) return;
+            if (isActive) line.textContent = t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) });
+            else if (blockedByOther) line.textContent = t('vip.otherTimeLeft', { name: vipTierDef(state.vip.tier).name, time: formatCountdown(state.vip.expiresAt - nowSeconds()) });
+        }
+
         function renderVipModal() {
             const tier = vipTierDef(vipModalTier);
             if (!tier) { closeVipModal(); return; }
@@ -3279,6 +3304,7 @@
             const blockedByOther = vipActive() && state.vip.tier !== tier.id;
             const affordable = state.coins >= tier.price_gram;
             const buyDisabled = isActive || blockedByOther || !affordable;
+            vipModalSig = vipModalSignature(tier);
 
             let buttonLabel;
             if (isActive) buttonLabel = t('vip.alreadyActive');
@@ -3292,8 +3318,8 @@
                 <div class="stat-row"><span>${t('vip.eggReduction')}</span><b>-${tier.egg_reduction_hours} ${t('vip.hoursShort')}</b></div>
                 <div class="stat-row"><span>${t('vip.expeditionReduction')}</span><b>-${tier.expedition_reduction_hours} ${t('vip.hoursShort')}</b></div>
                 <div class="stat-row"><span>${t('vip.duration')}</span><b>${tier.duration_days} ${t('vip.daysShort')}</b></div>
-                ${isActive ? `<p class="slot-modal-sub">${t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
-                ${blockedByOther ? `<p class="slot-modal-sub">${t('vip.otherTimeLeft', { name: vipTierDef(state.vip.tier).name, time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
+                ${isActive ? `<p class="slot-modal-sub" id="vipModalTimeLine">${t('vip.timeLeft', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
+                ${blockedByOther ? `<p class="slot-modal-sub" id="vipModalTimeLine">${t('vip.otherTimeLeft', { name: vipTierDef(state.vip.tier).name, time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</p>` : ''}
                 <button class="btn-primary" style="margin-top:12px; width:100%" ${buyDisabled ? 'disabled' : ''} onclick="buyVip('${tier.id}')">
                     ${buttonLabel}
                 </button>
@@ -4403,11 +4429,45 @@
             }
         }
 
+        // Полная пересборка модалки (включая <img> спрайта орла) на каждый
+        // секундный тик мигала — картинка каждый раз пересоздавалась и
+        // перерисовывалась заново, см. тот же приём в updateSlotProgress/
+        // tickNest. Сигнатура ловит смену состояния/ветки (началась
+        // экспедиция, яйцо стало готово и т.п.) — пока она не изменилась,
+        // tickSlotModal() просто двигает текст обратного отсчёта и ширину
+        // полоски прогресса по стабильным id.
+        let slotModalSig = null;
+
+        function slotModalSignature(slot) {
+            return [
+                modalSlot, slot.id, slotDeleteConfirm,
+                isOnExpedition(slot), expeditionReady(slot), eggReady(slot),
+                isFullyFed(slot), isFarmingEgg(slot), slot.feedLevel, slot.feedTaps,
+            ].join('|');
+        }
+
+        function tickSlotModal() {
+            const slot = state.farm[modalSlot];
+            if (!slot) { closeSlotModal(); return; }
+            if (slotModalSignature(slot) !== slotModalSig) { renderSlotModal(); return; }
+            if (slotDeleteConfirm) return;
+            const timerEl = document.getElementById('slotModalTimerVal');
+            const barEl = document.getElementById('slotModalProgressBar');
+            if (isOnExpedition(slot) && !expeditionReady(slot)) {
+                if (timerEl) timerEl.textContent = formatCountdown(slot.expeditionUntil - nowSeconds());
+                if (barEl) barEl.style.width = expeditionProgress(slot) + '%';
+            } else if (isFarmingEgg(slot)) {
+                if (timerEl) timerEl.textContent = formatCountdown(slot.nextEggAt - nowSeconds());
+                if (barEl) barEl.style.width = eggProgress(slot) + '%';
+            }
+        }
+
         function renderSlotModal() {
             const slot = state.farm[modalSlot];
             if (!slot) { closeSlotModal(); return; }
 
             const monster = MONSTERS[slot.id];
+            slotModalSig = slotModalSignature(slot);
 
             if (slotDeleteConfirm) {
                 document.getElementById('slotModalBody').innerHTML = `
@@ -4434,8 +4494,8 @@
             let actionHtml;
             if (onExpedition) {
                 progressHtml = `
-                    <div class="stat-row"><span>${t('slot.expedition')}</span><b style="color:#38bdf8">${expReady ? t('slot.ready') : formatCountdown(slot.expeditionUntil - nowSeconds())}</b></div>
-                    <div class="modal-progress"><i style="width:${expeditionProgress(slot)}%; background:#38bdf8"></i></div>
+                    <div class="stat-row"><span>${t('slot.expedition')}</span><b id="slotModalTimerVal" style="color:#38bdf8">${expReady ? t('slot.ready') : formatCountdown(slot.expeditionUntil - nowSeconds())}</b></div>
+                    <div class="modal-progress"><i id="slotModalProgressBar" style="width:${expeditionProgress(slot)}%; background:#38bdf8"></i></div>
                     <p class="slot-modal-sub">${t('slot.expeditionMining', { amount: fmtGram(expeditionGoldReward(monster)) })}</p>
                 `;
                 actionHtml = `<button class="btn-primary" style="margin-top:10px" ${expReady ? '' : 'disabled'} onclick="collectExpedition(modalSlot); closeSlotModal();">${t('slot.collectGold')}</button>`;
@@ -4446,8 +4506,8 @@
                 actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>${t('slot.collectEgg')}</button>`;
             } else if (farming || ready) {
                 progressHtml = `
-                    <div class="stat-row"><span>${t('slot.egg')}</span><b style="color:var(--accent-coin)">${ready ? t('slot.ready') : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
-                    <div class="modal-progress"><i style="width:${eggProgress(slot)}%; background:${monster.color}"></i></div>
+                    <div class="stat-row"><span>${t('slot.egg')}</span><b id="slotModalTimerVal" style="color:var(--accent-coin)">${ready ? t('slot.ready') : formatCountdown(slot.nextEggAt - nowSeconds())}</b></div>
+                    <div class="modal-progress"><i id="slotModalProgressBar" style="width:${eggProgress(slot)}%; background:${monster.color}"></i></div>
                     <p class="slot-modal-sub">${t('slot.levelProgress', { level: slot.feedLevel || 1, max: cfg.feed_levels })}</p>
                 `;
                 actionHtml = `<button class="btn-primary" style="margin-top:10px" ${ready ? '' : 'disabled'} onclick="collectEgg(modalSlot); closeSlotModal();">${t('slot.collectEgg')}</button>`;
@@ -4778,10 +4838,50 @@
             renderNestEagles();
         }
 
+        // Раз в секунду двигаются только таймеры/полоски прогресса — полная
+        // пересборка вкладки на каждый тик мигала (пересоздавала DOM,
+        // сбрасывала hover/disabled), см. тот же приём в updateSlotProgress
+        // для фермы. tickNest() трогает только текст/ширину/классы у уже
+        // существующих узлов и лишь при смене состояния зовёт полный рендер.
+        function tickNest() {
+            tickNestShard();
+            tickNestForge();
+        }
+
+        function nestShardSignature(now) {
+            const price = CONFIG.nest.shard_price_gram;
+            const limit = state.nest.shardDailyLimit || 4;
+            const boughtToday = state.nest.shardBoughtToday || 0;
+            const limitReached = boughtToday >= limit;
+            const ready = now >= (state.nest.shardCooldownUntil || 0);
+            const affordable = state.coins >= price;
+            return [limitReached, ready, boughtToday, limit, price, affordable].join('|');
+        }
+
+        let nestShardSig = null;
+
+        function tickNestShard() {
+            const el = document.getElementById('nestShardCard');
+            if (!el) return;
+            const now = Date.now() / 1000;
+            if (nestShardSignature(now) !== nestShardSig) { renderNestShard(); return; }
+            const limitReached = (state.nest.shardBoughtToday || 0) >= (state.nest.shardDailyLimit || 4);
+            const ready = now >= (state.nest.shardCooldownUntil || 0);
+            if (limitReached || ready) return;
+            const remaining = Math.max(0, state.nest.shardCooldownUntil - now);
+            const total = (CONFIG.nest.shard_cooldown_hours || 6) * 3600;
+            const pct = 100 - Math.min(100, (remaining / total) * 100);
+            const countdownEl = el.querySelector('.nest-countdown');
+            const trackEl = el.querySelector('.nest-track > i');
+            if (countdownEl) countdownEl.textContent = formatCountdown(remaining);
+            if (trackEl) trackEl.style.width = pct + '%';
+        }
+
         function renderNestShard() {
             const el = document.getElementById('nestShardCard');
             if (!el) return;
             const now = Date.now() / 1000;
+            nestShardSig = nestShardSignature(now);
             const price = CONFIG.nest.shard_price_gram;
             const limit = state.nest.shardDailyLimit || 4;
             const boughtToday = state.nest.shardBoughtToday || 0;
@@ -4817,6 +4917,39 @@
             }
         }
 
+        let nestMinerSig = '';
+
+        function nestMinerSignature() {
+            return state.nest.miners.map(m => m.id + ':' + m.lastCollectAt).join(',');
+        }
+
+        // Полоски заполнения и счётчик «готово к сбору» тикают каждую секунду
+        // сами по себе — количество осколков и их last_collect_at меняются
+        // только после покупки/сбора (оба уже зовут полный renderNestForge и
+        // тем самым обновляют nestMinerSig), так что здесь никогда не нужно
+        // трогать innerHTML.
+        function tickNestForge() {
+            const minersRow = document.getElementById('nestMinersRow');
+            if (!minersRow) return;
+            if (nestMinerSignature() !== nestMinerSig) { renderNestForge(); return; }
+            const now = Date.now() / 1000;
+            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
+            const tiles = minersRow.querySelectorAll('.nest-miner');
+            state.nest.miners.forEach((m, i) => {
+                const tile = tiles[i];
+                if (!tile) return;
+                const pending = nestMinerPending(m, now);
+                const progress = interval > 0 ? ((now - m.lastCollectAt) % interval) / interval : 0;
+                const pct = pending > 0 ? 100 : Math.round(progress * 100);
+                const fill = tile.querySelector('.nest-miner-fill');
+                const span = tile.querySelector('span');
+                if (fill) fill.style.height = pct + '%';
+                if (span) span.textContent = pending > 0 ? '✨' : '💎';
+            });
+            const pendingEl = document.getElementById('nestPendingParticles');
+            if (pendingEl) pendingEl.textContent = nestTotalPending(now) + ' ⚙️';
+        }
+
         function renderNestForge() {
             const minerCountEl = document.getElementById('nestMinerCount');
             if (!minerCountEl) return;
@@ -4824,6 +4957,7 @@
             const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
             const miners = state.nest.miners;
             minerCountEl.textContent = miners.length;
+            nestMinerSig = nestMinerSignature();
 
             let rows = miners.map(m => {
                 const pending = nestMinerPending(m, now);
@@ -5742,16 +5876,13 @@
                     renderActiveMonster();
                 }
                 if (document.getElementById('slotModal').classList.contains('open')) {
-                    renderSlotModal();
+                    tickSlotModal();
                 }
                 if (document.getElementById('vipModal').classList.contains('open')) {
-                    renderVipModal();
+                    tickVipModal();
                 }
                 if (document.getElementById('nest').classList.contains('active')) {
-                    renderNest();
-                }
-                if (document.getElementById('nestEquipModal').classList.contains('open')) {
-                    renderNestEquipModal();
+                    tickNest();
                 }
             }, 1000);
 
