@@ -1133,6 +1133,10 @@ class AdminPlayerUpdate(BaseModel):
     vip_expires_at: Optional[float] = None
 
 
+class AdminGrantShards(BaseModel):
+    count: int = 1
+
+
 class AdminConfigUpdate(BaseModel):
     config: dict
 
@@ -2385,6 +2389,7 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     doc["farm_queue"] = read_farm(doc.get("farm_queue"))[:FARM_QUEUE_MAX]
     doc["eggs_board"] = normalize_eggs_board(doc.get("eggs_board"))
     doc["eggs_queue"] = normalize_eggs_queue(doc.get("eggs_queue"))
+    doc["nest_miners"] = normalize_nest_miners(doc.get("nest_miners"))
     return doc
 
 
@@ -2422,6 +2427,27 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
     fresh = await store.get(user_id)
     fresh["monsters"] = read_farm(fresh.get("monsters"))
     return fresh
+
+
+@app.post("/admin/api/players/{user_id}/grant_shards")
+async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Depends(require_admin)):
+    """Начисляет игроку N Небесных Осколков напрямую, в обход общего (на
+    всех игроков) кулдауна и суточного лимита покупки — это админский
+    подарок, а не покупка. Каждый осколок — отдельный "майнер" в
+    nest_miners, который сразу начинает добывать частички (last_collect_at
+    = сейчас), точно как купленный за GRAM."""
+    doc = await store.get(user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+
+    count = max(1, min(int(body.count), 100))
+    now = time.time()
+    miners = normalize_nest_miners(doc.get("nest_miners"))
+    for i in range(count):
+        miners.append({"id": f"admin-{user_id}-{int(now * 1000)}-{i}", "last_collect_at": now})
+
+    await store.update(user_id, {"nest_miners": miners})
+    return {"nest_miners": miners}
 
 
 @app.get("/admin/api/withdrawals")

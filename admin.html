@@ -578,6 +578,13 @@ async function openPlayerModal(userId) {
                     <button id="addMonsterBtn">+ Добавить орла</button>
                 </div>
 
+                <b style="display:block; margin-top:14px;">Гнездо Воинов</b>
+                <div class="field-row">
+                    <label>Осколков в работе <input id="fShardCount" type="number" value="${(doc.nest_miners || []).length}" readonly></label>
+                    <label>Выдать осколков <input id="fGrantShards" type="number" min="1" max="100" value="1" style="width:70px"></label>
+                    <button id="grantShardsBtn">+ Выдать осколки</button>
+                </div>
+
                 <b style="display:block; margin-top:14px;">Доска яиц (0 — пусто, иначе уровень яйца)</b>
                 <div class="eggs-grid" id="eggsGrid">
                     ${board.map((v, i) => `<input type="number" min="0" data-egg="${i}" value="${v}">`).join('')}
@@ -598,6 +605,18 @@ async function openPlayerModal(userId) {
         const level = Math.max(1, Math.min(fusionFeedLevels, Number(document.getElementById('addMonsterLevel').value) || 1));
         editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: level, feed_taps: 0 });
         renderFarmList();
+    };
+    document.getElementById('grantShardsBtn').onclick = async () => {
+        const count = Math.max(1, Math.min(100, Number(document.getElementById('fGrantShards').value) || 1));
+        try {
+            const result = await api(`/admin/api/players/${userId}/grant_shards`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count }),
+            });
+            editingPlayer.nest_miners = result.nest_miners;
+            document.getElementById('fShardCount').value = result.nest_miners.length;
+            toast(`Выдано осколков: ${count}`);
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     };
     document.getElementById('playerModalClose').onclick = closePlayerModal;
     document.getElementById('playerModalCancel').onclick = closePlayerModal;
