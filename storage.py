@@ -521,6 +521,36 @@ class MongoStore:
             return {"user_id": doc["_id"], "name": doc.get("name") or "", "nest_equipped": doc.get("nest_equipped")}
         return None
 
+    async def get_leaderboard(self, limit: int = 100) -> list:
+        """Топ-N реальных игроков по pvp_rating, по убыванию — общая на всех
+        Таблица лидеров Арены. Отсутствующий pvp_rating (аккаунты до Арены)
+        трактуется как стартовые 1000, как и в pvp_rating_of на сервере."""
+        pipeline = [
+            {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
+            {"$sort": {"_rating": -1}},
+            {"$limit": limit},
+            {"$project": {"name": 1, "monsters": 1, "pvp_rating": "$_rating"}},
+        ]
+        docs = []
+        async for doc in self.users.aggregate(pipeline):
+            docs.append({
+                "user_id": doc["_id"], "name": doc.get("name") or "",
+                "pvp_rating": doc.get("pvp_rating"), "monsters": doc.get("monsters"),
+            })
+        return docs
+
+    async def count_higher_rating(self, rating: float) -> int:
+        """Сколько игроков строго выше данного рейтинга — чтобы посчитать
+        место игрока, не попавшего в Топ-100."""
+        pipeline = [
+            {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
+            {"$match": {"_rating": {"$gt": rating}}},
+            {"$count": "n"},
+        ]
+        async for doc in self.users.aggregate(pipeline):
+            return doc["n"]
+        return 0
+
     # --- АДМИН-ПАНЕЛЬ ---
 
     def _search_query(self, search: str) -> dict:

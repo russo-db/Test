@@ -604,6 +604,18 @@ def pvp_rating_of(row: dict) -> int:
     return PVP_RATING_START if value is None else max(0, int(value))
 
 
+def best_owned_tier(monsters_raw) -> str:
+    """Редкость самого высокоуровневого орла в коллекции — значок для
+    Таблицы лидеров Арены. TIER_INDEX растёт от обычного к мифическому,
+    поэтому достаточно максимума по индексу среди реально имеющихся тиров."""
+    farm = read_farm(monsters_raw)
+    tiers = {MONSTER_TIER.get(slot.get("id")) for slot in farm}
+    tiers.discard(None)
+    if not tiers:
+        return CONFIG["tiers"][0]["id"]
+    return max(tiers, key=lambda tier_id: TIER_INDEX.get(tier_id, 0))
+
+
 def normalize_nest_equipped(raw) -> dict:
     equipped = {tier_id: {t: None for t in NEST_TYPE_ORDER} for tier_id in TIER_INDEX}
     if isinstance(raw, dict):
@@ -1649,6 +1661,40 @@ async def arena_result(request: ArenaResult, x_telegram_init_data: Optional[str]
     new_rating = max(0, current + delta)
     await store.update(user_id, {"pvp_rating": new_rating})
     return {"pvp_rating": new_rating}
+
+
+@app.get("/api/arena/leaderboard")
+async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Общая Таблица лидеров Арены — реальный Топ-100 по pvp_rating среди
+    всех игроков (никаких сгенерированных ботов), плюс место текущего
+    игрока, даже если он не попал в топ-100."""
+    authenticate(x_telegram_init_data, user_id)
+    row = await fetch_user(user_id)
+    my_rating = pvp_rating_of(row)
+
+    top_docs = await store.get_leaderboard(100)
+    top = [
+        {
+            "user_id": doc["user_id"],
+            "name": doc["name"] or f"Игрок {doc['user_id']}",
+            "pvp_rating": int(doc["pvp_rating"]),
+            "best_tier": best_owned_tier(doc.get("monsters")),
+        }
+        for doc in top_docs
+    ]
+
+    my_index = next((i for i, e in enumerate(top) if e["user_id"] == user_id), None)
+    if my_index is not None:
+        my_rank = my_index + 1
+    else:
+        my_rank = await store.count_higher_rating(my_rating) + 1
+
+    return {
+        "top": top,
+        "my_rank": my_rank,
+        "my_rating": my_rating,
+        "my_best_tier": best_owned_tier(row.get("monsters")),
+    }
 
 
 @app.post("/api/nest/particles/collect")

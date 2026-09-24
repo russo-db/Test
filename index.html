@@ -1631,6 +1631,8 @@
                 'arena.noOpponentYet': 'Пока никто не вывел орла этой редкости — бой с диким орлом',
                 'arena.leaderboardBtn': 'Таблица лидеров', 'arena.leaderboardTitle': '🏆 Таблица лидеров',
                 'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
+                'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
+                'arena.leaderboardOnlineOnly': 'Таблица лидеров доступна только при подключении к серверу',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1833,6 +1835,8 @@
                 'arena.noOpponentYet': 'No one has this rarity yet — fighting a wild eagle',
                 'arena.leaderboardBtn': 'Leaderboard', 'arena.leaderboardTitle': '🏆 Leaderboard',
                 'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
+                'arena.leaderboardLoading': 'Loading leaderboard…',
+                'arena.leaderboardOnlineOnly': 'The leaderboard is only available when connected to the server',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -5968,68 +5972,30 @@
         }
 
         /* ---------- Таблица лидеров Арены (Топ-100) ---------- */
-        // global_leaderboard — заглушка для теста: 100 случайно сгенерированных
-        // ботов с именами и рейтингом 900-3000, генерируются один раз за сессию
-        // и дальше не меняются. Настоящий игрок каждый раз вставляется в них
-        // updateLeaderboard()-ом на правильное место по своему pvp_rating —
-        // сам список ботов при этом не трогаем.
-        let globalLeaderboardBots = null;
+        // Общая на всех игроков — реальный Топ-100 по pvp_rating с сервера
+        // (см. GET /api/arena/leaderboard), без ботов-заглушек. Каждое
+        // открытие таблицы запрашивает свежие данные заново.
         let leaderboardMyRank = 0;
 
-        const ARENA_BOT_NAME_ADJ = [
-            'Стальной', 'Огненный', 'Ледяной', 'Теневой', 'Грозовой', 'Кровавый', 'Быстрый', 'Дикий',
-            'Древний', 'Королевский', 'Мифический', 'Алый', 'Чёрный', 'Золотой', 'Штормовой', 'Ночной',
-        ];
-        const ARENA_BOT_NAME_NOUN = [
-            'Коготь', 'Клюв', 'Крыл', 'Взгляд', 'Полёт', 'Охотник', 'Страж', 'Хищник',
-            'Рейд', 'Шторм', 'Клинок', 'Ястреб', 'Орёл', 'Дозор', 'Пик', 'Клекот',
-        ];
-
-        function arenaRandomBotName() {
-            const adj = ARENA_BOT_NAME_ADJ[Math.floor(Math.random() * ARENA_BOT_NAME_ADJ.length)];
-            const noun = ARENA_BOT_NAME_NOUN[Math.floor(Math.random() * ARENA_BOT_NAME_NOUN.length)];
-            const n = 10 + Math.floor(Math.random() * 990);
-            return `@${adj}${noun}${n}`;
-        }
-
-        // Чем выше рейтинг бота, тем более редкого орла он вероятнее всего
-        // держит — с небольшим случайным разбросом, чтобы не было идеально
-        // линейно.
-        function arenaBotBestTier(rating) {
-            const tiers = CONFIG.tiers;
-            const pct = arenaClamp((rating - 900) / (3000 - 900), 0, 1);
-            let idx = Math.round(pct * (tiers.length - 1)) + Math.round((Math.random() - 0.5) * 2);
-            idx = Math.max(0, Math.min(tiers.length - 1, idx));
-            return tiers[idx].id;
-        }
-
-        function ensureLeaderboardBots() {
-            if (globalLeaderboardBots) return globalLeaderboardBots;
-            const bots = [];
-            for (let i = 0; i < 100; i++) {
-                const rating = Math.round(arenaRand(900, 3000));
-                bots.push({ id: `bot${i}`, name: arenaRandomBotName(), rating, bestTier: arenaBotBestTier(rating), isMe: false });
+        // Тянет актуальный Топ-100 и место игрока с сервера. Возвращает
+        // массив записей top-листа (с меткой isMe) или null, если таблица
+        // недоступна (офлайн-режим/нет соединения) — renderLeaderboard сам
+        // покажет соответствующее сообщение.
+        async function updateLeaderboard() {
+            if (offlineOnly || !state.userId) return null;
+            try {
+                const response = await fetch(`api/arena/leaderboard?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('leaderboard fetch failed');
+                const data = await response.json();
+                leaderboardMyRank = data.my_rank;
+                if (typeof data.my_rating === 'number') state.pvpRating = data.my_rating;
+                return (data.top || []).map(e => ({
+                    name: e.name, rating: e.pvp_rating, bestTier: e.best_tier,
+                    isMe: e.user_id === state.userId,
+                }));
+            } catch (error) {
+                return null;
             }
-            bots.sort((a, b) => b.rating - a.rating);
-            globalLeaderboardBots = bots;
-            return bots;
-        }
-
-        // Вставляет текущего игрока в global_leaderboard на правильное место
-        // по его pvp_rating и возвращает объединённый отсортированный список
-        // (боты не меняются — каждый вызов просто пересчитывает место игрока).
-        function updateLeaderboard() {
-            const bots = ensureLeaderboardBots();
-            const myTiers = ownedArenaTiers();
-            const myEntry = {
-                id: 'me', name: state.displayName || t('arena.you'),
-                rating: Math.max(0, Math.round(state.pvpRating)),
-                bestTier: myTiers.length ? myTiers[myTiers.length - 1] : CONFIG.tiers[0].id,
-                isMe: true,
-            };
-            const merged = bots.concat([myEntry]).sort((a, b) => b.rating - a.rating);
-            leaderboardMyRank = merged.findIndex(e => e.isMe) + 1;
-            return merged;
         }
 
         function arenaTierBadge(tierId) {
@@ -6055,20 +6021,28 @@
             </div>`;
         }
 
-        function renderLeaderboard() {
-            const merged = updateLeaderboard();
-            const top100 = merged.slice(0, 100);
+        async function renderLeaderboard() {
+            const top = await updateLeaderboard();
+            if (!top) {
+                document.getElementById('lbMyRankLine').textContent = t('arena.leaderboardOnlineOnly');
+                document.getElementById('lbTop3').innerHTML = '';
+                document.getElementById('lbRest').innerHTML = '';
+                return;
+            }
             document.getElementById('lbMyRankLine').textContent = t('arena.myRankLine', {
                 rank: leaderboardMyRank, rating: Math.max(0, Math.round(state.pvpRating)),
             });
-            document.getElementById('lbTop3').innerHTML = top100.slice(0, 3).map((e, i) => arenaLeaderboardRowHtml(e, i + 1)).join('');
-            document.getElementById('lbRest').innerHTML = top100.slice(3).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
+            document.getElementById('lbTop3').innerHTML = top.slice(0, 3).map((e, i) => arenaLeaderboardRowHtml(e, i + 1)).join('');
+            document.getElementById('lbRest').innerHTML = top.slice(3, 100).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
         }
 
-        function openLeaderboard() {
+        async function openLeaderboard() {
             haptic.select();
-            renderLeaderboard();
+            document.getElementById('lbMyRankLine').textContent = t('arena.leaderboardLoading');
+            document.getElementById('lbTop3').innerHTML = '';
+            document.getElementById('lbRest').innerHTML = '';
             document.getElementById('leaderboardModal').classList.add('open');
+            await renderLeaderboard();
         }
 
         function closeLeaderboard() {
