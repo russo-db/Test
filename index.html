@@ -6191,11 +6191,16 @@
         function arenaApplyEnergyGate() {
             const btn = document.getElementById('arenaStartBtn');
             if (!btn || arenaBattleActive) return;
+            // Готовность сцены (есть оба орла) решает, разблокировать ли кнопку
+            // энергии хватает — иначе докупка после разрядки в 0 навсегда
+            // оставляла бы её задизейбленной, ведь сама сцена не пересобиралась.
+            const sceneReady = !!(arenaPlayerEagle && arenaEnemyEagle);
             if (state.pvpEnergy < PVP_ENERGY_COST) {
                 btn.disabled = true;
                 btn.textContent = t('arena.noEnergy');
-            } else if (btn.textContent === t('arena.noEnergy')) {
-                btn.textContent = t('arena.startBtn');
+            } else {
+                btn.disabled = !sceneReady;
+                if (btn.textContent === t('arena.noEnergy')) btn.textContent = t('arena.startBtn');
             }
         }
 
