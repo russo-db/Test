@@ -1114,6 +1114,11 @@ class ArenaResult(BaseModel):
     won: bool
 
 
+class ArenaReveal(BaseModel):
+    user_id: int
+    match_token: str
+
+
 class MarketListRequest(BaseModel):
     user_id: int
     monster_id: str
@@ -1624,17 +1629,43 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
     }
 
 
+ARENA_MATCH_TTL_SECONDS = 300  # сколько живёт замаскированный подбор до раскрытия/протухания
+# match_token -> {"user_id", "opponent_id", "expires_at"} — только подобранный
+# соперник ждёт раскрытия перед боем; ничего секретного тут не хранится, но
+# сам по себе словарь не должен расти бесконечно, поэтому чистим протухшие
+# записи при каждом новом подборе (см. _prune_arena_matches).
+ARENA_PENDING_MATCHES: dict = {}
+
+
+def _prune_arena_matches() -> None:
+    now = time.time()
+    for token in [t for t, m in ARENA_PENDING_MATCHES.items() if m["expires_at"] < now]:
+        ARENA_PENDING_MATCHES.pop(token, None)
+
+
+def rating_bracket(rating: float) -> int:
+    """Рейтинг соперника, округлённый до ближайшей сотни — это всё, что
+    видно ДО боя (см. arena_opponent). Точная цифра позволила бы игроку
+    найти соперника в Топ-100 по этому же значению рейтинга и заранее
+    посмотреть его орла, поэтому точный pvp_rating на этом шаге на сервер
+    вообще не уходит."""
+    return round(rating / 100) * 100
+
+
 @app.get("/api/arena/opponent")
 async def arena_opponent(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Соперник для визуального автобоя на Арене подбирается по месту в
-    общей Таблице лидеров (PvP-рейтинг), а не по редкости орла — см.
-    store.find_ladder_opponent: случайный игрок либо из ближайших
-    ARENA_LADDER_ABOVE_COUNT мест НАД текущим игроком, либо в пределах
-    ±ARENA_LADDER_RATING_RANGE очков рейтинга. Сражается он своим
-    собственным лучшим орлом, какой бы редкости тот ни был — отдаём его
-    публичное имя, редкость этого орла и надетое на него снаряжение (те же
-    данные, что уже видны другим игрокам на P2P-рынке); боевые
-    характеристики (базовые + бонус снаряжения) считает клиент."""
+    """Подбор соперника на Арене по месту в общей Таблице лидеров (PvP-рейтинг),
+    а не по редкости орла — см. store.find_ladder_opponent: случайный игрок
+    либо из ближайших ARENA_LADDER_ABOVE_COUNT мест НАД текущим игроком, либо
+    в пределах ±ARENA_LADDER_RATING_RANGE очков рейтинга.
+
+    КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: на этом шаге отдаётся ТОЛЬКО округлённый до
+    сотен рейтинг и одноразовый match_token — ни ник, ни точный рейтинг, ни
+    редкость орла, ни снаряжение соперника клиенту не передаются. Иначе
+    точная цифра рейтинга однозначно вычисляла бы конкретного игрока в
+    Топ-100 ещё ДО начала боя. Точные данные раскрывает только
+    /api/arena/reveal, который клиент дёргает в момент реального запуска
+    анимации боя (см. arena_reveal)."""
     authenticate(x_telegram_init_data, user_id)
     row = await fetch_user(user_id)
     my_rating = pvp_rating_of(row)
@@ -1645,14 +1676,44 @@ async def arena_opponent(user_id: int, x_telegram_init_data: Optional[str] = Hea
     if not opponent:
         return {"found": False}
 
-    tier_id = best_owned_tier(opponent.get("monsters"))
-    equipped = normalize_nest_equipped(opponent.get("nest_equipped")).get(tier_id, {})
+    _prune_arena_matches()
+    token = secrets.token_urlsafe(16)
+    ARENA_PENDING_MATCHES[token] = {
+        "user_id": user_id,
+        "opponent_id": opponent["user_id"],
+        "expires_at": time.time() + ARENA_MATCH_TTL_SECONDS,
+    }
     return {
         "found": True,
-        "name": opponent["name"] or f"Игрок {opponent['user_id']}",
+        "match_token": token,
+        "rating_bracket": rating_bracket(opponent["pvp_rating"]),
+    }
+
+
+@app.post("/api/arena/reveal")
+async def arena_reveal(request: ArenaReveal, x_telegram_init_data: Optional[str] = Header(None)):
+    """Раскрывает реального соперника, подобранного arena_opponent, по
+    одноразовому match_token — вызывается клиентом строго в момент запуска
+    анимации боя, не раньше. Токен привязан к user_id (нельзя раскрыть чужой
+    подбор) и одноразовый (удаляется сразу при чтении), а протухшие токены
+    в ARENA_PENDING_MATCHES не проходят проверку expires_at."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    match = ARENA_PENDING_MATCHES.pop(request.match_token, None)
+    if not match or match["user_id"] != user_id or match["expires_at"] < time.time():
+        return {"found": False}
+
+    opponent_row = await store.get(match["opponent_id"])
+    if not opponent_row:
+        return {"found": False}
+
+    tier_id = best_owned_tier(opponent_row.get("monsters"))
+    equipped = normalize_nest_equipped(opponent_row.get("nest_equipped")).get(tier_id, {})
+    return {
+        "found": True,
+        "name": opponent_row.get("name") or f"Игрок {match['opponent_id']}",
         "tier_id": tier_id,
         "equipped": equipped,
-        "pvp_rating": int(opponent["pvp_rating"]),
+        "pvp_rating": pvp_rating_of(opponent_row),
     }
 
 

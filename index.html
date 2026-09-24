@@ -1589,6 +1589,9 @@
                 'arena.noEagles': 'Сначала выведи хотя бы одного орла на ферме',
                 'arena.startBtn': 'Начать бой', 'arena.restartBtn': 'Начать бой заново',
                 'arena.battleStart': 'Бой начинается!',
+                'arena.revealing': 'Раскрываем соперника…',
+                'arena.unknownWarrior': 'Неизвестный Воин',
+                'arena.rankMasked': 'Ранг: ~{rating} PvP',
                 'arena.attackLog': '{name} атакует! -{value} HP{crit}', 'arena.critSuffix': ' (Крит!)',
                 'arena.defeated': '{name} повержен!',
                 'arena.winTitle': 'Победа!', 'arena.loseTitle': 'Поражение...',
@@ -1790,6 +1793,9 @@
                 'arena.noEagles': 'Hatch at least one eagle on the farm first',
                 'arena.startBtn': 'Start battle', 'arena.restartBtn': 'Battle again',
                 'arena.battleStart': 'The battle begins!',
+                'arena.revealing': 'Revealing opponent…',
+                'arena.unknownWarrior': 'Unknown Warrior',
+                'arena.rankMasked': 'Rank: ~{rating} PvP',
                 'arena.attackLog': '{name} attacks! -{value} HP{crit}', 'arena.critSuffix': ' (Crit!)',
                 'arena.defeated': '{name} is defeated!',
                 'arena.winTitle': 'Victory!', 'arena.loseTitle': 'Defeat...',
@@ -5370,6 +5376,10 @@
                 this.maxHp = opts.stats.hp;
                 this.hp = opts.stats.hp;
                 this.idlePhase = opts.idlePhase;
+                // Соперник до раскрытия (см. arenaRevealOpponent): рисуется как
+                // силуэт-загадка, ХП и ник в UI показываются замаскированными.
+                this.masked = !!opts.masked;
+                this.ratingBracket = opts.ratingBracket || null;
                 this.state = 'idle';
                 this.stateT = 0;
                 this.attackFromX = this.x;
@@ -5471,6 +5481,9 @@
         let arenaSelectedTierId = null;
         let arenaPlayerEagle = null;
         let arenaEnemyEagle = null;
+        // Замаскированный подбор до раскрытия: { isBot, matchToken, ratingBracket }
+        // либо { isBot: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaRevealOpponent.
+        let arenaOpponentPending = null;
         let arenaBattleActive = false;
         let arenaCtx = null;
         let arenaCanvasEl = null;
@@ -5525,30 +5538,69 @@
         // Реальный соперник подбирается по месту в общей Таблице лидеров
         // (PvP-рейтинг), а не по редкости орла — сервер (см. find_ladder_opponent
         // в storage.py) берёт случайного игрока либо из 5 ближайших мест НАД
-        // текущим игроком, либо в пределах ±100 очков рейтинга. Серый орёл
-        // вполне может встретить зелёного или синего, если они рядом по
-        // рейтингу — сражается соперник СВОИМ собственным лучшим орлом (тем,
-        // что нам вернул сервер как tier_id), какой бы редкости тот ни был.
-        // Ник и надетое на этого орла снаряжение — те же данные, что уже
-        // видны другим игрокам на P2P-рынке; боевые характеристики считаем
-        // той же формулой, что и для своего орла (nestComputeStatsFromEquipped).
+        // текущим игроком, либо в пределах ±100 очков рейтинга.
+        //
+        // ВАЖНО ПО БЕЗОПАСНОСТИ: на этапе подбора (эта функция) сервер отдаёт
+        // ТОЛЬКО округлённый до сотен рейтинг и одноразовый match_token —
+        // ни ник, ни точную цифру рейтинга, ни редкость орла, ни снаряжение.
+        // Если бы точный рейтинг соперника уходил на клиент уже сейчас, игрок
+        // мог бы найти по этой цифре конкретного человека в Топ-100 и
+        // заранее посмотреть его орла, даже не начиная бой — сама Таблица
+        // лидеров это уже позволяет. Поэтому до старта боя соперник
+        // отображается как «Неизвестный Воин» с силуэтом-загадкой (см.
+        // arenaDrawMysteryEagle/arenaUpdateHpUI), а его реальные данные
+        // раскрывает только arenaRevealOpponent() — строго в момент запуска
+        // анимации боя, не раньше.
+        //
         // Если сервер недоступен или рядом по рейтингу пока никого нет —
-        // дикий орёл (заглушка на основе тира, который выбрал сам игрок).
-        async function arenaFetchOpponent(tierId) {
-            if (offlineOnly || !state.userId) return arenaGenerateBotOpponent(tierId);
+        // дикий орёл (заглушка на основе тира, который выбрал сам игрок);
+        // боту раскрывать нечего, он не привязан к реальному игроку.
+        async function arenaFetchOpponentPreview(tierId) {
+            if (offlineOnly || !state.userId) return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
             try {
                 const response = await fetch(`api/arena/opponent?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('arena opponent fetch failed');
                 const data = await response.json();
-                if (!data.found) return arenaGenerateBotOpponent(tierId);
-                const oppTier = CONFIG.tiers.find(x => x.id === data.tier_id) || CONFIG.tiers[0];
-                return {
-                    monster: oppTier.monsters[0], name: data.name, isBot: false,
-                    stats: nestComputeStatsFromEquipped(oppTier.id, data.equipped),
-                };
+                if (!data.found) return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
+                return { isBot: false, matchToken: data.match_token, ratingBracket: data.rating_bracket };
             } catch (error) {
-                return arenaGenerateBotOpponent(tierId);
+                return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
             }
+        }
+
+        // Раскрывает реального соперника перед самым стартом боя: меняет
+        // замаскированный силуэт на настоящего arenaEnemyEagle с реальным
+        // спрайтом/ником/статами. Если токен успел протухнуть или сервер
+        // недоступен — на этом же месте подставляется дикий орёл, чтобы бой
+        // в любом случае мог начаться.
+        async function arenaRevealOpponent() {
+            const pending = arenaOpponentPending;
+            const old = arenaEnemyEagle;
+            if (!pending || pending.isBot || !old) return;
+
+            const buildFrom = (name, oppTier, stats) => new ArenaEagle({
+                label: `${name} · ${oppTier.monsters[0].name}`, side: 'enemy',
+                img: arenaGetImage(oppTier.monsters[0].sprite), masked: false,
+                x: old.baseX, y: old.baseY, facing: -1, size: old.size, stats, idlePhase: old.idlePhase,
+            });
+
+            try {
+                const response = await fetch('api/arena/reveal', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, match_token: pending.matchToken }),
+                });
+                if (!response.ok) throw new Error('arena reveal failed');
+                const data = await response.json();
+                if (!data.found) throw new Error('match expired');
+                const oppTier = CONFIG.tiers.find(x => x.id === data.tier_id) || CONFIG.tiers[0];
+                arenaEnemyEagle = buildFrom(data.name, oppTier, nestComputeStatsFromEquipped(oppTier.id, data.equipped));
+            } catch (error) {
+                const bot = arenaGenerateBotOpponent(arenaSelectedTierId);
+                const oppTier = CONFIG.tiers.find(x => x.id === bot.monster.tier) || CONFIG.tiers[0];
+                arenaEnemyEagle = buildFrom(bot.name, oppTier, bot.stats);
+            }
+            pending.isBot = true; // уже раскрыт — арена больше не должна его маскировать
+            arenaUpdateHpUI();
         }
 
         function renderArenaPicker() {
@@ -5582,9 +5634,10 @@
         let arenaResetToken = 0;
 
         // Готовит сцену боя (ещё не сам бой) под текущий выбор: подбирает
-        // реального соперника той же редкости через сервер (см.
-        // arenaFetchOpponent), сбрасывает орлов в стойку ожидания, обновляет
-        // полоски ХП и убирает баннер финала.
+        // замаскированный предпросмотр соперника по рейтингу через сервер
+        // (см. arenaFetchOpponentPreview), сбрасывает орлов в стойку ожидания,
+        // обновляет полоски ХП и убирает баннер финала. Раскрытие реального
+        // соперника — только в arenaRevealOpponent(), при старте боя.
         async function arenaResetScene() {
             const canvas = document.getElementById('arenaCanvas');
             if (!canvas) return;
@@ -5597,6 +5650,7 @@
             if (!tiers.length) {
                 arenaPlayerEagle = null;
                 arenaEnemyEagle = null;
+                arenaOpponentPending = null;
                 arenaUpdateHpUI();
                 document.getElementById('arenaStartBtn').disabled = true;
                 return;
@@ -5610,7 +5664,7 @@
             const tier = CONFIG.tiers.find(x => x.id === arenaSelectedTierId);
             const monster = tier.monsters[0];
             const playerStats = nestEagleComputedStats(tier.id);
-            const opponent = await arenaFetchOpponent(arenaSelectedTierId);
+            const preview = await arenaFetchOpponentPreview(arenaSelectedTierId);
             if (token !== arenaResetToken) return; // выбор уже сменился, этот ответ устарел
 
             const myName = state.displayName || t('arena.you');
@@ -5618,14 +5672,30 @@
                 label: `${myName} · ${monster.name}`, side: 'player', img: arenaGetImage(monster.sprite),
                 x: w * 0.24, y: groundY, facing: 1, size: 96, stats: playerStats, idlePhase: 0,
             });
-            arenaEnemyEagle = new ArenaEagle({
-                label: `${opponent.name} · ${opponent.monster.name}`, side: 'enemy', img: arenaGetImage(opponent.monster.sprite),
-                x: w * 0.76, y: groundY, facing: -1, size: 96, stats: opponent.stats, idlePhase: 1.7,
-            });
+
+            arenaOpponentPending = preview;
+            if (preview.isBot) {
+                // Боту раскрывать нечего — он не привязан к реальному игроку,
+                // поэтому виден сразу целиком, как и раньше.
+                arenaEnemyEagle = new ArenaEagle({
+                    label: `${preview.bot.name} · ${preview.bot.monster.name}`, side: 'enemy',
+                    img: arenaGetImage(preview.bot.monster.sprite), masked: false,
+                    x: w * 0.76, y: groundY, facing: -1, size: 96, stats: preview.bot.stats, idlePhase: 1.7,
+                });
+            } else {
+                // Реальный соперник — до раскрытия виден только как силуэт-загадка
+                // с округлённым рейтингом (см. arenaFetchOpponentPreview выше).
+                arenaEnemyEagle = new ArenaEagle({
+                    label: t('arena.unknownWarrior'), side: 'enemy', img: null, masked: true,
+                    ratingBracket: preview.ratingBracket,
+                    x: w * 0.76, y: groundY, facing: -1, size: 96,
+                    stats: { hp: 1, atk: 0, def: 0, crit: 0, spd: 0 }, idlePhase: 1.7,
+                });
+            }
 
             document.getElementById('arenaStartBtn').disabled = false;
             document.getElementById('arenaStartBtn').textContent = t('arena.startBtn');
-            document.getElementById('arenaLog').textContent = opponent.isBot ? t('arena.noOpponentYet') : t('arena.pickPrompt');
+            document.getElementById('arenaLog').textContent = preview.isBot ? t('arena.noOpponentYet') : t('arena.pickPrompt');
             arenaSparks = [];
             arenaFloatTexts = [];
             arenaShake = { t: 0, dur: 0, mag: 0 };
@@ -5667,6 +5737,17 @@
                     if (fill) fill.style.width = '0%';
                     if (text) text.textContent = '0 / 0';
                     if (name) name.textContent = isPlayer ? '—' : t('arena.opponentLabel');
+                    return;
+                }
+                // Соперник ещё не раскрыт — вместо ХП и ника показываем только
+                // округлённый до сотен рейтинг (см. arena_opponent на сервере:
+                // точная цифра туда вообще не передаётся, так что и подменить
+                // тут нечего).
+                if (e.masked) {
+                    fill.style.width = '100%';
+                    fill.style.background = 'linear-gradient(90deg, #6b7280, #9ca3af)';
+                    text.textContent = t('arena.rankMasked', { rating: e.ratingBracket });
+                    name.textContent = t('arena.unknownWarrior');
                     return;
                 }
                 const pct = arenaClamp(e.hp / e.maxHp, 0, 1);
@@ -5767,8 +5848,37 @@
             ctx.restore();
         }
 
+        // Соперник ещё не раскрыт (см. arenaRevealOpponent) — вместо реального
+        // спрайта рисуем силуэт-загадку, чтобы редкость/вид орла нельзя было
+        // угадать по картинке до самого начала боя.
+        function arenaDrawMysteryEagle(ctx, e) {
+            const r = e.size * 0.42;
+            ctx.save();
+            ctx.translate(e.x, e.y);
+            ctx.rotate(e.rotation);
+            ctx.scale(e.scale, e.scale);
+            const grad = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+            grad.addColorStop(0, 'rgba(90, 70, 120, 0.95)');
+            grad.addColorStop(1, 'rgba(18, 10, 28, 0.95)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, r, r * 1.08, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.font = `800 ${Math.round(r * 1.15)}px Poppins, Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('?', 0, r * 0.05);
+            ctx.restore();
+        }
+
         function arenaDrawEagle(ctx, e) {
-            if (!e || e.gone || !e.img) return;
+            if (!e || e.gone) return;
+            if (e.masked) { arenaDrawMysteryEagle(ctx, e); return; }
+            if (!e.img) return;
             const ratio = (e.img.naturalHeight && e.img.naturalWidth) ? (e.img.naturalHeight / e.img.naturalWidth) : 0.9;
             const w = e.size, h = e.size * ratio;
             ctx.save();
@@ -5887,6 +5997,13 @@
             startBtn.disabled = true;
             await arenaResetScene(); // свежий соперник на каждый бой (в т.ч. «Начать бой заново»)
             startBtn.disabled = true;
+
+            // Раскрываем реального соперника строго сейчас — не раньше. До этого
+            // момента ни ник, ни точный рейтинг, ни редкость его орла на клиент
+            // не передавались (см. arenaFetchOpponentPreview/arenaRevealOpponent).
+            document.getElementById('arenaLog').textContent = t('arena.revealing');
+            await arenaRevealOpponent();
+
             document.getElementById('arenaLog').textContent = t('arena.battleStart');
             await arenaSleep(500);
 
