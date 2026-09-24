@@ -1137,6 +1137,12 @@ class AdminGrantShards(BaseModel):
     count: int = 1
 
 
+class AdminGrantItem(BaseModel):
+    item_type: str
+    grade: str
+    count: int = 1
+
+
 class AdminConfigUpdate(BaseModel):
     config: dict
 
@@ -2390,6 +2396,8 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     doc["eggs_board"] = normalize_eggs_board(doc.get("eggs_board"))
     doc["eggs_queue"] = normalize_eggs_queue(doc.get("eggs_queue"))
     doc["nest_miners"] = normalize_nest_miners(doc.get("nest_miners"))
+    doc["nest_inventory"] = normalize_nest_inventory(doc.get("nest_inventory"))
+    doc["nest_equipped"] = normalize_nest_equipped(doc.get("nest_equipped"))
     return doc
 
 
@@ -2448,6 +2456,27 @@ async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Dep
 
     await store.update(user_id, {"nest_miners": miners})
     return {"nest_miners": miners}
+
+
+@app.post("/admin/api/players/{user_id}/grant_item")
+async def admin_grant_item(user_id: int, body: AdminGrantItem, _: None = Depends(require_admin)):
+    """Начисляет игроку N предметов снаряжения Гнезда Воинов (когти/броня/
+    маска/амулет, любой грейд) напрямую в инвентарь — админский подарок в
+    обход крафта/улучшения."""
+    doc = await store.get(user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    if body.item_type not in NEST_TYPE_ORDER:
+        raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
+    if body.grade not in NEST_GRADES:
+        raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
+
+    count = max(1, min(int(body.count), 999))
+    inventory = normalize_nest_inventory(doc.get("nest_inventory"))
+    inventory[body.item_type][body.grade] += count
+
+    await store.update(user_id, {"nest_inventory": inventory})
+    return {"nest_inventory": inventory}
 
 
 @app.get("/admin/api/withdrawals")

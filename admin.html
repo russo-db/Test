@@ -518,6 +518,9 @@ document.getElementById('playersNext').onclick = () => {
 let editingPlayer = null;
 let monsterCatalog = null;
 let fusionFeedLevels = 7;
+let nestConfig = {};
+
+const NEST_GRADE_LABELS = { grey: 'Серый', green: 'Зелёный', blue: 'Синий', purple: 'Фиолетовый', gold: 'Золотой', mythic: 'Мифический' };
 
 async function getMonsterCatalog() {
     if (monsterCatalog) return monsterCatalog;
@@ -525,6 +528,7 @@ async function getMonsterCatalog() {
     monsterCatalog = [];
     cfg.tiers.forEach(tier => tier.monsters.forEach(m => monsterCatalog.push({ id: m.id, name: `${m.name} (${tier.name})` })));
     fusionFeedLevels = Number(cfg.fusion && cfg.fusion.feed_levels) || 7;
+    nestConfig = cfg.nest || {};
     return monsterCatalog;
 }
 
@@ -584,6 +588,13 @@ async function openPlayerModal(userId) {
                     <label>Выдать осколков <input id="fGrantShards" type="number" min="1" max="100" value="1" style="width:70px"></label>
                     <button id="grantShardsBtn">+ Выдать осколки</button>
                 </div>
+                <div class="add-eagle-row">
+                    <select id="grantItemType">${Object.entries(nestConfig.item_types || {}).map(([key, meta]) => `<option value="${key}">${meta.label}</option>`).join('')}</select>
+                    <select id="grantItemGrade">${(nestConfig.grades || []).map(g => `<option value="${g}">${NEST_GRADE_LABELS[g] || g}</option>`).join('')}</select>
+                    <label>Кол-во <input id="grantItemCount" type="number" min="1" max="999" value="1" style="width:70px"></label>
+                    <button id="grantItemBtn">+ Выдать предмет</button>
+                </div>
+                <div id="nestInventoryGrid" style="margin-top:8px; overflow-x:auto;"></div>
 
                 <b style="display:block; margin-top:14px;">Доска яиц (0 — пусто, иначе уровень яйца)</b>
                 <div class="eggs-grid" id="eggsGrid">
@@ -599,6 +610,7 @@ async function openPlayerModal(userId) {
     `;
 
     renderFarmList();
+    renderNestInventoryGrid();
 
     document.getElementById('addMonsterBtn').onclick = () => {
         const id = document.getElementById('addMonsterSelect').value;
@@ -618,12 +630,49 @@ async function openPlayerModal(userId) {
             toast(`Выдано осколков: ${count}`);
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     };
+    document.getElementById('grantItemBtn').onclick = async () => {
+        const item_type = document.getElementById('grantItemType').value;
+        const grade = document.getElementById('grantItemGrade').value;
+        const count = Math.max(1, Math.min(999, Number(document.getElementById('grantItemCount').value) || 1));
+        try {
+            const result = await api(`/admin/api/players/${userId}/grant_item`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item_type, grade, count }),
+            });
+            editingPlayer.nest_inventory = result.nest_inventory;
+            renderNestInventoryGrid();
+            const meta = nestConfig.item_types[item_type];
+            toast(`Выдано: ${meta.names ? meta.names[grade] : meta.label} × ${count}`);
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    };
     document.getElementById('playerModalClose').onclick = closePlayerModal;
     document.getElementById('playerModalCancel').onclick = closePlayerModal;
     document.getElementById('playerModalBackdrop').addEventListener('click', e => {
         if (e.target.id === 'playerModalBackdrop') closePlayerModal();
     });
     document.getElementById('playerModalSave').onclick = savePlayerModal;
+}
+
+function renderNestInventoryGrid() {
+    const el = document.getElementById('nestInventoryGrid');
+    if (!el) return;
+    const grades = nestConfig.grades || [];
+    const types = Object.entries(nestConfig.item_types || {});
+    if (!types.length || !grades.length) { el.innerHTML = ''; return; }
+    const inv = editingPlayer.nest_inventory || {};
+    el.innerHTML = `
+        <table>
+            <thead><tr><th></th>${grades.map(g => `<th>${NEST_GRADE_LABELS[g] || g}</th>`).join('')}</tr></thead>
+            <tbody>
+                ${types.map(([type, meta]) => `
+                    <tr>
+                        <td>${meta.label}</td>
+                        ${grades.map(g => `<td>${(inv[type] || {})[g] || 0}</td>`).join('')}
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
 function renderFarmList() {
