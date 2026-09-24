@@ -805,6 +805,7 @@
 
         .nest-ladder { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; margin-bottom: 4px; }
         .nest-ladder-row { display: flex; align-items: center; gap: 10px; background: var(--panel-soft); border: 1px solid var(--glass-border); border-radius: 14px; padding: 9px 11px; }
+        .nest-ladder-tap { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
         .nest-ladder-icon { width: 34px; height: 34px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 16px; overflow: hidden; }
         /* Иконка-картинка под конкретный грейд предмета (сейчас только у когтей) —
            заполняет квадратный контейнер вместо emoji, см. nestItemIconMarkup(). */
@@ -1469,6 +1470,7 @@
                 'nest.upgradeHeading': 'Улучшение снаряжения (4 → 1, успех 100%)',
                 'nest.upgradeBtn': 'Улучшить', 'nest.upgradeNeedMore': 'Нужно 4 предмета этого грейда',
                 'nest.upgraded': 'Улучшено до: {name}', 'nest.needFour': 'нужно 4', 'nest.maxGrade': 'максимум',
+                'nest.itemBonusInfo': '{name} — даёт +{bonus}% к параметру «{stat}»',
                 'nest.gradeGrey': 'Серый', 'nest.gradeGreen': 'Зелёный', 'nest.gradeBlue': 'Синий',
                 'nest.gradePurple': 'Фиолетовый', 'nest.gradeGold': 'Золотой', 'nest.gradeMythic': 'Мифический',
                 'nest.yourEagles': 'Твои орлы', 'nest.equipTitle': 'Выбор снаряжения',
@@ -1653,6 +1655,7 @@
                 'nest.upgradeHeading': 'Gear upgrade (4 → 1, 100% success)',
                 'nest.upgradeBtn': 'Upgrade', 'nest.upgradeNeedMore': 'Need 4 items of this grade',
                 'nest.upgraded': 'Upgraded to: {name}', 'nest.needFour': 'need 4', 'nest.maxGrade': 'max',
+                'nest.itemBonusInfo': '{name} — gives +{bonus}% to "{stat}"',
                 'nest.gradeGrey': 'Grey', 'nest.gradeGreen': 'Green', 'nest.gradeBlue': 'Blue',
                 'nest.gradePurple': 'Purple', 'nest.gradeGold': 'Gold', 'nest.gradeMythic': 'Mythic',
                 'nest.yourEagles': 'Your eagles', 'nest.equipTitle': 'Gear selection',
@@ -5034,12 +5037,15 @@
                     const count = nestInventoryCount(type, grade);
                     const next = nestNextGrade(grade);
                     const color = nestGradeColor(grade);
+                    const bonus = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
                     const upgradeGroup = CONFIG.nest.upgrade_group || 4;
                     html += `<div class="nest-ladder-row">
-                        <div class="nest-ladder-icon" style="background:${color}33">${nestItemIconMarkup(type, grade)}</div>
-                        <div class="nest-ladder-info">
-                            <div class="nest-ladder-name">${meta.names[grade]}</div>
-                            <div class="nest-ladder-count">${nestGradeLabel(grade)} · x${count}${next ? ' · ' + t('nest.needFour') : ' · ' + t('nest.maxGrade')}</div>
+                        <div class="nest-ladder-tap" onclick="nestShowItemInfo('${type}','${grade}')">
+                            <div class="nest-ladder-icon" style="background:${color}33">${nestItemIconMarkup(type, grade)}</div>
+                            <div class="nest-ladder-info">
+                                <div class="nest-ladder-name">${meta.names[grade]}</div>
+                                <div class="nest-ladder-count">${nestGradeLabel(grade)} · +${bonus}% ${meta.sub} · x${count}${next ? ' · ' + t('nest.needFour') : ' · ' + t('nest.maxGrade')}</div>
+                            </div>
                         </div>
                         ${next
                             ? `<button class="btn-action" ${count < upgradeGroup ? 'disabled' : ''} onclick="nestUpgrade('${type}','${grade}')">${t('nest.upgradeBtn')}</button>`
@@ -5102,6 +5108,16 @@
                     <div class="nest-slots-row">${slotsHtml}</div>
                 </div>`;
             }).join('');
+        }
+
+        // Тап по предмету в лесенке улучшений Кузницы — быстрая подсказка, какой
+        // бонус даёт именно этот грейд (сам процент уже виден в строке, тап лишь
+        // проговаривает его явно тостом, к какому параметру он относится).
+        function nestShowItemInfo(type, grade) {
+            const meta = CONFIG.nest.item_types[type];
+            const bonus = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
+            haptic.impact('light');
+            toast(t('nest.itemBonusInfo', { name: meta.names[grade], bonus, stat: meta.sub }));
         }
 
         let nestEquipCtx = null; // { tierId, type }
