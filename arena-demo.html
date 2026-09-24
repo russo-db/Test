@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PvP Арена — Демо боя</title>
+<style>
+    :root {
+        --accent-amber: #f5b400;
+        --accent-gold: #ffd76a;
+        --accent-red: #ff4d4d;
+        --accent-green: #4ee08a;
+        --bg-deep: #05030f;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0; padding: 0; height: 100%;
+        background:
+            radial-gradient(circle at 50% 0%, rgba(90, 50, 160, 0.35), transparent 60%),
+            var(--bg-deep);
+        color: #f2eee6;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .arena-wrap {
+        width: 100%; max-width: 920px; padding: 18px;
+        display: flex; flex-direction: column; align-items: center; gap: 14px;
+    }
+    h1 {
+        margin: 0; font-size: 26px; letter-spacing: 0.5px; text-align: center;
+        background: linear-gradient(135deg, var(--accent-gold), var(--accent-amber));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        text-shadow: 0 0 24px rgba(245, 180, 0, 0.25);
+    }
+    .subtitle { margin: -8px 0 0; font-size: 13px; color: rgba(242, 238, 230, 0.55); text-align: center; }
+
+    .hud { width: 100%; display: flex; align-items: center; gap: 14px; }
+    .hp-box { flex: 1; min-width: 0; }
+    .hp-box.right { text-align: right; }
+    .hp-name { font-size: 13px; font-weight: 700; margin-bottom: 5px; color: rgba(242, 238, 230, 0.85); }
+    .hp-bar-bg {
+        width: 100%; height: 16px; border-radius: 9px; overflow: hidden;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    .hp-bar-fill {
+        height: 100%; width: 100%;
+        background: linear-gradient(90deg, #22c55e, #86efac);
+        transition: width 0.25s ease, background 0.25s ease;
+        box-shadow: 0 0 10px rgba(78, 224, 138, 0.5);
+    }
+    .hp-box.right .hp-bar-fill { margin-left: auto; }
+    .hp-text { font-size: 11px; margin-top: 3px; color: rgba(242, 238, 230, 0.6); font-variant-numeric: tabular-nums; }
+    .vs {
+        flex: 0 0 auto; font-size: 15px; font-weight: 800; color: var(--accent-amber);
+        text-shadow: 0 0 12px rgba(245, 180, 0, 0.6);
+    }
+
+    .canvas-frame {
+        position: relative; width: 100%; border-radius: 18px; overflow: hidden;
+        border: 1px solid rgba(245, 180, 0, 0.25);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55), inset 0 0 60px rgba(120, 70, 200, 0.12);
+    }
+    canvas { display: block; width: 100%; height: auto; background: #0a0716; }
+
+    .banner {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 6px;
+        background: rgba(4, 2, 12, 0.55); backdrop-filter: blur(2px);
+        opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
+    }
+    .banner.show { opacity: 1; }
+    .banner .title { font-size: 30px; font-weight: 800; }
+    .banner .title.win { color: var(--accent-green); text-shadow: 0 0 20px rgba(78, 224, 138, 0.6); }
+    .banner .title.lose { color: var(--accent-red); text-shadow: 0 0 20px rgba(255, 77, 77, 0.6); }
+    .banner .sub { font-size: 13px; color: rgba(242, 238, 230, 0.7); }
+
+    .log {
+        width: 100%; min-height: 20px; text-align: center; font-size: 13px;
+        color: rgba(242, 238, 230, 0.75); font-style: italic;
+    }
+
+    .start-btn {
+        appearance: none; border: none; cursor: pointer;
+        padding: 13px 34px; border-radius: 14px; font-size: 15px; font-weight: 800;
+        color: #201200; background: linear-gradient(135deg, var(--accent-gold), var(--accent-amber));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 18px rgba(245, 180, 0, 0.35);
+        transition: transform 0.12s ease, filter 0.2s ease;
+    }
+    .start-btn:active { transform: scale(0.95); box-shadow: none; }
+    .start-btn:disabled { filter: grayscale(0.6) brightness(0.75); cursor: default; }
+</style>
+</head>
+<body>
+    <div class="arena-wrap">
+        <h1>⚔️ PvP Арена</h1>
+        <p class="subtitle">Автоматический бой — демонстрация боевого движка</p>
+
+        <div class="hud">
+            <div class="hp-box left">
+                <div class="hp-name">🦅 Ваш орёл</div>
+                <div class="hp-bar-bg"><div class="hp-bar-fill" id="hpLeftFill"></div></div>
+                <div class="hp-text" id="hpLeftText">30 / 30</div>
+            </div>
+            <div class="vs">VS</div>
+            <div class="hp-box right">
+                <div class="hp-name">Орёл соперника 🦅</div>
+                <div class="hp-bar-bg"><div class="hp-bar-fill" id="hpRightFill"></div></div>
+                <div class="hp-text" id="hpRightText">30 / 30</div>
+            </div>
+        </div>
+
+        <div class="canvas-frame">
+            <canvas id="arena" width="880" height="420"></canvas>
+            <div class="banner" id="banner">
+                <div class="title" id="bannerTitle">Победа!</div>
+                <div class="sub" id="bannerSub">Соперник повержен</div>
+            </div>
+        </div>
+
+        <div class="log" id="battleLog">Нажмите «Начать бой», чтобы начать сражение.</div>
+        <button class="start-btn" id="startBtn">Начать бой</button>
+    </div>
+
+<script>
+(function () {
+    'use strict';
+
+    const canvas = document.getElementById('arena');
+    const ctx = canvas.getContext('2d');
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const W = canvas.width, H = canvas.height;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.scale(DPR, DPR);
+
+    const startBtn = document.getElementById('startBtn');
+    const logEl = document.getElementById('battleLog');
+    const bannerEl = document.getElementById('banner');
+    const bannerTitleEl = document.getElementById('bannerTitle');
+    const bannerSubEl = document.getElementById('bannerSub');
+    const hpFill = { player: document.getElementById('hpLeftFill'), enemy: document.getElementById('hpRightFill') };
+    const hpText = { player: document.getElementById('hpLeftText'), enemy: document.getElementById('hpRightText') };
+
+    const GROUND_Y = 330;
+    const ATTACK_DUR = 0.22;   // резкий рывок к сопернику
+    const RETURN_DUR = 0.38;   // плавный откат на исходную позицию
+    const HURT_DUR = 0.36;     // отлёт назад + мигание
+    const TURN_GAP = 0.55;     // пауза между ходами
+    const GRAVITY = 1500;
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function easeInCubic(t) { return t * t * t; }
+    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+    function easeOutBack(t) { const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    function rand(a, b) { return a + Math.random() * (b - a); }
+
+    let time = 0;
+
+    // ---------- Экранная тряска ----------
+    const shake = { t: 0, dur: 0, mag: 0 };
+    function triggerShake(mag, dur) { shake.mag = mag; shake.dur = dur; shake.t = dur; }
+    function updateShake(dt) {
+        if (shake.t > 0) shake.t = Math.max(0, shake.t - dt);
+    }
+    function shakeOffset() {
+        if (shake.t <= 0) return { x: 0, y: 0 };
+        const power = (shake.t / shake.dur) * shake.mag;
+        return { x: rand(-power, power), y: rand(-power, power) };
+    }
+
+    // ---------- Эффекты: искры и текст урона ----------
+    const sparks = [];
+    const floatTexts = [];
+
+    function spawnImpact(x, y, crit) {
+        sparks.push({ x, y, r: 4, maxR: crit ? 46 : 32, life: 0.3, maxLife: 0.3 });
+        const rays = crit ? 10 : 7;
+        for (let i = 0; i < rays; i++) {
+            const a = (Math.PI * 2 * i) / rays + rand(-0.2, 0.2);
+            sparks.push({
+                x, y, ray: true, angle: a,
+                len: rand(10, crit ? 30 : 20), life: 0.22, maxLife: 0.22,
+            });
+        }
+    }
+
+    function spawnDamageText(x, y, value, crit) {
+        floatTexts.push({
+            x: x + rand(-8, 8), y, vy: -70, text: (crit ? '-' + value + ' Крит!' : '-' + value + ' HP'),
+            color: crit ? '#ffd76a' : '#ff5757', size: crit ? 22 : 17,
+            life: 1.1, maxLife: 1.1,
+        });
+    }
+
+    function updateEffects(dt) {
+        for (let i = sparks.length - 1; i >= 0; i--) {
+            const s = sparks[i];
+            s.life -= dt;
+            if (!s.ray) s.r = lerp(s.r, s.maxR, 1 - Math.pow(0.001, dt));
+            if (s.life <= 0) sparks.splice(i, 1);
+        }
+        for (let i = floatTexts.length - 1; i >= 0; i--) {
+            const f = floatTexts[i];
+            f.y += f.vy * dt;
+            f.vy *= 0.94;
+            f.life -= dt;
+            if (f.life <= 0) floatTexts.splice(i, 1);
+        }
+    }
+
+    function drawEffects() {
+        for (const s of sparks) {
+            const alpha = clamp(s.life / s.maxLife, 0, 1);
+            if (s.ray) {
+                const x2 = s.x + Math.cos(s.angle) * s.len;
+                const y2 = s.y + Math.sin(s.angle) * s.len;
+                ctx.strokeStyle = `rgba(255, 244, 200, ${alpha})`;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            } else {
+                const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+                grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+                grad.addColorStop(0.4, `rgba(255, 220, 120, ${alpha * 0.8})`);
+                grad.addColorStop(1, 'rgba(255, 180, 60, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        for (const f of floatTexts) {
+            const alpha = clamp(f.life / f.maxLife, 0, 1);
+            ctx.globalAlpha = alpha;
+            ctx.font = `800 ${f.size}px Segoe UI, Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.strokeText(f.text, f.x, f.y);
+            ctx.fillStyle = f.color;
+            ctx.fillText(f.text, f.x, f.y);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ---------- Орёл ----------
+    class Eagle {
+        constructor(opts) {
+            this.label = opts.label;
+            this.side = opts.side;
+            this.baseX = opts.x;
+            this.baseY = opts.y;
+            this.x = opts.x;
+            this.y = opts.y;
+            this.facing = opts.facing;
+            this.color = opts.color;
+            this.colorDark = opts.colorDark;
+            this.maxHp = opts.hp;
+            this.hp = opts.hp;
+            this.idlePhase = opts.idlePhase;
+            this.wingPhase = Math.random() * 10;
+            this.state = 'idle';
+            this.stateT = 0;
+            this.attackFromX = this.x;
+            this.attackTargetX = this.x;
+            this.hurtDir = 1;
+            this.willDie = false;
+            this.flash = 0;
+            this.scale = 1;
+            this.rotation = 0;
+            this.rotSpeed = 0;
+            this.fallVy = 0;
+            this.gone = false;
+        }
+
+        startAttack(targetEagle) {
+            const dir = Math.sign(targetEagle.baseX - this.baseX);
+            this.attackFromX = this.baseX;
+            this.attackTargetX = targetEagle.baseX - dir * 78;
+            this.state = 'attacking';
+            this.stateT = 0;
+        }
+
+        startReturn() {
+            this.attackFromX = this.x;
+            this.attackTargetX = this.baseX;
+            this.state = 'returning';
+            this.stateT = 0;
+        }
+
+        startHurt(attackerX, willDie) {
+            this.hurtDir = Math.sign(this.baseX - attackerX) || 1;
+            this.willDie = willDie;
+            this.state = 'hurt';
+            this.stateT = 0;
+        }
+
+        startDying() {
+            this.state = 'dying';
+            this.stateT = 0;
+            this.rotSpeed = rand(5, 7) * (Math.random() < 0.5 ? -1 : 1);
+            this.fallVy = -180;
+        }
+
+        startVictory() {
+            this.state = 'victory';
+            this.stateT = 0;
+        }
+
+        update(dt, t) {
+            this.stateT += dt;
+            const flapSpeed = (this.state === 'attacking' || this.state === 'returning') ? 22 : 6.5;
+            this.wingPhase += dt * flapSpeed;
+
+            if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 4.5);
+
+            switch (this.state) {
+                case 'idle': {
+                    this.x = this.baseX;
+                    this.y = this.baseY + Math.sin(t * 2.1 + this.idlePhase) * 9;
+                    this.scale = 1;
+                    break;
+                }
+                case 'attacking': {
+                    const p = clamp(this.stateT / ATTACK_DUR, 0, 1);
+                    this.x = lerp(this.attackFromX, this.attackTargetX, easeInCubic(p));
+                    this.y = this.baseY + Math.sin(t * 16) * 4;
+                    if (p >= 1) this._onAttackReached && this._onAttackReached();
+                    break;
+                }
+                case 'returning': {
+                    const p = clamp(this.stateT / RETURN_DUR, 0, 1);
+                    this.x = lerp(this.attackFromX, this.attackTargetX, easeOutCubic(p));
+                    this.y = this.baseY + Math.sin(t * 2.1 + this.idlePhase) * 9;
+                    if (p >= 1) { this.state = 'idle'; this.x = this.baseX; }
+                    break;
+                }
+                case 'hurt': {
+                    const p = clamp(this.stateT / HURT_DUR, 0, 1);
+                    const knock = Math.sin(p * Math.PI) * 26 * this.hurtDir;
+                    this.x = this.baseX + knock;
+                    this.y = this.baseY + Math.sin(t * 2.1 + this.idlePhase) * 9;
+                    this.scale = 1 - Math.sin(p * Math.PI) * 0.1;
+                    if (p >= 1) {
+                        this.x = this.baseX;
+                        this.scale = 1;
+                        this.state = this.willDie ? 'dying' : 'idle';
+                        if (this.state === 'dying') this.startDying();
+                    }
+                    break;
+                }
+                case 'dying': {
+                    this.fallVy += GRAVITY * dt;
+                    this.y += this.fallVy * dt;
+                    this.rotation += this.rotSpeed * dt;
+                    this.x += this.rotSpeed * 2 * dt;
+                    if (this.y > H + 80) this.gone = true;
+                    break;
+                }
+                case 'victory': {
+                    this.y -= (140 + this.stateT * 260) * dt;
+                    this.x = this.baseX + Math.sin(t * 6) * 10;
+                    this.rotation = Math.sin(t * 5) * 0.08;
+                    if (this.y < -100) this.gone = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    function drawGround(e) {
+        if (e.state === 'dying' || e.state === 'victory') return;
+        const drop = e.y - e.baseY;
+        const s = clamp(1 - drop * 0.012, 0.55, 1.15);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * s;
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.ellipse(e.baseX, GROUND_Y, 34 * s, 10 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    function drawEagle(e) {
+        if (e.gone) return;
+        ctx.save();
+        ctx.globalAlpha = clamp(1, 0, 1);
+        ctx.translate(e.x, e.y);
+        ctx.rotate(e.rotation);
+        ctx.scale(e.facing * e.scale, e.scale);
+
+        const flap = Math.sin(e.wingPhase);
+        const dark = e.colorDark, main = e.color;
+
+        // дальнее крыло
+        ctx.save();
+        ctx.translate(-6, -3);
+        ctx.rotate(flap * 0.5);
+        ctx.fillStyle = dark;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-28, -8 - flap * 10, -52, 4 - flap * 18);
+        ctx.quadraticCurveTo(-28, 14, 0, 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // хвост
+        ctx.fillStyle = dark;
+        ctx.beginPath();
+        ctx.moveTo(-19, 5);
+        ctx.lineTo(-40, -6);
+        ctx.lineTo(-40, 15);
+        ctx.closePath();
+        ctx.fill();
+
+        // тело
+        ctx.fillStyle = main;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 25, 17, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ближнее крыло
+        ctx.save();
+        ctx.translate(4, -1);
+        ctx.rotate(-flap * 0.8);
+        ctx.fillStyle = main;
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(26, -13 - flap * 13, 48, 2 - flap * 24);
+        ctx.quadraticCurveTo(24, 17, 0, 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // голова
+        ctx.fillStyle = '#f5f1e6';
+        ctx.beginPath();
+        ctx.ellipse(23, -8, 10, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // клюв
+        ctx.fillStyle = '#f5b400';
+        ctx.beginPath();
+        ctx.moveTo(31, -8);
+        ctx.lineTo(44, -5);
+        ctx.lineTo(31, -2);
+        ctx.closePath();
+        ctx.fill();
+
+        // глаз
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.arc(26, -10, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // вспышка при ударе
+        if (e.flash > 0) {
+            ctx.globalAlpha = e.flash;
+            ctx.fillStyle = '#ff3b3b';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 27, 19, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.restore();
+    }
+
+    function drawBackground() {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#150a2e');
+        grad.addColorStop(0.55, '#0c0620');
+        grad.addColorStop(1, '#050310');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        for (const s of stars) {
+            ctx.globalAlpha = 0.35 + 0.35 * Math.sin(time * s.tw + s.phase);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(s.x, s.y, s.size, s.size);
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = 'rgba(245, 180, 0, 0.18)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(30, GROUND_Y + 30);
+        ctx.lineTo(W - 30, GROUND_Y + 30);
+        ctx.stroke();
+    }
+
+    const stars = Array.from({ length: 40 }, () => ({
+        x: rand(0, W), y: rand(0, GROUND_Y), size: rand(1, 2.4), tw: rand(1, 3), phase: rand(0, 10),
+    }));
+
+    // ---------- Инициализация бойцов ----------
+    let playerEagle, enemyEagle;
+    function createEagles() {
+        playerEagle = new Eagle({
+            label: 'Ваш орёл', side: 'player', x: 190, y: 250, facing: 1,
+            color: '#e8a13c', colorDark: '#a5661f', hp: 30, idlePhase: 0,
+        });
+        enemyEagle = new Eagle({
+            label: 'Орёл соперника', side: 'enemy', x: 690, y: 250, facing: -1,
+            color: '#8f6ad1', colorDark: '#5a3f96', hp: 30, idlePhase: 1.7,
+        });
+    }
+    createEagles();
+
+    function updateHpUI() {
+        for (const e of [playerEagle, enemyEagle]) {
+            const pct = clamp(e.hp / e.maxHp, 0, 1);
+            const fill = hpFill[e.side];
+            fill.style.width = (pct * 100) + '%';
+            fill.style.background = pct > 0.5
+                ? 'linear-gradient(90deg, #22c55e, #86efac)'
+                : (pct > 0.22 ? 'linear-gradient(90deg, #eab308, #fde68a)' : 'linear-gradient(90deg, #dc2626, #ff8a8a)');
+            hpText[e.side].textContent = `${Math.max(0, Math.round(e.hp))} / ${e.maxHp}`;
+        }
+    }
+
+    function log(msg) { logEl.textContent = msg; }
+
+    // ---------- Бой ----------
+    let battleActive = false;
+
+    function rollDamage() {
+        const crit = Math.random() < 0.22;
+        const base = rand(3, 6);
+        const value = Math.round(crit ? base * 1.8 : base);
+        return { value, crit };
+    }
+
+    function performAttack(attacker, defender) {
+        return new Promise((resolve) => {
+            attacker.startAttack(defender);
+            setTimeout(() => {
+                const dmg = rollDamage();
+                defender.hp = Math.max(0, defender.hp - dmg.value);
+                updateHpUI();
+
+                const hitX = (attacker.x + defender.baseX) / 2 + (attacker.facing * 20);
+                const hitY = defender.y - 6;
+                spawnImpact(hitX, hitY, dmg.crit);
+                spawnDamageText(defender.baseX, defender.baseY - 44, dmg.value, dmg.crit);
+                triggerShake(dmg.crit ? 13 : 7, dmg.crit ? 0.3 : 0.22);
+
+                defender.flash = 1;
+                defender.startHurt(attacker.x, defender.hp <= 0);
+                attacker.startReturn();
+
+                log(`${attacker.label} атакует! -${dmg.value} HP${dmg.crit ? ' (Крит!)' : ''}`);
+
+                setTimeout(resolve, Math.max(RETURN_DUR, HURT_DUR) * 1000 + 60);
+            }, ATTACK_DUR * 1000);
+        });
+    }
+
+    async function runBattle() {
+        battleActive = true;
+        startBtn.disabled = true;
+        bannerEl.classList.remove('show');
+        createEagles();
+        updateHpUI();
+        log('Бой начинается!');
+        await sleep(500);
+
+        let attacker = playerEagle, defender = enemyEagle;
+        while (playerEagle.hp > 0 && enemyEagle.hp > 0) {
+            await performAttack(attacker, defender);
+            if (defender.hp <= 0) break;
+            await sleep(TURN_GAP * 1000);
+            const tmp = attacker; attacker = defender; defender = tmp;
+        }
+
+        const winner = playerEagle.hp > 0 ? playerEagle : enemyEagle;
+        const loser = winner === playerEagle ? enemyEagle : playerEagle;
+        log(`${loser.label} повержен!`);
+        loser.startDying();
+        winner.startVictory();
+        await sleep(1500);
+
+        const playerWon = winner === playerEagle;
+        bannerTitleEl.textContent = playerWon ? 'Победа!' : 'Поражение...';
+        bannerTitleEl.className = 'title ' + (playerWon ? 'win' : 'lose');
+        bannerSubEl.textContent = playerWon ? 'Соперник повержен' : 'Ваш орёл повержен';
+        bannerEl.classList.add('show');
+
+        battleActive = false;
+        startBtn.disabled = false;
+        startBtn.textContent = 'Начать бой заново';
+    }
+
+    startBtn.addEventListener('click', () => {
+        if (battleActive) return;
+        runBattle();
+    });
+
+    // ---------- Игровой цикл ----------
+    let lastTs = 0;
+    function frame(ts) {
+        if (!lastTs) lastTs = ts;
+        const dt = Math.min(0.05, (ts - lastTs) / 1000);
+        lastTs = ts;
+        time += dt;
+
+        playerEagle.update(dt, time);
+        enemyEagle.update(dt, time);
+        updateEffects(dt);
+        updateShake(dt);
+
+        ctx.clearRect(0, 0, W, H);
+        drawBackground();
+        const off = shakeOffset();
+        ctx.save();
+        ctx.translate(off.x, off.y);
+        drawGround(playerEagle);
+        drawGround(enemyEagle);
+        drawEagle(playerEagle);
+        drawEagle(enemyEagle);
+        drawEffects();
+        ctx.restore();
+
+        requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    updateHpUI();
+})();
+</script>
+</body>
+</html>
