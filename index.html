@@ -113,7 +113,11 @@
             background: linear-gradient(90deg, transparent, var(--accent-violet) 35%, var(--accent-rose) 65%, transparent);
             opacity: 0.9; pointer-events: none; box-shadow: var(--glow-violet);
         }
-        .brand-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.4px; line-height: 1.1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; text-transform: uppercase; min-width: 0; }
+        .brand-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.4px; line-height: 1.1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; text-transform: uppercase; min-width: 0; cursor: pointer; }
+        /* Значок профиля (аватар/фото из Telegram, см. initProfile) в шапке —
+           открывает вкладку «Профиль», которая раньше жила в нижней навигации. */
+        .brand-title .header-profile-icon { width: 28px; height: 28px; flex: 0 0 auto; }
+        .brand-title .header-profile-icon img { opacity: 1; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5)); }
         .brand-stack { display: flex; flex-direction: column; line-height: 1.05; }
         .brand-stack b { font-style: normal; font-weight: 800; font-size: 11px; color: var(--text-main); letter-spacing: 0.6px; white-space: nowrap; }
         .brand-stack i { font-style: normal; font-weight: 800; font-size: 12px; letter-spacing: 1px; white-space: nowrap; background: linear-gradient(90deg, var(--accent-violet), var(--accent-rose)); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -131,7 +135,6 @@
         .gold-coin-icon { flex: 0 0 auto; filter: drop-shadow(0 0 4px rgba(255, 176, 32, 0.6)); }
 
         .coin-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
-        .coin-brand { width: 22px; height: 22px; flex: 0 0 auto; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.7)); }
         .coin-md { width: 30px; height: 30px; }
         .coin-lg { width: 40px; height: 40px; }
 
@@ -990,8 +993,8 @@
     <div id="main-wrapper">
         <!-- TOP HEADER -->
         <div class="top-header">
-            <div class="brand-title">
-                <img class="coin-icon coin-brand" src="assets/coin.png" alt="">
+            <div class="brand-title" onclick="switchTab('profile', this)">
+                <div class="nav-icon header-profile-icon" id="navProfileIcon"><img src="assets/nav-profile.png" alt=""></div>
                 <span class="brand-stack"><b>SKYLORDS</b><i>GRAMM</i></span>
             </div>
             <div class="balance-bar">
@@ -1336,10 +1339,6 @@
             <div class="nav-item" onclick="switchTab('arena', this)">
                 <div class="nav-icon"><img src="assets/nav-arena.png" alt=""></div>
                 <span data-i18n="nav.arena">Арена</span>
-            </div>
-            <div class="nav-item" onclick="switchTab('profile', this)">
-                <div class="nav-icon" id="navProfileIcon"><img src="assets/nav-profile.png" alt=""></div>
-                <span data-i18n="nav.profile">Профиль</span>
             </div>
         </div>
     </div>
@@ -4957,7 +4956,7 @@
         function switchTab(tabId, element) {
             haptic.select();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item, .brand-title').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             element.classList.add('active');
 
@@ -6811,7 +6810,7 @@
 
             // Реальное фото профиля из Telegram, если игрок его открыл; иначе —
             // первая буква имени, как и раньше. Показываем и на странице
-            // профиля, и в иконке нижней навигации (см. .nav-avatar).
+            // профиля, и в иконке-аватаре в шапке (см. .nav-avatar).
             const letter = name.charAt(0).toUpperCase();
             const navIcon = document.getElementById('navProfileIcon');
             const profileAvatar = document.getElementById('profileAvatar');
