@@ -32,6 +32,9 @@ EGG_QUEUE_MAX = 300  # защитный предел на длину очере�
 ONLINE_THRESHOLD_SECONDS = 60
 FARM_QUEUE_MAX = 300  # защитный предел на длину очереди орлов, не помещающихся в открытые слоты
 EAGLE_DELETE_MEAT_REWARD = 10  # фиксированная компенсация Meat за безвозвратное удаление орла
+PVP_RATING_START = 1000  # стартовый PvP-рейтинг нового игрока для Топ-100 Арены
+PVP_RATING_WIN = 25  # прирост рейтинга за победу на Арене
+PVP_RATING_LOSS = 15  # потеря рейтинга за поражение на Арене (итог не опускается ниже 0)
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -593,6 +596,14 @@ def normalize_nest_inventory(raw) -> dict:
     return inventory
 
 
+def pvp_rating_of(row: dict) -> int:
+    """PvP-рейтинг игрока — у аккаунтов, созданных до Арены, поля ещё нет,
+    поэтому отсутствующее значение (не 0 — 0 сам по себе законный итог
+    после серии поражений) трактуется как стартовые PVP_RATING_START."""
+    value = row.get("pvp_rating")
+    return PVP_RATING_START if value is None else max(0, int(value))
+
+
 def normalize_nest_equipped(raw) -> dict:
     equipped = {tier_id: {t: None for t in NEST_TYPE_ORDER} for tier_id in TIER_INDEX}
     if isinstance(raw, dict):
@@ -835,6 +846,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "nest_particles": 0.0,
             "nest_inventory": {},
             "nest_equipped": {},
+            "pvp_rating": PVP_RATING_START,
         }
     )
 
@@ -1083,6 +1095,11 @@ class NestUnequipAction(BaseModel):
     item_type: str
 
 
+class ArenaResult(BaseModel):
+    user_id: int
+    won: bool
+
+
 class MarketListRequest(BaseModel):
     user_id: int
     monster_id: str
@@ -1243,6 +1260,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "merchant": await store.get_merchant_state(),
         "wheel": wheel_state(row),
         "nest": await nest_state_view(row),
+        "pvp_rating": pvp_rating_of(row),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -1616,6 +1634,21 @@ async def arena_opponent(
         "name": opponent["name"] or f"Игрок {opponent['user_id']}",
         "equipped": equipped,
     }
+
+
+@app.post("/api/arena/result")
+async def arena_result(request: ArenaResult, x_telegram_init_data: Optional[str] = Header(None)):
+    """Итог боя на Арене (визуальный автобой) резолвится на клиенте — сюда
+    приходит только won: сервер лишь сохраняет прирост/потерю PvP-рейтинга
+    для Топ-100 (+PVP_RATING_WIN за победу, -PVP_RATING_LOSS за поражение,
+    не ниже 0)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    current = pvp_rating_of(row)
+    delta = PVP_RATING_WIN if request.won else -PVP_RATING_LOSS
+    new_rating = max(0, current + delta)
+    await store.update(user_id, {"pvp_rating": new_rating})
+    return {"pvp_rating": new_rating}
 
 
 @app.post("/api/nest/particles/collect")

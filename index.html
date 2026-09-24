@@ -899,6 +899,31 @@
 
         .arena-log { text-align: center; font-size: 12.5px; color: var(--text-muted); font-style: italic; margin: 10px 2px; min-height: 16px; }
         .arena-start-btn { width: 100%; justify-content: center; }
+        .arena-leaderboard-btn { width: 100%; justify-content: center; margin-bottom: 12px; }
+
+        /* ---------- Таблица лидеров Арены ---------- */
+        .leaderboard-box { max-width: 380px; text-align: left; max-height: 84vh; display: flex; flex-direction: column; padding: 18px; }
+        .leaderboard-box .nest-equip-head h3 { font-size: 16px; }
+        .lb-my-rank {
+            flex: none; font-size: 13px; font-weight: 800; text-align: center; padding: 10px 8px; margin-bottom: 10px;
+            border-radius: 14px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(239, 68, 68, 0.16));
+            border: 1px solid var(--glass-border);
+        }
+        .lb-top3 { flex: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .lb-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 16px; background: rgba(5, 3, 16, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--glass-border); }
+        .lb-row, .lb-podium-row {
+            display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04); border: 1px solid transparent;
+        }
+        .lb-row.lb-me, .lb-podium-row.lb-me { border-color: var(--accent-amber); box-shadow: 0 0 12px rgba(255, 204, 77, 0.35); }
+        .lb-rank { flex: 0 0 30px; font-size: 11.5px; font-weight: 800; color: var(--text-muted); }
+        .lb-crown { flex: 0 0 22px; font-size: 16px; text-align: center; }
+        .lb-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .lb-rating { flex: 0 0 auto; font-size: 12px; font-weight: 800; color: var(--accent-amber); font-variant-numeric: tabular-nums; }
+        .lb-tier-badge { flex: 0 0 auto; font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+        .lb-podium-row.lb-rank-1 { background: linear-gradient(135deg, rgba(255, 215, 0, 0.28), rgba(255, 215, 0, 0.06)); border-color: rgba(255, 215, 0, 0.5); }
+        .lb-podium-row.lb-rank-2 { background: linear-gradient(135deg, rgba(200, 210, 224, 0.26), rgba(200, 210, 224, 0.05)); border-color: rgba(200, 210, 224, 0.5); }
+        .lb-podium-row.lb-rank-3 { background: linear-gradient(135deg, rgba(205, 127, 50, 0.28), rgba(205, 127, 50, 0.06)); border-color: rgba(205, 127, 50, 0.5); }
 
     </style>
 </head>
@@ -1143,6 +1168,11 @@
         <div id="arena" class="content">
             <h1 data-i18n="arena.heading">Арена</h1>
             <p class="subtitle" data-i18n="arena.subtitle">Автоматический бой твоего орла против соперника</p>
+
+            <button class="btn-action arena-leaderboard-btn" onclick="openLeaderboard()">
+                <span class="icon-md">🏆</span>
+                <span data-i18n="arena.leaderboardBtn">Таблица лидеров</span>
+            </button>
 
             <div class="arena-picker" id="arenaPicker"></div>
 
@@ -1427,6 +1457,19 @@
         </div>
     </div>
 
+    <!-- ARENA LEADERBOARD MODAL -->
+    <div class="modal-backdrop" id="leaderboardModal" onclick="if (event.target === this) closeLeaderboard()">
+        <div class="modal-box glass-panel leaderboard-box">
+            <div class="nest-equip-head">
+                <h3 data-i18n="arena.leaderboardTitle">🏆 Таблица лидеров</h3>
+                <button class="nest-modal-close" onclick="closeLeaderboard()">✕</button>
+            </div>
+            <div class="lb-my-rank" id="lbMyRankLine">Ваше место: #— | Рейтинг: — PvP</div>
+            <div class="lb-top3" id="lbTop3"></div>
+            <div class="lb-scroll" id="lbRest"></div>
+        </div>
+    </div>
+
     <div id="toast"></div>
 
     <script>
@@ -1577,10 +1620,12 @@
                 'arena.attackLog': '{name} атакует! -{value} HP{crit}', 'arena.critSuffix': ' (Крит!)',
                 'arena.defeated': '{name} повержен!',
                 'arena.winTitle': 'Победа!', 'arena.loseTitle': 'Поражение...',
-                'arena.winSub': 'Соперник повержен', 'arena.loseSub': 'Твой орёл повержен',
+                'arena.winSub': 'Соперник повержен · +{delta} PvP', 'arena.loseSub': 'Твой орёл повержен · -{delta} PvP',
                 'arena.opponentLabel': 'Соперник', 'arena.you': 'Ты',
                 'arena.wildOpponent': 'Дикий орёл', 'arena.searching': 'Ищем соперника…',
                 'arena.noOpponentYet': 'Пока никто не вывел орла этой редкости — бой с диким орлом',
+                'arena.leaderboardBtn': 'Таблица лидеров', 'arena.leaderboardTitle': '🏆 Таблица лидеров',
+                'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1775,10 +1820,12 @@
                 'arena.attackLog': '{name} attacks! -{value} HP{crit}', 'arena.critSuffix': ' (Crit!)',
                 'arena.defeated': '{name} is defeated!',
                 'arena.winTitle': 'Victory!', 'arena.loseTitle': 'Defeat...',
-                'arena.winSub': 'Opponent defeated', 'arena.loseSub': 'Your eagle was defeated',
+                'arena.winSub': 'Opponent defeated · +{delta} PvP', 'arena.loseSub': 'Your eagle was defeated · -{delta} PvP',
                 'arena.opponentLabel': 'Opponent', 'arena.you': 'You',
                 'arena.wildOpponent': 'Wild eagle', 'arena.searching': 'Looking for an opponent…',
                 'arena.noOpponentYet': 'No one has this rarity yet — fighting a wild eagle',
+                'arena.leaderboardBtn': 'Leaderboard', 'arena.leaderboardTitle': '🏆 Leaderboard',
+                'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -1975,6 +2022,7 @@
         const state = {
             userId: 0,
             displayName: '', // @username из Telegram (initProfile) — показывается на Арене рядом со своим орлом
+            pvpRating: 1000, // PvP-рейтинг для Топ-100 Арены (см. arenaReportResult/updateLeaderboard)
             coins: 0,
             totalEarned: 0,
             mnstr: 0,
@@ -5285,6 +5333,8 @@
         const ARENA_HURT_DUR = 0.36;
         const ARENA_TURN_GAP = 0.55;
         const ARENA_GRAVITY = 1500;
+        const ARENA_RATING_WIN = 25;  // прирост PvP-рейтинга за победу (см. arenaReportResult)
+        const ARENA_RATING_LOSS = 15; // потеря PvP-рейтинга за поражение (итог не ниже 0)
 
         function arenaLerp(a, b, tt) { return a + (b - a) * tt; }
         function arenaClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -5827,16 +5877,153 @@
             await arenaSleep(1500);
 
             const playerWon = winner === arenaPlayerEagle;
+            arenaReportResult(playerWon); // сетевой вызов идёт параллельно, не блокирует анимацию
             const bannerTitle = document.getElementById('arenaBannerTitle');
             bannerTitle.textContent = playerWon ? t('arena.winTitle') : t('arena.loseTitle');
             bannerTitle.className = 'arena-banner-title ' + (playerWon ? 'win' : 'lose');
-            document.getElementById('arenaBannerSub').textContent = playerWon ? t('arena.winSub') : t('arena.loseSub');
+            document.getElementById('arenaBannerSub').textContent = t(playerWon ? 'arena.winSub' : 'arena.loseSub', {
+                delta: playerWon ? ARENA_RATING_WIN : ARENA_RATING_LOSS,
+            });
             document.getElementById('arenaBanner').classList.add('show');
 
             haptic.notify(playerWon ? 'success' : 'error');
             arenaBattleActive = false;
             startBtn.disabled = false;
             startBtn.textContent = t('arena.restartBtn');
+        }
+
+        // Сохраняет итог боя как изменение PvP-рейтинга (+25 победа / -15
+        // поражение, не ниже 0). Сам бой уже полностью отыгран на клиенте —
+        // сервер здесь не пересчитывает исход, только фиксирует рейтинг для
+        // Топ-100 (см. /api/arena/result). Офлайн — считаем то же самое
+        // локально, чтобы рейтинг не терялся визуально при тестировании.
+        async function arenaReportResult(won) {
+            const delta = won ? ARENA_RATING_WIN : -ARENA_RATING_LOSS;
+            if (offlineOnly || !state.userId) {
+                state.pvpRating = Math.max(0, Math.round(state.pvpRating) + delta);
+                saveLocally();
+                return;
+            }
+            try {
+                const response = await fetch('api/arena/result', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, won }),
+                });
+                if (!response.ok) throw new Error('arena result failed');
+                const data = await response.json();
+                if (typeof data.pvp_rating === 'number') state.pvpRating = data.pvp_rating;
+            } catch (error) {
+                state.pvpRating = Math.max(0, Math.round(state.pvpRating) + delta);
+            }
+            saveLocally();
+        }
+
+        /* ---------- Таблица лидеров Арены (Топ-100) ---------- */
+        // global_leaderboard — заглушка для теста: 100 случайно сгенерированных
+        // ботов с именами и рейтингом 900-3000, генерируются один раз за сессию
+        // и дальше не меняются. Настоящий игрок каждый раз вставляется в них
+        // updateLeaderboard()-ом на правильное место по своему pvp_rating —
+        // сам список ботов при этом не трогаем.
+        let globalLeaderboardBots = null;
+        let leaderboardMyRank = 0;
+
+        const ARENA_BOT_NAME_ADJ = [
+            'Стальной', 'Огненный', 'Ледяной', 'Теневой', 'Грозовой', 'Кровавый', 'Быстрый', 'Дикий',
+            'Древний', 'Королевский', 'Мифический', 'Алый', 'Чёрный', 'Золотой', 'Штормовой', 'Ночной',
+        ];
+        const ARENA_BOT_NAME_NOUN = [
+            'Коготь', 'Клюв', 'Крыл', 'Взгляд', 'Полёт', 'Охотник', 'Страж', 'Хищник',
+            'Рейд', 'Шторм', 'Клинок', 'Ястреб', 'Орёл', 'Дозор', 'Пик', 'Клекот',
+        ];
+
+        function arenaRandomBotName() {
+            const adj = ARENA_BOT_NAME_ADJ[Math.floor(Math.random() * ARENA_BOT_NAME_ADJ.length)];
+            const noun = ARENA_BOT_NAME_NOUN[Math.floor(Math.random() * ARENA_BOT_NAME_NOUN.length)];
+            const n = 10 + Math.floor(Math.random() * 990);
+            return `@${adj}${noun}${n}`;
+        }
+
+        // Чем выше рейтинг бота, тем более редкого орла он вероятнее всего
+        // держит — с небольшим случайным разбросом, чтобы не было идеально
+        // линейно.
+        function arenaBotBestTier(rating) {
+            const tiers = CONFIG.tiers;
+            const pct = arenaClamp((rating - 900) / (3000 - 900), 0, 1);
+            let idx = Math.round(pct * (tiers.length - 1)) + Math.round((Math.random() - 0.5) * 2);
+            idx = Math.max(0, Math.min(tiers.length - 1, idx));
+            return tiers[idx].id;
+        }
+
+        function ensureLeaderboardBots() {
+            if (globalLeaderboardBots) return globalLeaderboardBots;
+            const bots = [];
+            for (let i = 0; i < 100; i++) {
+                const rating = Math.round(arenaRand(900, 3000));
+                bots.push({ id: `bot${i}`, name: arenaRandomBotName(), rating, bestTier: arenaBotBestTier(rating), isMe: false });
+            }
+            bots.sort((a, b) => b.rating - a.rating);
+            globalLeaderboardBots = bots;
+            return bots;
+        }
+
+        // Вставляет текущего игрока в global_leaderboard на правильное место
+        // по его pvp_rating и возвращает объединённый отсортированный список
+        // (боты не меняются — каждый вызов просто пересчитывает место игрока).
+        function updateLeaderboard() {
+            const bots = ensureLeaderboardBots();
+            const myTiers = ownedArenaTiers();
+            const myEntry = {
+                id: 'me', name: state.displayName || t('arena.you'),
+                rating: Math.max(0, Math.round(state.pvpRating)),
+                bestTier: myTiers.length ? myTiers[myTiers.length - 1] : CONFIG.tiers[0].id,
+                isMe: true,
+            };
+            const merged = bots.concat([myEntry]).sort((a, b) => b.rating - a.rating);
+            leaderboardMyRank = merged.findIndex(e => e.isMe) + 1;
+            return merged;
+        }
+
+        function arenaTierBadge(tierId) {
+            const tier = CONFIG.tiers.find(x => x.id === tierId) || CONFIG.tiers[0];
+            return `<span class="lb-tier-badge" style="background:${tier.color}22; color:${tier.color}; border-color:${tier.color}66">${tier.name}</span>`;
+        }
+
+        function arenaLeaderboardRowHtml(entry, rank) {
+            if (rank <= 3) {
+                const crown = rank === 1 ? '👑' : (rank === 2 ? '🥈' : '🥉');
+                return `<div class="lb-podium-row lb-rank-${rank} ${entry.isMe ? 'lb-me' : ''}">
+                    <span class="lb-crown">${crown}</span>
+                    <span class="lb-name">${entry.name}</span>
+                    ${arenaTierBadge(entry.bestTier)}
+                    <span class="lb-rating">${entry.rating}</span>
+                </div>`;
+            }
+            return `<div class="lb-row ${entry.isMe ? 'lb-me' : ''}">
+                <span class="lb-rank">#${rank}</span>
+                <span class="lb-name">${entry.name}</span>
+                ${arenaTierBadge(entry.bestTier)}
+                <span class="lb-rating">${entry.rating}</span>
+            </div>`;
+        }
+
+        function renderLeaderboard() {
+            const merged = updateLeaderboard();
+            const top100 = merged.slice(0, 100);
+            document.getElementById('lbMyRankLine').textContent = t('arena.myRankLine', {
+                rank: leaderboardMyRank, rating: Math.max(0, Math.round(state.pvpRating)),
+            });
+            document.getElementById('lbTop3').innerHTML = top100.slice(0, 3).map((e, i) => arenaLeaderboardRowHtml(e, i + 1)).join('');
+            document.getElementById('lbRest').innerHTML = top100.slice(3).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
+        }
+
+        function openLeaderboard() {
+            haptic.select();
+            renderLeaderboard();
+            document.getElementById('leaderboardModal').classList.add('open');
+        }
+
+        function closeLeaderboard() {
+            document.getElementById('leaderboardModal').classList.remove('open');
         }
 
         // Тап по предмету в лесенке улучшений Кузницы — быстрая подсказка, какой
@@ -6553,6 +6740,7 @@
                 state.nest.inventory = data.nest.inventory || {};
                 state.nest.equipped = data.nest.equipped || {};
             }
+            if (typeof data.pvp_rating === 'number') state.pvpRating = data.pvp_rating;
 
             renderAll();
             renderWallet();
@@ -6617,6 +6805,7 @@
             if (!state.vip || typeof state.vip !== 'object') state.vip = { tier: null, expiresAt: 0, lastMeatAt: 0 };
             if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
             if (!state.merchant || typeof state.merchant !== 'object') state.merchant = { meatBought: 0, eaglesSold: 0 };
+            if (typeof state.pvpRating !== 'number' || !Number.isFinite(state.pvpRating)) state.pvpRating = 1000;
             applyWheelState(state.wheel);
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
