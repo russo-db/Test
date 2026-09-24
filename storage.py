@@ -507,6 +507,19 @@ class MongoStore:
         friends.sort(key=lambda f: f["total_deposit"], reverse=True)
         return friends
 
+    async def find_random_opponent(self, monster_ids: list, exclude_user_id: int) -> Optional[dict]:
+        """Случайный другой игрок, у которого на ферме есть орёл с id из
+        monster_ids (все монстры одной редкости) — соперник для боя на Арене.
+        Возвращает только публично безопасные поля (имя и снаряжение орлов)."""
+        pipeline = [
+            {"$match": {"_id": {"$ne": exclude_user_id}, "monsters.id": {"$in": monster_ids}}},
+            {"$sample": {"size": 1}},
+            {"$project": {"name": 1, "nest_equipped": 1}},
+        ]
+        async for doc in self.users.aggregate(pipeline):
+            return {"user_id": doc["_id"], "name": doc.get("name") or "", "nest_equipped": doc.get("nest_equipped")}
+        return None
+
     # --- АДМИН-ПАНЕЛЬ ---
 
     def _search_query(self, search: str) -> dict:

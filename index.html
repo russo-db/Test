@@ -1578,7 +1578,9 @@
                 'arena.defeated': '{name} повержен!',
                 'arena.winTitle': 'Победа!', 'arena.loseTitle': 'Поражение...',
                 'arena.winSub': 'Соперник повержен', 'arena.loseSub': 'Твой орёл повержен',
-                'arena.opponentLabel': 'Соперник',
+                'arena.opponentLabel': 'Соперник', 'arena.you': 'Ты',
+                'arena.wildOpponent': 'Дикий орёл', 'arena.searching': 'Ищем соперника…',
+                'arena.noOpponentYet': 'Пока никто не вывел орла этой редкости — бой с диким орлом',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1774,7 +1776,9 @@
                 'arena.defeated': '{name} is defeated!',
                 'arena.winTitle': 'Victory!', 'arena.loseTitle': 'Defeat...',
                 'arena.winSub': 'Opponent defeated', 'arena.loseSub': 'Your eagle was defeated',
-                'arena.opponentLabel': 'Opponent',
+                'arena.opponentLabel': 'Opponent', 'arena.you': 'You',
+                'arena.wildOpponent': 'Wild eagle', 'arena.searching': 'Looking for an opponent…',
+                'arena.noOpponentYet': 'No one has this rarity yet — fighting a wild eagle',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -1970,6 +1974,7 @@
         // Player state (kept in sync with the backend)
         const state = {
             userId: 0,
+            displayName: '', // @username из Telegram (initProfile) — показывается на Арене рядом со своим орлом
             coins: 0,
             totalEarned: 0,
             mnstr: 0,
@@ -5189,12 +5194,25 @@
             return bonus;
         }
 
-        // Итоговые боевые характеристики орла редкости tierId (базовые из
-        // NEST_EAGLE_BASE_STATS + бонус надетого снаряжения) — используются
-        // на Арене как статы игрока.
-        function nestEagleComputedStats(tierId) {
+        // Итоговые боевые характеристики орла редкости tierId по произвольной
+        // карте надетого снаряжения ({claws:'green', armor:null, ...}) —
+        // общая формула для своего орла (nestEagleComputedStats) и для орла
+        // соперника на Арене, чьё снаряжение приходит с сервера.
+        function nestComputeStatsFromEquipped(tierId, equippedForTier) {
             const base = NEST_EAGLE_BASE_STATS[tierId] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
-            const bonus = nestEagleBonus(tierId);
+            const types = nestTypeOrder();
+            const equipped = equippedForTier || {};
+            const bonus = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
+            types.forEach(type => {
+                const grade = equipped[type];
+                if (!grade) return;
+                const pct = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
+                const stat = CONFIG.nest.item_types[type].stat;
+                if (stat === 'atk') bonus.atk += pct;
+                if (stat === 'def') bonus.def += pct;
+                if (stat === 'crit') bonus.crit += pct;
+                if (stat === 'hpspd') { bonus.hp += pct; bonus.spd += pct; }
+            });
             return {
                 hp: Math.round(base.hp * (1 + bonus.hp / 100)),
                 atk: Math.round(base.atk * (1 + bonus.atk / 100)),
@@ -5202,6 +5220,13 @@
                 crit: Number((base.crit * (1 + bonus.crit / 100)).toFixed(1)),
                 spd: Math.round(base.spd * (1 + bonus.spd / 100)),
             };
+        }
+
+        // Итоговые боевые характеристики СВОЕГО орла редкости tierId (базовые
+        // из NEST_EAGLE_BASE_STATS + бонус снаряжения, надетого в Гнезде
+        // Воинов) — используются в карточке «Боевой Орёл» и на Арене.
+        function nestEagleComputedStats(tierId) {
+            return nestComputeStatsFromEquipped(tierId, state.nest.equipped[tierId]);
         }
 
         function renderNestEagles() {
@@ -5413,13 +5438,16 @@
             return CONFIG.tiers.map(tr => tr.id).filter(id => seen.has(id));
         }
 
-        function arenaGenerateOpponent(tierId) {
+        // Соперник-заглушка — дикий орёл со случайным разбросом статов вместо
+        // снаряжения. Используется, если сервер недоступен (офлайн-режим) или
+        // пока ни один реальный игрок не вывел орла этой редкости.
+        function arenaGenerateBotOpponent(tierId) {
             const tier = CONFIG.tiers.find(x => x.id === tierId);
             const monster = tier.monsters[0];
             const base = NEST_EAGLE_BASE_STATS[tierId] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
             const v = () => arenaRand(0.85, 1.15);
             return {
-                tierId, monster, tierColor: tier.color,
+                monster, name: t('arena.wildOpponent'), isBot: true,
                 stats: {
                     hp: Math.round(base.hp * v()),
                     atk: Math.round(base.atk * v()),
@@ -5428,6 +5456,29 @@
                     spd: Math.round(base.spd * v()),
                 },
             };
+        }
+
+        // Реальный соперник: другой игрок, у которого на ферме есть орёл той
+        // же редкости — сервер отдаёт его ник и надетое на этого орла
+        // снаряжение, боевые характеристики считаем той же формулой, что и
+        // для своего орла (nestComputeStatsFromEquipped). Если сервер
+        // недоступен или пока никто не владеет этой редкостью — дикий орёл.
+        async function arenaFetchOpponent(tierId) {
+            const tier = CONFIG.tiers.find(x => x.id === tierId);
+            const monster = tier.monsters[0];
+            if (offlineOnly || !state.userId) return arenaGenerateBotOpponent(tierId);
+            try {
+                const response = await fetch(`api/arena/opponent?user_id=${state.userId}&tier_id=${encodeURIComponent(tierId)}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('arena opponent fetch failed');
+                const data = await response.json();
+                if (!data.found) return arenaGenerateBotOpponent(tierId);
+                return {
+                    monster, name: data.name, isBot: false,
+                    stats: nestComputeStatsFromEquipped(tierId, data.equipped),
+                };
+            } catch (error) {
+                return arenaGenerateBotOpponent(tierId);
+            }
         }
 
         function renderArenaPicker() {
@@ -5455,9 +5506,16 @@
             return { w: canvas.width, h: canvas.height };
         }
 
-        // Готовит сцену боя (ещё не сам бой) под текущий выбор: сбрасывает
-        // орлов в стойку ожидания, обновляет полоски ХП и убирает баннер финала.
-        function arenaResetScene() {
+        // Счётчик запросов соперника — если игрок успел переключить редкость
+        // (или снова открыть вкладку) до того, как пришёл ответ сервера, ответ
+        // на устаревший запрос просто игнорируется.
+        let arenaResetToken = 0;
+
+        // Готовит сцену боя (ещё не сам бой) под текущий выбор: подбирает
+        // реального соперника той же редкости через сервер (см.
+        // arenaFetchOpponent), сбрасывает орлов в стойку ожидания, обновляет
+        // полоски ХП и убирает баннер финала.
+        async function arenaResetScene() {
             const canvas = document.getElementById('arenaCanvas');
             if (!canvas) return;
             arenaCanvasEl = canvas;
@@ -5473,24 +5531,31 @@
                 document.getElementById('arenaStartBtn').disabled = true;
                 return;
             }
-            document.getElementById('arenaStartBtn').disabled = false;
+
+            const token = ++arenaResetToken;
+            document.getElementById('arenaStartBtn').disabled = true;
+            document.getElementById('arenaBanner').classList.remove('show');
+            document.getElementById('arenaLog').textContent = t('arena.searching');
+
             const tier = CONFIG.tiers.find(x => x.id === arenaSelectedTierId);
             const monster = tier.monsters[0];
             const playerStats = nestEagleComputedStats(tier.id);
-            const opponent = arenaGenerateOpponent(arenaSelectedTierId);
+            const opponent = await arenaFetchOpponent(arenaSelectedTierId);
+            if (token !== arenaResetToken) return; // выбор уже сменился, этот ответ устарел
 
+            const myName = state.displayName || t('arena.you');
             arenaPlayerEagle = new ArenaEagle({
-                label: monster.name, side: 'player', img: arenaGetImage(monster.sprite),
+                label: `${myName} · ${monster.name}`, side: 'player', img: arenaGetImage(monster.sprite),
                 x: w * 0.24, y: groundY, facing: 1, size: 96, stats: playerStats, idlePhase: 0,
             });
             arenaEnemyEagle = new ArenaEagle({
-                label: opponent.monster.name, side: 'enemy', img: arenaGetImage(opponent.monster.sprite),
+                label: `${opponent.name} · ${opponent.monster.name}`, side: 'enemy', img: arenaGetImage(opponent.monster.sprite),
                 x: w * 0.76, y: groundY, facing: -1, size: 96, stats: opponent.stats, idlePhase: 1.7,
             });
 
-            document.getElementById('arenaBanner').classList.remove('show');
-            document.getElementById('arenaLog').textContent = t('arena.pickPrompt');
+            document.getElementById('arenaStartBtn').disabled = false;
             document.getElementById('arenaStartBtn').textContent = t('arena.startBtn');
+            document.getElementById('arenaLog').textContent = opponent.isBot ? t('arena.noOpponentYet') : t('arena.pickPrompt');
             arenaSparks = [];
             arenaFloatTexts = [];
             arenaShake = { t: 0, dur: 0, mag: 0 };
@@ -5738,7 +5803,8 @@
             haptic.impact('medium');
             const startBtn = document.getElementById('arenaStartBtn');
             startBtn.disabled = true;
-            arenaResetScene();
+            await arenaResetScene(); // свежий соперник на каждый бой (в т.ч. «Начать бой заново»)
+            startBtn.disabled = true;
             document.getElementById('arenaLog').textContent = t('arena.battleStart');
             await arenaSleep(500);
 
@@ -6575,6 +6641,7 @@
             if (!user) return;
             state.userId = user.id;
             const name = user.username || user.first_name || 'monster';
+            state.displayName = `@${name}`;
             document.getElementById('profileUsername').innerText = `@${name}`;
 
             // Реальное фото профиля из Telegram, если игрок его открыл; иначе —

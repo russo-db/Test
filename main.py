@@ -1592,6 +1592,32 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
     }
 
 
+@app.get("/api/arena/opponent")
+async def arena_opponent(
+    user_id: int, tier_id: str, x_telegram_init_data: Optional[str] = Header(None),
+):
+    """Случайный другой реальный игрок, у которого на ферме есть орёл этой
+    редкости — соперник для визуального автобоя на Арене. Отдаём только его
+    публичное имя и надетое на этого орла снаряжение (те же данные, что уже
+    видны другим игрокам на P2P-рынке) — боевые характеристики (базовые +
+    бонус снаряжения) считает клиент, как и для своего орла."""
+    authenticate(x_telegram_init_data, user_id)
+    if tier_id not in TIER_INDEX:
+        raise HTTPException(status_code=400, detail="Неизвестная редкость")
+
+    monster_ids = [mid for mid, t in MONSTER_TIER.items() if t == tier_id]
+    opponent = await store.find_random_opponent(monster_ids, user_id)
+    if not opponent:
+        return {"found": False}
+
+    equipped = normalize_nest_equipped(opponent.get("nest_equipped")).get(tier_id, {})
+    return {
+        "found": True,
+        "name": opponent["name"] or f"Игрок {opponent['user_id']}",
+        "equipped": equipped,
+    }
+
+
 @app.post("/api/nest/particles/collect")
 async def nest_particles_collect(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Собирает накопленные частички со всех осколков — офлайн-safe: время,
