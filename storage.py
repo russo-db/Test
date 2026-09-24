@@ -9,6 +9,8 @@
     (Гнездо Воинов: добыча частичек, крафт/улучшение снаряжения, экипировка —
     личные для каждого игрока)
     pvp_rating (Арена: рейтинг для Топ-100, старт 1000, +25/-15 за победу/поражение)
+    pvp_energy, pvp_energy_day (Арена: энергия на вход в бой, потолок 10,
+    пополняется раз в UTC-сутки; day — номер суток последнего пополнения)
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
@@ -29,6 +31,7 @@ FIELDS = (
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
     "nest_miners", "nest_particles", "nest_inventory", "nest_equipped", "pvp_rating",
+    "pvp_energy", "pvp_energy_day",
 )
 
 

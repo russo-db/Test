@@ -907,6 +907,25 @@
         .arena-start-btn { width: 100%; justify-content: center; }
         .arena-leaderboard-btn { width: 100%; justify-content: center; margin-bottom: 12px; }
 
+        /* ---------- Энергия Арены ---------- */
+        .arena-energy-bar { margin-bottom: 12px; padding: 10px 12px; border-radius: 16px; background: var(--panel-soft); border: 1px solid var(--glass-border); }
+        .arena-energy-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+        .arena-energy-row { display: flex; align-items: center; gap: 8px; }
+        .arena-energy-dots { flex: 1; display: flex; gap: 3px; min-width: 0; }
+        .arena-energy-dot { flex: 1; height: 10px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); transition: background 0.2s ease, box-shadow 0.2s ease; }
+        .arena-energy-dot.filled { background: linear-gradient(180deg, #ffe08a, var(--accent-amber)); border-color: var(--accent-amber); box-shadow: 0 0 8px rgba(255, 204, 77, 0.55); }
+        .arena-energy-dot.filled.overflow { background: linear-gradient(180deg, #86efac, #22c55e); border-color: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.55); }
+        .arena-energy-value { flex: 0 0 auto; font-size: 12px; font-weight: 800; color: var(--accent-amber); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .arena-energy-plus {
+            flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--accent-amber);
+            background: rgba(255, 204, 77, 0.14); color: var(--accent-amber); font-size: 16px; font-weight: 800;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; line-height: 1; padding: 0;
+        }
+        .arena-energy-timer { font-size: 10px; color: var(--text-muted); margin-top: 5px; text-align: right; min-height: 12px; }
+        .arena-energy-shop-box { max-width: 340px; }
+        .arena-energy-options { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+        .arena-energy-option { width: 100%; justify-content: center; }
+
         /* ---------- Таблица лидеров Арены ---------- */
         .leaderboard-box { max-width: 380px; text-align: left; max-height: 84vh; display: flex; flex-direction: column; padding: 18px; }
         .leaderboard-box .nest-equip-head h3 { font-size: 16px; }
@@ -1141,6 +1160,16 @@
         <div id="arena" class="content">
             <h1 data-i18n="arena.heading">Арена</h1>
             <p class="subtitle" data-i18n="arena.subtitle">Автоматический бой твоего орла против соперника</p>
+
+            <div class="arena-energy-bar" id="arenaEnergyBar">
+                <div class="arena-energy-label" data-i18n="arena.energyLabel">Энергия Арены</div>
+                <div class="arena-energy-row">
+                    <div class="arena-energy-dots" id="arenaEnergyDots"></div>
+                    <div class="arena-energy-value" id="arenaEnergyValue">10/10 ⚡</div>
+                    <button class="arena-energy-plus" id="arenaEnergyPlusBtn" onclick="openArenaEnergyShop()">+</button>
+                </div>
+                <div class="arena-energy-timer" id="arenaEnergyTimer"></div>
+            </div>
 
             <button class="btn-action arena-leaderboard-btn" onclick="openLeaderboard()">
                 <span class="icon-md">🏆</span>
@@ -1442,6 +1471,26 @@
         </div>
     </div>
 
+    <div class="modal-backdrop" id="arenaEnergyModal" onclick="if (event.target === this) closeArenaEnergyShop()">
+        <div class="modal-box glass-panel arena-energy-shop-box">
+            <div class="nest-equip-head">
+                <h3 data-i18n="arena.energyShopTitle">⚡ Докупить энергию</h3>
+                <button class="nest-modal-close" onclick="closeArenaEnergyShop()">✕</button>
+            </div>
+            <p class="subtitle" data-i18n="arena.energyShopSubtitle">Энергия может превысить максимум — она не сгорит</p>
+            <div class="arena-energy-options">
+                <button class="btn-action arena-energy-option" id="arenaEnergyBuyGoldBtn" onclick="arenaBuyEnergy('gold')">
+                    <span class="icon-md">🥇</span>
+                    <span data-i18n="arena.buyEnergyGold">Купить 1⚡ за 10 Золота</span>
+                </button>
+                <button class="btn-action arena-energy-option" id="arenaEnergyBuyGramBtn" onclick="arenaBuyEnergy('gram')">
+                    <span class="icon-md">💎</span>
+                    <span data-i18n="arena.buyEnergyGram">Купить 1⚡ за 0.25 GRAM</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast"></div>
 
     <script>
@@ -1603,6 +1652,12 @@
                 'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
                 'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
                 'arena.leaderboardOnlineOnly': 'Таблица лидеров доступна только при подключении к серверу',
+                'arena.energyLabel': 'Энергия Арены', 'arena.noEnergy': 'Нет энергии',
+                'arena.energyResetIn': 'Пополнение через {time}',
+                'arena.energyShopTitle': '⚡ Докупить энергию',
+                'arena.energyShopSubtitle': 'Энергия может превысить максимум — она не сгорит',
+                'arena.buyEnergyGold': 'Купить 1⚡ за 10 Золота', 'arena.buyEnergyGram': 'Купить 1⚡ за 0.25 GRAM',
+                'arena.energyBought': 'Энергия пополнена!',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1807,6 +1862,12 @@
                 'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
                 'arena.leaderboardLoading': 'Loading leaderboard…',
                 'arena.leaderboardOnlineOnly': 'The leaderboard is only available when connected to the server',
+                'arena.energyLabel': 'Arena Energy', 'arena.noEnergy': 'No energy',
+                'arena.energyResetIn': 'Refills in {time}',
+                'arena.energyShopTitle': '⚡ Buy energy',
+                'arena.energyShopSubtitle': 'Energy can go above the cap — it never gets lost',
+                'arena.buyEnergyGold': 'Buy 1⚡ for 10 Gold', 'arena.buyEnergyGram': 'Buy 1⚡ for 0.25 GRAM',
+                'arena.energyBought': 'Energy refilled!',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -2003,6 +2064,8 @@
             userId: 0,
             displayName: '', // @username из Telegram (initProfile) — показывается на Арене рядом со своим орлом
             pvpRating: 1000, // PvP-рейтинг для Топ-100 Арены (см. arenaReportResult/updateLeaderboard)
+            pvpEnergy: 10, // Энергия Арены — 1 списывается за бой, докупка за золото/GRAM (см. arenaSpendEnergy/arenaBuyEnergy)
+            pvpEnergyResetAt: 0, // когда энергия пополнится до максимума (следующая полночь UTC)
             coins: 0,
             totalEarned: 0,
             mnstr: 0,
@@ -5355,6 +5418,10 @@
         const ARENA_GRAVITY = 1500;
         const ARENA_RATING_WIN = 25;  // прирост PvP-рейтинга за победу (см. arenaReportResult)
         const ARENA_RATING_LOSS = 15; // потеря PvP-рейтинга за поражение (итог не ниже 0)
+        const PVP_ENERGY_MAX = 10;          // потолок суточного пополнения энергии Арены (см. main.py)
+        const PVP_ENERGY_COST = 1;          // энергии списывается за один вход в бой
+        const ARENA_ENERGY_PRICE_GOLD = 10; // золота за 1 докупленную единицу энергии
+        const ARENA_ENERGY_PRICE_GRAM = 0.25; // GRAM за 1 докупленную единицу энергии
 
         function arenaLerp(a, b, tt) { return a + (b - a) * tt; }
         function arenaClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -5700,10 +5767,12 @@
             arenaFloatTexts = [];
             arenaShake = { t: 0, dur: 0, mag: 0 };
             arenaUpdateHpUI();
+            arenaApplyEnergyGate(); // без энергии кнопка остаётся заблокированной даже с готовым соперником
         }
 
         function renderArena() {
             renderArenaPicker();
+            renderArenaEnergyBar();
             // Бой уже идёт (например, игрок ушёл на другую вкладку и вернулся) —
             // ни в коем случае не пересоздавать орлов и не подбирать нового
             // соперника поверх активного arenaStartBattle(): его цикл продолжает
@@ -5991,10 +6060,27 @@
 
         async function arenaStartBattle() {
             if (arenaBattleActive || !arenaPlayerEagle || !arenaEnemyEagle) return;
+            if (state.pvpEnergy < PVP_ENERGY_COST) {
+                toast(t('arena.noEnergy'));
+                arenaApplyEnergyGate();
+                return;
+            }
             arenaBattleActive = true;
             haptic.impact('medium');
             const startBtn = document.getElementById('arenaStartBtn');
             startBtn.disabled = true;
+
+            // Списываем энергию сразу — один вход в бой стоит PVP_ENERGY_COST
+            // независимо от исхода (см. /api/arena/spend_energy). Если списание
+            // не удалось (сервер отказал — гонка с другой вкладкой и т.п.),
+            // бой не начинается вовсе.
+            if (!(await arenaSpendEnergy())) {
+                arenaBattleActive = false;
+                startBtn.disabled = false;
+                arenaApplyEnergyGate();
+                return;
+            }
+
             await arenaResetScene(); // свежий соперник на каждый бой (в т.ч. «Начать бой заново»)
             startBtn.disabled = true;
 
@@ -6039,6 +6125,7 @@
             arenaBattleActive = false;
             startBtn.disabled = false;
             startBtn.textContent = t('arena.restartBtn');
+            arenaApplyEnergyGate(); // энергия закончилась именно этим боем — сразу блокируем кнопку
         }
 
         // Сохраняет итог боя как изменение PvP-рейтинга (+25 победа / -15
@@ -6065,6 +6152,132 @@
                 state.pvpRating = Math.max(0, Math.round(state.pvpRating) + delta);
             }
             saveLocally();
+        }
+
+        /* ---------- Энергия Арены ---------- */
+        // Ограничитель числа боёв: 1 вход в бой = PVP_ENERGY_COST энергии,
+        // автопополнение до PVP_ENERGY_MAX раз в UTC-сутки (см. reconcile_pvp_energy
+        // в main.py). Докупка за золото/GRAM может увести энергию выше потолка —
+        // суточное пополнение такой донат-излишек никогда не срезает.
+
+        // Перерисовывает шкалу (точки + текст "X/10 ⚡") и таймер до пополнения,
+        // затем сверяет кнопку старта боя с текущим запасом энергии.
+        function renderArenaEnergyBar() {
+            const dotsWrap = document.getElementById('arenaEnergyDots');
+            const valueEl = document.getElementById('arenaEnergyValue');
+            const timerEl = document.getElementById('arenaEnergyTimer');
+            if (!dotsWrap || !valueEl) return;
+
+            const energy = Math.max(0, Math.round(state.pvpEnergy));
+            const overflow = energy > PVP_ENERGY_MAX;
+            const filled = Math.min(energy, PVP_ENERGY_MAX);
+            dotsWrap.innerHTML = Array.from({ length: PVP_ENERGY_MAX }, (_, i) => {
+                const cls = i < filled ? `filled${overflow ? ' overflow' : ''}` : '';
+                return `<div class="arena-energy-dot ${cls}"></div>`;
+            }).join('');
+            valueEl.textContent = `${energy}/${PVP_ENERGY_MAX} ⚡`;
+
+            if (timerEl) {
+                const secsLeft = Math.round((state.pvpEnergyResetAt || 0) - Date.now() / 1000);
+                timerEl.textContent = (energy < PVP_ENERGY_MAX && secsLeft > 0)
+                    ? t('arena.energyResetIn', { time: formatCountdown(secsLeft) }) : '';
+            }
+            arenaApplyEnergyGate();
+        }
+
+        // Держит кнопку старта боя заблокированной с надписью «Нет энергии»,
+        // если запас исчерпан — независимо от того, что готовность соперника
+        // (arenaResetScene) сама по себе разблокировала бы кнопку.
+        function arenaApplyEnergyGate() {
+            const btn = document.getElementById('arenaStartBtn');
+            if (!btn || arenaBattleActive) return;
+            if (state.pvpEnergy < PVP_ENERGY_COST) {
+                btn.disabled = true;
+                btn.textContent = t('arena.noEnergy');
+            } else if (btn.textContent === t('arena.noEnergy')) {
+                btn.textContent = t('arena.startBtn');
+            }
+        }
+
+        function openArenaEnergyShop() {
+            haptic.select();
+            renderArenaEnergyBar();
+            document.getElementById('arenaEnergyModal').classList.add('open');
+        }
+
+        function closeArenaEnergyShop() {
+            document.getElementById('arenaEnergyModal').classList.remove('open');
+        }
+
+        // Списывает PVP_ENERGY_COST перед стартом боя. Возвращает true, если
+        // бой можно начинать. Офлайн/без сервера — считаем локально, как и
+        // остальные офлайн-ветки Арены (см. arenaReportResult).
+        async function arenaSpendEnergy() {
+            if (state.pvpEnergy < PVP_ENERGY_COST) return false;
+            if (offlineOnly || !state.userId) {
+                state.pvpEnergy = Math.max(0, state.pvpEnergy - PVP_ENERGY_COST);
+                renderArenaEnergyBar();
+                saveLocally();
+                return true;
+            }
+            try {
+                const response = await fetch('api/arena/spend_energy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
+                    renderArenaEnergyBar();
+                    toast(data.detail || t('arena.noEnergy'));
+                    return false;
+                }
+                state.pvpEnergy = data.pvp_energy;
+                if (typeof data.energy_reset_at === 'number') state.pvpEnergyResetAt = data.energy_reset_at;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                renderArenaEnergyBar();
+                saveLocally();
+                return true;
+            } catch (error) {
+                state.pvpEnergy = Math.max(0, state.pvpEnergy - PVP_ENERGY_COST);
+                renderArenaEnergyBar();
+                saveLocally();
+                return true;
+            }
+        }
+
+        // Докупка энергии за золото или GRAM — без потолка (см. /api/arena/buy_energy).
+        async function arenaBuyEnergy(currency) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const goldBtn = document.getElementById('arenaEnergyBuyGoldBtn');
+            const gramBtn = document.getElementById('arenaEnergyBuyGramBtn');
+            if (goldBtn) goldBtn.disabled = true;
+            if (gramBtn) gramBtn.disabled = true;
+            try {
+                const response = await fetch('api/arena/buy_energy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, currency }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || 'Не хватает GRAM');
+                    return;
+                }
+                state.pvpEnergy = data.pvp_energy;
+                if (typeof data.gold === 'number') state.gold = data.gold;
+                if (typeof data.coins === 'number') state.coins = data.coins;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t('arena.energyBought'));
+                renderArenaEnergyBar();
+                renderHeader();
+                saveLocally();
+            } catch (error) {
+                toast('Сервер недоступен');
+            } finally {
+                if (goldBtn) goldBtn.disabled = false;
+                if (gramBtn) gramBtn.disabled = false;
+            }
         }
 
         /* ---------- Таблица лидеров Арены (Топ-100) ---------- */
@@ -6851,6 +7064,8 @@
                 state.nest.equipped = data.nest.equipped || {};
             }
             if (typeof data.pvp_rating === 'number') state.pvpRating = data.pvp_rating;
+            if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
+            if (typeof data.pvp_energy_reset_at === 'number') state.pvpEnergyResetAt = data.pvp_energy_reset_at;
 
             renderAll();
             renderWallet();
@@ -6916,6 +7131,8 @@
             if (typeof state.dailyFirstLap !== 'boolean') state.dailyFirstLap = true;
             if (!state.merchant || typeof state.merchant !== 'object') state.merchant = { meatBought: 0, eaglesSold: 0 };
             if (typeof state.pvpRating !== 'number' || !Number.isFinite(state.pvpRating)) state.pvpRating = 1000;
+            if (typeof state.pvpEnergy !== 'number' || !Number.isFinite(state.pvpEnergy)) state.pvpEnergy = PVP_ENERGY_MAX;
+            if (typeof state.pvpEnergyResetAt !== 'number' || !Number.isFinite(state.pvpEnergyResetAt)) state.pvpEnergyResetAt = 0;
             applyWheelState(state.wheel);
             state.farm = readFarm(saved.farm !== undefined ? saved.farm : saved.monsters);
             delete state.monsters;
@@ -6975,6 +7192,9 @@
                 }
                 if (document.getElementById('nest').classList.contains('active')) {
                     tickNest();
+                }
+                if (document.getElementById('arena').classList.contains('active')) {
+                    renderArenaEnergyBar();
                 }
             }, 1000);
 

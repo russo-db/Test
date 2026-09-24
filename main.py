@@ -37,6 +37,10 @@ PVP_RATING_WIN = 25  # прирост рейтинга за победу на А
 PVP_RATING_LOSS = 15  # потеря рейтинга за поражение на Арене (итог не опускается ниже 0)
 ARENA_LADDER_ABOVE_COUNT = 5  # сколько ближайших мест НАД игроком учитывать при подборе соперника
 ARENA_LADDER_RATING_RANGE = 100  # ± очков рейтинга для подбора «соседей» по месту в таблице
+PVP_ENERGY_MAX = 10  # суточный потолок энергии Арены (донат может увести выше)
+PVP_ENERGY_COST = 1  # энергии за один вход в бой
+ARENA_ENERGY_PRICE_GOLD = 10  # золота за 1 докупленную энергию
+ARENA_ENERGY_PRICE_GRAM = 0.25  # GRAM за 1 докупленную энергию
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -606,6 +610,53 @@ def pvp_rating_of(row: dict) -> int:
     return PVP_RATING_START if value is None else max(0, int(value))
 
 
+def pvp_energy_of(row: dict):
+    """(энергия, day_index последнего пополнения) с учётом суточного
+    пополнения до PVP_ENERGY_MAX по UTC-суткам (см. day_index) — только
+    ПОДНИМАЕТ энергию в новые сутки, никогда не отнимает задонатенное
+    сверх потолка. Чистая функция, ничего не пишет в БД сама (см.
+    reconcile_pvp_energy для персистентного пополнения на /api/load и
+    arena_spend_energy/arena_buy_energy для трат)."""
+    energy = row.get("pvp_energy")
+    energy = float(PVP_ENERGY_MAX) if energy is None else float(energy)
+    last_day = row.get("pvp_energy_day")
+    today = day_index()
+    if last_day is None or int(last_day) < today:
+        energy = max(energy, PVP_ENERGY_MAX)
+        last_day = today
+    else:
+        last_day = int(last_day)
+    return energy, last_day
+
+
+def arena_energy_reset_at(day: int) -> float:
+    """Момент следующего суточного пополнения энергии — начало следующих
+    UTC-суток после day (см. day_index)."""
+    return (day + 1) * 86400
+
+
+async def reconcile_pvp_energy(user_id: int, row: dict) -> dict:
+    """Персистентно пополняет pvp_energy, если наступили новые UTC-сутки с
+    последнего пополнения — вызывается из /api/load, как и accrue_vip_meat,
+    чтобы обновление происходило само по факту захода в игру, без отдельного
+    действия игрока."""
+    energy, day = pvp_energy_of(row)
+    if row.get("pvp_energy") == energy and row.get("pvp_energy_day") == day:
+        return row  # уже актуально, писать нечего
+
+    for _ in range(3):
+        ops = int(row.get("ops") or 0)
+        fields = {"pvp_energy": energy, "pvp_energy_day": day}
+        if await store.cas_update(user_id, fields, ops):
+            row = dict(row)
+            row.update(fields)
+            row["ops"] = ops + 1
+            return row
+        row = await fetch_user(user_id)  # гонка с другим действием — перечитать и попробовать снова
+        energy, day = pvp_energy_of(row)
+    return row
+
+
 def best_owned_tier(monsters_raw) -> str:
     """Редкость самого высокоуровневого орла в коллекции — значок для
     Таблицы лидеров Арены. TIER_INDEX растёт от обычного к мифическому,
@@ -861,6 +912,8 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "nest_inventory": {},
             "nest_equipped": {},
             "pvp_rating": PVP_RATING_START,
+            "pvp_energy": PVP_ENERGY_MAX,
+            "pvp_energy_day": day_index(),
         }
     )
 
@@ -1119,6 +1172,11 @@ class ArenaReveal(BaseModel):
     match_token: str
 
 
+class ArenaBuyEnergy(BaseModel):
+    user_id: int
+    currency: str  # "gold" | "gram"
+
+
 class MarketListRequest(BaseModel):
     user_id: int
     monster_id: str
@@ -1250,6 +1308,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
     row = await fetch_user(user_id)
     row = await accrue_vip_meat(user_id, row)
     row = await reconcile_queues(user_id, row)
+    row = await reconcile_pvp_energy(user_id, row)
     farm = read_farm(row["monsters"])
 
     await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
@@ -1280,6 +1339,8 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "wheel": wheel_state(row),
         "nest": await nest_state_view(row),
         "pvp_rating": pvp_rating_of(row),
+        "pvp_energy": row.get("pvp_energy", PVP_ENERGY_MAX),
+        "pvp_energy_reset_at": arena_energy_reset_at(int(row.get("pvp_energy_day") or day_index())),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -1730,6 +1791,56 @@ async def arena_result(request: ArenaResult, x_telegram_init_data: Optional[str]
     new_rating = max(0, current + delta)
     await store.update(user_id, {"pvp_rating": new_rating})
     return {"pvp_rating": new_rating}
+
+
+@app.post("/api/arena/spend_energy")
+async def arena_spend_energy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Списывает PVP_ENERGY_COST энергии за вход в бой на Арене — клиент
+    вызывает это ровно один раз на каждый реальный запуск боя
+    (arenaStartBattle), что для реального соперника, что для дикого орла.
+    До списания пересчитывает суточное пополнение (см. pvp_energy_of), так
+    что заход после долгого перерыва сперва honestly увидит полную шкалу."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        energy, day = pvp_energy_of(row)
+        if energy < PVP_ENERGY_COST:
+            raise HTTPException(status_code=400, detail="Нет энергии")
+        energy -= PVP_ENERGY_COST
+        fields = {"pvp_energy": energy, "pvp_energy_day": day}
+        extra = {"pvp_energy": energy, "energy_reset_at": arena_energy_reset_at(day)}
+        return fields, extra
+
+    return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/arena/buy_energy")
+async def arena_buy_energy(request: ArenaBuyEnergy, x_telegram_init_data: Optional[str] = Header(None)):
+    """Докупка энергии Арены — 1⚡ за ARENA_ENERGY_PRICE_GOLD золота или за
+    ARENA_ENERGY_PRICE_GRAM GRAM. Потолка PVP_ENERGY_MAX у покупки нет —
+    донат может увести энергию выше дневного лимита, суточное пополнение
+    его при этом никогда не опускает (см. pvp_energy_of)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.currency not in ("gold", "gram"):
+        raise HTTPException(status_code=400, detail="Неизвестная валюта")
+
+    def compute(row):
+        energy, day = pvp_energy_of(row)
+        if request.currency == "gold":
+            gold = float(row.get("gold") or 0)
+            if gold < ARENA_ENERGY_PRICE_GOLD:
+                raise HTTPException(status_code=400, detail="Не хватает золота")
+            fields = {"gold": gold - ARENA_ENERGY_PRICE_GOLD, "pvp_energy": energy + 1, "pvp_energy_day": day}
+            extra = {"pvp_energy": energy + 1, "gold": fields["gold"]}
+        else:
+            coins = float(row.get("coins") or 0)
+            if coins < ARENA_ENERGY_PRICE_GRAM:
+                raise HTTPException(status_code=400, detail="Не хватает GRAM")
+            fields = {"coins": coins - ARENA_ENERGY_PRICE_GRAM, "pvp_energy": energy + 1, "pvp_energy_day": day}
+            extra = {"pvp_energy": energy + 1, "coins": fields["coins"]}
+        return fields, extra
+
+    return await run_farm_action(user_id, compute)
 
 
 @app.get("/api/arena/leaderboard")
