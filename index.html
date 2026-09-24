@@ -862,6 +862,44 @@
         .nest-equip-option .nest-equip-info .nest-equip-g { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
         .nest-empty-note { color: var(--text-muted); font-size: 12.5px; text-align: center; padding: 24px 10px; }
 
+        /* ---------- Арена ---------- */
+        .arena-picker { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; -webkit-overflow-scrolling: touch; }
+        .arena-pick-item {
+            flex: 0 0 auto; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+            padding: 8px 4px; border-radius: 14px; cursor: pointer;
+            border: 1.5px solid var(--glass-border); background: var(--panel-soft);
+            opacity: 0.65; transition: opacity 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+        }
+        .arena-pick-item.active { opacity: 1; border-color: var(--tier-color, var(--accent-amber)); box-shadow: 0 0 14px var(--tier-glow, rgba(255, 204, 77, 0.45)); transform: translateY(-2px); }
+        .arena-pick-item img { width: 40px; height: 40px; object-fit: contain; }
+        .arena-pick-item span { font-size: 9px; font-weight: 700; text-align: center; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+        .arena-hud { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .arena-hp-box { flex: 1; min-width: 0; }
+        .arena-hp-box.right { text-align: right; }
+        .arena-hp-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .arena-hp-bar-bg { width: 100%; height: 14px; border-radius: 8px; overflow: hidden; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5); }
+        .arena-hp-bar-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #22c55e, #86efac); transition: width 0.25s ease, background 0.25s ease; }
+        .arena-hp-box.right .arena-hp-bar-fill { margin-left: auto; }
+        .arena-hp-text { font-size: 10.5px; margin-top: 2px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .arena-vs { flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--accent-amber); }
+
+        .arena-canvas-frame { position: relative; width: 100%; border-radius: 20px; overflow: hidden; border: 1px solid var(--glass-border); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+        .arena-canvas-frame canvas { display: block; width: 100%; height: auto; background: #0a0716; }
+        .arena-banner {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+            background: rgba(4, 2, 12, 0.55); backdrop-filter: blur(2px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
+        }
+        .arena-banner.show { opacity: 1; }
+        .arena-banner .arena-banner-title { font-size: 26px; font-weight: 800; }
+        .arena-banner .arena-banner-title.win { color: var(--accent-slime); text-shadow: 0 0 20px rgba(124, 255, 107, 0.6); }
+        .arena-banner .arena-banner-title.lose { color: var(--accent-rose); text-shadow: 0 0 20px rgba(239, 68, 68, 0.6); }
+        .arena-banner .arena-banner-sub { font-size: 12.5px; color: var(--text-muted); }
+
+        .arena-log { text-align: center; font-size: 12.5px; color: var(--text-muted); font-style: italic; margin: 10px 2px; min-height: 16px; }
+        .arena-start-btn { width: 100%; justify-content: center; }
+
     </style>
 </head>
 <body>
@@ -942,6 +980,10 @@
             <linearGradient id="navGradNest" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#a855f7" />
                 <stop offset="100%" stop-color="#f59e0b" />
+            </linearGradient>
+            <linearGradient id="navGradArena" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ff4d4d" />
+                <stop offset="100%" stop-color="#fbbf24" />
             </linearGradient>
         </defs>
     </svg>
@@ -1095,6 +1137,39 @@
             <div class="subtab-panel" id="nestSubEagle">
                 <div id="nestEagleList"></div>
             </div>
+        </div>
+
+        <!-- ARENA TAB -->
+        <div id="arena" class="content">
+            <h1 data-i18n="arena.heading">Арена</h1>
+            <p class="subtitle" data-i18n="arena.subtitle">Автоматический бой твоего орла против соперника</p>
+
+            <div class="arena-picker" id="arenaPicker"></div>
+
+            <div class="arena-hud">
+                <div class="arena-hp-box left">
+                    <div class="arena-hp-name" id="arenaHpLeftName">—</div>
+                    <div class="arena-hp-bar-bg"><div class="arena-hp-bar-fill" id="arenaHpLeftFill"></div></div>
+                    <div class="arena-hp-text" id="arenaHpLeftText">0 / 0</div>
+                </div>
+                <div class="arena-vs">VS</div>
+                <div class="arena-hp-box right">
+                    <div class="arena-hp-name" id="arenaHpRightName">—</div>
+                    <div class="arena-hp-bar-bg"><div class="arena-hp-bar-fill" id="arenaHpRightFill"></div></div>
+                    <div class="arena-hp-text" id="arenaHpRightText">0 / 0</div>
+                </div>
+            </div>
+
+            <div class="arena-canvas-frame">
+                <canvas id="arenaCanvas" width="720" height="360"></canvas>
+                <div class="arena-banner" id="arenaBanner">
+                    <div class="arena-banner-title" id="arenaBannerTitle">Победа!</div>
+                    <div class="arena-banner-sub" id="arenaBannerSub"></div>
+                </div>
+            </div>
+
+            <div class="arena-log" id="arenaLog" data-i18n="arena.pickPrompt">Выбери орла и нажми «Начать бой»</div>
+            <button class="btn-primary arena-start-btn" id="arenaStartBtn" onclick="arenaStartBattle()" data-i18n="arena.startBtn">Начать бой</button>
         </div>
 
         <!-- PROFILE TAB -->
@@ -1259,6 +1334,10 @@
             <div class="nav-item" onclick="switchTab('nest', this)">
                 <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5Z" fill="url(#navGradNest)"></path><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
                 <span data-i18n="nav.nest">Гнездо</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('arena', this)">
+                <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M6.4 2 14 9.6l1.6-1.6 2.1 2.1-1.6 1.6L22.6 18l-2 2-6.5-6.5-1.6 1.6-2.1-2.1 1.6-1.6L4.4 3.8Z" fill="url(#navGradArena)"></path><path d="M17.6 2 10 9.6l-1.6-1.6-2.1 2.1 1.6 1.6L1.4 18l2 2 6.5-6.5 1.6 1.6 2.1-2.1-1.6-1.6L19.6 3.8Z" fill="url(#navGradArena)" opacity="0.85"></path></svg></div>
+                <span data-i18n="nav.arena">Арена</span>
             </div>
             <div class="nav-item" onclick="switchTab('profile', this)">
                 <div class="nav-icon" id="navProfileIcon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2Z" fill="url(#navGradProfile)"></path><circle cx="12" cy="7" r="4" fill="url(#navGradProfile)"></circle><ellipse cx="10.5" cy="5.6" rx="1.3" ry="0.9" fill="rgba(255,255,255,0.55)"></ellipse></svg></div>
@@ -1460,6 +1539,7 @@
                 'farm.queueLabel': 'Не поместились — ждут своей очереди',
                 'nav.merchant': 'Купец',
                 'nav.nest': 'Гнездо',
+                'nav.arena': 'Арена',
                 'nest.heading': 'Гнездо Воинов',
                 'nest.subtitle': 'Небесные Осколки, частички и снаряжение для твоих орлов',
                 'nest.subtabForge': '🔨 Кузница', 'nest.subtabEagle': '🦅 Боевой Орёл',
@@ -1489,6 +1569,16 @@
                 'nest.emptyInventoryNote': 'В инвентаре нет предметов этого типа. Скрафти или улучши снаряжение в Кузнице.',
                 'nest.statHp': 'ХП', 'nest.statAtk': 'Атака', 'nest.statDef': 'Защита',
                 'nest.statCrit': 'Крит', 'nest.statSpd': 'Скор.',
+                'arena.heading': 'Арена', 'arena.subtitle': 'Автоматический бой твоего орла против соперника',
+                'arena.pickPrompt': 'Выбери орла и нажми «Начать бой»',
+                'arena.noEagles': 'Сначала выведи хотя бы одного орла на ферме',
+                'arena.startBtn': 'Начать бой', 'arena.restartBtn': 'Начать бой заново',
+                'arena.battleStart': 'Бой начинается!',
+                'arena.attackLog': '{name} атакует! -{value} HP{crit}', 'arena.critSuffix': ' (Крит!)',
+                'arena.defeated': '{name} повержен!',
+                'arena.winTitle': 'Победа!', 'arena.loseTitle': 'Поражение...',
+                'arena.winSub': 'Соперник повержен', 'arena.loseSub': 'Твой орёл повержен',
+                'arena.opponentLabel': 'Соперник',
                 'merchant.heading': 'Купец',
                 'merchant.onlineOnly': 'Купец работает только при подключении к серверу',
                 'merchant.meatSectionTitle': 'Купить Meat',
@@ -1645,6 +1735,7 @@
                 'farm.queueLabel': "Didn't fit — waiting in line",
                 'nav.merchant': 'Merchant',
                 'nav.nest': 'Nest',
+                'nav.arena': 'Arena',
                 'nest.heading': "Warriors' Nest",
                 'nest.subtitle': 'Sky Shards, particles and gear for your eagles',
                 'nest.subtabForge': '🔨 Forge', 'nest.subtabEagle': '🦅 Battle Eagle',
@@ -1674,6 +1765,16 @@
                 'nest.emptyInventoryNote': 'No items of this type yet. Craft or upgrade gear in the Forge.',
                 'nest.statHp': 'HP', 'nest.statAtk': 'ATK', 'nest.statDef': 'DEF',
                 'nest.statCrit': 'Crit', 'nest.statSpd': 'SPD',
+                'arena.heading': 'Arena', 'arena.subtitle': 'Automatic battle — your eagle against an opponent',
+                'arena.pickPrompt': 'Pick an eagle and tap "Start battle"',
+                'arena.noEagles': 'Hatch at least one eagle on the farm first',
+                'arena.startBtn': 'Start battle', 'arena.restartBtn': 'Battle again',
+                'arena.battleStart': 'The battle begins!',
+                'arena.attackLog': '{name} attacks! -{value} HP{crit}', 'arena.critSuffix': ' (Crit!)',
+                'arena.defeated': '{name} is defeated!',
+                'arena.winTitle': 'Victory!', 'arena.loseTitle': 'Defeat...',
+                'arena.winSub': 'Opponent defeated', 'arena.loseSub': 'Your eagle was defeated',
+                'arena.opponentLabel': 'Opponent',
                 'merchant.heading': 'Merchant',
                 'merchant.onlineOnly': 'Merchant only works when connected to the server',
                 'merchant.meatSectionTitle': 'Buy Meat',
@@ -4797,6 +4898,7 @@
             if (tabId === 'market') loadMarketListings();
             if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
             if (tabId === 'nest') { renderNest(); refreshNestShardState(); }
+            if (tabId === 'arena') { renderArena(); arenaStartLoop(); } else { arenaStopLoop(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
         }
 
@@ -5067,6 +5169,41 @@
             document.getElementById('nestUpgradeBlocks').innerHTML = html;
         }
 
+        // Суммарный процентный бонус снаряжения, надетого на орла редкости
+        // tierId, по каждому параметру — общий расчёт для карточки Гнезда
+        // Воинов и для боевых характеристик на Арене (см. nestEagleComputedStats).
+        function nestEagleBonus(tierId) {
+            const types = nestTypeOrder();
+            const equipped = state.nest.equipped[tierId] || {};
+            const bonus = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
+            types.forEach(type => {
+                const grade = equipped[type];
+                if (!grade) return;
+                const pct = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
+                const stat = CONFIG.nest.item_types[type].stat;
+                if (stat === 'atk') bonus.atk += pct;
+                if (stat === 'def') bonus.def += pct;
+                if (stat === 'crit') bonus.crit += pct;
+                if (stat === 'hpspd') { bonus.hp += pct; bonus.spd += pct; }
+            });
+            return bonus;
+        }
+
+        // Итоговые боевые характеристики орла редкости tierId (базовые из
+        // NEST_EAGLE_BASE_STATS + бонус надетого снаряжения) — используются
+        // на Арене как статы игрока.
+        function nestEagleComputedStats(tierId) {
+            const base = NEST_EAGLE_BASE_STATS[tierId] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
+            const bonus = nestEagleBonus(tierId);
+            return {
+                hp: Math.round(base.hp * (1 + bonus.hp / 100)),
+                atk: Math.round(base.atk * (1 + bonus.atk / 100)),
+                def: Math.round(base.def * (1 + bonus.def / 100)),
+                crit: Number((base.crit * (1 + bonus.crit / 100)).toFixed(1)),
+                spd: Math.round(base.spd * (1 + bonus.spd / 100)),
+            };
+        }
+
         function renderNestEagles() {
             const list = document.getElementById('nestEagleList');
             if (!list) return;
@@ -5074,17 +5211,7 @@
             list.innerHTML = CONFIG.tiers.map(tier => {
                 const monster = tier.monsters[0];
                 const equipped = state.nest.equipped[tier.id] || {};
-                const bonus = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
-                types.forEach(type => {
-                    const grade = equipped[type];
-                    if (!grade) return;
-                    const pct = (CONFIG.nest.grade_bonus_pct || {})[grade] || 0;
-                    const stat = CONFIG.nest.item_types[type].stat;
-                    if (stat === 'atk') bonus.atk += pct;
-                    if (stat === 'def') bonus.def += pct;
-                    if (stat === 'crit') bonus.crit += pct;
-                    if (stat === 'hpspd') { bonus.hp += pct; bonus.spd += pct; }
-                });
+                const bonus = nestEagleBonus(tier.id);
                 const base = NEST_EAGLE_BASE_STATS[tier.id] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
                 function statCell(key, label) {
                     const b = bonus[key] || 0;
@@ -5118,6 +5245,532 @@
                     <div class="nest-slots-row">${slotsHtml}</div>
                 </div>`;
             }).join('');
+        }
+
+        /* ---------- Арена ---------- */
+        // Визуальный автобой на canvas: реальный орёл игрока (редкость + бонусы
+        // снаряжения из Гнезда Воинов, см. nestEagleComputedStats) против
+        // сгенерированного соперника той же редкости. Экранная тряска, искры,
+        // всплывающий урон и падение/взлёт побеждённого/победителя — как в
+        // отдельном прототипе arena-demo.html, но орлы рисуются настоящими
+        // спрайтами (framePath), а не процедурными фигурами.
+
+        const ARENA_ATTACK_DUR = 0.22;
+        const ARENA_RETURN_DUR = 0.38;
+        const ARENA_HURT_DUR = 0.36;
+        const ARENA_TURN_GAP = 0.55;
+        const ARENA_GRAVITY = 1500;
+
+        function arenaLerp(a, b, tt) { return a + (b - a) * tt; }
+        function arenaClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+        function arenaEaseInCubic(tt) { return tt * tt * tt; }
+        function arenaEaseOutCubic(tt) { return 1 - Math.pow(1 - tt, 3); }
+        function arenaRand(a, b) { return a + Math.random() * (b - a); }
+        function arenaSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        class ArenaEagle {
+            constructor(opts) {
+                this.label = opts.label;
+                this.side = opts.side;
+                this.img = opts.img;
+                this.baseX = opts.x; this.baseY = opts.y;
+                this.x = opts.x; this.y = opts.y;
+                this.facing = opts.facing;
+                this.size = opts.size;
+                this.stats = opts.stats;
+                this.maxHp = opts.stats.hp;
+                this.hp = opts.stats.hp;
+                this.idlePhase = opts.idlePhase;
+                this.state = 'idle';
+                this.stateT = 0;
+                this.attackFromX = this.x;
+                this.attackTargetX = this.x;
+                this.hurtDir = 1;
+                this.willDie = false;
+                this.flash = 0;
+                this.scale = 1;
+                this.rotation = 0;
+                this.rotSpeed = 0;
+                this.fallVy = 0;
+                this.gone = false;
+            }
+            startAttack(targetEagle) {
+                const dir = Math.sign(targetEagle.baseX - this.baseX);
+                this.attackFromX = this.baseX;
+                this.attackTargetX = targetEagle.baseX - dir * (this.size * 0.55);
+                this.state = 'attacking';
+                this.stateT = 0;
+            }
+            startReturn() {
+                this.attackFromX = this.x;
+                this.attackTargetX = this.baseX;
+                this.state = 'returning';
+                this.stateT = 0;
+            }
+            startHurt(attackerX, willDie) {
+                this.hurtDir = Math.sign(this.baseX - attackerX) || 1;
+                this.willDie = willDie;
+                this.state = 'hurt';
+                this.stateT = 0;
+            }
+            startDying() {
+                this.state = 'dying';
+                this.stateT = 0;
+                this.rotSpeed = arenaRand(5, 7) * (Math.random() < 0.5 ? -1 : 1);
+                this.fallVy = -180;
+            }
+            startVictory() {
+                this.state = 'victory';
+                this.stateT = 0;
+            }
+            update(dt, tt, groundY) {
+                this.stateT += dt;
+                if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 4.5);
+                switch (this.state) {
+                    case 'idle': {
+                        this.x = this.baseX;
+                        this.y = this.baseY + Math.sin(tt * 2.1 + this.idlePhase) * 9;
+                        this.scale = 1;
+                        break;
+                    }
+                    case 'attacking': {
+                        const p = arenaClamp(this.stateT / ARENA_ATTACK_DUR, 0, 1);
+                        this.x = arenaLerp(this.attackFromX, this.attackTargetX, arenaEaseInCubic(p));
+                        this.y = this.baseY + Math.sin(tt * 16) * 4;
+                        break;
+                    }
+                    case 'returning': {
+                        const p = arenaClamp(this.stateT / ARENA_RETURN_DUR, 0, 1);
+                        this.x = arenaLerp(this.attackFromX, this.attackTargetX, arenaEaseOutCubic(p));
+                        this.y = this.baseY + Math.sin(tt * 2.1 + this.idlePhase) * 9;
+                        if (p >= 1) { this.state = 'idle'; this.x = this.baseX; }
+                        break;
+                    }
+                    case 'hurt': {
+                        const p = arenaClamp(this.stateT / ARENA_HURT_DUR, 0, 1);
+                        const knock = Math.sin(p * Math.PI) * 26 * this.hurtDir;
+                        this.x = this.baseX + knock;
+                        this.y = this.baseY + Math.sin(tt * 2.1 + this.idlePhase) * 9;
+                        this.scale = 1 - Math.sin(p * Math.PI) * 0.1;
+                        if (p >= 1) {
+                            this.x = this.baseX;
+                            this.scale = 1;
+                            this.state = this.willDie ? 'dying' : 'idle';
+                            if (this.state === 'dying') this.startDying();
+                        }
+                        break;
+                    }
+                    case 'dying': {
+                        this.fallVy += ARENA_GRAVITY * dt;
+                        this.y += this.fallVy * dt;
+                        this.rotation += this.rotSpeed * dt;
+                        this.x += this.rotSpeed * 2 * dt;
+                        if (this.y > groundY + 260) this.gone = true;
+                        break;
+                    }
+                    case 'victory': {
+                        this.y -= (140 + this.stateT * 260) * dt;
+                        this.x = this.baseX + Math.sin(tt * 6) * 10;
+                        this.rotation = Math.sin(tt * 5) * 0.08;
+                        if (this.y < -140) this.gone = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        let arenaSelectedTierId = null;
+        let arenaPlayerEagle = null;
+        let arenaEnemyEagle = null;
+        let arenaBattleActive = false;
+        let arenaCtx = null;
+        let arenaCanvasEl = null;
+        let arenaFrameHandle = null;
+        let arenaLastTs = 0;
+        let arenaTime = 0;
+        let arenaShake = { t: 0, dur: 0, mag: 0 };
+        let arenaSparks = [];
+        let arenaFloatTexts = [];
+        const arenaImageCache = {};
+
+        function arenaGetImage(sprite) {
+            if (!arenaImageCache[sprite]) {
+                const img = new Image();
+                img.src = framePath(sprite, 0);
+                arenaImageCache[sprite] = img;
+            }
+            return arenaImageCache[sprite];
+        }
+
+        // Редкости, которыми игрок реально владеет хотя бы на одном орле фермы —
+        // порядок как в CONFIG.tiers (от обычного к мифическому).
+        function ownedArenaTiers() {
+            const seen = new Set();
+            state.farm.forEach(slot => {
+                const monster = MONSTERS[slot.id];
+                if (monster) seen.add(monster.tier);
+            });
+            return CONFIG.tiers.map(tr => tr.id).filter(id => seen.has(id));
+        }
+
+        function arenaGenerateOpponent(tierId) {
+            const tier = CONFIG.tiers.find(x => x.id === tierId);
+            const monster = tier.monsters[0];
+            const base = NEST_EAGLE_BASE_STATS[tierId] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
+            const v = () => arenaRand(0.85, 1.15);
+            return {
+                tierId, monster, tierColor: tier.color,
+                stats: {
+                    hp: Math.round(base.hp * v()),
+                    atk: Math.round(base.atk * v()),
+                    def: Math.round(base.def * v()),
+                    crit: Number((base.crit * v()).toFixed(1)),
+                    spd: Math.round(base.spd * v()),
+                },
+            };
+        }
+
+        function renderArenaPicker() {
+            const wrap = document.getElementById('arenaPicker');
+            if (!wrap) return;
+            const tiers = ownedArenaTiers();
+            if (!tiers.length) {
+                wrap.innerHTML = `<p class="market-section-empty">${t('arena.noEagles')}</p>`;
+                return;
+            }
+            if (!arenaSelectedTierId || !tiers.includes(arenaSelectedTierId)) arenaSelectedTierId = tiers[tiers.length - 1];
+            wrap.innerHTML = tiers.map(tierId => {
+                const tier = CONFIG.tiers.find(x => x.id === tierId);
+                const monster = tier.monsters[0];
+                const active = tierId === arenaSelectedTierId;
+                return `<div class="arena-pick-item ${active ? 'active' : ''}" style="--tier-color:${tier.color}; --tier-glow:${tier.color}66" onclick="arenaSelectTier('${tierId}')">
+                    <img src="${framePath(monster.sprite, 0)}" alt="">
+                    <span>${monster.name}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function arenaCanvasSize() {
+            const canvas = document.getElementById('arenaCanvas');
+            return { w: canvas.width, h: canvas.height };
+        }
+
+        // Готовит сцену боя (ещё не сам бой) под текущий выбор: сбрасывает
+        // орлов в стойку ожидания, обновляет полоски ХП и убирает баннер финала.
+        function arenaResetScene() {
+            const canvas = document.getElementById('arenaCanvas');
+            if (!canvas) return;
+            arenaCanvasEl = canvas;
+            arenaCtx = canvas.getContext('2d');
+            const { w, h } = arenaCanvasSize();
+            const groundY = h * 0.78;
+
+            const tiers = ownedArenaTiers();
+            if (!tiers.length) {
+                arenaPlayerEagle = null;
+                arenaEnemyEagle = null;
+                arenaUpdateHpUI();
+                document.getElementById('arenaStartBtn').disabled = true;
+                return;
+            }
+            document.getElementById('arenaStartBtn').disabled = false;
+            const tier = CONFIG.tiers.find(x => x.id === arenaSelectedTierId);
+            const monster = tier.monsters[0];
+            const playerStats = nestEagleComputedStats(tier.id);
+            const opponent = arenaGenerateOpponent(arenaSelectedTierId);
+
+            arenaPlayerEagle = new ArenaEagle({
+                label: monster.name, side: 'player', img: arenaGetImage(monster.sprite),
+                x: w * 0.24, y: groundY, facing: 1, size: 96, stats: playerStats, idlePhase: 0,
+            });
+            arenaEnemyEagle = new ArenaEagle({
+                label: opponent.monster.name, side: 'enemy', img: arenaGetImage(opponent.monster.sprite),
+                x: w * 0.76, y: groundY, facing: -1, size: 96, stats: opponent.stats, idlePhase: 1.7,
+            });
+
+            document.getElementById('arenaBanner').classList.remove('show');
+            document.getElementById('arenaLog').textContent = t('arena.pickPrompt');
+            document.getElementById('arenaStartBtn').textContent = t('arena.startBtn');
+            arenaSparks = [];
+            arenaFloatTexts = [];
+            arenaShake = { t: 0, dur: 0, mag: 0 };
+            arenaUpdateHpUI();
+        }
+
+        function renderArena() {
+            renderArenaPicker();
+            arenaResetScene();
+        }
+
+        function arenaSelectTier(tierId) {
+            if (arenaBattleActive) return;
+            haptic.select();
+            arenaSelectedTierId = tierId;
+            renderArenaPicker();
+            arenaResetScene();
+        }
+
+        function arenaUpdateHpUI() {
+            [arenaPlayerEagle, arenaEnemyEagle].forEach(e => {
+                const isPlayer = e === arenaPlayerEagle;
+                const fill = document.getElementById(isPlayer ? 'arenaHpLeftFill' : 'arenaHpRightFill');
+                const text = document.getElementById(isPlayer ? 'arenaHpLeftText' : 'arenaHpRightText');
+                const name = document.getElementById(isPlayer ? 'arenaHpLeftName' : 'arenaHpRightName');
+                if (!e) {
+                    if (fill) fill.style.width = '0%';
+                    if (text) text.textContent = '0 / 0';
+                    if (name) name.textContent = isPlayer ? '—' : t('arena.opponentLabel');
+                    return;
+                }
+                const pct = arenaClamp(e.hp / e.maxHp, 0, 1);
+                fill.style.width = (pct * 100) + '%';
+                fill.style.background = pct > 0.5
+                    ? 'linear-gradient(90deg, #22c55e, #86efac)'
+                    : (pct > 0.22 ? 'linear-gradient(90deg, #eab308, #fde68a)' : 'linear-gradient(90deg, #dc2626, #ff8a8a)');
+                text.textContent = `${Math.max(0, Math.round(e.hp))} / ${e.maxHp}`;
+                name.textContent = e.label;
+            });
+        }
+
+        function arenaTriggerShake(mag, dur) { arenaShake = { mag, dur, t: dur }; }
+
+        function arenaSpawnImpact(x, y, crit) {
+            arenaSparks.push({ x, y, r: 4, maxR: crit ? 46 : 32, life: 0.3, maxLife: 0.3 });
+            const rays = crit ? 10 : 7;
+            for (let i = 0; i < rays; i++) {
+                const a = (Math.PI * 2 * i) / rays + arenaRand(-0.2, 0.2);
+                arenaSparks.push({ x, y, ray: true, angle: a, len: arenaRand(10, crit ? 30 : 20), life: 0.22, maxLife: 0.22 });
+            }
+        }
+
+        function arenaSpawnDamageText(x, y, value, crit) {
+            arenaFloatTexts.push({
+                x: x + arenaRand(-8, 8), y, vy: -70,
+                text: (crit ? '-' + value + ' Крит!' : '-' + value + ' HP'),
+                color: crit ? '#ffd76a' : '#ff5757', size: crit ? 20 : 16,
+                life: 1.1, maxLife: 1.1,
+            });
+        }
+
+        function arenaUpdateEffects(dt) {
+            for (let i = arenaSparks.length - 1; i >= 0; i--) {
+                const s = arenaSparks[i];
+                s.life -= dt;
+                if (!s.ray) s.r = arenaLerp(s.r, s.maxR, 1 - Math.pow(0.001, dt));
+                if (s.life <= 0) arenaSparks.splice(i, 1);
+            }
+            for (let i = arenaFloatTexts.length - 1; i >= 0; i--) {
+                const f = arenaFloatTexts[i];
+                f.y += f.vy * dt;
+                f.vy *= 0.94;
+                f.life -= dt;
+                if (f.life <= 0) arenaFloatTexts.splice(i, 1);
+            }
+            if (arenaShake.t > 0) arenaShake.t = Math.max(0, arenaShake.t - dt);
+        }
+
+        function arenaShakeOffset() {
+            if (arenaShake.t <= 0) return { x: 0, y: 0 };
+            const power = (arenaShake.t / arenaShake.dur) * arenaShake.mag;
+            return { x: arenaRand(-power, power), y: arenaRand(-power, power) };
+        }
+
+        function arenaDrawEffects(ctx) {
+            for (const s of arenaSparks) {
+                const alpha = arenaClamp(s.life / s.maxLife, 0, 1);
+                if (s.ray) {
+                    const x2 = s.x + Math.cos(s.angle) * s.len;
+                    const y2 = s.y + Math.sin(s.angle) * s.len;
+                    ctx.strokeStyle = `rgba(255, 244, 200, ${alpha})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke();
+                } else {
+                    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+                    grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+                    grad.addColorStop(0.4, `rgba(255, 220, 120, ${alpha * 0.8})`);
+                    grad.addColorStop(1, 'rgba(255, 180, 60, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            for (const f of arenaFloatTexts) {
+                const alpha = arenaClamp(f.life / f.maxLife, 0, 1);
+                ctx.globalAlpha = alpha;
+                ctx.font = `800 ${f.size}px Poppins, Segoe UI, Arial, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+                ctx.strokeText(f.text, f.x, f.y);
+                ctx.fillStyle = f.color;
+                ctx.fillText(f.text, f.x, f.y);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function arenaDrawGround(ctx, e, groundY) {
+            if (!e || e.state === 'dying' || e.state === 'victory') return;
+            const drop = e.y - e.baseY;
+            const s = arenaClamp(1 - drop * 0.012, 0.55, 1.15);
+            ctx.save();
+            ctx.globalAlpha = 0.3 * s;
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.ellipse(e.baseX, groundY, 30 * s, 9 * s, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function arenaDrawEagle(ctx, e) {
+            if (!e || e.gone || !e.img) return;
+            const ratio = (e.img.naturalHeight && e.img.naturalWidth) ? (e.img.naturalHeight / e.img.naturalWidth) : 0.9;
+            const w = e.size, h = e.size * ratio;
+            ctx.save();
+            ctx.translate(e.x, e.y);
+            ctx.rotate(e.rotation);
+            ctx.scale(e.facing * e.scale, e.scale);
+            ctx.drawImage(e.img, -w / 2, -h / 2, w, h);
+            if (e.flash > 0) {
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = `rgba(255, 40, 40, ${e.flash})`;
+                ctx.fillRect(-w / 2, -h / 2, w, h);
+                ctx.globalCompositeOperation = 'source-over';
+            }
+            ctx.restore();
+        }
+
+        function arenaDrawBackground(ctx, w, h, groundY) {
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, '#150a2e');
+            grad.addColorStop(0.55, '#0c0620');
+            grad.addColorStop(1, '#050310');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = 'rgba(245, 180, 0, 0.18)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(24, groundY + 26);
+            ctx.lineTo(w - 24, groundY + 26);
+            ctx.stroke();
+        }
+
+        function arenaDraw() {
+            if (!arenaCtx || !arenaCanvasEl) return;
+            const { w, h } = arenaCanvasSize();
+            const groundY = h * 0.78;
+            arenaCtx.clearRect(0, 0, w, h);
+            arenaDrawBackground(arenaCtx, w, h, groundY);
+            const off = arenaShakeOffset();
+            arenaCtx.save();
+            arenaCtx.translate(off.x, off.y);
+            arenaDrawGround(arenaCtx, arenaPlayerEagle, groundY);
+            arenaDrawGround(arenaCtx, arenaEnemyEagle, groundY);
+            arenaDrawEagle(arenaCtx, arenaPlayerEagle);
+            arenaDrawEagle(arenaCtx, arenaEnemyEagle);
+            arenaDrawEffects(arenaCtx);
+            arenaCtx.restore();
+        }
+
+        function arenaFrame(ts) {
+            const tab = document.getElementById('arena');
+            if (!tab || !tab.classList.contains('active')) { arenaFrameHandle = null; return; }
+            if (!arenaLastTs) arenaLastTs = ts;
+            const dt = Math.min(0.05, (ts - arenaLastTs) / 1000);
+            arenaLastTs = ts;
+            arenaTime += dt;
+            const groundY = arenaCanvasSize().h * 0.78;
+            if (arenaPlayerEagle) arenaPlayerEagle.update(dt, arenaTime, groundY);
+            if (arenaEnemyEagle) arenaEnemyEagle.update(dt, arenaTime, groundY);
+            arenaUpdateEffects(dt);
+            arenaDraw();
+            arenaFrameHandle = requestAnimationFrame(arenaFrame);
+        }
+
+        function arenaStartLoop() {
+            if (arenaFrameHandle) return;
+            arenaLastTs = 0;
+            arenaFrameHandle = requestAnimationFrame(arenaFrame);
+        }
+
+        function arenaStopLoop() {
+            if (arenaFrameHandle) cancelAnimationFrame(arenaFrameHandle);
+            arenaFrameHandle = null;
+        }
+
+        function arenaRollDamage(attackerStats, defenderStats) {
+            const critChance = arenaClamp((attackerStats.crit || 0) / 100, 0, 0.6);
+            const crit = Math.random() < critChance;
+            const raw = attackerStats.atk * (100 / (100 + defenderStats.def));
+            let value = raw * arenaRand(0.85, 1.15);
+            if (crit) value *= 1.8;
+            return { value: Math.max(1, Math.round(value)), crit };
+        }
+
+        function arenaPerformAttack(attacker, defender) {
+            return new Promise((resolve) => {
+                attacker.startAttack(defender);
+                setTimeout(() => {
+                    const dmg = arenaRollDamage(attacker.stats, defender.stats);
+                    defender.hp = Math.max(0, defender.hp - dmg.value);
+                    arenaUpdateHpUI();
+
+                    const hitX = (attacker.x + defender.baseX) / 2 + attacker.facing * 20;
+                    const hitY = defender.y - defender.size * 0.18;
+                    arenaSpawnImpact(hitX, hitY, dmg.crit);
+                    arenaSpawnDamageText(defender.baseX, defender.baseY - defender.size * 0.5, dmg.value, dmg.crit);
+                    arenaTriggerShake(dmg.crit ? 13 : 7, dmg.crit ? 0.3 : 0.22);
+
+                    defender.flash = 1;
+                    defender.startHurt(attacker.x, defender.hp <= 0);
+                    attacker.startReturn();
+
+                    document.getElementById('arenaLog').textContent = t('arena.attackLog', {
+                        name: attacker.label, value: dmg.value, crit: dmg.crit ? t('arena.critSuffix') : '',
+                    });
+
+                    setTimeout(resolve, Math.max(ARENA_RETURN_DUR, ARENA_HURT_DUR) * 1000 + 60);
+                }, ARENA_ATTACK_DUR * 1000);
+            });
+        }
+
+        async function arenaStartBattle() {
+            if (arenaBattleActive || !arenaPlayerEagle || !arenaEnemyEagle) return;
+            arenaBattleActive = true;
+            haptic.impact('medium');
+            const startBtn = document.getElementById('arenaStartBtn');
+            startBtn.disabled = true;
+            arenaResetScene();
+            document.getElementById('arenaLog').textContent = t('arena.battleStart');
+            await arenaSleep(500);
+
+            let attacker = arenaPlayerEagle, defender = arenaEnemyEagle;
+            if (arenaEnemyEagle.stats.spd > arenaPlayerEagle.stats.spd) { attacker = arenaEnemyEagle; defender = arenaPlayerEagle; }
+            else if (arenaEnemyEagle.stats.spd === arenaPlayerEagle.stats.spd && Math.random() < 0.5) { attacker = arenaEnemyEagle; defender = arenaPlayerEagle; }
+
+            while (arenaPlayerEagle.hp > 0 && arenaEnemyEagle.hp > 0) {
+                await arenaPerformAttack(attacker, defender);
+                if (defender.hp <= 0) break;
+                await arenaSleep(ARENA_TURN_GAP * 1000);
+                const tmp = attacker; attacker = defender; defender = tmp;
+            }
+
+            const winner = arenaPlayerEagle.hp > 0 ? arenaPlayerEagle : arenaEnemyEagle;
+            const loser = winner === arenaPlayerEagle ? arenaEnemyEagle : arenaPlayerEagle;
+            document.getElementById('arenaLog').textContent = t('arena.defeated', { name: loser.label });
+            loser.startDying();
+            winner.startVictory();
+            await arenaSleep(1500);
+
+            const playerWon = winner === arenaPlayerEagle;
+            const bannerTitle = document.getElementById('arenaBannerTitle');
+            bannerTitle.textContent = playerWon ? t('arena.winTitle') : t('arena.loseTitle');
+            bannerTitle.className = 'arena-banner-title ' + (playerWon ? 'win' : 'lose');
+            document.getElementById('arenaBannerSub').textContent = playerWon ? t('arena.winSub') : t('arena.loseSub');
+            document.getElementById('arenaBanner').classList.add('show');
+
+            haptic.notify(playerWon ? 'success' : 'error');
+            arenaBattleActive = false;
+            startBtn.disabled = false;
+            startBtn.textContent = t('arena.restartBtn');
         }
 
         // Тап по предмету в лесенке улучшений Кузницы — быстрая подсказка, какой
