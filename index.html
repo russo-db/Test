@@ -1595,7 +1595,7 @@
                 'arena.winSub': 'Соперник повержен · +{delta} PvP', 'arena.loseSub': 'Твой орёл повержен · -{delta} PvP',
                 'arena.opponentLabel': 'Соперник', 'arena.you': 'Ты',
                 'arena.wildOpponent': 'Дикий орёл', 'arena.searching': 'Ищем соперника…',
-                'arena.noOpponentYet': 'Пока никто не вывел орла этой редкости — бой с диким орлом',
+                'arena.noOpponentYet': 'Пока рядом по рейтингу никого нет — бой с диким орлом',
                 'arena.leaderboardBtn': 'Таблица лидеров', 'arena.leaderboardTitle': '🏆 Таблица лидеров',
                 'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
                 'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
@@ -1796,7 +1796,7 @@
                 'arena.winSub': 'Opponent defeated · +{delta} PvP', 'arena.loseSub': 'Your eagle was defeated · -{delta} PvP',
                 'arena.opponentLabel': 'Opponent', 'arena.you': 'You',
                 'arena.wildOpponent': 'Wild eagle', 'arena.searching': 'Looking for an opponent…',
-                'arena.noOpponentYet': 'No one has this rarity yet — fighting a wild eagle',
+                'arena.noOpponentYet': 'No one nearby in rating yet — fighting a wild eagle',
                 'arena.leaderboardBtn': 'Leaderboard', 'arena.leaderboardTitle': '🏆 Leaderboard',
                 'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
                 'arena.leaderboardLoading': 'Loading leaderboard…',
@@ -5522,23 +5522,29 @@
             };
         }
 
-        // Реальный соперник: другой игрок, у которого на ферме есть орёл той
-        // же редкости — сервер отдаёт его ник и надетое на этого орла
-        // снаряжение, боевые характеристики считаем той же формулой, что и
-        // для своего орла (nestComputeStatsFromEquipped). Если сервер
-        // недоступен или пока никто не владеет этой редкостью — дикий орёл.
+        // Реальный соперник подбирается по месту в общей Таблице лидеров
+        // (PvP-рейтинг), а не по редкости орла — сервер (см. find_ladder_opponent
+        // в storage.py) берёт случайного игрока либо из 5 ближайших мест НАД
+        // текущим игроком, либо в пределах ±100 очков рейтинга. Серый орёл
+        // вполне может встретить зелёного или синего, если они рядом по
+        // рейтингу — сражается соперник СВОИМ собственным лучшим орлом (тем,
+        // что нам вернул сервер как tier_id), какой бы редкости тот ни был.
+        // Ник и надетое на этого орла снаряжение — те же данные, что уже
+        // видны другим игрокам на P2P-рынке; боевые характеристики считаем
+        // той же формулой, что и для своего орла (nestComputeStatsFromEquipped).
+        // Если сервер недоступен или рядом по рейтингу пока никого нет —
+        // дикий орёл (заглушка на основе тира, который выбрал сам игрок).
         async function arenaFetchOpponent(tierId) {
-            const tier = CONFIG.tiers.find(x => x.id === tierId);
-            const monster = tier.monsters[0];
             if (offlineOnly || !state.userId) return arenaGenerateBotOpponent(tierId);
             try {
-                const response = await fetch(`api/arena/opponent?user_id=${state.userId}&tier_id=${encodeURIComponent(tierId)}`, { headers: apiHeaders() });
+                const response = await fetch(`api/arena/opponent?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('arena opponent fetch failed');
                 const data = await response.json();
                 if (!data.found) return arenaGenerateBotOpponent(tierId);
+                const oppTier = CONFIG.tiers.find(x => x.id === data.tier_id) || CONFIG.tiers[0];
                 return {
-                    monster, name: data.name, isBot: false,
-                    stats: nestComputeStatsFromEquipped(tierId, data.equipped),
+                    monster: oppTier.monsters[0], name: data.name, isBot: false,
+                    stats: nestComputeStatsFromEquipped(oppTier.id, data.equipped),
                 };
             } catch (error) {
                 return arenaGenerateBotOpponent(tierId);

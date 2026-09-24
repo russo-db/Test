@@ -35,6 +35,8 @@ EAGLE_DELETE_MEAT_REWARD = 10  # фиксированная компенсаци
 PVP_RATING_START = 1000  # стартовый PvP-рейтинг нового игрока для Топ-100 Арены
 PVP_RATING_WIN = 25  # прирост рейтинга за победу на Арене
 PVP_RATING_LOSS = 15  # потеря рейтинга за поражение на Арене (итог не опускается ниже 0)
+ARENA_LADDER_ABOVE_COUNT = 5  # сколько ближайших мест НАД игроком учитывать при подборе соперника
+ARENA_LADDER_RATING_RANGE = 100  # ± очков рейтинга для подбора «соседей» по месту в таблице
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -1623,28 +1625,34 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
 
 
 @app.get("/api/arena/opponent")
-async def arena_opponent(
-    user_id: int, tier_id: str, x_telegram_init_data: Optional[str] = Header(None),
-):
-    """Случайный другой реальный игрок, у которого на ферме есть орёл этой
-    редкости — соперник для визуального автобоя на Арене. Отдаём только его
-    публичное имя и надетое на этого орла снаряжение (те же данные, что уже
-    видны другим игрокам на P2P-рынке) — боевые характеристики (базовые +
-    бонус снаряжения) считает клиент, как и для своего орла."""
+async def arena_opponent(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Соперник для визуального автобоя на Арене подбирается по месту в
+    общей Таблице лидеров (PvP-рейтинг), а не по редкости орла — см.
+    store.find_ladder_opponent: случайный игрок либо из ближайших
+    ARENA_LADDER_ABOVE_COUNT мест НАД текущим игроком, либо в пределах
+    ±ARENA_LADDER_RATING_RANGE очков рейтинга. Сражается он своим
+    собственным лучшим орлом, какой бы редкости тот ни был — отдаём его
+    публичное имя, редкость этого орла и надетое на него снаряжение (те же
+    данные, что уже видны другим игрокам на P2P-рынке); боевые
+    характеристики (базовые + бонус снаряжения) считает клиент."""
     authenticate(x_telegram_init_data, user_id)
-    if tier_id not in TIER_INDEX:
-        raise HTTPException(status_code=400, detail="Неизвестная редкость")
+    row = await fetch_user(user_id)
+    my_rating = pvp_rating_of(row)
 
-    monster_ids = [mid for mid, t in MONSTER_TIER.items() if t == tier_id]
-    opponent = await store.find_random_opponent(monster_ids, user_id)
+    opponent = await store.find_ladder_opponent(
+        user_id, my_rating, ARENA_LADDER_ABOVE_COUNT, ARENA_LADDER_RATING_RANGE,
+    )
     if not opponent:
         return {"found": False}
 
+    tier_id = best_owned_tier(opponent.get("monsters"))
     equipped = normalize_nest_equipped(opponent.get("nest_equipped")).get(tier_id, {})
     return {
         "found": True,
         "name": opponent["name"] or f"Игрок {opponent['user_id']}",
+        "tier_id": tier_id,
         "equipped": equipped,
+        "pvp_rating": int(opponent["pvp_rating"]),
     }
 
 

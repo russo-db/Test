@@ -19,6 +19,7 @@ nest_state: {cooldown_until, day, bought_today}.
 """
 
 import os
+import random
 import re
 from typing import Optional
 
@@ -508,18 +509,45 @@ class MongoStore:
         friends.sort(key=lambda f: f["total_deposit"], reverse=True)
         return friends
 
-    async def find_random_opponent(self, monster_ids: list, exclude_user_id: int) -> Optional[dict]:
-        """Случайный другой игрок, у которого на ферме есть орёл с id из
-        monster_ids (все монстры одной редкости) — соперник для боя на Арене.
-        Возвращает только публично безопасные поля (имя и снаряжение орлов)."""
-        pipeline = [
-            {"$match": {"_id": {"$ne": exclude_user_id}, "monsters.id": {"$in": monster_ids}}},
-            {"$sample": {"size": 1}},
-            {"$project": {"name": 1, "nest_equipped": 1}},
+    async def find_ladder_opponent(
+        self, exclude_user_id: int, my_rating: float, above_count: int, rating_range: float,
+    ) -> Optional[dict]:
+        """Соперник по месту в общей Таблице лидеров, а не по редкости орла —
+        случайный другой игрок из объединения (а) above_count ближайших мест
+        НАД игроком в рейтинге (стимул подниматься выше) и (б) любых игроков
+        в пределах ±rating_range очков рейтинга. Так серый орёл может
+        встретить синего, если они рядом по рейтингу. Отсутствующий
+        pvp_rating (аккаунты до Арены) трактуется как стартовые 1000, как
+        и везде в Арене."""
+        above_pipeline = [
+            {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
+            {"$match": {"_id": {"$ne": exclude_user_id}, "_rating": {"$gt": my_rating}}},
+            {"$sort": {"_rating": 1}},
+            {"$limit": above_count},
+            {"$project": {"name": 1, "monsters": 1, "nest_equipped": 1, "pvp_rating": "$_rating"}},
         ]
-        async for doc in self.users.aggregate(pipeline):
-            return {"user_id": doc["_id"], "name": doc.get("name") or "", "nest_equipped": doc.get("nest_equipped")}
-        return None
+        nearby_pipeline = [
+            {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
+            {"$match": {
+                "_id": {"$ne": exclude_user_id},
+                "_rating": {"$gte": my_rating - rating_range, "$lte": my_rating + rating_range},
+            }},
+            {"$sample": {"size": 20}},
+            {"$project": {"name": 1, "monsters": 1, "nest_equipped": 1, "pvp_rating": "$_rating"}},
+        ]
+        candidates = {}
+        async for doc in self.users.aggregate(above_pipeline):
+            candidates[doc["_id"]] = doc
+        async for doc in self.users.aggregate(nearby_pipeline):
+            candidates[doc["_id"]] = doc
+        if not candidates:
+            return None
+        doc = random.choice(list(candidates.values()))
+        return {
+            "user_id": doc["_id"], "name": doc.get("name") or "",
+            "pvp_rating": doc.get("pvp_rating"),
+            "monsters": doc.get("monsters"), "nest_equipped": doc.get("nest_equipped"),
+        }
 
     async def get_leaderboard(self, limit: int = 100) -> list:
         """Топ-N реальных игроков по pvp_rating, по убыванию — общая на всех
