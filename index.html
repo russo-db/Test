@@ -1386,6 +1386,11 @@
         <div class="modal-box glass-panel pay-box" id="marketSellBody"></div>
     </div>
 
+    <!-- MERCHANT SELL EAGLE CONFIRM MODAL -->
+    <div class="modal-backdrop" id="merchantSellConfirmModal" onclick="if (event.target === this) closeMerchantSellConfirm()">
+        <div class="modal-box glass-panel" id="merchantSellConfirmBody"></div>
+    </div>
+
     <!-- VIP TIER MODAL -->
     <div class="modal-backdrop" id="vipModal" onclick="if (event.target === this) closeVipModal()">
         <div class="modal-box glass-panel" id="vipModalBody"></div>
@@ -1645,6 +1650,8 @@
                 'merchant.eagleLimitReached': 'Лимит продажи орлов исчерпан',
                 'merchant.noEagles': 'Нет полностью откормленных обычных орлов на продажу',
                 'merchant.eagleSold': 'Орёл продан: +{amount} GRAM',
+                'merchant.sellConfirmBody': 'Ты продашь этого орла купцу за {price} GRAM. Это действие нельзя отменить.',
+                'merchant.sellConfirmBtn': 'Продать',
                 'eggs.heading': 'Яйца',
                 'eggs.subtitle': 'Тапни яйцо, чтобы вскрыть его, или перетащи на такое же — сольются в старшую редкость',
                 'eggs.openAll': 'Вскрыть все',
@@ -1845,6 +1852,8 @@
                 'merchant.eagleLimitReached': 'Eagle sell limit reached',
                 'merchant.noEagles': 'No fully-trained common eagles to sell',
                 'merchant.eagleSold': 'Eagle sold: +{amount} GRAM',
+                'merchant.sellConfirmBody': 'You will sell this eagle to the merchant for {price} GRAM. This cannot be undone.',
+                'merchant.sellConfirmBtn': 'Sell',
                 'eggs.heading': 'Eggs',
                 'eggs.subtitle': 'Tap an egg to open it, or drag it onto a matching one to merge into the next rarity',
                 'eggs.openAll': 'Open all',
@@ -3628,8 +3637,45 @@
             }
         }
 
-        async function sellEagleToMerchant(idx) {
+        // Продажа необратима, поэтому кнопка на карточке только открывает
+        // модалку с подтверждением (см. слот-паттерн askDeleteEagle) — сам
+        // запрос на сервер уходит только из confirmSellEagleToMerchant().
+        let merchantSellIdx = null;
+
+        function askSellEagleToMerchant(idx) {
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const slot = state.farm[idx];
+            if (!slot || !MONSTERS[slot.id]) return;
+            merchantSellIdx = idx;
+            haptic.notify('warning');
+            renderMerchantSellConfirm();
+            document.getElementById('merchantSellConfirmModal').classList.add('open');
+        }
+
+        function closeMerchantSellConfirm() {
+            document.getElementById('merchantSellConfirmModal').classList.remove('open');
+            merchantSellIdx = null;
+        }
+
+        function renderMerchantSellConfirm() {
+            const slot = state.farm[merchantSellIdx];
+            const monster = slot && MONSTERS[slot.id];
+            if (!monster) { closeMerchantSellConfirm(); return; }
+            const price = Number(CONFIG.merchant.eagle_gram_price) || 0;
+            document.getElementById('merchantSellConfirmBody').innerHTML = `
+                <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}" style="width:72px; height:72px; margin:0 auto 10px; display:block;">
+                <h2 style="color:${monster.color}">${monster.name}</h2>
+                <p>${t('merchant.sellConfirmBody', { price: fmtGram(price) })}</p>
+                <button class="btn-primary" style="margin-top:10px" onclick="confirmSellEagleToMerchant()">${t('merchant.sellConfirmBtn')}</button>
+                <button class="btn-action roll-close" onclick="closeMerchantSellConfirm()">${t('common.cancel')}</button>
+            `;
+        }
+
+        async function confirmSellEagleToMerchant() {
+            const idx = merchantSellIdx;
+            if (idx === null || offlineOnly || !state.userId) { closeMerchantSellConfirm(); return; }
+            if (farmActionBusy.has('merchant-sell-eagle')) return;
+            farmActionBusy.add('merchant-sell-eagle');
 
             try {
                 const response = await fetch('api/merchant/sell_eagle', {
@@ -3650,6 +3696,7 @@
                 state.activeSlot = data.active_slot || 0;
                 state.merchant = { meatBought: data.merchant.meat_bought || 0, eaglesSold: data.merchant.eagles_sold || 0 };
                 if (typeof data.ops === 'number') state.ops = data.ops;
+                closeMerchantSellConfirm();
                 haptic.notify('success');
                 const price = Number(CONFIG.merchant.eagle_gram_price) || 0;
                 toast(t('merchant.eagleSold', { amount: fmtGram(price) }));
@@ -3658,6 +3705,8 @@
                 saveLocally();
             } catch (error) {
                 toast('Сервер недоступен');
+            } finally {
+                farmActionBusy.delete('merchant-sell-eagle');
             }
         }
 
@@ -3704,7 +3753,7 @@
                                     <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                                     <h3 style="color:${monster.color}">${eagleGlyph(tierIndexOf(monster) + 1, 15)}${monster.name}</h3>
                                 </div>
-                                <button class="btn-action btn-buy" onclick="sellEagleToMerchant(${idx})">${t('merchant.sellEagleBtn')}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                                <button class="btn-action btn-buy" onclick="askSellEagleToMerchant(${idx})">${t('merchant.sellEagleBtn')}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                             </div>
                         `;
                     }).join('') : `<p class="market-section-empty">${t('merchant.noEagles')}</p>`)
