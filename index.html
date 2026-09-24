@@ -670,7 +670,6 @@
         .wallet-connect { width: 100%; justify-content: center; margin-top: 4px; }
         .wallet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 11px; }
         .wallet-actions .btn-action { width: 100%; justify-content: center; padding: 13px 10px; font-size: 14px; }
-        .wallet-note { text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 11px; }
 
         /* ---------- Язык и звук ---------- */
         .lang-options { display: flex; flex-direction: column; gap: 10px; }
@@ -1238,8 +1237,6 @@
                     </button>
                 </div>
 
-                <p class="wallet-note" id="walletNote">1 GRAM = 1 TON • минимум 1 GRAM</p>
-
                 <div class="tier-heading" id="walletOpsHead" style="display: none;"><span data-i18n="wallet.recentOps">Последние операции</span></div>
                 <div id="walletOps"></div>
             </div>
@@ -1669,9 +1666,6 @@
                 'wallet.connected': 'Кошелёк подключён', 'wallet.addressForPayouts': 'Адрес для выплат',
                 'wallet.deposit': 'Пополнить', 'wallet.withdraw': 'Вывести', 'wallet.recentOps': 'Последние операции',
                 'wallet.depositNoun': 'Пополнение', 'wallet.withdrawNoun': 'Вывод',
-                'wallet.serverSide': 'Пополнение и вывод работают на сервере проекта',
-                'wallet.noTonConnect': 'TON Connect не загрузился — переведи вручную по адресу и мемо',
-                'wallet.minimum': 'минимум {min} GRAM',
                 'wallet.credited': 'Зачислено', 'wallet.sent': 'Отправлено', 'wallet.processing': 'В обработке',
                 'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
                 'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
@@ -1873,9 +1867,6 @@
                 'wallet.connected': 'Wallet connected', 'wallet.addressForPayouts': 'Address for payouts',
                 'wallet.deposit': 'Deposit', 'wallet.withdraw': 'Withdraw', 'wallet.recentOps': 'Recent operations',
                 'wallet.depositNoun': 'Deposit', 'wallet.withdrawNoun': 'Withdrawal',
-                'wallet.serverSide': 'Deposits and withdrawals run on the project server',
-                'wallet.noTonConnect': "TON Connect didn't load — send manually to the address and memo",
-                'wallet.minimum': 'minimum {min} GRAM',
                 'wallet.credited': 'Credited', 'wallet.sent': 'Sent', 'wallet.processing': 'Processing',
                 'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
                 'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
@@ -6385,15 +6376,6 @@
                 tonAddress ? t('wallet.disconnect') : t('wallet.connect');
             document.getElementById('walletBtn').disabled = !tonUI || !TON_CFG.enabled;
 
-            const note = document.getElementById('walletNote');
-            if (!TON_CFG.enabled) {
-                note.innerText = t('wallet.serverSide');
-            } else if (!tonUI) {
-                note.innerText = t('wallet.noTonConnect');
-            } else {
-                note.innerText = `1 GRAM = ${(1 / TON_CFG.rate).toFixed(TON_CFG.rate >= 1 ? 0 : 2)} TON `
-                    + `• ${t('wallet.minimum', { min: fmtGram(TON_CFG.min_deposit) })}`;
-            }
             document.querySelectorAll('.wallet-actions .btn-action')
                 .forEach(btn => { btn.disabled = !TON_CFG.enabled; });
 
