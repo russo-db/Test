@@ -784,6 +784,7 @@
         .nest-particle-timer { margin-left: auto; flex: none; text-align: right; }
         .nest-particle-timer-label { font-size: 9.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
         .nest-particle-timer-val { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13.5px; color: var(--accent-violet); margin-top: 2px; }
+        .nest-particle-icon { width: 15px; height: 15px; object-fit: cover; border-radius: 3px; vertical-align: -2px; margin-left: 2px; }
         .nest-shard-daily { margin-top: 10px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; }
         .nest-countdown-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
         .nest-countdown-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -1066,12 +1067,12 @@
                 <div class="glass-panel nest-card">
                     <div class="stat-row"><span data-i18n="nest.minersInWork">Осколков в работе</span><b id="nestMinerCount">0</b></div>
                     <div class="nest-miners-row" id="nestMinersRow"></div>
-                    <div class="stat-row"><span data-i18n="nest.readyToCollect">Готово к сбору</span><b id="nestPendingParticles">0 ⚙️</b></div>
+                    <div class="stat-row"><span data-i18n="nest.readyToCollect">Готово к сбору</span><b id="nestPendingParticles">0 <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt=""></b></div>
                     <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCollectBtn" onclick="nestCollectParticles()" data-i18n="nest.collectBtn">Собрать частички</button>
                 </div>
 
                 <div class="glass-panel nest-card">
-                    <div class="stat-row"><span data-i18n="nest.particlesInInventory">Частичек в инвентаре</span><b id="nestCraftParticles">0 / 20 ⚙️</b></div>
+                    <div class="stat-row"><span data-i18n="nest.particlesInInventory">Частичек в инвентаре</span><b id="nestCraftParticles">0 / 20 <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt=""></b></div>
                     <div class="nest-track"><i id="nestCraftTrack" style="width:0%"></i></div>
                     <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCraftBtn" onclick="nestCraft()">Скрафтить серый предмет</button>
                 </div>
@@ -1463,7 +1464,7 @@
                 'nest.readyToCollect': 'Готово к сбору', 'nest.collectBtn': 'Собрать частички',
                 'nest.nothingToCollect': 'Пока нечего собирать', 'nest.collected': 'Собрано {amount} ⚙️',
                 'nest.particlesInInventory': 'Частичек в инвентаре',
-                'nest.craftBtn': 'Скрафтить серый предмет ({cost} ⚙️)',
+                'nest.craftBtn': 'Скрафтить серый предмет ({cost}{icon})',
                 'nest.craftNeedMore': 'Нужно {cost} частичек', 'nest.crafted': 'Получен предмет: {name}',
                 'nest.upgradeHeading': 'Улучшение снаряжения (4 → 1, успех 100%)',
                 'nest.upgradeBtn': 'Улучшить', 'nest.upgradeNeedMore': 'Нужно 4 предмета этого грейда',
@@ -1647,7 +1648,7 @@
                 'nest.readyToCollect': 'Ready to collect', 'nest.collectBtn': 'Collect particles',
                 'nest.nothingToCollect': 'Nothing to collect yet', 'nest.collected': 'Collected {amount} ⚙️',
                 'nest.particlesInInventory': 'Particles in inventory',
-                'nest.craftBtn': 'Craft a grey item ({cost} ⚙️)',
+                'nest.craftBtn': 'Craft a grey item ({cost}{icon})',
                 'nest.craftNeedMore': 'Need {cost} particles', 'nest.crafted': 'Item obtained: {name}',
                 'nest.upgradeHeading': 'Gear upgrade (4 → 1, 100% success)',
                 'nest.upgradeBtn': 'Upgrade', 'nest.upgradeNeedMore': 'Need 4 items of this grade',
@@ -4993,7 +4994,7 @@
                 if (span) span.textContent = pending > 0 ? '✨' : '💎';
             });
             const pendingEl = document.getElementById('nestPendingParticles');
-            if (pendingEl) pendingEl.textContent = nestTotalPending(now) + ' ⚙️';
+            if (pendingEl) pendingEl.innerHTML = nestTotalPending(now) + NEST_PARTICLE_ICON_HTML;
         }
 
         function renderNestForge() {
@@ -5013,14 +5014,14 @@
             }).join('');
             if (!miners.length) rows = `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
             document.getElementById('nestMinersRow').innerHTML = rows;
-            document.getElementById('nestPendingParticles').textContent = nestTotalPending(now) + ' ⚙️';
+            document.getElementById('nestPendingParticles').innerHTML = nestTotalPending(now) + NEST_PARTICLE_ICON_HTML;
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
             const have = state.nest.particles;
-            document.getElementById('nestCraftParticles').textContent = `${fmt(have)} / ${craftCost} ⚙️`;
+            document.getElementById('nestCraftParticles').innerHTML = `${fmt(have)} / ${craftCost}${NEST_PARTICLE_ICON_HTML}`;
             document.getElementById('nestCraftTrack').style.width = Math.min(100, (have / craftCost) * 100) + '%';
             const craftBtn = document.getElementById('nestCraftBtn');
-            craftBtn.textContent = t('nest.craftBtn', { cost: craftCost });
+            craftBtn.innerHTML = t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML });
             craftBtn.disabled = have < craftCost;
 
             const grades = CONFIG.nest.grades || [];
@@ -6031,6 +6032,10 @@
                 names: { grey: 'Медный Амулет', green: 'Амулет Травника', blue: 'Печать Бури', purple: 'Амулет Миражей', gold: 'Драгоценная Метрика', mythic: 'Реликвия Начала Времён' },
                 icons: { grey: 'assets/ring-grey.jpg', green: 'assets/ring-green.jpg', blue: 'assets/ring-blue.jpg', purple: 'assets/ring-purple.jpg', gold: 'assets/ring-gold.jpg', mythic: 'assets/ring-mythic.jpg' } },
         };
+
+        // Иконка частичек Кузницы — вставляется как разметка (не emoji) во все
+        // счётчики/подписи, где показывается их количество.
+        const NEST_PARTICLE_ICON_HTML = ' <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt="">';
 
         // Косметические базовые характеристики «боевых орлов» по редкости — витрина
         // Гнезда Воинов, будущая боевая система игру пока не затрагивает.
