@@ -41,7 +41,9 @@ PVP_ENERGY_MAX = 10  # суточный потолок энергии Арены
 PVP_ENERGY_COST = 1  # энергии за один вход в бой
 ARENA_ENERGY_PRICE_GOLD = 10  # золота за 1 докупленную энергию
 ARENA_ENERGY_PRICE_GRAM = 0.25  # GRAM за 1 докупленную энергию
-ARENA_SEASON_DAYS = 20  # длительность сезона Арены — по истечении призы Топ-50 и общий сброс рейтинга
+# ARENA_SEASON_DAYS/ARENA_SEASON_REWARDS — конфиг-драйвен, см. apply_config
+# (game_config.json -> arena_season), чтобы игрок видел ту же таблицу наград
+# в интерфейсе (CONFIG.arena_season.rewards), какую сервер реально выдаёт.
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -66,6 +68,7 @@ def apply_config(cfg: dict):
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
     global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
     global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
+    global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
     global EGGS_CFG, EGG_INTERVAL_HOURS, UNLOCK_PRICES
@@ -122,6 +125,18 @@ def apply_config(cfg: dict):
     RESOURCE_MARKET_COMMISSION = float(RESOURCE_MARKET_CFG.get("commission", 0.10))
     RESOURCE_MARKET_MIN_PRICE = {k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price") or {}).items()}
     RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
+    ARENA_SEASON_CFG = CONFIG.get("arena_season") or {}
+    ARENA_SEASON_DAYS = int(ARENA_SEASON_CFG.get("days", 20))
+    ARENA_SEASON_REWARDS = ARENA_SEASON_CFG.get("rewards") or [
+        {"rank": 1, "gram": 50, "shards": 10, "particles": 0},
+        {"rank": 2, "gram": 30, "shards": 4, "particles": 0},
+        {"rank": 3, "gram": 20, "shards": 2, "particles": 0},
+        {"rank": 4, "gram": 10, "shards": 1, "particles": 0},
+        {"rank": 5, "gram": 3, "shards": 1, "particles": 0},
+        {"rank_from": 6, "rank_to": 10, "gram": 0, "shards": 1, "particles": 0},
+        {"rank_from": 11, "rank_to": 20, "gram": 0, "shards": 0, "particles": 10},
+        {"rank_from": 21, "rank_to": 50, "gram": 0, "shards": 0, "particles": 1},
+    ]
     DAILY = CONFIG.get("daily") or {}
     DAILY_DAYS = int(DAILY.get("days", 30))
     DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
@@ -2039,30 +2054,26 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
 
 
 # --- ПРИЗЫ ТУРНИРА АРЕНЫ (награда по итоговым местам Топ-50) ---
-
-ARENA_TOP_REWARDS = {
-    1: {"gram": 50, "shards": 10, "particles": 0},
-    2: {"gram": 30, "shards": 4, "particles": 0},
-    3: {"gram": 20, "shards": 2, "particles": 0},
-    4: {"gram": 10, "shards": 1, "particles": 0},
-    5: {"gram": 3, "shards": 1, "particles": 0},
-}
-
+# Таблица наград (ARENA_SEASON_REWARDS) живёт в game_config.json ->
+# arena_season.rewards, а не хардкодом здесь — клиент читает ровно ту же
+# таблицу напрямую из CONFIG.arena_season.rewards и показывает её в
+# Таблице лидеров, так что игроки видят точно то, что реально начислится
+# (единый источник правды, см. renderLeaderboardRewards в index.html).
 
 def arena_tournament_reward(rank: int) -> dict:
     """Приз турнира Арены по итоговому месту в Топ-50 (см.
-    distribute_arena_rewards). GRAMM начисляется строго на внутриигровой
-    баланс (coins) — тот же баланс, которым игрок платит за всё внутри
-    игры, — а НЕ отправляется на внешний TON-кошелёк; кошелёк/операции
-    вывода здесь вообще не участвуют."""
-    if rank in ARENA_TOP_REWARDS:
-        return dict(ARENA_TOP_REWARDS[rank])
-    if 6 <= rank <= 10:
-        return {"gram": 0, "shards": 1, "particles": 0}
-    if 11 <= rank <= 20:
-        return {"gram": 0, "shards": 0, "particles": 10}
-    if 21 <= rank <= 50:
-        return {"gram": 0, "shards": 0, "particles": 1}
+    distribute_arena_rewards) — ищет место в ARENA_SEASON_REWARDS: либо
+    точный "rank", либо диапазон "rank_from"..."rank_to". GRAMM
+    начисляется строго на внутриигровой баланс (coins) — тот же баланс,
+    которым игрок платит за всё внутри игры, — а НЕ отправляется на
+    внешний TON-кошелёк; кошелёк/операции вывода здесь вообще не
+    участвуют."""
+    for tier in ARENA_SEASON_REWARDS:
+        if "rank" in tier:
+            if rank == tier["rank"]:
+                return {"gram": tier.get("gram", 0), "shards": tier.get("shards", 0), "particles": tier.get("particles", 0)}
+        elif tier.get("rank_from", 1) <= rank <= tier.get("rank_to", 0):
+            return {"gram": tier.get("gram", 0), "shards": tier.get("shards", 0), "particles": tier.get("particles", 0)}
     return {"gram": 0, "shards": 0, "particles": 0}
 
 

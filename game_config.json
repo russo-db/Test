@@ -298,6 +298,19 @@
       "mythical": 32
     }
   },
+  "arena_season": {
+    "days": 20,
+    "rewards": [
+      { "rank": 1, "gram": 50, "shards": 10, "particles": 0 },
+      { "rank": 2, "gram": 30, "shards": 4, "particles": 0 },
+      { "rank": 3, "gram": 20, "shards": 2, "particles": 0 },
+      { "rank": 4, "gram": 10, "shards": 1, "particles": 0 },
+      { "rank": 5, "gram": 3, "shards": 1, "particles": 0 },
+      { "rank_from": 6, "rank_to": 10, "gram": 0, "shards": 1, "particles": 0 },
+      { "rank_from": 11, "rank_to": 20, "gram": 0, "shards": 0, "particles": 10 },
+      { "rank_from": 21, "rank_to": 50, "gram": 0, "shards": 0, "particles": 1 }
+    ]
+  },
   "equip_market": {
     "commission": 0.10,
     "min_price_by_grade": {

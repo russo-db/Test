@@ -935,6 +935,22 @@
             border: 1px solid var(--glass-border);
         }
         .lb-season-line { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: center; margin: -4px 0 10px; }
+        .lb-rewards-toggle {
+            flex: none; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+            font-size: 12px; font-weight: 700; color: var(--accent-amber); background: rgba(245, 158, 11, 0.1);
+            border: 1px solid var(--glass-border); border-radius: 12px; padding: 8px; margin-bottom: 8px; cursor: pointer;
+        }
+        .lb-rewards-chevron { transition: transform 0.2s ease; }
+        .lb-rewards-toggle.open .lb-rewards-chevron { transform: rotate(180deg); }
+        .lb-rewards-panel {
+            flex: none; display: none; flex-direction: column; gap: 4px; margin-bottom: 10px; padding: 10px;
+            border-radius: 14px; background: rgba(5, 3, 16, 0.35); border: 1px solid var(--glass-border);
+        }
+        .lb-rewards-panel.open { display: flex; animation: popIn 0.2s ease; }
+        .lb-reward-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .lb-reward-rank { flex: 0 0 66px; font-weight: 800; color: var(--text-muted); }
+        .lb-reward-items { flex: 1; display: flex; align-items: center; gap: 10px; font-weight: 700; }
+        .lb-reward-icon { width: 16px; height: 16px; object-fit: contain; vertical-align: -3px; margin-right: 3px; }
         .lb-top3 { flex: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
         .lb-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 16px; background: rgba(5, 3, 16, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--glass-border); }
         .lb-row, .lb-podium-row {
@@ -1504,6 +1520,11 @@
             </div>
             <div class="lb-my-rank" id="lbMyRankLine">Ваше место: #— | Рейтинг: — PvP</div>
             <div class="lb-season-line" id="lbSeasonLine"></div>
+            <button class="lb-rewards-toggle" id="lbRewardsToggle" onclick="toggleLeaderboardRewards()">
+                <span data-i18n="arena.seasonRewardsBtn">🏆 Награды сезона</span>
+                <span class="lb-rewards-chevron" id="lbRewardsChevron">▾</span>
+            </button>
+            <div class="lb-rewards-panel" id="lbRewardsPanel"></div>
             <div class="lb-top3" id="lbTop3"></div>
             <div class="lb-scroll" id="lbRest"></div>
         </div>
@@ -1690,6 +1711,7 @@
                 'arena.leaderboardBtn': 'Таблица лидеров', 'arena.leaderboardTitle': '🏆 Таблица лидеров',
                 'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
                 'arena.seasonEndsIn': 'Сезон закончится через {days} дн. — награды получит Топ-50',
+                'arena.seasonRewardsBtn': '🏆 Награды сезона',
                 'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
                 'arena.leaderboardOnlineOnly': 'Таблица лидеров доступна только при подключении к серверу',
                 'arena.energyLabel': 'Энергия Арены', 'arena.noEnergy': 'Нет энергии',
@@ -1920,6 +1942,7 @@
                 'arena.leaderboardBtn': 'Leaderboard', 'arena.leaderboardTitle': '🏆 Leaderboard',
                 'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
                 'arena.seasonEndsIn': 'Season ends in {days}d — the Top 50 get rewarded',
+                'arena.seasonRewardsBtn': '🏆 Season rewards',
                 'arena.leaderboardLoading': 'Loading leaderboard…',
                 'arena.leaderboardOnlineOnly': 'The leaderboard is only available when connected to the server',
                 'arena.energyLabel': 'Arena Energy', 'arena.noEnergy': 'No energy',
@@ -6886,6 +6909,42 @@
             el.textContent = t('arena.seasonEndsIn', { days: daysLeft });
         }
 
+        function arenaRewardTierLabel(tier) {
+            return (typeof tier.rank === 'number') ? `#${tier.rank}` : `#${tier.rank_from}–${tier.rank_to}`;
+        }
+
+        function arenaRewardItemsHtml(tier) {
+            const parts = [];
+            if (tier.gram) parts.push(`<span>${tier.gram} <img class="lb-reward-icon" src="assets/coin.png" alt=""></span>`);
+            if (tier.shards) parts.push(`<span>${tier.shards} <img class="lb-reward-icon" src="assets/nest-shard-v2.jpg" alt=""></span>`);
+            if (tier.particles) parts.push(`<span>${tier.particles} <img class="lb-reward-icon" src="assets/nest-particle.jpg" alt=""></span>`);
+            return parts.join('');
+        }
+
+        // Таблица наград сезона видна ВСЕМ игрокам (не только тем, кто в
+        // призовой зоне) — читает CONFIG.arena_season.rewards, ту же
+        // таблицу, которую сервер реально использует для начисления (см.
+        // arena_tournament_reward в main.py), единый источник правды.
+        function renderLeaderboardRewards() {
+            const panel = document.getElementById('lbRewardsPanel');
+            if (!panel) return;
+            const rewards = (CONFIG.arena_season && CONFIG.arena_season.rewards) || DEFAULT_ARENA_SEASON_REWARDS;
+            panel.innerHTML = rewards.map(tier => `
+                <div class="lb-reward-row">
+                    <span class="lb-reward-rank">${arenaRewardTierLabel(tier)}</span>
+                    <span class="lb-reward-items">${arenaRewardItemsHtml(tier)}</span>
+                </div>
+            `).join('');
+        }
+
+        let leaderboardRewardsOpen = false;
+        function toggleLeaderboardRewards() {
+            haptic.select();
+            leaderboardRewardsOpen = !leaderboardRewardsOpen;
+            document.getElementById('lbRewardsToggle').classList.toggle('open', leaderboardRewardsOpen);
+            document.getElementById('lbRewardsPanel').classList.toggle('open', leaderboardRewardsOpen);
+        }
+
         async function renderLeaderboard() {
             const top = await updateLeaderboard();
             if (!top) {
@@ -6910,6 +6969,10 @@
             document.getElementById('lbMyRankLine').textContent = t('arena.leaderboardLoading');
             document.getElementById('lbTop3').innerHTML = '';
             document.getElementById('lbRest').innerHTML = '';
+            renderLeaderboardRewards();
+            leaderboardRewardsOpen = false;
+            document.getElementById('lbRewardsToggle').classList.remove('open');
+            document.getElementById('lbRewardsPanel').classList.remove('open');
             document.getElementById('leaderboardModal').classList.add('open');
             await renderLeaderboard();
         }
@@ -7851,6 +7914,20 @@
         // Резервные минимальные цены по грейду на рынке снаряжения.
         const DEFAULT_EQUIP_MARKET_MIN_PRICE = { grey: 1, green: 2, blue: 4, purple: 8, gold: 16, mythic: 32 };
 
+        // Резервная таблица наград сезона Арены (см. arena_tournament_reward
+        // в main.py — тот же список, единый источник правды в game_config.json
+        // под arena_season.rewards).
+        const DEFAULT_ARENA_SEASON_REWARDS = [
+            { rank: 1, gram: 50, shards: 10, particles: 0 },
+            { rank: 2, gram: 30, shards: 4, particles: 0 },
+            { rank: 3, gram: 20, shards: 2, particles: 0 },
+            { rank: 4, gram: 10, shards: 1, particles: 0 },
+            { rank: 5, gram: 3, shards: 1, particles: 0 },
+            { rank_from: 6, rank_to: 10, gram: 0, shards: 1, particles: 0 },
+            { rank_from: 11, rank_to: 20, gram: 0, shards: 0, particles: 10 },
+            { rank_from: 21, rank_to: 50, gram: 0, shards: 0, particles: 1 },
+        ];
+
         // Резервные настройки лавки купца (покупка Meat за золото и орлов за GRAM).
         const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, meat_buy_max_per_purchase: 5, eagle_gram_price: 0.2, eagle_sell_limit: 10 };
 
@@ -7965,6 +8042,10 @@
                 { commission: 0.10, min_price: { shards: 1, particles: 0.1 }, min_amount: { shards: 1, particles: 1 } },
                 cfg.resource_market
             );
+            cfg.arena_season = Object.assign({ days: 20, rewards: DEFAULT_ARENA_SEASON_REWARDS }, cfg.arena_season);
+            if (!Array.isArray(cfg.arena_season.rewards) || !cfg.arena_season.rewards.length) {
+                cfg.arena_season.rewards = DEFAULT_ARENA_SEASON_REWARDS;
+            }
             cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
             if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
             cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);
