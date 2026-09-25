@@ -80,6 +80,9 @@ def apply_config(cfg: dict):
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
     global NEST_CRAFT_COST_PARTICLES, NEST_CRAFT_COST_GOLD, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
     global NEST_ITEM_TYPES, NEST_TYPE_ORDER, NEST_SHARD_DAILY_LIMIT
+    global COMBAT_BASE_STATS, CLAN_CFG, CLAN_CREATE_COST_GRAM, CLAN_CREATE_COST_GOLD, CLAN_CREATE_COST_MEAT
+    global CLAN_MEMBER_LIMIT, CLAN_INITIAL_OPEN_SLOTS, CLAN_SLOT_PRICE_GRAM, CLAN_BURN_POWER_BY_TIER
+    global CLAN_TOURNAMENT_SIZE, CLAN_TOURNAMENT_DAYS, CLAN_ROSTER_SIZE
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -178,6 +181,24 @@ def apply_config(cfg: dict):
     NEST_GRADE_BONUS = {k: float(v) for k, v in (NEST_CFG.get("grade_bonus_pct") or {}).items()}
     NEST_ITEM_TYPES = NEST_CFG.get("item_types") or {}
     NEST_TYPE_ORDER = list(NEST_ITEM_TYPES.keys()) or ["claws", "armor", "mask", "ring"]
+
+    # Кланы: боевые статы орлов (та же таблица, что и клиентский
+    # NEST_EAGLE_BASE_STATS, теперь и на сервере — нужна для авторитетной
+    # симуляции 10х10 «Прямого Эфира», см. combat_eagle_stats) и баланс
+    # клана (стоимость создания, лимит участников, цена места, сила за
+    # сожжённого 7-уровневого орла по редкости, размер турнирной сетки).
+    COMBAT_BASE_STATS = CONFIG.get("combat_base_stats") or {}
+    CLAN_CFG = CONFIG.get("clans") or {}
+    CLAN_CREATE_COST_GRAM = float(CLAN_CFG.get("create_cost_gram", 10))
+    CLAN_CREATE_COST_GOLD = float(CLAN_CFG.get("create_cost_gold", 500))
+    CLAN_CREATE_COST_MEAT = float(CLAN_CFG.get("create_cost_meat", 1000))
+    CLAN_MEMBER_LIMIT = int(CLAN_CFG.get("member_limit", 15))
+    CLAN_INITIAL_OPEN_SLOTS = int(CLAN_CFG.get("initial_open_slots", 2))
+    CLAN_SLOT_PRICE_GRAM = float(CLAN_CFG.get("slot_price_gram", 5))
+    CLAN_BURN_POWER_BY_TIER = {k: float(v) for k, v in (CLAN_CFG.get("burn_power_by_tier") or {}).items()}
+    CLAN_TOURNAMENT_SIZE = int(CLAN_CFG.get("tournament_size", 32))
+    CLAN_TOURNAMENT_DAYS = int(CLAN_CFG.get("tournament_days", 24))
+    CLAN_ROSTER_SIZE = int(CLAN_CFG.get("roster_size", 10))
 
 
 apply_config(load_config())
@@ -1039,6 +1060,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "pvp_rating": PVP_RATING_START,
             "pvp_energy": PVP_ENERGY_MAX,
             "pvp_energy_day": day_index(),
+            "clan_id": None,
         }
     )
 
@@ -1465,6 +1487,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         await ensure_user(user_id, name=context["name"])
 
     await reconcile_arena_season()
+    await reconcile_clan_tournament()
     row = await fetch_user(user_id)
     row = await accrue_vip_meat(user_id, row)
     row = await reconcile_queues(user_id, row)
@@ -1503,6 +1526,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "pvp_energy": row.get("pvp_energy", PVP_ENERGY_MAX),
         "pvp_energy_reset_at": arena_energy_reset_at(int(row.get("pvp_energy_day") or day_index())),
         "arena_season": arena_season_view(),
+        "clan_id": row.get("clan_id"),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -2143,6 +2167,610 @@ async def admin_distribute_arena_rewards(_: None = Depends(require_admin)):
     жми из админки по факту окончания турнира (см. distribute_arena_rewards).
     Места/рейтинг игроков этим не сбрасываются."""
     return await distribute_arena_rewards()
+
+
+# --- КЛАНЫ: создание/вступление, сжигание прокачанных орлов на силу
+# клана, расстановка бойцов и турнирная сетка Топ-32 на вылет (24 дня,
+# 5 раундов + матч за 3-е место — см. build_clan_bracket/reconcile_clan_tournament). ---
+
+class ClanCreateRequest(BaseModel):
+    user_id: int
+    name: str
+
+
+class ClanJoinRequest(BaseModel):
+    user_id: int
+    clan_id: str
+
+
+class ClanAction(BaseModel):
+    user_id: int
+
+
+class ClanBurnRequest(BaseModel):
+    user_id: int
+    monster_id: str
+
+
+class ClanLineupSubmitRequest(BaseModel):
+    user_id: int
+    tier_id: str
+
+
+class ClanLineupApproveRequest(BaseModel):
+    user_id: int
+    member_ids: List[int]
+
+
+def clan_view(clan: dict) -> dict:
+    """Единая форма ответа о клане — и для «своего» клана, и (без лишних
+    полей расстановки) для превью в Топе кланов."""
+    return {
+        "id": clan["id"],
+        "name": clan.get("name") or "",
+        "leader_id": clan.get("leader_id"),
+        "members": list(clan.get("members") or []),
+        "member_count": len(clan.get("members") or []),
+        "member_limit": CLAN_MEMBER_LIMIT,
+        "open_slots": int(clan.get("open_slots") or 0),
+        "clan_power": float(clan.get("clan_power") or 0),
+        "lineup_submissions": clan.get("lineup_submissions") or {},
+        "approved_lineup": clan.get("approved_lineup") or [],
+    }
+
+
+def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict]) -> dict:
+    """Итоговые боевые статы орла редкости tier_id — серверный порт
+    nestComputeStatsFromEquipped (index.html): та же формула бонуса
+    снаряжения (когти->atk, броня->def, маска->crit, амулет->hp+spd),
+    только источник базовых статов — COMBAT_BASE_STATS, а не клиентский
+    NEST_EAGLE_BASE_STATS. Нужен для авторитетной серверной симуляции
+    боя кланов (см. clan_battle_simulate), которая, в отличие от 1v1
+    Арены, должна разрешаться сама — без участия чьего-либо клиента."""
+    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
+    equipped = equipped_for_tier or {}
+    bonus = {"hp": 0.0, "atk": 0.0, "def": 0.0, "crit": 0.0, "spd": 0.0}
+    for item_type in NEST_TYPE_ORDER:
+        grade = equipped.get(item_type)
+        if not grade:
+            continue
+        pct = NEST_GRADE_BONUS.get(grade, 0.0)
+        stat = (NEST_ITEM_TYPES.get(item_type) or {}).get("stat")
+        if stat == "atk":
+            bonus["atk"] += pct
+        elif stat == "def":
+            bonus["def"] += pct
+        elif stat == "crit":
+            bonus["crit"] += pct
+        elif stat == "hpspd":
+            bonus["hp"] += pct
+            bonus["spd"] += pct
+    return {
+        "hp": round(base["hp"] * (1 + bonus["hp"] / 100)),
+        "atk": round(base["atk"] * (1 + bonus["atk"] / 100)),
+        "def": round(base["def"] * (1 + bonus["def"] / 100)),
+        "crit": round(base["crit"] * (1 + bonus["crit"] / 100), 1),
+        "spd": round(base["spd"] * (1 + bonus["spd"] / 100)),
+    }
+
+
+def _clan_roll_damage(rng: random.Random, attacker_stats: dict, defender_stats: dict) -> tuple:
+    """Порт arenaRollDamage (index.html) — тот же урон/крит, но со своим
+    random.Random(seed), чтобы бой кланов был воспроизводим (детерминирован
+    номером цикла турнира и индексом матча, см. clan_battle_simulate)."""
+    crit_chance = max(0.0, min(0.6, (attacker_stats.get("crit") or 0) / 100))
+    crit = rng.random() < crit_chance
+    raw = attacker_stats["atk"] * (100 / (100 + defender_stats["def"]))
+    value = raw * (0.85 + rng.random() * 0.3)
+    if crit:
+        value *= 1.8
+    return max(1, round(value)), crit
+
+
+def clan_battle_simulate(seed: str, roster_a: list, roster_b: list) -> dict:
+    """10х10 «Прямой Эфир»: king of the hill — сражаются только текущие
+    передние бойцы сторон, при гибели одного из них следующий из его
+    очереди выходит со свежим HP, а ПОБЕДИВШИЙ бой продолжает со своим
+    ТЕКУЩИМ (не восстановленным) HP — лечения между дуэлями нет. Очерёдность
+    первого удара в каждой новой дуэли решает сравнение скорости (как и в
+    1v1 Арене), заново для каждой пары. roster_a/roster_b — списки бойцов
+    {user_id, name, tier_id, stats}, до CLAN_ROSTER_SIZE каждый. Возвращает
+    {"winner": "a"|"b"|None, "log": [...]} — log воспроизводится на клиенте
+    Canvas-анимацией вкладки «Прямой Эфир»."""
+    rng = random.Random(seed)
+    queue_a = [dict(f, hp=f["stats"]["hp"]) for f in roster_a]
+    queue_b = [dict(f, hp=f["stats"]["hp"]) for f in roster_b]
+    if not queue_a or not queue_b:
+        if queue_a and not queue_b:
+            return {"winner": "a", "log": []}
+        if queue_b and not queue_a:
+            return {"winner": "b", "log": []}
+        return {"winner": None, "log": []}
+
+    log = []
+
+    def enter(side, fighter):
+        log.append({
+            "type": "enter", "side": side, "user_id": fighter["user_id"], "name": fighter["name"],
+            "tier_id": fighter["tier_id"], "hp": fighter["hp"], "max_hp": fighter["stats"]["hp"],
+        })
+
+    cur_a = queue_a.pop(0)
+    cur_b = queue_b.pop(0)
+    enter("a", cur_a)
+    enter("b", cur_b)
+
+    guard = 0
+    while guard < 20000:
+        guard += 1
+        a_spd, b_spd = cur_a["stats"]["spd"], cur_b["stats"]["spd"]
+        if a_spd > b_spd:
+            attacker_side = "a"
+        elif b_spd > a_spd:
+            attacker_side = "b"
+        else:
+            attacker_side = "a" if rng.random() < 0.5 else "b"
+
+        while cur_a["hp"] > 0 and cur_b["hp"] > 0:
+            attacker = cur_a if attacker_side == "a" else cur_b
+            defender = cur_b if attacker_side == "a" else cur_a
+            dmg, crit = _clan_roll_damage(rng, attacker["stats"], defender["stats"])
+            defender["hp"] = max(0, defender["hp"] - dmg)
+            log.append({"type": "attack", "side": attacker_side, "value": dmg, "crit": crit,
+                        "defender_hp": defender["hp"]})
+            if defender["hp"] <= 0:
+                break
+            attacker_side = "b" if attacker_side == "a" else "a"
+
+        if cur_a["hp"] <= 0:
+            log.append({"type": "death", "side": "a", "user_id": cur_a["user_id"], "name": cur_a["name"]})
+            if not queue_a:
+                return {"winner": "b", "log": log}
+            cur_a = queue_a.pop(0)
+            enter("a", cur_a)
+        elif cur_b["hp"] <= 0:
+            log.append({"type": "death", "side": "b", "user_id": cur_b["user_id"], "name": cur_b["name"]})
+            if not queue_b:
+                return {"winner": "a", "log": log}
+            cur_b = queue_b.pop(0)
+            enter("b", cur_b)
+
+    return {"winner": None, "log": log}  # защитный предел — на практике недостижим (урон >= 1/удар)
+
+
+def _clan_seed_order(n: int) -> list:
+    """Стандартная сетка посева плей-офф на вылет: для n=4 -> [1,4,2,3]
+    (1v4, 2v3), для n=8 -> [1,8,4,5,2,7,3,6] — сильнейший всегда встречает
+    самого слабого из оставшихся в своей половине сетки."""
+    order = [1, 2]
+    while len(order) < n:
+        size = len(order)
+        order = [x for s in order for x in (s, size * 2 + 1 - s)]
+    return order
+
+
+# Структура турнирной сетки Топ-32 на 24 дня (см. build_clan_bracket):
+# раунд -> (сколько матчей, с какого дня начинается, сколько матчей в день).
+CLAN_ROUND_SPECS = [
+    ("r32", 16, 1, 2),   # 1/16 финала — дни 1-8, 2 матча/день
+    ("r16", 8, 9, 1),    # 1/8 финала — дни 9-16, 1 матч/день
+    ("r8", 4, 17, 1),    # 1/4 финала — дни 17-20
+    ("r4", 2, 21, 1),    # 1/2 финала — дни 21-22
+]
+# Индекс первого матча раунда в плоском списке bracket и число матчей в нём.
+CLAN_ROUND_OFFSETS = {"r32": (0, 16), "r16": (16, 8), "r8": (24, 4), "r4": (28, 2), "r3rd": (30, 1), "final": (31, 1)}
+
+
+def build_clan_bracket(clans: list) -> list:
+    """Строит турнирную сетку Топ-32 (см. reconcile_clan_tournament) —
+    только первый раунд получает реальных участников (посев по clan_power,
+    см. _clan_seed_order); все последующие матчи, включая матч за 3-е
+    место и финал, начинаются с пустых слотов, которые заполняются по мере
+    разрешения предыдущих матчей (см. _advance_clan_bracket). Если
+    зарегистрированных кланов меньше 32 — недостающие места сетки первого
+    раунда становятся техническими «бай» (пустой слот, автопобеда соперника)."""
+    n = CLAN_TOURNAMENT_SIZE
+    seeds = _clan_seed_order(n)
+    slots = [None] * n
+    for i, seed in enumerate(seeds):
+        idx = seed - 1
+        slots[i] = clans[idx] if idx < len(clans) else None
+
+    bracket = []
+    for round_idx, (round_key, match_count, day_start, per_day) in enumerate(CLAN_ROUND_SPECS):
+        for i in range(match_count):
+            a = slots[2 * i] if round_idx == 0 else None
+            b = slots[2 * i + 1] if round_idx == 0 else None
+            bracket.append({
+                "round": round_key, "day": day_start + i // per_day,
+                "clan_a_id": a["id"] if a else None, "clan_a_name": a["name"] if a else None,
+                "clan_b_id": b["id"] if b else None, "clan_b_name": b["name"] if b else None,
+                "resolved": False, "winner_id": None, "winner_name": None, "battle_log": [],
+            })
+    bracket.append({"round": "r3rd", "day": 23, "clan_a_id": None, "clan_a_name": None,
+                     "clan_b_id": None, "clan_b_name": None, "resolved": False,
+                     "winner_id": None, "winner_name": None, "battle_log": []})
+    bracket.append({"round": "final", "day": 24, "clan_a_id": None, "clan_a_name": None,
+                     "clan_b_id": None, "clan_b_name": None, "resolved": False,
+                     "winner_id": None, "winner_name": None, "battle_log": []})
+    return bracket
+
+
+def _clan_next_match_for_winner(round_key: str, local_idx: int) -> Optional[tuple]:
+    """Куда попадает победитель матча round_key[local_idx] — (индекс
+    следующего матча в bracket, слот 'clan_a'/'clan_b'). None — для
+    финала и матча за 3-е место (дальше сетки нет)."""
+    next_offset = {"r32": 16, "r16": 24, "r8": 28}.get(round_key)
+    if next_offset is not None:
+        return (next_offset + local_idx // 2, "clan_a" if local_idx % 2 == 0 else "clan_b")
+    if round_key == "r4":
+        return (31, "clan_a" if local_idx == 0 else "clan_b")  # финал
+    return None
+
+
+def _clan_next_match_for_loser(round_key: str, local_idx: int) -> Optional[tuple]:
+    """Проигравший полуфинала (round_key == 'r4') уходит в матч за 3-е
+    место — единственный случай, когда исход матча кланов важен и
+    победителю, и проигравшему."""
+    if round_key == "r4":
+        return (30, "clan_a" if local_idx == 0 else "clan_b")
+    return None
+
+
+async def _clan_roster_fighters(clan: Optional[dict]) -> list:
+    """Собирает боевых бойцов клана из его approved_lineup — для каждой
+    записи {user_id, tier_id} подтягивает текущее снаряжение владельца в
+    Кузнице на этой редкости и считает итоговые статы (combat_eagle_stats).
+    Игрок, покинувший клан или не имеющий орла этой редкости уже, просто
+    выпадает из состава (его лучше было не звать на бой без свежего
+    подтверждения — но сама расстановка это отдельно проверяет при подаче)."""
+    if not clan:
+        return []
+    fighters = []
+    for entry in (clan.get("approved_lineup") or [])[:CLAN_ROSTER_SIZE]:
+        user_id = entry.get("user_id")
+        tier_id = entry.get("tier_id")
+        if tier_id not in TIER_INDEX or user_id is None:
+            continue
+        row = await store.get(user_id)
+        if not row:
+            continue
+        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        fighters.append({
+            "user_id": user_id, "name": row.get("name") or "",
+            "tier_id": tier_id, "stats": combat_eagle_stats(tier_id, equipped.get(tier_id)),
+        })
+    return fighters
+
+
+def clan_tournament_cycle_index(moment: Optional[float] = None) -> int:
+    """Порядковый номер турнирного цикла кланов — тот же принцип, что и
+    arena_season_index, но с шагом CLAN_TOURNAMENT_DAYS суток."""
+    return int((moment if moment is not None else time.time()) // (CLAN_TOURNAMENT_DAYS * 86400))
+
+
+async def _advance_clan_bracket(tournament: dict) -> None:
+    """Разрешает все матчи текущего турнира, чей день уже наступил и кто
+    ещё не resolved — в порядке индекса bracket, так что победитель/
+    проигравший матча первого раунда попадает в слот следующего раунда ещё
+    в ЭТОМ ЖЕ проходе (см. _clan_next_match_for_winner/_loser), а не ждёт
+    отдельного вызова. Каждое разрешение матча — свой независимый
+    conditional update (store.resolve_clan_match), так что при гонке
+    конкурентных вызовов (несколько игроков зашли в момент смены дня)
+    исход запишет только один из них; остальные просто не находят что
+    записать и идут дальше по сетке, уже видя чужую запись при следующем
+    reconcile."""
+    now = time.time()
+    bracket = tournament["bracket"]
+    start_at = tournament["start_at"]
+
+    for idx, match in enumerate(bracket):
+        if match.get("resolved"):
+            continue
+        if start_at + (match.get("day", 1) - 1) * 86400 > now:
+            continue
+
+        a_id, b_id = match.get("clan_a_id"), match.get("clan_b_id")
+        winner_id = winner_name = None
+        battle_log: list = []
+
+        if a_id and b_id:
+            fighters_a = await _clan_roster_fighters(await store.get_clan(a_id))
+            fighters_b = await _clan_roster_fighters(await store.get_clan(b_id))
+            if fighters_a and fighters_b:
+                result = clan_battle_simulate(f"{tournament['cycle']}:{idx}", fighters_a, fighters_b)
+                battle_log = result["log"]
+                if result["winner"] == "a":
+                    winner_id, winner_name = a_id, match.get("clan_a_name")
+                elif result["winner"] == "b":
+                    winner_id, winner_name = b_id, match.get("clan_b_name")
+            elif fighters_a:
+                winner_id, winner_name = a_id, match.get("clan_a_name")  # соперник не подал расстановку
+            elif fighters_b:
+                winner_id, winner_name = b_id, match.get("clan_b_name")
+        elif a_id:
+            winner_id, winner_name = a_id, match.get("clan_a_name")  # технический бай
+        elif b_id:
+            winner_id, winner_name = b_id, match.get("clan_b_name")
+
+        if not await store.resolve_clan_match(idx, winner_id, winner_name, battle_log):
+            continue  # уже разрешён другим конкурентным вызовом
+
+        match["resolved"], match["winner_id"], match["winner_name"], match["battle_log"] = (
+            True, winner_id, winner_name, battle_log,
+        )
+
+        round_key = match["round"]
+        local_idx = idx - CLAN_ROUND_OFFSETS[round_key][0]
+        if winner_id:
+            target = _clan_next_match_for_winner(round_key, local_idx)
+            if target:
+                target_idx, slot = target
+                if await store.set_clan_match_participant(target_idx, slot, winner_id, winner_name):
+                    bracket[target_idx][f"{slot}_id"] = winner_id
+                    bracket[target_idx][f"{slot}_name"] = winner_name
+        if round_key == "r4":
+            loser_id = b_id if winner_id == a_id else (a_id if winner_id == b_id else None)
+            loser_name = match.get("clan_b_name") if loser_id == b_id else match.get("clan_a_name")
+            target = _clan_next_match_for_loser(round_key, local_idx)
+            if target and loser_id:
+                target_idx, slot = target
+                if await store.set_clan_match_participant(target_idx, slot, loser_id, loser_name):
+                    bracket[target_idx][f"{slot}_id"] = loser_id
+                    bracket[target_idx][f"{slot}_name"] = loser_name
+
+
+async def reconcile_clan_tournament() -> None:
+    """Лениво продвигает турнир кланов — та же гонка-и-победитель схема,
+    что и у reconcile_arena_season: если текущий сохранённый цикл устарел,
+    сначала строим новую сетку по текущему Топ-32 силы (build_clan_bracket)
+    и пробуем её атомарно записать (store.try_start_clan_tournament) —
+    выигрывает ровно один из конкурентных вызовов, остальные просто
+    перечитывают то, что записал победитель. Затем — вне зависимости от
+    того, кто именно запустил цикл — разрешаем все назревшие матчи
+    (_advance_clan_bracket), что дешёвый no-op, пока день очередного матча
+    не наступил."""
+    cycle = clan_tournament_cycle_index()
+    tournament = await store.get_clan_tournament()
+    if tournament is None or int(tournament.get("cycle", -1)) < cycle:
+        top_clans = await store.list_top_clans(CLAN_TOURNAMENT_SIZE)
+        bracket = build_clan_bracket(top_clans)
+        start_at = cycle * CLAN_TOURNAMENT_DAYS * 86400
+        if await store.try_start_clan_tournament(cycle, start_at, bracket):
+            tournament = {"_id": "current", "cycle": cycle, "start_at": start_at, "bracket": bracket}
+        else:
+            tournament = await store.get_clan_tournament()
+    if tournament:
+        await _advance_clan_bracket(tournament)
+
+
+@app.get("/api/clan/mine")
+async def clan_mine(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Клан текущего игрока (или null, если ни в одном не состоит) — для
+    входного экрана раздела «Кланы» и вкладки «Мой Клан»."""
+    user_id = authenticate(x_telegram_init_data, user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        return {"clan_id": None, "clan": None}
+    clan = await store.get_clan(clan_id)
+    if not clan:
+        await store.update(user_id, {"clan_id": None})  # рассинхрон — клан уже удалён (see leave_clan)
+        return {"clan_id": None, "clan": None}
+
+    member_names = {}
+    for member_id in clan.get("members") or []:
+        member_row = await store.get(member_id)
+        if member_row:
+            member_names[str(member_id)] = member_row.get("name") or ""
+
+    return {
+        "clan_id": clan_id, "clan": clan_view(clan), "is_leader": clan.get("leader_id") == user_id,
+        "member_names": member_names,
+    }
+
+
+@app.get("/api/clan/top")
+async def clan_top(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Топ кланов по силе — превью с кнопкой входа для тех, кто ещё ни в
+    одном клане не состоит."""
+    authenticate(x_telegram_init_data, user_id)
+    clans = await store.list_top_clans(100)
+    return {"clans": [clan_view(c) for c in clans]}
+
+
+@app.post("/api/clan/create")
+async def clan_create(request: ClanCreateRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Создаёт клан и сразу делает создателя лидером — стоит
+    CLAN_CREATE_COST_GRAM GRAM + CLAN_CREATE_COST_GOLD золота +
+    CLAN_CREATE_COST_MEAT мяса одновременно."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    name = (request.name or "").strip()[:24]
+    if not name:
+        raise HTTPException(status_code=400, detail="Введите название клана")
+
+    status, clan_id = await store.create_clan(
+        user_id, name, CLAN_CREATE_COST_GRAM, CLAN_CREATE_COST_GOLD, CLAN_CREATE_COST_MEAT,
+        CLAN_INITIAL_OPEN_SLOTS,
+    )
+    if status != "ok":
+        raise HTTPException(status_code=400, detail="Не хватает ресурсов или вы уже состоите в клане")
+
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
+
+
+@app.post("/api/clan/join")
+async def clan_join(request: ClanJoinRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Свободное вступление в клан с открытым местом — без одобрения
+    лидера (см. join_clan в storage.py)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    result = await store.join_clan(user_id, request.clan_id)
+    if result != "ok":
+        messages = {
+            "not_found": "Клан не найден",
+            "no_open_slot": "В клане нет свободных мест",
+            "already_in_clan": "Вы уже состоите в клане",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось вступить в клан"))
+
+    clan = await store.get_clan(request.clan_id)
+    return {"status": "success", "clan_id": request.clan_id, "clan": clan_view(clan)}
+
+
+@app.post("/api/clan/leave")
+async def clan_leave(request: ClanAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выход из клана — лидерство переходит следующему участнику, если
+    выходит лидер (см. leave_clan)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    result = await store.leave_clan(user_id, clan_id)
+    if result != "ok":
+        raise HTTPException(status_code=400, detail="Не удалось покинуть клан")
+    return {"status": "success"}
+
+
+@app.post("/api/clan/open_slot")
+async def clan_open_slot(request: ClanAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер платит CLAN_SLOT_PRICE_GRAM GRAM за одно дополнительное место
+    (до CLAN_MEMBER_LIMIT) — из изначальных CLAN_INITIAL_OPEN_SLOTS
+    открытых при создании."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    result = await store.open_clan_slot(user_id, clan_id, CLAN_SLOT_PRICE_GRAM, CLAN_MEMBER_LIMIT)
+    if result != "ok":
+        messages = {
+            "not_found": "Клан не найден",
+            "not_leader": "Открывать места может только лидер клана",
+            "slots_maxed": "Все места уже открыты",
+            "insufficient_funds": "Не хватает GRAM",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось открыть место"))
+
+    clan = await store.get_clan(clan_id)
+    fresh = await store.get(user_id)
+    return {"status": "success", "clan": clan_view(clan), "coins": float(fresh.get("coins") or 0.0)}
+
+
+@app.post("/api/clan/burn")
+async def clan_burn(request: ClanBurnRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Безвозвратно сжигает полностью прокачанного (FEED_LEVELS уровня)
+    орла с фермы игрока на силу его клана — прибавка зависит от редкости
+    орла (см. CLAN_BURN_POWER_BY_TIER)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    tier_id = MONSTER_TIER.get(request.monster_id)
+    power = CLAN_BURN_POWER_BY_TIER.get(tier_id)
+    if not power:
+        raise HTTPException(status_code=400, detail="Этого орла нельзя пожертвовать клану")
+
+    farm = await store.burn_eagle_for_clan_power(user_id, clan_id, request.monster_id, FEED_LEVELS, power)
+    if farm is None:
+        raise HTTPException(status_code=400, detail="Нет такого прокачанного орла (7 ур.) на ферме")
+
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "monsters": read_farm(farm), "clan": clan_view(clan)}
+
+
+@app.post("/api/clan/lineup/submit")
+async def clan_lineup_submit(request: ClanLineupSubmitRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Участник подаёт вкладке «Расстановка» своего лучшего боевого орла
+    (по редкости — снаряжение берётся из его Кузницы на этот тир на момент
+    боя, см. _clan_roster_fighters, а не фиксируется здесь)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    if request.tier_id not in TIER_INDEX:
+        raise HTTPException(status_code=400, detail="Неизвестная редкость")
+    if not any(m.get("id") == request.tier_id for m in read_farm(row.get("monsters"))):
+        raise HTTPException(status_code=400, detail="У вас нет орла этой редкости")
+
+    ok = await store.submit_clan_lineup(clan_id, user_id, request.tier_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Не удалось сохранить расстановку")
+
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "clan": clan_view(clan)}
+
+
+@app.post("/api/clan/lineup/approve")
+async def clan_lineup_approve(request: ClanLineupApproveRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер выбирает до CLAN_ROSTER_SIZE лучших поданных бойцов и
+    утверждает состав — именно этот approved_lineup идёт в бой в
+    «Битве Кланов» (см. _clan_roster_fighters)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    clan = await store.get_clan(clan_id)
+    if not clan or clan.get("leader_id") != user_id:
+        raise HTTPException(status_code=403, detail="Утвердить расстановку может только лидер клана")
+
+    submissions = clan.get("lineup_submissions") or {}
+    entries, seen = [], set()
+    for uid in request.member_ids:
+        if uid in seen:
+            continue
+        sub = submissions.get(str(uid))
+        if not sub:
+            continue
+        entries.append({"user_id": uid, "tier_id": sub.get("tier_id")})
+        seen.add(uid)
+        if len(entries) >= CLAN_ROSTER_SIZE:
+            break
+    if not entries:
+        raise HTTPException(status_code=400, detail="Нет ни одного бойца с поданной расстановкой")
+
+    ok = await store.approve_clan_lineup(clan_id, user_id, entries)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Не удалось утвердить расстановку")
+
+    fresh = await store.get_clan(clan_id)
+    return {"status": "success", "clan": clan_view(fresh)}
+
+
+@app.get("/api/clan/tournament")
+async def clan_tournament_view(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Турнирная сетка Топ-32 кланов целиком — вкладка «Битва Кланов».
+    battle_log каждого матча здесь не отдаётся (может быть длинным) — за
+    ним отдельно, см. /api/clan/tournament/match/{match_index}."""
+    authenticate(x_telegram_init_data, user_id)
+    await reconcile_clan_tournament()
+    tournament = await store.get_clan_tournament()
+    if not tournament:
+        return {"cycle": 0, "start_at": 0, "bracket": []}
+    bracket = [{k: v for k, v in match.items() if k != "battle_log"} for match in tournament["bracket"]]
+    return {"cycle": tournament["cycle"], "start_at": tournament["start_at"], "bracket": bracket}
+
+
+@app.get("/api/clan/tournament/match/{match_index}")
+async def clan_tournament_match(match_index: int, user_id: int,
+                                 x_telegram_init_data: Optional[str] = Header(None)):
+    """Один разрешённый матч турнира вместе с battle_log — вкладка
+    «Прямой Эфир» проигрывает его на Canvas дуэль за дуэлью."""
+    authenticate(x_telegram_init_data, user_id)
+    tournament = await store.get_clan_tournament()
+    bracket = (tournament or {}).get("bracket") or []
+    if not (0 <= match_index < len(bracket)):
+        raise HTTPException(status_code=404, detail="Матч не найден")
+    return bracket[match_index]
 
 
 @app.post("/api/nest/particles/collect")

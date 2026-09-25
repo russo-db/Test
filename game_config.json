@@ -334,6 +334,26 @@
     "eagle_gram_price": 0.2,
     "eagle_sell_limit": 10
   },
+  "combat_base_stats": {
+    "common": { "hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10 },
+    "uncommon": { "hp": 150, "atk": 16, "def": 13, "crit": 7, "spd": 14 },
+    "rare": { "hp": 220, "atk": 25, "def": 20, "crit": 10, "spd": 20 },
+    "epic": { "hp": 320, "atk": 38, "def": 32, "crit": 14, "spd": 26 },
+    "legendary": { "hp": 460, "atk": 56, "def": 48, "crit": 19, "spd": 34 },
+    "mythical": { "hp": 650, "atk": 80, "def": 70, "crit": 25, "spd": 44 }
+  },
+  "clans": {
+    "create_cost_gram": 10,
+    "create_cost_gold": 500,
+    "create_cost_meat": 1000,
+    "member_limit": 15,
+    "initial_open_slots": 2,
+    "slot_price_gram": 5,
+    "burn_power_by_tier": { "common": 1, "uncommon": 3, "rare": 15, "epic": 50, "legendary": 250, "mythical": 1000 },
+    "tournament_size": 32,
+    "tournament_days": 24,
+    "roster_size": 10
+  },
   "nest": {
     "shard_price_gram": 3,
     "shard_cooldown_hours": 6,

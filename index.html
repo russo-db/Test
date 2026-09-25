@@ -966,6 +966,67 @@
         .lb-podium-row.lb-rank-2 { background: linear-gradient(135deg, rgba(200, 210, 224, 0.26), rgba(200, 210, 224, 0.05)); border-color: rgba(200, 210, 224, 0.5); }
         .lb-podium-row.lb-rank-3 { background: linear-gradient(135deg, rgba(205, 127, 50, 0.28), rgba(205, 127, 50, 0.06)); border-color: rgba(205, 127, 50, 0.5); }
 
+        /* ---------- Кланы ---------- */
+        .clan-entry-btn {
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+            width: 46px; height: 46px; border-radius: 16px; transform: translateX(10px);
+            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); cursor: pointer;
+            font-size: 20px; color: var(--text-main);
+        }
+        .clan-entry-btn:active { transform: translateX(10px) scale(0.93); }
+        .clan-entry-btn .clan-entry-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); }
+        #clanTabBar .subtab-item { font-size: 9.5px; white-space: normal; line-height: 1.2; padding-left: 1px; padding-right: 1px; }
+        .clan-screen-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .clan-back-btn { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); cursor: pointer; }
+        .clan-header-info { flex: 1; min-width: 0; }
+        .clan-header-name { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-header-power { font-size: 12px; color: var(--accent-amber); font-weight: 700; }
+        .clan-leave-btn { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #ef6a6a; background: none; border: 1px solid rgba(239, 106, 106, 0.4); border-radius: 10px; padding: 6px 10px; cursor: pointer; }
+
+        .clan-top-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+        .clan-top-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); }
+        .clan-top-rank { flex: 0 0 26px; font-weight: 800; color: var(--text-muted); font-size: 13px; }
+        .clan-top-name { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-top-power { flex: 0 0 auto; font-size: 12px; font-weight: 800; color: var(--accent-amber); }
+        .clan-top-join { flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 10px; background: var(--accent-violet); color: #fff; border: none; }
+        .clan-top-join:disabled { opacity: 0.4; }
+        .clan-empty-hint { color: var(--text-muted); font-size: 13px; text-align: center; padding: 18px 8px; }
+
+        .clan-member-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+        .clan-member-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; }
+        .clan-member-row.is-leader { border-color: rgba(255, 204, 77, 0.4); }
+        .clan-member-crown { flex: 0 0 18px; font-size: 14px; }
+        .clan-member-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-member-tier { flex: 0 0 auto; font-size: 11px; font-weight: 700; }
+        .clan-slots-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+
+        .clan-lineup-tiers { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+        .clan-lineup-tier-btn { flex: 0 0 auto; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+        .clan-lineup-tier-btn.active { border-color: var(--accent-violet); box-shadow: var(--glow-violet); }
+        .clan-lineup-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+        .clan-lineup-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+        .clan-lineup-check { flex: 0 0 auto; width: 18px; height: 18px; }
+        .clan-lineup-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; }
+        .clan-lineup-tier-tag { flex: 0 0 auto; font-size: 11px; font-weight: 700; }
+
+        .clan-bracket-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+        .clan-bracket { display: flex; gap: 14px; padding: 4px 2px; }
+        .clan-round-col { display: flex; flex-direction: column; gap: 10px; justify-content: center; flex: 0 0 132px; }
+        .clan-round-title { font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); text-align: center; margin-bottom: 2px; }
+        .clan-match-card { display: flex; flex-direction: column; gap: 3px; padding: 7px 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 10.5px; cursor: pointer; }
+        .clan-match-card.resolved { border-color: rgba(74, 222, 128, 0.35); }
+        .clan-match-card .clan-match-day { font-size: 9px; color: var(--text-muted); text-align: center; }
+        .clan-match-side { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 4px; border-radius: 6px; white-space: nowrap; overflow: hidden; }
+        .clan-match-side span:first-child { overflow: hidden; text-overflow: ellipsis; }
+        .clan-match-side.is-winner { background: rgba(74, 222, 128, 0.18); font-weight: 800; }
+        .clan-match-side.is-empty { color: var(--text-muted); font-style: italic; }
+
+        .clan-replay-picker { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
+        .clan-replay-pick-btn { text-align: left; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 12px; font-weight: 700; cursor: pointer; }
+        .clan-replay-canvas-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        #clanReplayCanvas { width: 100%; max-width: 380px; height: 220px; border-radius: 16px; background: rgba(6, 3, 16, 0.55); border: 1px solid var(--glass-border); }
+        .clan-replay-controls { display: flex; gap: 10px; }
+        .clan-replay-log { font-size: 12px; color: var(--text-muted); text-align: center; min-height: 16px; }
     </style>
 </head>
 <body>
@@ -1078,6 +1139,10 @@
                     <div class="monster-stage" id="monsterStage" onclick="onFarmSlotTap(state.activeSlot, event)">
                         <div class="monster-glow" id="monsterGlow"></div>
                         <img class="monster-sprite" id="monsterSprite" alt="">
+                    </div>
+                    <div class="clan-entry-btn" id="clanEntryBtn" onclick="openClanScreen()">
+                        <span>⚔️</span>
+                        <span class="clan-entry-label" data-i18n="nav.clans">Кланы</span>
                     </div>
                 </div>
                 <div class="monster-name-tag" id="activeMonsterName">—</div>
@@ -1200,6 +1265,86 @@
         </div>
 
         <!-- ARENA TAB -->
+        <!-- CLANS SCREEN -->
+        <div id="clans" class="content">
+            <div class="clan-screen-header">
+                <div class="clan-back-btn" onclick="closeClanScreen()">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                </div>
+                <div class="clan-header-info">
+                    <div class="clan-header-name" id="clanHeaderName" data-i18n="clan.heading">Кланы</div>
+                    <div class="clan-header-power" id="clanHeaderPower"></div>
+                </div>
+                <button class="clan-leave-btn" id="clanLeaveBtn" style="display:none;" onclick="leaveClan()" data-i18n="clan.leaveBtn">Выйти</button>
+            </div>
+
+            <!-- PRE-JOIN: игрок ни в одном клане не состоит -->
+            <div id="clanPreJoin">
+                <p class="subtitle" data-i18n="clan.preJoinSubtitle">Объединяйтесь в клан, качайте общую силу сожжёнными орлами и сражайтесь в турнире Топ-32 на вылет</p>
+                <button class="btn-primary" onclick="openCreateClanModal()">
+                    <span data-i18n="clan.createBtn">Создать клан</span>
+                </button>
+                <p class="clan-empty-hint" id="clanCreateCostHint" style="padding:6px 0 0;"></p>
+                <h2 style="margin-top:16px;font-size:14px;" data-i18n="clan.topHeading">Топ кланов</h2>
+                <div class="clan-top-list" id="clanTopList"></div>
+            </div>
+
+            <!-- MY CLAN: 4 вкладки -->
+            <div id="clanMyClanWrap" style="display:none;">
+                <div class="subtab-bar" id="clanTabBar">
+                    <div class="subtab-item active" data-clantab="mine" onclick="switchClanSubtab('mine')" data-i18n="clan.tabMine">Мой Клан</div>
+                    <div class="subtab-item" data-clantab="lineup" onclick="switchClanSubtab('lineup')" data-i18n="clan.tabLineup">Расстановка</div>
+                    <div class="subtab-item" data-clantab="battle" onclick="switchClanSubtab('battle')" data-i18n="clan.tabBattle">Битва Кланов</div>
+                    <div class="subtab-item" data-clantab="live" onclick="switchClanSubtab('live')" data-i18n="clan.tabLive">Прямой Эфир</div>
+                </div>
+
+                <div class="subtab-panel active" id="clanSubMine">
+                    <p class="clan-slots-hint" id="clanSlotsHint"></p>
+                    <div class="clan-member-list" id="clanMemberList"></div>
+                    <button class="btn-action" id="clanOpenSlotBtn" onclick="openClanSlotBuy()" style="display:none;width:100%;margin-bottom:10px;">
+                        <span data-i18n="clan.openSlotBtn">Открыть место</span>
+                        <span id="clanOpenSlotCost"></span>
+                    </button>
+                    <button class="btn-action" onclick="openClanBurnPicker()" style="width:100%;">
+                        <span data-i18n="clan.donateBtn">🔥 Пожертвовать Орла 7 ур.</span>
+                    </button>
+                </div>
+
+                <div class="subtab-panel" id="clanSubLineup">
+                    <p class="subtitle" data-i18n="clan.lineupSubtitle">Выбери своего лучшего боевого орла — снаряжение учитывается на момент боя</p>
+                    <div class="clan-lineup-tiers" id="clanLineupTiers"></div>
+                    <button class="btn-primary" id="clanLineupSubmitBtn" onclick="submitClanLineup()" data-i18n="clan.lineupSubmitBtn">Подать расстановку</button>
+
+                    <div id="clanLineupApproveWrap" style="display:none;margin-top:18px;">
+                        <h2 style="font-size:14px;" data-i18n="clan.approveHeading">Утверждение состава (до 10 бойцов)</h2>
+                        <div class="clan-lineup-list" id="clanLineupApproveList"></div>
+                        <button class="btn-primary" onclick="approveClanLineup()" data-i18n="clan.approveBtn">Утвердить расстановку</button>
+                    </div>
+                </div>
+
+                <div class="subtab-panel" id="clanSubBattle">
+                    <p class="subtitle" id="clanTournamentSubtitle"></p>
+                    <div class="clan-bracket-scroll">
+                        <div class="clan-bracket" id="clanBracket"></div>
+                    </div>
+                </div>
+
+                <div class="subtab-panel" id="clanSubLive">
+                    <p class="subtitle" data-i18n="clan.liveSubtitle">Выбери разрешённый матч, чтобы посмотреть повтор боя 10х10</p>
+                    <div class="clan-replay-picker" id="clanReplayPicker"></div>
+                    <div class="clan-replay-canvas-wrap" id="clanReplayStage" style="display:none;">
+                        <canvas id="clanReplayCanvas" width="380" height="220"></canvas>
+                        <div class="clan-replay-log" id="clanReplayLog"></div>
+                        <div class="clan-replay-controls">
+                            <button class="btn-action" onclick="clanReplayTogglePlay()" id="clanReplayPlayBtn">▶</button>
+                            <button class="btn-action" onclick="clanReplayStep()" data-i18n="clan.replayStep">Шаг</button>
+                            <button class="btn-action" onclick="clanReplayRestart()" data-i18n="clan.replayRestart">Заново</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="arena" class="content">
             <h1 data-i18n="arena.heading">Арена</h1>
             <p class="subtitle" data-i18n="arena.subtitle">Автоматический бой твоего орла против соперника</p>
@@ -1471,6 +1616,21 @@
 
     <div class="modal-backdrop" id="dailyModal" onclick="if (event.target === this) closeDaily()">
         <div class="modal-box glass-panel daily-box" id="dailyBody"></div>
+    </div>
+
+    <!-- CLAN CREATE MODAL -->
+    <div class="modal-backdrop" id="clanCreateModal" onclick="if (event.target === this) closeCreateClanModal()">
+        <div class="modal-box glass-panel pay-box" id="clanCreateBody"></div>
+    </div>
+
+    <!-- CLAN DONATE-EAGLE MODAL -->
+    <div class="modal-backdrop" id="clanBurnModal" onclick="if (event.target === this) closeClanBurnPicker()">
+        <div class="modal-box glass-panel pay-box" id="clanBurnBody"></div>
+    </div>
+
+    <!-- CLAN OPEN-SLOT MODAL -->
+    <div class="modal-backdrop" id="clanSlotModal" onclick="if (event.target === this) closeClanSlotBuy()">
+        <div class="modal-box glass-panel pay-box" id="clanSlotBody"></div>
     </div>
 
     <div class="modal-backdrop" id="tokenModal" onclick="if (event.target === this) closeTokenInfo()">
@@ -1876,6 +2036,44 @@
                 'withdraw.submit': 'Вывести', 'withdraw.telegramOnly': 'Вывод работает только в Telegram',
                 'withdraw.minToast': 'Минимум для вывода — {min} GRAM',
                 'withdraw.insufficientBalance': 'Недостаточно GRAM на балансе', 'withdraw.needAddress': 'Укажи адрес кошелька',
+                'common.confirm': 'Подтвердить',
+                'nav.clans': 'Кланы',
+                'clan.heading': 'Кланы', 'clan.powerLabel': 'Сила клана: {power} 💪',
+                'clan.preJoinSubtitle': 'Объединяйтесь в клан, качайте общую силу сожжёнными орлами и сражайтесь в турнире Топ-32 на вылет',
+                'clan.createBtn': 'Создать клан',
+                'clan.createCostHint': 'Стоимость: {gram} GRAM + {gold} 🪙 + {meat} 🍖',
+                'clan.namePlaceholder': 'Название клана', 'clan.nameRequired': 'Введите название клана',
+                'clan.createFailed': 'Не удалось создать клан', 'clan.created': 'Клан создан!',
+                'clan.topHeading': 'Топ кланов', 'clan.noClansYet': 'Кланов пока нет — создай первый!',
+                'clan.joinBtn': 'Войти', 'clan.joinFailed': 'Не удалось вступить в клан', 'clan.joined': 'Вы вступили в клан!',
+                'clan.onlineOnly': 'Кланы доступны только при подключении к серверу',
+                'clan.leaveBtn': 'Выйти', 'clan.leaveConfirm': 'Точно покинуть клан?',
+                'clan.leaveFailed': 'Не удалось покинуть клан', 'clan.left': 'Вы покинули клан',
+                'clan.tabMine': 'Мой Клан', 'clan.tabLineup': 'Расстановка', 'clan.tabBattle': 'Битва Кланов', 'clan.tabLive': 'Прямой Эфир',
+                'clan.slotsHint': 'Участников: {count} · открыто мест: {open}/{max}',
+                'clan.openSlotBtn': 'Открыть место', 'clan.openSlotConfirm': 'Открыть дополнительное место за {cost} GRAM?',
+                'clan.openSlotFailed': 'Не удалось открыть место', 'clan.slotOpened': 'Место открыто!',
+                'clan.donateBtn': '🔥 Пожертвовать Орла 7 ур.',
+                'clan.donateWarning': 'Орёл будет безвозвратно удалён и превращён в силу клана!',
+                'clan.noEligibleEagles': 'Нет прокачанных до 7 уровня орлов', 'clan.burnFailed': 'Не удалось пожертвовать орла',
+                'clan.burned': 'Орёл принесён в жертву силе клана!',
+                'clan.lineupSubtitle': 'Выбери своего лучшего боевого орла — снаряжение учитывается на момент боя',
+                'clan.lineupSubmitBtn': 'Подать расстановку', 'clan.noEaglesForLineup': 'Нет орлов для расстановки',
+                'clan.approveHeading': 'Утверждение состава (до 10 бойцов)', 'clan.approveBtn': 'Утвердить расстановку',
+                'clan.noSubmissionsYet': 'Пока никто не подал расстановку',
+                'clan.rosterFull': 'Можно выбрать не больше {max} бойцов',
+                'clan.lineupFailed': 'Не удалось сохранить расстановку', 'clan.lineupSubmitted': 'Расстановка подана!',
+                'clan.pickAtLeastOne': 'Выбери хотя бы одного бойца',
+                'clan.approveFailed': 'Не удалось утвердить расстановку', 'clan.approved': 'Расстановка утверждена!',
+                'clan.round32': '1/16 финала', 'clan.round16': '1/8 финала', 'clan.round8': '1/4 финала',
+                'clan.round4': '1/2 финала', 'clan.round3rd': 'За 3-е место', 'clan.roundFinal': 'Финал',
+                'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Турнир загружается…',
+                'clan.tournamentCycle': 'Турнирный цикл №{cycle}', 'clan.dayLabel': 'День {day}',
+                'clan.liveSubtitle': 'Выбери разрешённый матч, чтобы посмотреть повтор боя 10х10',
+                'clan.noMatchesYet': 'Разрешённых матчей пока нет',
+                'clan.matchNotFound': 'Матч не найден', 'clan.matchNotReady': 'Матч ещё не разрешён',
+                'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
+                'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
             },
             en: {
                 'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.market': 'Market', 'nav.profile': 'Profile',
@@ -2107,6 +2305,44 @@
                 'withdraw.submit': 'Withdraw', 'withdraw.telegramOnly': 'Withdrawals only work inside Telegram',
                 'withdraw.minToast': 'Minimum withdrawal — {min} GRAM',
                 'withdraw.insufficientBalance': 'Not enough GRAM on balance', 'withdraw.needAddress': 'Enter a wallet address',
+                'common.confirm': 'Confirm',
+                'nav.clans': 'Clans',
+                'clan.heading': 'Clans', 'clan.powerLabel': 'Clan power: {power} 💪',
+                'clan.preJoinSubtitle': 'Join a clan, grow its shared power by sacrificing eagles, and fight in the Top-32 knockout tournament',
+                'clan.createBtn': 'Create clan',
+                'clan.createCostHint': 'Cost: {gram} GRAM + {gold} 🪙 + {meat} 🍖',
+                'clan.namePlaceholder': 'Clan name', 'clan.nameRequired': 'Enter a clan name',
+                'clan.createFailed': 'Failed to create clan', 'clan.created': 'Clan created!',
+                'clan.topHeading': 'Top clans', 'clan.noClansYet': 'No clans yet — create the first one!',
+                'clan.joinBtn': 'Join', 'clan.joinFailed': 'Failed to join clan', 'clan.joined': 'You joined the clan!',
+                'clan.onlineOnly': 'Clans only work when connected to the server',
+                'clan.leaveBtn': 'Leave', 'clan.leaveConfirm': 'Leave the clan for sure?',
+                'clan.leaveFailed': 'Failed to leave clan', 'clan.left': 'You left the clan',
+                'clan.tabMine': 'My Clan', 'clan.tabLineup': 'Lineup', 'clan.tabBattle': 'Clan Battle', 'clan.tabLive': 'Live',
+                'clan.slotsHint': 'Members: {count} · open slots: {open}/{max}',
+                'clan.openSlotBtn': 'Open a slot', 'clan.openSlotConfirm': 'Open an extra slot for {cost} GRAM?',
+                'clan.openSlotFailed': 'Failed to open a slot', 'clan.slotOpened': 'Slot opened!',
+                'clan.donateBtn': '🔥 Sacrifice a lvl.7 Eagle',
+                'clan.donateWarning': 'The eagle will be permanently deleted and turned into clan power!',
+                'clan.noEligibleEagles': 'No level-7 eagles available', 'clan.burnFailed': 'Failed to sacrifice the eagle',
+                'clan.burned': 'Eagle sacrificed for clan power!',
+                'clan.lineupSubtitle': 'Pick your best battle eagle — gear is read at battle time',
+                'clan.lineupSubmitBtn': 'Submit lineup', 'clan.noEaglesForLineup': 'No eagles available for the lineup',
+                'clan.approveHeading': 'Approve lineup (up to 10 fighters)', 'clan.approveBtn': 'Approve lineup',
+                'clan.noSubmissionsYet': 'No one has submitted a lineup yet',
+                'clan.rosterFull': 'You can pick at most {max} fighters',
+                'clan.lineupFailed': 'Failed to save lineup', 'clan.lineupSubmitted': 'Lineup submitted!',
+                'clan.pickAtLeastOne': 'Pick at least one fighter',
+                'clan.approveFailed': 'Failed to approve lineup', 'clan.approved': 'Lineup approved!',
+                'clan.round32': 'Round of 32', 'clan.round16': 'Round of 16', 'clan.round8': 'Quarterfinals',
+                'clan.round4': 'Semifinals', 'clan.round3rd': '3rd place', 'clan.roundFinal': 'Final',
+                'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Loading tournament…',
+                'clan.tournamentCycle': 'Tournament cycle #{cycle}', 'clan.dayLabel': 'Day {day}',
+                'clan.liveSubtitle': 'Pick a resolved match to watch the 10v10 battle replay',
+                'clan.noMatchesYet': 'No resolved matches yet',
+                'clan.matchNotFound': 'Match not found', 'clan.matchNotReady': 'Match not resolved yet',
+                'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
+                'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
             },
         };
 
@@ -2193,7 +2429,8 @@
             resourceMarketListings: [], // лоты рынка ресурсов — Осколки/частички (см. loadResourceMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, eaglesSold: 0 }, // общий (не персональный!) остаток лимитов купца, кэш с сервера
-            nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
+            nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} }, // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
+            clanId: null, // id клана текущего игрока, или null — см. loadClanMine
         };
 
         let botUsername = '';
@@ -7698,6 +7935,7 @@
             if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
             if (typeof data.pvp_energy_reset_at === 'number') state.pvpEnergyResetAt = data.pvp_energy_reset_at;
             if (data.arena_season && typeof data.arena_season.ends_at === 'number') state.arenaSeasonEndsAt = data.arena_season.ends_at;
+            state.clanId = data.clan_id || null;
 
             renderAll();
             renderWallet();
@@ -7962,6 +8200,15 @@
             mythical: { hp: 650, atk: 80, def: 70, crit: 25, spd: 44 },
         };
 
+        // Резервная таблица баланса Кланов (см. CONFIG.clans) — те же цифры,
+        // что и в дефолтах apply_config на сервере (game_config.json -> clans).
+        const DEFAULT_CLAN_CFG = {
+            create_cost_gram: 10, create_cost_gold: 500, create_cost_meat: 1000,
+            member_limit: 15, initial_open_slots: 2, slot_price_gram: 5,
+            burn_power_by_tier: { common: 1, uncommon: 3, rare: 15, epic: 50, legendary: 250, mythical: 1000 },
+            tournament_size: 32, tournament_days: 24, roster_size: 10,
+        };
+
         // Резервная таблица цен слотов фермы (индекс 0 = слот №1, GRAM).
         const DEFAULT_SLOT_PRICES = [
             0, 0, 1, 1.2, 1.4, 1.6, 1.8, 2, 2.5, 3, 3.5, 4,
@@ -8046,6 +8293,10 @@
             if (!Array.isArray(cfg.arena_season.rewards) || !cfg.arena_season.rewards.length) {
                 cfg.arena_season.rewards = DEFAULT_ARENA_SEASON_REWARDS;
             }
+            cfg.clans = Object.assign({}, DEFAULT_CLAN_CFG, cfg.clans);
+            if (!cfg.clans.burn_power_by_tier || typeof cfg.clans.burn_power_by_tier !== 'object') {
+                cfg.clans.burn_power_by_tier = DEFAULT_CLAN_CFG.burn_power_by_tier;
+            }
             cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
             if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
             cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);
@@ -8071,6 +8322,632 @@
                 const img = new Image();
                 img.src = `assets/${file}`;
             });
+        }
+
+        /* ---------- Кланы ---------- */
+        let clanData = null;            // клан текущего игрока, или null — см. loadClanMine
+        let clanMemberNames = {};       // { user_id: name } для участников своего клана
+        let clanIsLeader = false;
+        let clanTopCache = [];          // топ кланов для входного экрана
+        let activeClanTab = 'mine';     // 'mine' | 'lineup' | 'battle' | 'live'
+        let clanCreateNameDraft = '';
+        let clanLineupTierChoice = null;
+        let clanLineupApprovePicked = new Set();
+        let clanTournamentData = null;  // { cycle, start_at, bracket } без battle_log — см. loadClanTournament
+        let clanReplayMatch = null;      // разрешённый матч с battle_log — см. openClanReplay
+        let clanReplayCursor = 0;
+        let clanReplayPlaying = false;
+        let clanReplayTimer = null;
+
+        function clanTierColor(tierId) { return tierById(tierId).color; }
+        function clanTierLabel(tierId) { return tierById(tierId).name; }
+
+        // Орлы 7 уровня — те же, что уже нельзя дальше кормить (см. FEED_LEVELS);
+        // в отличие от eligibleMarketEagles, обычная (common) редкость тоже подходит.
+        function eligibleClanBurnEagles() {
+            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels);
+        }
+
+        async function openClanScreen() {
+            haptic.select();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('clans').classList.add('active');
+            arenaStopLoop();
+            await loadClanMine();
+        }
+
+        function closeClanScreen() {
+            haptic.select();
+            clanReplayStopAuto();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('farm').classList.add('active');
+        }
+
+        async function loadClanMine() {
+            if (offlineOnly || !state.userId) {
+                clanData = null; clanMemberNames = {}; clanIsLeader = false;
+                renderClanScreen();
+                return;
+            }
+            try {
+                const response = await fetch(`api/clan/mine?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                clanData = data.clan || null;
+                clanMemberNames = data.member_names || {};
+                clanIsLeader = !!data.is_leader;
+                state.clanId = data.clan_id || null;
+            } catch (e) {
+                clanData = null; clanMemberNames = {}; clanIsLeader = false;
+            }
+            renderClanScreen();
+            if (!clanData) loadClanTop(); else loadClanTournament();
+        }
+
+        function renderClanScreen() {
+            const inClan = !!clanData;
+            document.getElementById('clanPreJoin').style.display = inClan ? 'none' : '';
+            document.getElementById('clanMyClanWrap').style.display = inClan ? '' : 'none';
+            document.getElementById('clanLeaveBtn').style.display = inClan ? 'inline-block' : 'none';
+
+            if (inClan) {
+                document.getElementById('clanHeaderName').textContent = clanData.name;
+                document.getElementById('clanHeaderPower').textContent = t('clan.powerLabel', { power: fmt(clanData.clan_power) });
+                renderMyClanTab();
+                renderClanLineupTab();
+            } else {
+                document.getElementById('clanHeaderName').textContent = t('clan.heading');
+                document.getElementById('clanHeaderPower').textContent = '';
+                const cfg = CONFIG.clans;
+                document.getElementById('clanCreateCostHint').textContent = t('clan.createCostHint', {
+                    gram: fmtGram(cfg.create_cost_gram), gold: fmt(cfg.create_cost_gold), meat: fmt(cfg.create_cost_meat),
+                });
+                renderClanTopList();
+            }
+        }
+
+        function switchClanSubtab(id) {
+            haptic.select();
+            activeClanTab = id;
+            if (id !== 'live') clanReplayStopAuto();
+            document.querySelectorAll('#clanTabBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.clantab === id));
+            document.getElementById('clanSubMine').classList.toggle('active', id === 'mine');
+            document.getElementById('clanSubLineup').classList.toggle('active', id === 'lineup');
+            document.getElementById('clanSubBattle').classList.toggle('active', id === 'battle');
+            document.getElementById('clanSubLive').classList.toggle('active', id === 'live');
+            if (id === 'battle') loadClanTournament();
+            if (id === 'live') renderClanReplayPicker();
+        }
+
+        // ---------- Топ кланов / создание / вступление ----------
+
+        async function loadClanTop() {
+            if (offlineOnly || !state.userId) { clanTopCache = []; renderClanTopList(); return; }
+            try {
+                const response = await fetch(`api/clan/top?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                clanTopCache = data.clans || [];
+            } catch (e) {
+                clanTopCache = [];
+            }
+            renderClanTopList();
+        }
+
+        function renderClanTopList() {
+            const box = document.getElementById('clanTopList');
+            if (!box) return;
+            if (!clanTopCache.length) {
+                box.innerHTML = `<p class="clan-empty-hint">${t('clan.noClansYet')}</p>`;
+                return;
+            }
+            box.innerHTML = clanTopCache.map((clan, i) => {
+                const joinable = clan.member_count < clan.open_slots;
+                return `<div class="clan-top-row">
+                    <span class="clan-top-rank">#${i + 1}</span>
+                    <span class="clan-top-name">${clan.name}</span>
+                    <span class="clan-top-power">💪 ${fmt(clan.clan_power)}</span>
+                    <span style="font-size:11px;color:var(--text-muted);">${clan.member_count}/${clan.open_slots}</span>
+                    <button class="clan-top-join" ${joinable ? '' : 'disabled'} onclick="joinClan('${clan.id}')">${t('clan.joinBtn')}</button>
+                </div>`;
+            }).join('');
+        }
+
+        function openCreateClanModal() {
+            if (offlineOnly || !state.userId) { toast(t('clan.onlineOnly')); return; }
+            clanCreateNameDraft = '';
+            renderCreateClanModal();
+            document.getElementById('clanCreateModal').classList.add('open');
+        }
+
+        function closeCreateClanModal() {
+            document.getElementById('clanCreateModal').classList.remove('open');
+        }
+
+        function renderCreateClanModal() {
+            const cfg = CONFIG.clans;
+            document.getElementById('clanCreateBody').innerHTML = `
+                <h2>${t('clan.createBtn')}</h2>
+                <p>${t('clan.createCostHint', { gram: fmtGram(cfg.create_cost_gram), gold: fmt(cfg.create_cost_gold), meat: fmt(cfg.create_cost_meat) })}</p>
+                <input class="pay-input" id="clanCreateNameInput" type="text" maxlength="24" placeholder="${t('clan.namePlaceholder')}" value="${clanCreateNameDraft.replace(/"/g, '&quot;')}">
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="confirmCreateClan()">${t('clan.createBtn')}</button>
+                    <button class="btn-action" onclick="closeCreateClanModal()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmCreateClan() {
+            const name = (document.getElementById('clanCreateNameInput').value || '').trim();
+            if (!name) { toast(t('clan.nameRequired')); return; }
+            try {
+                const response = await fetch('api/clan/create', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, name }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.createFailed')); haptic.notify('warning'); return; }
+                closeCreateClanModal();
+                haptic.notify('success');
+                toast(t('clan.created'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function joinClan(clanId) {
+            try {
+                const response = await fetch('api/clan/join', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, clan_id: clanId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.joinFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.joined'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function leaveClan() {
+            if (!confirm(t('clan.leaveConfirm'))) return;
+            try {
+                const response = await fetch('api/clan/leave', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.leaveFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.left'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        // ---------- Вкладка «Мой Клан» ----------
+
+        function renderMyClanTab() {
+            if (!clanData) return;
+            const cfg = CONFIG.clans;
+            document.getElementById('clanSlotsHint').textContent = t('clan.slotsHint', {
+                count: clanData.member_count, open: clanData.open_slots, max: cfg.member_limit,
+            });
+            document.getElementById('clanMemberList').innerHTML = clanData.members.map(uid => {
+                const isLeader = uid === clanData.leader_id;
+                const name = clanMemberNames[String(uid)] || `#${uid}`;
+                const submission = clanData.lineup_submissions[String(uid)];
+                return `<div class="clan-member-row ${isLeader ? 'is-leader' : ''}">
+                    <span class="clan-member-crown">${isLeader ? '👑' : '🦅'}</span>
+                    <span class="clan-member-name">${name}</span>
+                    ${submission ? `<span class="clan-member-tier" style="color:${clanTierColor(submission.tier_id)}">${clanTierLabel(submission.tier_id)}</span>` : ''}
+                </div>`;
+            }).join('');
+
+            const openBtn = document.getElementById('clanOpenSlotBtn');
+            if (clanIsLeader && clanData.open_slots < cfg.member_limit) {
+                openBtn.style.display = '';
+                document.getElementById('clanOpenSlotCost').textContent = ` (${fmtGram(cfg.slot_price_gram)} GRAM)`;
+            } else {
+                openBtn.style.display = 'none';
+            }
+        }
+
+        function openClanSlotBuy() {
+            renderClanSlotModal();
+            document.getElementById('clanSlotModal').classList.add('open');
+        }
+
+        function closeClanSlotBuy() {
+            document.getElementById('clanSlotModal').classList.remove('open');
+        }
+
+        function renderClanSlotModal() {
+            const cfg = CONFIG.clans;
+            document.getElementById('clanSlotBody').innerHTML = `
+                <h2>${t('clan.openSlotBtn')}</h2>
+                <p>${t('clan.openSlotConfirm', { cost: fmtGram(cfg.slot_price_gram) })}</p>
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="confirmClanOpenSlot()">${t('common.confirm')}</button>
+                    <button class="btn-action" onclick="closeClanSlotBuy()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmClanOpenSlot() {
+            try {
+                const response = await fetch('api/clan/open_slot', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.openSlotFailed')); haptic.notify('warning'); closeClanSlotBuy(); return; }
+                state.coins = data.coins;
+                closeClanSlotBuy();
+                haptic.notify('success');
+                toast(t('clan.slotOpened'));
+                renderHeader();
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        function openClanBurnPicker() {
+            if (!eligibleClanBurnEagles().length) { toast(t('clan.noEligibleEagles')); haptic.notify('warning'); return; }
+            renderClanBurnPicker();
+            document.getElementById('clanBurnModal').classList.add('open');
+        }
+
+        function closeClanBurnPicker() {
+            document.getElementById('clanBurnModal').classList.remove('open');
+        }
+
+        function renderClanBurnPicker() {
+            const counts = {};
+            eligibleClanBurnEagles().forEach(slot => { counts[slot.id] = (counts[slot.id] || 0) + 1; });
+            const ids = Object.keys(counts);
+            if (!ids.length) { closeClanBurnPicker(); return; }
+            const cfg = CONFIG.clans;
+            document.getElementById('clanBurnBody').innerHTML = `
+                <h2>${t('clan.donateBtn')}</h2>
+                <p class="pay-warning">${t('clan.donateWarning')}</p>
+                <div class="lang-options">
+                    ${ids.map(id => {
+                        const monster = MONSTERS[id];
+                        const tier = tierById(monster.tier);
+                        const power = (cfg.burn_power_by_tier || {})[monster.tier] || 0;
+                        return `<button class="lang-option" onclick="confirmClanBurn('${id}')">
+                            <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="">
+                            <span class="rarity-name" style="color:${tier.color}">${monster.name}</span>
+                            <span style="margin-left:auto; color:var(--text-muted)">×${counts[id]}</span>
+                            <span style="color:var(--accent-amber); font-weight:800;">+${fmt(power)} 💪</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <div class="pay-actions">
+                    <button class="btn-action" onclick="closeClanBurnPicker()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmClanBurn(monsterId) {
+            try {
+                const response = await fetch('api/clan/burn', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, monster_id: monsterId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.burnFailed')); haptic.notify('warning'); closeClanBurnPicker(); return; }
+                state.farm = readFarm(data.monsters);
+                closeClanBurnPicker();
+                haptic.notify('success');
+                toast(t('clan.burned'));
+                renderAll();
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        // ---------- Вкладка «Расстановка» ----------
+
+        function renderClanLineupTab() {
+            if (!clanData) return;
+            const owned = ownedArenaTiers();
+            const mySubmission = clanData.lineup_submissions[String(state.userId)];
+            if (!clanLineupTierChoice || !owned.includes(clanLineupTierChoice)) {
+                clanLineupTierChoice = (mySubmission && owned.includes(mySubmission.tier_id)) ? mySubmission.tier_id : (owned[0] || null);
+            }
+            document.getElementById('clanLineupTiers').innerHTML = owned.length
+                ? owned.map(tierId => `<button class="clan-lineup-tier-btn ${tierId === clanLineupTierChoice ? 'active' : ''}"
+                        style="${tierId === clanLineupTierChoice ? `border-color:${clanTierColor(tierId)}` : ''}"
+                        onclick="clanLineupTierChoice='${tierId}'; renderClanLineupTab();">${clanTierLabel(tierId)}</button>`).join('')
+                : `<p class="clan-empty-hint">${t('clan.noEaglesForLineup')}</p>`;
+
+            const approveWrap = document.getElementById('clanLineupApproveWrap');
+            if (clanIsLeader) {
+                approveWrap.style.display = '';
+                const subs = clanData.lineup_submissions || {};
+                const approvedIds = new Set((clanData.approved_lineup || []).map(e => String(e.user_id)));
+                if (!clanLineupApprovePicked.size && approvedIds.size) clanLineupApprovePicked = approvedIds;
+                document.getElementById('clanLineupApproveList').innerHTML = Object.keys(subs).length
+                    ? Object.entries(subs).map(([uidStr, sub]) => {
+                        const checked = clanLineupApprovePicked.has(uidStr);
+                        const name = clanMemberNames[uidStr] || `#${uidStr}`;
+                        return `<label class="clan-lineup-row">
+                            <input class="clan-lineup-check" type="checkbox" ${checked ? 'checked' : ''}
+                                onchange="clanToggleLineupPick('${uidStr}', this.checked)">
+                            <span class="clan-lineup-name">${name}</span>
+                            <span class="clan-lineup-tier-tag" style="color:${clanTierColor(sub.tier_id)}">${clanTierLabel(sub.tier_id)}</span>
+                        </label>`;
+                    }).join('')
+                    : `<p class="clan-empty-hint">${t('clan.noSubmissionsYet')}</p>`;
+            } else {
+                approveWrap.style.display = 'none';
+            }
+        }
+
+        function clanToggleLineupPick(uidStr, checked) {
+            if (checked) {
+                if (clanLineupApprovePicked.size >= CONFIG.clans.roster_size) {
+                    toast(t('clan.rosterFull', { max: CONFIG.clans.roster_size }));
+                    renderClanLineupTab();
+                    return;
+                }
+                clanLineupApprovePicked.add(uidStr);
+            } else {
+                clanLineupApprovePicked.delete(uidStr);
+            }
+        }
+
+        async function submitClanLineup() {
+            if (!clanLineupTierChoice) { toast(t('clan.noEaglesForLineup')); return; }
+            try {
+                const response = await fetch('api/clan/lineup/submit', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, tier_id: clanLineupTierChoice }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.lineupFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.lineupSubmitted'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function approveClanLineup() {
+            const memberIds = Array.from(clanLineupApprovePicked).map(Number);
+            if (!memberIds.length) { toast(t('clan.pickAtLeastOne')); return; }
+            try {
+                const response = await fetch('api/clan/lineup/approve', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, member_ids: memberIds }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.approveFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.approved'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        // ---------- Вкладка «Битва Кланов» ----------
+
+        const CLAN_ROUND_LABELS = {
+            r32: 'clan.round32', r16: 'clan.round16', r8: 'clan.round8',
+            r4: 'clan.round4', r3rd: 'clan.round3rd', final: 'clan.roundFinal',
+        };
+
+        async function loadClanTournament() {
+            if (offlineOnly || !state.userId) return;
+            try {
+                const response = await fetch(`api/clan/tournament?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                clanTournamentData = data;
+            } catch (e) {
+                clanTournamentData = null;
+            }
+            renderClanBracket();
+            if (activeClanTab === 'live') renderClanReplayPicker();
+        }
+
+        function clanMatchSideHtml(match, side) {
+            const id = match[`clan_${side}_id`], name = match[`clan_${side}_name`];
+            if (!id) return `<div class="clan-match-side is-empty">${t('clan.tbd')}</div>`;
+            const isWinner = match.resolved && match.winner_id === id;
+            return `<div class="clan-match-side ${isWinner ? 'is-winner' : ''}"><span>${name}</span></div>`;
+        }
+
+        function renderClanBracket() {
+            const box = document.getElementById('clanBracket');
+            if (!box) return;
+            if (!clanTournamentData || !clanTournamentData.bracket || !clanTournamentData.bracket.length) {
+                box.innerHTML = `<p class="clan-empty-hint">${t('clan.tournamentLoading')}</p>`;
+                document.getElementById('clanTournamentSubtitle').textContent = '';
+                return;
+            }
+            const bracket = clanTournamentData.bracket;
+            document.getElementById('clanTournamentSubtitle').textContent = t('clan.tournamentCycle', { cycle: clanTournamentData.cycle + 1 });
+
+            const rounds = [
+                { key: 'r32', from: 0, to: 16 }, { key: 'r16', from: 16, to: 24 },
+                { key: 'r8', from: 24, to: 28 }, { key: 'r4', from: 28, to: 30 },
+                { key: 'r3rd', from: 30, to: 31 }, { key: 'final', from: 31, to: 32 },
+            ];
+            box.innerHTML = rounds.map(round => {
+                const matches = bracket.slice(round.from, round.to);
+                return `<div class="clan-round-col">
+                    <div class="clan-round-title">${t(CLAN_ROUND_LABELS[round.key])}</div>
+                    ${matches.map((m, i) => `
+                        <div class="clan-match-card ${m.resolved ? 'resolved' : ''}" onclick="openClanReplay(${round.from + i})">
+                            <div class="clan-match-day">${t('clan.dayLabel', { day: m.day })}</div>
+                            ${clanMatchSideHtml(m, 'a')}
+                            ${clanMatchSideHtml(m, 'b')}
+                        </div>
+                    `).join('')}
+                </div>`;
+            }).join('');
+        }
+
+        // ---------- Вкладка «Прямой Эфир» ----------
+
+        function renderClanReplayPicker() {
+            const box = document.getElementById('clanReplayPicker');
+            if (!box) return;
+            const bracket = (clanTournamentData && clanTournamentData.bracket) || [];
+            const resolved = bracket.map((m, i) => ({ m, i })).filter(x => x.m.resolved && x.m.clan_a_id && x.m.clan_b_id);
+            if (!resolved.length) {
+                box.innerHTML = `<p class="clan-empty-hint">${t('clan.noMatchesYet')}</p>`;
+                return;
+            }
+            box.innerHTML = resolved.map(({ m, i }) => `
+                <button class="clan-replay-pick-btn" onclick="openClanReplay(${i})">
+                    ${t(CLAN_ROUND_LABELS[m.round])} · ${m.clan_a_name} vs ${m.clan_b_name}
+                    ${m.winner_id ? ` — 🏆 ${m.winner_name}` : ''}
+                </button>
+            `).join('');
+        }
+
+        async function openClanReplay(matchIndex) {
+            try {
+                const response = await fetch(`api/clan/tournament/match/${matchIndex}?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) { toast(t('clan.matchNotFound')); return; }
+                const match = await response.json();
+                if (!match.resolved || !match.clan_a_id || !match.clan_b_id) { toast(t('clan.matchNotReady')); return; }
+                clanReplayMatch = match;
+                clanReplayCursor = 0;
+                switchClanSubtab('live');
+                document.getElementById('clanReplayStage').style.display = '';
+                clanReplayRestart();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        function clanReplayStopAuto() {
+            clanReplayPlaying = false;
+            if (clanReplayTimer) { clearInterval(clanReplayTimer); clanReplayTimer = null; }
+            const btn = document.getElementById('clanReplayPlayBtn');
+            if (btn) btn.textContent = '▶';
+        }
+
+        function clanReplayRestart() {
+            if (!clanReplayMatch) return;
+            clanReplayCursor = 0;
+            clanReplayStopAuto();
+            clanReplayDrawFrame();
+        }
+
+        function clanReplayStep() {
+            if (!clanReplayMatch) return;
+            if (clanReplayCursor < clanReplayMatch.battle_log.length) clanReplayCursor++;
+            clanReplayDrawFrame();
+        }
+
+        function clanReplayTogglePlay() {
+            if (!clanReplayMatch) return;
+            if (clanReplayPlaying) { clanReplayStopAuto(); return; }
+            clanReplayPlaying = true;
+            document.getElementById('clanReplayPlayBtn').textContent = '⏸';
+            clanReplayTimer = setInterval(() => {
+                if (!clanReplayMatch || clanReplayCursor >= clanReplayMatch.battle_log.length) { clanReplayStopAuto(); return; }
+                clanReplayCursor++;
+                clanReplayDrawFrame();
+            }, 550);
+        }
+
+        // Восстанавливает состояние боя (текущие бойцы сторон и их HP на
+        // данный момент) проигрыванием лога с начала до clanReplayCursor —
+        // тот же принцип, что и сама серверная симуляция: победивший боец
+        // переносит текущее (не восстановленное) HP в следующую дуэль.
+        function clanReplayStateAt(cursor) {
+            if (!clanReplayMatch) return null;
+            const log = clanReplayMatch.battle_log;
+            let a = null, b = null;
+            let lastHit = null;
+            for (let i = 0; i < cursor && i < log.length; i++) {
+                const e = log[i];
+                if (e.type === 'enter') {
+                    const fighter = { userId: e.user_id, name: e.name, tierId: e.tier_id, hp: e.hp, maxHp: e.max_hp };
+                    if (e.side === 'a') a = fighter; else b = fighter;
+                } else if (e.type === 'attack') {
+                    const defender = e.side === 'a' ? b : a;
+                    if (defender) defender.hp = e.defender_hp;
+                    lastHit = e;
+                }
+            }
+            return { a, b, lastHit, done: cursor >= log.length };
+        }
+
+        function clanReplayDrawFrame() {
+            const canvas = document.getElementById('clanReplayCanvas');
+            if (!canvas || !clanReplayMatch) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = 'rgba(255,255,255,0.03)';
+            ctx.fillRect(0, 0, w, h);
+
+            const snap = clanReplayStateAt(clanReplayCursor);
+            const logLine = document.getElementById('clanReplayLog');
+
+            function drawFighter(fighter, x, side) {
+                if (!fighter) {
+                    ctx.font = '11px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.textAlign = 'center';
+                    ctx.fillText('—', x, h / 2);
+                    return;
+                }
+                const color = clanTierColor(fighter.tierId);
+                ctx.beginPath(); ctx.arc(x, h / 2 - 10, 26, 0, Math.PI * 2);
+                ctx.fillStyle = color + '33'; ctx.fill();
+                ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+                ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+                ctx.fillText('🦅', x, h / 2 - 2);
+
+                ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = '#fff';
+                ctx.fillText(fighter.name || ('#' + fighter.userId), x, h / 2 + 34);
+
+                const barW = 64, barH = 7, pct = Math.max(0, Math.min(1, fighter.hp / (fighter.maxHp || 1)));
+                ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(x - barW / 2, h / 2 + 42, barW, barH);
+                ctx.fillStyle = pct > 0.4 ? '#4ade80' : '#ef6a6a'; ctx.fillRect(x - barW / 2, h / 2 + 42, barW * pct, barH);
+                ctx.font = '9px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillText(`${Math.max(0, Math.round(fighter.hp))}/${fighter.maxHp}`, x, h / 2 + 58);
+
+                if (side && snap.lastHit && snap.lastHit.side !== side && clanReplayCursor > 0
+                    && log_is_recent_hit(side)) {
+                    ctx.font = 'bold 15px sans-serif'; ctx.fillStyle = snap.lastHit.crit ? '#ffcc4d' : '#ff6a6a';
+                    ctx.fillText('-' + snap.lastHit.value, x, h / 2 - 40);
+                }
+            }
+            function log_is_recent_hit(side) {
+                return snap.lastHit && (side === 'a' ? snap.lastHit.side === 'b' : snap.lastHit.side === 'a');
+            }
+
+            if (snap) {
+                drawFighter(snap.a, w * 0.27, 'a');
+                drawFighter(snap.b, w * 0.73, 'b');
+                ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.textAlign = 'center';
+                ctx.fillText('VS', w / 2, h / 2 - 2);
+
+                if (snap.done) {
+                    const winnerName = clanReplayMatch.winner_name || '';
+                    logLine.textContent = t('clan.replayWinner', { name: winnerName });
+                    clanReplayStopAuto();
+                } else if (snap.lastHit) {
+                    logLine.textContent = t('clan.replayHit', {
+                        value: snap.lastHit.value, crit: snap.lastHit.crit ? t('arena.critSuffix') : '',
+                    });
+                } else {
+                    logLine.textContent = t('clan.replayStart');
+                }
+            }
         }
 
         async function boot() {

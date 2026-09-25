@@ -13,6 +13,8 @@
     победу/поражение, сбрасывается всем разом раз в сезон — см. arena_season)
     pvp_energy, pvp_energy_day (Арена: энергия на вход в бой, потолок 10,
     пополняется раз в UTC-сутки; day — номер суток последнего пополнения)
+    clan_id (Кланы: ObjectId клана, в котором состоит игрок, строкой; None —
+    не состоит ни в одном; см. clans ниже)
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
@@ -26,11 +28,23 @@ nest_state: {cooldown_until, day, bought_today}, и общий номер тек
 сезона Арены — arena_season: {season} (см. try_advance_arena_season /
 reconcile_arena_season в main.py — раз в ARENA_SEASON_DAYS суток Топ-50
 получает призы и PvP-рейтинг сбрасывается всем игрокам).
+
+Кланы — clans: {name, leader_id, members: [user_id...], open_slots,
+clan_power, lineup_submissions: {user_id: {tier_id}}, approved_lineup:
+[{user_id, tier_id}...]} — до 15 участников, силу качают сжиганием орлов
+7 уровня (см. burn_eagle_for_clan_power в main.py). Раз в
+CLAN_TOURNAMENT_DAYS дней 32 сильнейших клана автоматически входят в
+турнирную сетку на вылет — clan_tournament: {_id: "current", cycle,
+start_at, bracket: [{round, day, clan_a_id, clan_a_name, clan_b_id,
+clan_b_name, resolved, winner_id, winner_name, battle_log}...]} (см.
+reconcile_clan_tournament в main.py — та же логика лениво продвигаемого
+по дням турнира, что и у сезона Арены).
 """
 
 import os
 import random
 import re
+import time
 from typing import Optional
 
 FIELDS = (
@@ -39,7 +53,7 @@ FIELDS = (
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
     "nest_miners", "nest_particles", "nest_last_claim", "nest_inventory", "nest_equipped", "pvp_rating",
-    "pvp_energy", "pvp_energy_day",
+    "pvp_energy", "pvp_energy_day", "clan_id",
 )
 
 
@@ -60,6 +74,8 @@ class MongoStore:
         self.merchant = client[db_name]["merchant_state"]
         self.nest_global = client[db_name]["nest_state"]
         self.arena_season = client[db_name]["arena_season"]
+        self.clans = client[db_name]["clans"]
+        self.clan_tournament = client[db_name]["clan_tournament"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -68,6 +84,7 @@ class MongoStore:
         await self.market.create_index("seller_id")
         await self.equip_market.create_index("seller_id")
         await self.resource_market.create_index("seller_id")
+        await self.clans.create_index("clan_power")
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
@@ -826,6 +843,261 @@ class MongoStore:
         ARENA_SEASON_DAYS дней), поэтому обычный update_many без CAS —
         рейтинг никто параллельно не читает так, чтобы гонка была заметна."""
         await self.users.update_many({}, {"$set": {"pvp_rating": start_rating}})
+
+    # --- КЛАНЫ: создание/вступление, открытие мест, сжигание орлов за
+    # силу клана, расстановка бойцов, турнирная сетка Топ-32. ---
+
+    async def create_clan(self, user_id: int, name: str, cost_gram: float, cost_gold: float,
+                           cost_meat: float, open_slots: int) -> tuple:
+        """Создаёт клан и сразу вступает в него создателем-лидером. Порядок
+        важен: сперва создаём документ клана (сам по себе он ничего не
+        стоит), затем ОДНИМ атомарным update списываем ресурсы у игрока И
+        проставляем ему clan_id — если это не удалось (не хватает
+        ресурсов или игрок уже успел вступить в другой клан параллельно),
+        откатываем и удаляем только что созданный клан. Возвращает
+        (код, clan_id|None)."""
+        clan_doc = {
+            "name": name, "leader_id": user_id, "members": [user_id],
+            "open_slots": open_slots, "clan_power": 0.0, "created_at": time.time(),
+            "lineup_submissions": {}, "approved_lineup": [],
+        }
+        result = await self.clans.insert_one(clan_doc)
+        clan_id = str(result.inserted_id)
+
+        charge = await self.users.update_one(
+            {"_id": user_id, "clan_id": {"$in": [None, ""]},
+             "coins": {"$gte": cost_gram}, "gold": {"$gte": cost_gold}, "mnstr": {"$gte": cost_meat}},
+            {"$inc": {"coins": -cost_gram, "gold": -cost_gold, "mnstr": -cost_meat, "ops": 1},
+             "$set": {"clan_id": clan_id}},
+        )
+        if charge.modified_count == 0:
+            await self.clans.delete_one({"_id": result.inserted_id})
+            return "failed", None
+        return "ok", clan_id
+
+    async def get_clan(self, clan_id: str) -> Optional[dict]:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return None
+        doc = await self.clans.find_one({"_id": oid})
+        if not doc:
+            return None
+        doc = dict(doc)
+        doc["id"] = str(doc.pop("_id"))
+        return doc
+
+    async def list_top_clans(self, limit: int = 100) -> list:
+        cursor = self.clans.find().sort("clan_power", -1).limit(limit)
+        out = []
+        async for doc in cursor:
+            doc = dict(doc)
+            doc["id"] = str(doc.pop("_id"))
+            out.append(doc)
+        return out
+
+    async def join_clan(self, user_id: int, clan_id: str) -> str:
+        """Свободное вступление на открытое место — без одобрения лидера,
+        как и задумано (лидер управляет только КОЛИЧЕСТВОМ мест, не тем,
+        кто их занимает)."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return "not_found"
+
+        result = await self.clans.update_one(
+            {"_id": oid, "$expr": {"$lt": [{"$size": "$members"}, "$open_slots"]}},
+            {"$push": {"members": user_id}},
+        )
+        if result.modified_count == 0:
+            exists = await self.clans.find_one({"_id": oid})
+            return "no_open_slot" if exists else "not_found"
+
+        charge = await self.users.update_one(
+            {"_id": user_id, "clan_id": {"$in": [None, ""]}},
+            {"$set": {"clan_id": clan_id}},
+        )
+        if charge.modified_count == 0:
+            await self.clans.update_one({"_id": oid}, {"$pull": {"members": user_id}})
+            return "already_in_clan"
+        return "ok"
+
+    async def leave_clan(self, user_id: int, clan_id: str) -> str:
+        """Выход из клана. Если уходит лидер и в клане остаётся кто-то ещё,
+        лидерство переходит следующему по списку участников — без этого
+        клан осиротел бы без единого способа управлять местами/составом.
+        Если участников не осталось вовсе — клан удаляется."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return "not_found"
+
+        clan = await self.clans.find_one({"_id": oid})
+        if not clan or user_id not in (clan.get("members") or []):
+            return "not_member"
+
+        members = [m for m in clan["members"] if m != user_id]
+        update = {"$pull": {"members": user_id}, "$unset": {f"lineup_submissions.{user_id}": ""}}
+        if not members:
+            await self.clans.delete_one({"_id": oid})
+        else:
+            if clan.get("leader_id") == user_id:
+                update["$set"] = {"leader_id": members[0]}
+            await self.clans.update_one({"_id": oid}, update)
+        await self.users.update_one({"_id": user_id}, {"$set": {"clan_id": None}})
+        return "ok"
+
+    async def open_clan_slot(self, user_id: int, clan_id: str, price_gram: float, member_limit: int) -> str:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return "not_found"
+
+        result = await self.clans.update_one(
+            {"_id": oid, "leader_id": user_id, "open_slots": {"$lt": member_limit}},
+            {"$inc": {"open_slots": 1}},
+        )
+        if result.modified_count == 0:
+            clan = await self.clans.find_one({"_id": oid})
+            if not clan:
+                return "not_found"
+            if clan.get("leader_id") != user_id:
+                return "not_leader"
+            return "slots_maxed"
+
+        charge = await self.users.update_one(
+            {"_id": user_id, "coins": {"$gte": price_gram}},
+            {"$inc": {"coins": -price_gram, "ops": 1}},
+        )
+        if charge.modified_count == 0:
+            await self.clans.update_one({"_id": oid}, {"$inc": {"open_slots": -1}})
+            return "insufficient_funds"
+        return "ok"
+
+    async def burn_eagle_for_clan_power(self, user_id: int, clan_id: str, monster_id: str,
+                                         feed_levels: int, power: float) -> Optional[list]:
+        """Сжигает первого попавшегося полностью прокачанного орла нужного
+        вида с фермы (та же оптимистичная блокировка по monsters, что и в
+        create_listing для орлов) и начисляет клану power очков силы.
+        Возвращает обновлённый список monsters или None, если такого орла
+        нет. Начисление силы клана — простой $inc, без отдельного отката:
+        если бы он не удался (крайне маловероятно), орёл всё равно уже
+        сожжён — тот же уровень риска, что и в остальных двухшаговых
+        операциях этого файла."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return None
+
+        doc = await self.users.find_one({"_id": user_id}, {"monsters": 1})
+        farm = list((doc or {}).get("monsters") or [])
+        idx = next((i for i, m in enumerate(farm)
+                    if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels), None)
+        if idx is None:
+            return None
+        original = farm[:]
+        farm.pop(idx)
+        result = await self.users.update_one(
+            {"_id": user_id, "monsters": original}, {"$set": {"monsters": farm}}
+        )
+        if result.modified_count == 0:
+            return None
+
+        await self.clans.update_one({"_id": oid}, {"$inc": {"clan_power": power}})
+        return farm
+
+    async def submit_clan_lineup(self, clan_id: str, user_id: int, tier_id: str) -> bool:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        result = await self.clans.update_one(
+            {"_id": oid, "members": user_id},
+            {"$set": {f"lineup_submissions.{user_id}": {"tier_id": tier_id}}},
+        )
+        return result.modified_count > 0
+
+    async def approve_clan_lineup(self, clan_id: str, leader_id: int, entries: list) -> bool:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        result = await self.clans.update_one(
+            {"_id": oid, "leader_id": leader_id},
+            {"$set": {"approved_lineup": entries}},
+        )
+        return result.modified_count > 0
+
+    # --- Турнирная сетка кланов (см. reconcile_clan_tournament в main.py) ---
+
+    async def get_clan_tournament(self) -> Optional[dict]:
+        return await self.clan_tournament.find_one({"_id": "current"})
+
+    async def try_start_clan_tournament(self, cycle: int, start_at: float, bracket: list) -> bool:
+        """Атомарно начинает новый турнирный цикл — true только у ОДНОГО
+        из конкурентных вызовов (та же гонка, что и у смены сезона Арены),
+        не перезаписывая уже идущий турнир того же (или более нового)
+        цикла. Документ создаётся лениво при самом первом обращении
+        (upsert), без розыгрыша "нулевого" турнира."""
+        existing = await self.clan_tournament.find_one({"_id": "current"})
+        if existing is None:
+            await self.clan_tournament.update_one(
+                {"_id": "current"},
+                {"$setOnInsert": {"cycle": cycle, "start_at": start_at, "bracket": bracket}},
+                upsert=True,
+            )
+            return False
+        result = await self.clan_tournament.update_one(
+            {"_id": "current", "cycle": {"$lt": cycle}},
+            {"$set": {"cycle": cycle, "start_at": start_at, "bracket": bracket}},
+        )
+        return result.modified_count > 0
+
+    async def resolve_clan_match(self, match_index: int, winner_id: Optional[str],
+                                  winner_name: Optional[str], battle_log: list) -> bool:
+        """Атомарно фиксирует исход одного матча — conditional update по
+        индексу в массиве bracket, "resolved": False в фильтре гарантирует,
+        что при гонке конкурентных запросов исход запишет только один из
+        них. winner_id=None — техническая победа при пустом слоте (бай)."""
+        result = await self.clan_tournament.update_one(
+            {"_id": "current", f"bracket.{match_index}.resolved": False},
+            {"$set": {
+                f"bracket.{match_index}.resolved": True,
+                f"bracket.{match_index}.winner_id": winner_id,
+                f"bracket.{match_index}.winner_name": winner_name,
+                f"bracket.{match_index}.battle_log": battle_log,
+            }},
+        )
+        return result.modified_count > 0
+
+    async def set_clan_match_participant(self, match_index: int, slot: str,
+                                          clan_id: Optional[str], clan_name: Optional[str]) -> bool:
+        """Проставляет победителя предыдущего раунда в слот следующего
+        матча (slot — 'clan_a' или 'clan_b'), только если тот слот ещё
+        пуст — так конкурентные запросы, разрешающие соседние матчи
+        одновременно, не затирают друг друга."""
+        result = await self.clan_tournament.update_one(
+            {"_id": "current", f"bracket.{match_index}.{slot}_id": None},
+            {"$set": {
+                f"bracket.{match_index}.{slot}_id": clan_id,
+                f"bracket.{match_index}.{slot}_name": clan_name,
+            }},
+        )
+        return result.modified_count > 0
 
     # --- АДМИН-ПАНЕЛЬ ---
 
