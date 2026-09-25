@@ -905,6 +905,15 @@
 
         .arena-log { text-align: center; font-size: 12.5px; color: var(--text-muted); font-style: italic; margin: 10px 2px; min-height: 16px; }
         .arena-start-btn { width: 100%; justify-content: center; }
+        .arena-speed-btn {
+            position: absolute; top: 8px; right: 8px; z-index: 5;
+            min-width: 34px; height: 30px; padding: 0 8px; border-radius: 10px;
+            background: rgba(10, 7, 22, 0.65); border: 1px solid var(--glass-border);
+            color: var(--text-main); font-size: 12px; font-weight: 800; letter-spacing: 0.3px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        }
+        .arena-speed-btn.active { border-color: var(--accent-violet); box-shadow: var(--glow-violet); color: var(--accent-amber); }
         .arena-leaderboard-btn { width: 100%; justify-content: center; margin-bottom: 12px; }
 
         /* ---------- Энергия Арены ---------- */
@@ -1383,6 +1392,7 @@
 
             <div class="arena-canvas-frame">
                 <canvas id="arenaCanvas" width="720" height="360"></canvas>
+                <button class="arena-speed-btn" id="arenaSpeedBtn" onclick="arenaToggleSpeed()">×1</button>
                 <div class="arena-banner" id="arenaBanner">
                     <div class="arena-banner-title" id="arenaBannerTitle">Победа!</div>
                     <div class="arena-banner-sub" id="arenaBannerSub"></div>
@@ -6354,6 +6364,7 @@
         // либо { isBot: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaRevealOpponent.
         let arenaOpponentPending = null;
         let arenaBattleActive = false;
+        let arenaSpeedMultiplier = 1; // 1 или 2 — ×2 ускоряет и анимацию, и паузы между ударами (см. arenaToggleSpeed)
         let arenaCtx = null;
         let arenaCanvasEl = null;
         let arenaFrameHandle = null;
@@ -6802,7 +6813,7 @@
             const tab = document.getElementById('arena');
             if (!tab || !tab.classList.contains('active')) { arenaFrameHandle = null; return; }
             if (!arenaLastTs) arenaLastTs = ts;
-            const dt = Math.min(0.05, (ts - arenaLastTs) / 1000);
+            const dt = Math.min(0.05, (ts - arenaLastTs) / 1000) * arenaSpeedMultiplier;
             arenaLastTs = ts;
             arenaTime += dt;
             const groundY = arenaCanvasSize().h * 0.78;
@@ -6855,9 +6866,23 @@
                         name: attacker.label, value: dmg.value, crit: dmg.crit ? t('arena.critSuffix') : '',
                     });
 
-                    setTimeout(resolve, Math.max(ARENA_RETURN_DUR, ARENA_HURT_DUR) * 1000 + 60);
-                }, ARENA_ATTACK_DUR * 1000);
+                    setTimeout(resolve, (Math.max(ARENA_RETURN_DUR, ARENA_HURT_DUR) * 1000 + 60) / arenaSpeedMultiplier);
+                }, ARENA_ATTACK_DUR * 1000 / arenaSpeedMultiplier);
             });
+        }
+
+        // Переключатель ×1/×2 — ускоряет и саму анимацию (dt в arenaFrame), и
+        // паузы между ударами (arenaPerformAttack/arenaStartBattle), так что
+        // бой реально проходит вдвое быстрее, а не просто "мельтешит" вдвое
+        // быстрее визуально. Сохраняется между боями до перезагрузки страницы.
+        function arenaToggleSpeed() {
+            haptic.select();
+            arenaSpeedMultiplier = arenaSpeedMultiplier === 1 ? 2 : 1;
+            const btn = document.getElementById('arenaSpeedBtn');
+            if (btn) {
+                btn.textContent = '×' + arenaSpeedMultiplier;
+                btn.classList.toggle('active', arenaSpeedMultiplier === 2);
+            }
         }
 
         async function arenaStartBattle() {
@@ -6893,7 +6918,7 @@
             await arenaRevealOpponent();
 
             document.getElementById('arenaLog').textContent = t('arena.battleStart');
-            await arenaSleep(500);
+            await arenaSleep(500 / arenaSpeedMultiplier);
 
             let attacker = arenaPlayerEagle, defender = arenaEnemyEagle;
             if (arenaEnemyEagle.stats.spd > arenaPlayerEagle.stats.spd) { attacker = arenaEnemyEagle; defender = arenaPlayerEagle; }
@@ -6902,7 +6927,7 @@
             while (arenaPlayerEagle.hp > 0 && arenaEnemyEagle.hp > 0) {
                 await arenaPerformAttack(attacker, defender);
                 if (defender.hp <= 0) break;
-                await arenaSleep(ARENA_TURN_GAP * 1000);
+                await arenaSleep(ARENA_TURN_GAP * 1000 / arenaSpeedMultiplier);
                 const tmp = attacker; attacker = defender; defender = tmp;
             }
 
@@ -6911,7 +6936,7 @@
             document.getElementById('arenaLog').textContent = t('arena.defeated', { name: loser.label });
             loser.startDying();
             winner.startVictory();
-            await arenaSleep(1500);
+            await arenaSleep(1500 / arenaSpeedMultiplier);
 
             const playerWon = winner === arenaPlayerEagle;
             arenaReportResult(playerWon); // сетевой вызов идёт параллельно, не блокирует анимацию
