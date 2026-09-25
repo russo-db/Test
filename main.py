@@ -41,6 +41,7 @@ PVP_ENERGY_MAX = 10  # суточный потолок энергии Арены
 PVP_ENERGY_COST = 1  # энергии за один вход в бой
 ARENA_ENERGY_PRICE_GOLD = 10  # золота за 1 докупленную энергию
 ARENA_ENERGY_PRICE_GRAM = 0.25  # GRAM за 1 докупленную энергию
+ARENA_SEASON_DAYS = 20  # длительность сезона Арены — по истечении призы Топ-50 и общий сброс рейтинга
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -878,6 +879,27 @@ def day_index(moment: Optional[float] = None) -> int:
     return int((moment if moment is not None else time.time()) // 86400)
 
 
+# --- СЕЗОНЫ АРЕНЫ: раз в ARENA_SEASON_DAYS дней Топ-50 получает призы
+# (см. distribute_arena_rewards), после чего PvP-рейтинг сбрасывается
+# всем игрокам разом — см. reconcile_arena_season. ---
+def arena_season_index(moment: Optional[float] = None) -> int:
+    """Порядковый номер сезона Арены — тот же принцип, что и day_index,
+    но с шагом ARENA_SEASON_DAYS суток."""
+    return int((moment if moment is not None else time.time()) // (ARENA_SEASON_DAYS * 86400))
+
+
+def arena_season_ends_at(season: int) -> float:
+    return (season + 1) * ARENA_SEASON_DAYS * 86400
+
+
+def arena_season_view() -> dict:
+    """Текущий сезон Арены для клиента — чистая функция от времени, не
+    требует чтения БД (в отличие от reconcile_arena_season, который решает,
+    не пора ли уже провести смену сезона)."""
+    season = arena_season_index()
+    return {"season": season, "ends_at": arena_season_ends_at(season)}
+
+
 def daily_reward(day: int, first_lap: bool = True) -> dict:
     """Награда за day-й день серии: Meat по нарастающей (day × шаг), кроме особых дней.
 
@@ -1427,6 +1449,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
     elif context.get("name"):
         await ensure_user(user_id, name=context["name"])
 
+    await reconcile_arena_season()
     row = await fetch_user(user_id)
     row = await accrue_vip_meat(user_id, row)
     row = await reconcile_queues(user_id, row)
@@ -1464,6 +1487,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "pvp_rating": pvp_rating_of(row),
         "pvp_energy": row.get("pvp_energy", PVP_ENERGY_MAX),
         "pvp_energy_reset_at": arena_energy_reset_at(int(row.get("pvp_energy_day") or day_index())),
+        "arena_season": arena_season_view(),
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
@@ -1974,19 +1998,23 @@ async def arena_buy_energy(request: ArenaBuyEnergy, x_telegram_init_data: Option
 
 @app.get("/api/arena/leaderboard")
 async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Общая Таблица лидеров Арены — реальный Топ-100 по pvp_rating среди
-    всех игроков (никаких сгенерированных ботов), плюс место текущего
-    игрока, даже если он не попал в топ-100."""
+    """Общая Таблица лидеров Арены — ВСЕ игроки по pvp_rating (никаких
+    сгенерированных ботов), плюс место текущего игрока. Открытие таблицы —
+    такая же точка проверки смены сезона, как и /api/load (см.
+    reconcile_arena_season), чтобы сезон сменился не только у тех, кто
+    успел перезайти в приложение."""
     authenticate(x_telegram_init_data, user_id)
+    await reconcile_arena_season()
     row = await fetch_user(user_id)
     my_rating = pvp_rating_of(row)
 
-    # Абсолютная анонимность Топ-100: только место, ник и очки — редкость/
-    # грейд орла (best_tier) намеренно не отдаём вообще, иначе по нему можно
+    # Абсолютная анонимность: только место, ник и очки — редкость/грейд
+    # орла (best_tier) намеренно не отдаём вообще, иначе по нему можно
     # было бы вычислить силу чужой птицы прямо из таблицы лидеров, даже не
     # заходя в бой (см. также двухфазный подбор соперника — arena_opponent/
-    # arena_reveal — построенный на той же идее).
-    top_docs = await store.get_leaderboard(100)
+    # arena_reveal — построенный на той же идее). limit=None — в таблицу
+    # попадают ВСЕ игроки, не только верхушка.
+    top_docs = await store.get_leaderboard(None)
     top = [
         {
             "user_id": doc["user_id"],
@@ -2006,6 +2034,7 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
         "top": top,
         "my_rank": my_rank,
         "my_rating": my_rating,
+        "season": arena_season_view(),
     }
 
 
@@ -2044,9 +2073,10 @@ async def distribute_arena_rewards() -> dict:
     ДО добавления, как и в admin_grant_shards/nest_shard_buy — иначе
     пересчёт ставки задним числом обнулил бы или задвоил уже накопленный
     дробный прогресс, см. nest_settle_particles) и/или целые частички
-    снаряжения (nest_particles) напрямую. Рейтинг игроков не сбрасывает —
-    вызывающий (админ-эндпоинт ниже) решает, когда именно «конец
-    турнира» и нужно ли после этого обнулять места отдельно."""
+    снаряжения (nest_particles) напрямую. Рейтинг игроков сама НЕ
+    сбрасывает — это отдельный шаг у вызывающего (см. reconcile_arena_season
+    для автоматического конца сезона и admin_distribute_arena_rewards для
+    ручного запуска без сброса)."""
     top_docs = await store.get_leaderboard(50)
     now = time.time()
     awarded = []
@@ -2076,6 +2106,24 @@ async def distribute_arena_rewards() -> dict:
         awarded.append({"user_id": user_id, "rank": rank, **reward})
 
     return {"rewarded": len(awarded), "details": awarded}
+
+
+async def reconcile_arena_season() -> None:
+    """Проверяет, не наступил ли новый сезон Арены (см. arena_season_index)
+    — если да, ровно ОДИН из множества конкурентных вызовов выигрывает
+    гонку за смену сезона (store.try_advance_arena_season — атомарный
+    conditional update, как и общий кулдаун Небесного Осколка) и только он
+    разносит призы по итоговому Топ-50 УХОДЯЩЕГО сезона (см.
+    distribute_arena_rewards — считает по рейтингу ДО сброса, вызывается
+    раньше reset_all_pvp_ratings строго в этом порядке), затем сбрасывает
+    PvP-рейтинг всем игрокам к PVP_RATING_START для нового сезона. Вызывается
+    на каждом /api/load и при каждом открытии Таблицы лидеров — пока сезон
+    не сменился, это дешёвый no-op (один conditional update, всегда
+    промахивающийся мимо фильтра)."""
+    season = arena_season_index()
+    if await store.try_advance_arena_season(season):
+        await distribute_arena_rewards()
+        await store.reset_all_pvp_ratings(PVP_RATING_START)
 
 
 @app.post("/admin/api/arena/distribute_rewards")

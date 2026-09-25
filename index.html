@@ -934,6 +934,7 @@
             border-radius: 14px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(239, 68, 68, 0.16));
             border: 1px solid var(--glass-border);
         }
+        .lb-season-line { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: center; margin: -4px 0 10px; }
         .lb-top3 { flex: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
         .lb-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 16px; background: rgba(5, 3, 16, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--glass-border); }
         .lb-row, .lb-podium-row {
@@ -1502,6 +1503,7 @@
                 <button class="nest-modal-close" onclick="closeLeaderboard()">✕</button>
             </div>
             <div class="lb-my-rank" id="lbMyRankLine">Ваше место: #— | Рейтинг: — PvP</div>
+            <div class="lb-season-line" id="lbSeasonLine"></div>
             <div class="lb-top3" id="lbTop3"></div>
             <div class="lb-scroll" id="lbRest"></div>
         </div>
@@ -1687,6 +1689,7 @@
                 'arena.noOpponentYet': 'Пока рядом по рейтингу никого нет — бой с диким орлом',
                 'arena.leaderboardBtn': 'Таблица лидеров', 'arena.leaderboardTitle': '🏆 Таблица лидеров',
                 'arena.myRankLine': 'Ваше место: #{rank} | Рейтинг: {rating} PvP',
+                'arena.seasonEndsIn': 'Сезон закончится через {days} дн. — награды получит Топ-50',
                 'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
                 'arena.leaderboardOnlineOnly': 'Таблица лидеров доступна только при подключении к серверу',
                 'arena.energyLabel': 'Энергия Арены', 'arena.noEnergy': 'Нет энергии',
@@ -1916,6 +1919,7 @@
                 'arena.noOpponentYet': 'No one nearby in rating yet — fighting a wild eagle',
                 'arena.leaderboardBtn': 'Leaderboard', 'arena.leaderboardTitle': '🏆 Leaderboard',
                 'arena.myRankLine': 'Your place: #{rank} | Rating: {rating} PvP',
+                'arena.seasonEndsIn': 'Season ends in {days}d — the Top 50 get rewarded',
                 'arena.leaderboardLoading': 'Loading leaderboard…',
                 'arena.leaderboardOnlineOnly': 'The leaderboard is only available when connected to the server',
                 'arena.energyLabel': 'Arena Energy', 'arena.noEnergy': 'No energy',
@@ -2140,6 +2144,7 @@
             pvpRating: 1000, // PvP-рейтинг для Топ-100 Арены (см. arenaReportResult/updateLeaderboard)
             pvpEnergy: 10, // Энергия Арены — 1 списывается за бой, докупка за золото/GRAM (см. arenaSpendEnergy/arenaBuyEnergy)
             pvpEnergyResetAt: 0, // когда энергия пополнится до максимума (следующая полночь UTC)
+            arenaSeasonEndsAt: 0, // когда текущий 20-дневный сезон Арены закончится (см. renderLeaderboardSeasonLine)
             coins: 0,
             totalEarned: 0,
             mnstr: 0,
@@ -6839,6 +6844,7 @@
                 const data = await response.json();
                 leaderboardMyRank = data.my_rank;
                 if (typeof data.my_rating === 'number') state.pvpRating = data.my_rating;
+                if (data.season && typeof data.season.ends_at === 'number') state.arenaSeasonEndsAt = data.season.ends_at;
                 // Только место, никнейм и рейтинг — редкость/грейд орла
                 // сервер больше вообще не присылает (см. arena_leaderboard в
                 // main.py), чтобы через Топ-100 нельзя было подсмотреть силу
@@ -6868,10 +6874,23 @@
             </div>`;
         }
 
+        // Строка "сезон закончится через Xд" под своим местом — целыми
+        // днями, не formatCountdown (та считает в ч/м/с, для 20-суточного
+        // сезона выглядела бы нечитаемо). Пусто, если срок ещё не известен
+        // (первый рендер до ответа сервера).
+        function renderLeaderboardSeasonLine() {
+            const el = document.getElementById('lbSeasonLine');
+            if (!el) return;
+            if (!state.arenaSeasonEndsAt) { el.textContent = ''; return; }
+            const daysLeft = Math.max(0, Math.ceil((state.arenaSeasonEndsAt - Date.now() / 1000) / 86400));
+            el.textContent = t('arena.seasonEndsIn', { days: daysLeft });
+        }
+
         async function renderLeaderboard() {
             const top = await updateLeaderboard();
             if (!top) {
                 document.getElementById('lbMyRankLine').textContent = t('arena.leaderboardOnlineOnly');
+                document.getElementById('lbSeasonLine').textContent = '';
                 document.getElementById('lbTop3').innerHTML = '';
                 document.getElementById('lbRest').innerHTML = '';
                 return;
@@ -6879,8 +6898,11 @@
             document.getElementById('lbMyRankLine').textContent = t('arena.myRankLine', {
                 rank: leaderboardMyRank, rating: Math.max(0, Math.round(state.pvpRating)),
             });
+            renderLeaderboardSeasonLine();
             document.getElementById('lbTop3').innerHTML = top.slice(0, 3).map((e, i) => arenaLeaderboardRowHtml(e, i + 1)).join('');
-            document.getElementById('lbRest').innerHTML = top.slice(3, 100).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
+            // Топ-100 отменён — сервер отдаёт ВСЕХ игроков (см. arena_leaderboard
+            // в main.py), поэтому список не срезается верхней границей.
+            document.getElementById('lbRest').innerHTML = top.slice(3).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
         }
 
         async function openLeaderboard() {
@@ -7612,6 +7634,7 @@
             if (typeof data.pvp_rating === 'number') state.pvpRating = data.pvp_rating;
             if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
             if (typeof data.pvp_energy_reset_at === 'number') state.pvpEnergyResetAt = data.pvp_energy_reset_at;
+            if (data.arena_season && typeof data.arena_season.ends_at === 'number') state.arenaSeasonEndsAt = data.arena_season.ends_at;
 
             renderAll();
             renderWallet();

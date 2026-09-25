@@ -9,7 +9,8 @@
     (Гнездо Воинов: добыча частичек, крафт/улучшение снаряжения, экипировка —
     личные для каждого игрока; nest_last_claim — точка отсчёта непрерывного
     накопления частичек, см. nest_pending_particles в main.py)
-    pvp_rating (Арена: рейтинг для Топ-100, старт 1000, +25/-15 за победу/поражение)
+    pvp_rating (Арена: рейтинг для таблицы лидеров, старт 1000, +25/-15 за
+    победу/поражение, сбрасывается всем разом раз в сезон — см. arena_season)
     pvp_energy, pvp_energy_day (Арена: энергия на вход в бой, потолок 10,
     пополняется раз в UTC-сутки; day — номер суток последнего пополнения)
 
@@ -19,9 +20,12 @@
 предметами Кузницы по грейдам) и рынка ресурсов (resource_listings —
 P2P-торговля целыми Небесными Осколками и целыми частичками), общий (один
 на всех игроков, не по-пользовательски) счётчик лавки купца —
-merchant_state: {meat_bought, eagles_sold} — и точно так же общий
+merchant_state: {meat_bought, eagles_sold}, точно так же общий
 кулдаун/суточный лимит покупки Небесного Осколка —
-nest_state: {cooldown_until, day, bought_today}.
+nest_state: {cooldown_until, day, bought_today}, и общий номер текущего
+сезона Арены — arena_season: {season} (см. try_advance_arena_season /
+reconcile_arena_season в main.py — раз в ARENA_SEASON_DAYS суток Топ-50
+получает призы и PvP-рейтинг сбрасывается всем игрокам).
 """
 
 import os
@@ -55,6 +59,7 @@ class MongoStore:
         self.resource_market = client[db_name]["resource_listings"]
         self.merchant = client[db_name]["merchant_state"]
         self.nest_global = client[db_name]["nest_state"]
+        self.arena_season = client[db_name]["arena_season"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -757,20 +762,24 @@ class MongoStore:
             "monsters": doc.get("monsters"), "nest_equipped": doc.get("nest_equipped"),
         }
 
-    async def get_leaderboard(self, limit: int = 100) -> list:
+    async def get_leaderboard(self, limit: Optional[int] = 100) -> list:
         """Топ-N реальных игроков по pvp_rating, по убыванию — общая на всех
-        Таблица лидеров Арены. Отсутствующий pvp_rating (аккаунты до Арены)
-        трактуется как стартовые 1000, как и в pvp_rating_of на сервере.
-        Редкость орла (monsters) сюда намеренно не проецируется — Топ-100
-        показывает только место/ник/рейтинг, а награды за призовые места
-        (см. distribute_arena_rewards) читают monsters отдельно, только для
+        Таблица лидеров Арены; limit=None возвращает ВСЕХ игроков (см.
+        arena_leaderboard в main.py, которая показывает всех, тогда как
+        distribute_arena_rewards по-прежнему просит только 50 — для наград
+        нужен именно Топ-50, а не вся таблица). Отсутствующий pvp_rating
+        (аккаунты до Арены) трактуется как стартовые 1000, как и в
+        pvp_rating_of на сервере. Редкость орла (monsters) сюда намеренно
+        не проецируется — таблица показывает только место/ник/рейтинг, а
+        награды за призовые места читают monsters отдельно, только для
         того самого игрока, а не для всей таблицы разом."""
         pipeline = [
             {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
             {"$sort": {"_rating": -1}},
-            {"$limit": limit},
-            {"$project": {"name": 1, "pvp_rating": "$_rating"}},
         ]
+        if limit is not None:
+            pipeline.append({"$limit": limit})
+        pipeline.append({"$project": {"name": 1, "pvp_rating": "$_rating"}})
         docs = []
         async for doc in self.users.aggregate(pipeline):
             docs.append({
@@ -790,6 +799,33 @@ class MongoStore:
         async for doc in self.users.aggregate(pipeline):
             return doc["n"]
         return 0
+
+    async def try_advance_arena_season(self, new_season: int) -> bool:
+        """Атомарно продвигает сохранённый номер сезона Арены — true
+        только у ОДНОГО запроса среди множества конкурентных (гонка сразу
+        у всех, кто открыл приложение после смены сезона), и только этот
+        запрос обязан разнести призы и сбросить рейтинг (см.
+        reconcile_arena_season в main.py). Документ создаётся лениво прямо
+        на ТЕКУЩЕМ сезоне при самом первом обращении (upsert), чтобы не
+        наградить никого за ещё не сыгранный «нулевой» сезон при первом
+        запуске игры."""
+        result = await self.arena_season.update_one(
+            {"_id": "global", "season": {"$lt": new_season}},
+            {"$set": {"season": new_season}},
+        )
+        if result.modified_count > 0:
+            return True
+        await self.arena_season.update_one(
+            {"_id": "global"}, {"$setOnInsert": {"season": new_season}}, upsert=True,
+        )
+        return False
+
+    async def reset_all_pvp_ratings(self, start_rating: int) -> None:
+        """Сбрасывает PvP-рейтинг ВСЕХ игроков разом — конец сезона Арены
+        (см. reconcile_arena_season). Редкая операция (раз в
+        ARENA_SEASON_DAYS дней), поэтому обычный update_many без CAS —
+        рейтинг никто параллельно не читает так, чтобы гонка была заметна."""
+        await self.users.update_many({}, {"$set": {"pvp_rating": start_rating}})
 
     # --- АДМИН-ПАНЕЛЬ ---
 
