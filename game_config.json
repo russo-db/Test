@@ -330,7 +330,7 @@
     "craft_cost_gold": 300,
     "upgrade_group": 4,
     "grades": ["grey", "green", "blue", "purple", "gold", "mythic"],
-    "grade_bonus_pct": { "grey": 2, "green": 4, "blue": 8, "purple": 16, "gold": 32, "mythic": 64 },
+    "grade_bonus_pct": { "grey": 10, "green": 20, "blue": 35, "purple": 50, "gold": 70, "mythic": 90 },
     "item_types": {
       "claws": {
         "label": "Когти", "sub": "Атака", "icon": "🗡️", "stat": "atk",
