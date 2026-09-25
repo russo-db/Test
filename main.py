@@ -63,6 +63,8 @@ def apply_config(cfg: dict):
     global MISSIONS_ENABLED
     global TON, TON_RATE, MIN_DEPOSIT, MIN_WITHDRAW, MEMO_PREFIX, WITHDRAW_COMMISSION
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
+    global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
+    global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
     global EGGS_CFG, EGG_INTERVAL_HOURS, UNLOCK_PRICES
@@ -112,6 +114,13 @@ def apply_config(cfg: dict):
     MARKET_MIN_TIER_INDEX = 1  # обычная (индекс 0) редкость на P2P-рынке не продаётся
     MARKET_COMMISSION = float(MARKET_CFG.get("commission", 0.10))
     MARKET_MIN_PRICE = {k: float(v) for k, v in (MARKET_CFG.get("min_price_by_tier") or {}).items()}
+    EQUIP_MARKET_CFG = CONFIG.get("equip_market") or {}
+    EQUIP_MARKET_COMMISSION = float(EQUIP_MARKET_CFG.get("commission", 0.10))
+    EQUIP_MARKET_MIN_PRICE = {k: float(v) for k, v in (EQUIP_MARKET_CFG.get("min_price_by_grade") or {}).items()}
+    RESOURCE_MARKET_CFG = CONFIG.get("resource_market") or {}
+    RESOURCE_MARKET_COMMISSION = float(RESOURCE_MARKET_CFG.get("commission", 0.10))
+    RESOURCE_MARKET_MIN_PRICE = {k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price") or {}).items()}
+    RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
     DAILY = CONFIG.get("daily") or {}
     DAILY_DAYS = int(DAILY.get("days", 30))
     DAILY_STEP = float(DAILY.get("mnstr_step", 0.1))
@@ -1268,6 +1277,40 @@ class MarketBuyRequest(BaseModel):
 
 
 class MarketCancelRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class EquipMarketListRequest(BaseModel):
+    user_id: int
+    item_type: str
+    grade: str
+    price_gram: float
+
+
+class EquipMarketBuyRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class EquipMarketCancelRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class ResourceMarketListRequest(BaseModel):
+    user_id: int
+    resource: str  # "shards" | "particles"
+    amount: int
+    price_gram: float
+
+
+class ResourceMarketBuyRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class ResourceMarketCancelRequest(BaseModel):
     user_id: int
     listing_id: str
 
@@ -2691,6 +2734,226 @@ async def market_cancel(request: MarketCancelRequest, x_telegram_init_data: Opti
         "status": "success",
         "monsters": read_farm(fresh["monsters"]),
         "slots": int(fresh.get("slots") or START_SLOTS),
+    }
+
+
+# --- РЫНОК СНАРЯЖЕНИЯ: P2P-торговля крафченным снаряжением по грейдам ---
+
+@app.get("/api/market/equip/listings")
+async def equip_market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Список активных лотов рынка снаряжения — P2P-торговля предметами
+    Кузницы (когти/броня/маска/кольцо) между игроками, отдельно от Топ-100
+    орлов и обычного рынка орлов."""
+    authenticate(x_telegram_init_data, user_id)
+    return {"listings": await store.list_equip_listings()}
+
+
+@app.post("/api/market/equip/list")
+async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выставляет 1 шт. предмета инвентаря на продажу за GRAM — списывается
+    сразу (см. store.create_equip_listing), как и орёл на обычном рынке."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.item_type not in NEST_TYPE_ORDER:
+        raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
+    if request.grade not in NEST_GRADES:
+        raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
+    if not (request.price_gram > 0):
+        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    min_price = EQUIP_MARKET_MIN_PRICE.get(request.grade, 0.0)
+    if request.price_gram < min_price:
+        raise HTTPException(status_code=400, detail=f"Минимальная цена для этого грейда — {min_price:g} GRAM")
+
+    row = await fetch_user(user_id)
+    listing_id = await store.create_equip_listing(
+        user_id, row.get("name") or "", request.item_type, request.grade, request.price_gram, int(time.time()),
+    )
+    if listing_id is None:
+        raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success", "listing_id": listing_id,
+        "inventory": normalize_nest_inventory(fresh.get("nest_inventory")),
+    }
+
+
+@app.post("/api/market/equip/buy")
+async def equip_market_buy(request: EquipMarketBuyRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупает лот снаряжения — сервер атомарно переводит GRAM и передаёт предмет."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    result = await store.buy_equip_listing(user_id, request.listing_id, EQUIP_MARKET_COMMISSION)
+    if result != "ok":
+        messages = {
+            "not_found": "Лот уже продан или снят с продажи",
+            "own_listing": "Нельзя купить свой же лот",
+            "insufficient_funds": "Не хватает GRAM",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось купить"))
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "coins": float(fresh.get("coins") or 0.0),
+        "inventory": normalize_nest_inventory(fresh.get("nest_inventory")),
+    }
+
+
+@app.post("/api/market/equip/cancel")
+async def equip_market_cancel(request: EquipMarketCancelRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Снимает свой лот снаряжения с продажи — предмет возвращается в инвентарь."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    result = await store.cancel_equip_listing(user_id, request.listing_id)
+    if result != "ok":
+        messages = {
+            "not_found": "Лот уже продан или снят с продажи",
+            "not_owner": "Это не твой лот",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось снять лот"))
+
+    fresh = await store.get(user_id)
+    return {"status": "success", "inventory": normalize_nest_inventory(fresh.get("nest_inventory"))}
+
+
+# --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
+# частичками снаряжения. В отличие от орлов/снаряжения выше, оба ресурса —
+# не дискретные предметы инвентаря, а количества (amount), и Осколки к тому
+# же двигают ставку накопления частичек (см. nest_pending_particles),
+# поэтому их списание/зачисление на СВОЁМ документе делает
+# _adjust_user_resource ниже (игровая формула), а не сырой storage.py —
+# сравни с equip-рынком выше, которому такая формула не нужна вовсе. ---
+
+async def _adjust_user_resource(user_id: int, resource: str, delta: int) -> bool:
+    """+delta зачисляет, -delta списывает |delta| штук ресурса на СВОЁМ ЖЕ
+    документе игрока — только эта половина сделки (списание у продавца при
+    выставлении лота; зачисление покупателю или возврат продавцу при
+    отмене/откате). Лот и GRAM — забота вызывающих эндпоинтов ниже через
+    storage.py. Возвращает False, если ушло бы в минус, или если все 5
+    попыток съела гонка (как и в run_farm_action).
+
+    Для 'shards' пересчитывает nest_last_claim ДО изменения числа осколков
+    (nest_settle_particles) — та же защита от «задним числом» смены ставки,
+    что и в nest_shard_buy/admin_grant_shards/distribute_arena_rewards."""
+    for _ in range(5):
+        row = await fetch_user(user_id)
+        ops = int(row.get("ops") or 0)
+        if resource == "shards":
+            miners = normalize_nest_miners(row.get("nest_miners"))
+            new_count = len(miners) + delta
+            if new_count < 0:
+                return False
+            now = time.time()
+            new_last_claim = nest_settle_particles(row, now, new_count)
+            if delta > 0:
+                miners.extend({"id": f"trade-{user_id}-{int(now * 1000)}-{i}"} for i in range(delta))
+            else:
+                miners = miners[:new_count]
+            fields = {"nest_miners": miners, "nest_last_claim": new_last_claim}
+        else:  # particles
+            particles = float(row.get("nest_particles") or 0)
+            if particles + delta < -1e-9:
+                return False
+            fields = {"nest_particles": max(0.0, particles + delta)}
+        if await store.cas_update(user_id, fields, ops):
+            return True
+    return False
+
+
+@app.get("/api/market/resources/listings")
+async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Список активных лотов рынка ресурсов (Небесные Осколки/частички)."""
+    authenticate(x_telegram_init_data, user_id)
+    return {"listings": await store.list_resource_listings()}
+
+
+@app.post("/api/market/resources/list")
+async def resource_market_list(request: ResourceMarketListRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выставляет amount штук ресурса на продажу за GRAM — списывается
+    сразу через _adjust_user_resource, лот создаётся только при успехе."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.resource not in ("shards", "particles"):
+        raise HTTPException(status_code=400, detail="Неизвестный ресурс")
+    amount = int(request.amount)
+    min_amount = RESOURCE_MARKET_MIN_AMOUNT.get(request.resource, 1)
+    if amount < min_amount:
+        raise HTTPException(status_code=400, detail=f"Минимум {min_amount} шт.")
+    if not (request.price_gram > 0):
+        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    min_price = RESOURCE_MARKET_MIN_PRICE.get(request.resource, 0.0)
+    if request.price_gram < min_price:
+        raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM")
+
+    row = await fetch_user(user_id)
+    if not await _adjust_user_resource(user_id, request.resource, -amount):
+        raise HTTPException(status_code=400, detail="Недостаточно ресурса для выставления лота")
+    listing_id = await store.create_resource_listing(
+        user_id, row.get("name") or "", request.resource, amount, request.price_gram, int(time.time()),
+    )
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success", "listing_id": listing_id,
+        "particles": float(fresh.get("nest_particles") or 0),
+        "shard_count": nest_owned_shards(fresh),
+    }
+
+
+@app.post("/api/market/resources/buy")
+async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Покупает лот ресурса. Лот+GRAM обрабатывает storage.py, как и у
+    остальных рынков; зачисление ресурса покупателю — отдельный шаг через
+    _adjust_user_resource (нужна игровая формула для Осколков). Если этот
+    шаг не удался (гонка на 5 попыток) — откатываем и GRAM покупателя, и
+    сам лот, чтобы деньги не списались без товара; продавцу ничего не
+    зачисляем раньше самого последнего шага именно поэтому."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    claim = await store.claim_resource_listing_for_buy(user_id, request.listing_id)
+    if claim == "not_found":
+        raise HTTPException(status_code=400, detail="Лот уже продан или снят с продажи")
+    if claim == "own_listing":
+        raise HTTPException(status_code=400, detail="Нельзя купить свой же лот")
+    if claim == "insufficient_funds":
+        raise HTTPException(status_code=400, detail="Не хватает GRAM")
+    listing = claim  # GRAM покупателя уже списан на этом этапе
+
+    granted = await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"]))
+    if not granted:
+        await store.refund_failed_resource_purchase(user_id, listing)
+        raise HTTPException(status_code=409, detail="Не удалось завершить покупку — попробуй ещё раз")
+
+    await store.credit_resource_seller(listing["seller_id"], listing["price_gram"], RESOURCE_MARKET_COMMISSION)
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "coins": float(fresh.get("coins") or 0.0),
+        "particles": float(fresh.get("nest_particles") or 0),
+        "shard_count": nest_owned_shards(fresh),
+    }
+
+
+@app.post("/api/market/resources/cancel")
+async def resource_market_cancel(request: ResourceMarketCancelRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Снимает свой лот ресурса с продажи и возвращает штуки обратно."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    listing = await store.take_own_resource_listing(user_id, request.listing_id)
+    if listing == "not_found":
+        raise HTTPException(status_code=400, detail="Лот уже продан или снят с продажи")
+    if listing == "not_owner":
+        raise HTTPException(status_code=400, detail="Это не твой лот")
+
+    if not await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"])):
+        await store.restore_resource_listing(listing)
+        raise HTTPException(status_code=409, detail="Не удалось снять лот — попробуй ещё раз")
+
+    fresh = await store.get(user_id)
+    return {
+        "status": "success",
+        "particles": float(fresh.get("nest_particles") or 0),
+        "shard_count": nest_owned_shards(fresh),
     }
 
 

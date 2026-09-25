@@ -298,6 +298,22 @@
       "mythical": 32
     }
   },
+  "equip_market": {
+    "commission": 0.10,
+    "min_price_by_grade": {
+      "grey": 1,
+      "green": 2,
+      "blue": 4,
+      "purple": 8,
+      "gold": 16,
+      "mythic": 32
+    }
+  },
+  "resource_market": {
+    "commission": 0.10,
+    "min_price": { "shards": 1, "particles": 0.1 },
+    "min_amount": { "shards": 1, "particles": 1 }
+  },
   "merchant": {
     "meat_per_gold": 5,
     "meat_buy_limit": 1000,

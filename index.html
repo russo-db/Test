@@ -1106,12 +1106,39 @@
         <div id="market" class="content">
             <h1 data-i18n="market.heading">Рынок</h1>
             <p class="subtitle" data-i18n="market.subtitle">Торгуй орлами редкости зелёный и выше с другими игроками — комиссия рынка 10%</p>
-            <button class="btn-primary market-sell-btn" onclick="openMarketSell()">
-                <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
-                <span data-i18n="market.sellBtn">Выставить орла на продажу</span>
-            </button>
-            <div class="market-tab-bar" id="marketTabBar"></div>
-            <div id="marketBody"></div>
+
+            <div class="subtab-bar market-dept-bar" id="marketDeptBar">
+                <div class="subtab-item active" data-dept="eagles" onclick="switchMarketDept('eagles')" data-i18n="market.deptEagles">🦅 Орлы</div>
+                <div class="subtab-item" data-dept="equip" onclick="switchMarketDept('equip')" data-i18n="market.deptEquip">🛡️ Снаряжение</div>
+                <div class="subtab-item" data-dept="resources" onclick="switchMarketDept('resources')" data-i18n="market.deptResources">💠 Ресурсы</div>
+            </div>
+
+            <div class="subtab-panel active" id="marketDeptEagles">
+                <button class="btn-primary market-sell-btn" onclick="openMarketSell()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
+                    <span data-i18n="market.sellBtn">Выставить орла на продажу</span>
+                </button>
+                <div class="market-tab-bar" id="marketTabBar"></div>
+                <div id="marketBody"></div>
+            </div>
+
+            <div class="subtab-panel" id="marketDeptEquip">
+                <button class="btn-primary market-sell-btn" onclick="openEquipMarketSell()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
+                    <span data-i18n="equipmarket.sellBtn">Выставить снаряжение на продажу</span>
+                </button>
+                <div class="market-tab-bar" id="equipMarketTabBar"></div>
+                <div id="equipMarketBody"></div>
+            </div>
+
+            <div class="subtab-panel" id="marketDeptResources">
+                <button class="btn-primary market-sell-btn" onclick="openResourceMarketSell()">
+                    <div class="icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></div>
+                    <span data-i18n="resourcemarket.sellBtn">Выставить ресурс на продажу</span>
+                </button>
+                <div class="market-tab-bar" id="resourceMarketTabBar"></div>
+                <div id="resourceMarketBody"></div>
+            </div>
         </div>
 
         <!-- MERCHANT TAB -->
@@ -1379,6 +1406,16 @@
     <!-- MARKET SELL MODAL -->
     <div class="modal-backdrop" id="marketSellModal" onclick="if (event.target === this) closeMarketSell()">
         <div class="modal-box glass-panel pay-box" id="marketSellBody"></div>
+    </div>
+
+    <!-- EQUIP MARKET SELL MODAL -->
+    <div class="modal-backdrop" id="equipMarketSellModal" onclick="if (event.target === this) closeEquipMarketSell()">
+        <div class="modal-box glass-panel pay-box" id="equipMarketSellBody"></div>
+    </div>
+
+    <!-- RESOURCE MARKET SELL MODAL -->
+    <div class="modal-backdrop" id="resourceMarketSellModal" onclick="if (event.target === this) closeResourceMarketSell()">
+        <div class="modal-box glass-panel pay-box" id="resourceMarketSellBody"></div>
     </div>
 
     <!-- MERCHANT SELL EAGLE CONFIRM MODAL -->
@@ -1706,6 +1743,24 @@
                 'market.sectionEmpty': 'Пока никто не продаёт — загляни позже',
                 'market.noOwnListings': 'У тебя пока нет лотов на рынке',
                 'market.bestPrice': 'лучшая цена',
+                'market.deptEagles': '🦅 Орлы', 'market.deptEquip': '🛡️ Снаряжение', 'market.deptResources': '💠 Ресурсы',
+                'equipmarket.sellBtn': 'Выставить снаряжение на продажу',
+                'equipmarket.noEligible': 'Нет предметов снаряжения на продажу',
+                'equipmarket.sellTitle': 'Выставить снаряжение на продажу',
+                'equipmarket.listed': 'Предмет выставлен на продажу', 'equipmarket.bought': 'Предмет куплен!',
+                'equipmarket.minPriceHint': 'Минимальная цена для этого грейда — {price} GRAM',
+                'equipmarket.belowMinPrice': 'Цена ниже минимальной для этого грейда — {price} GRAM',
+                'resourcemarket.sellBtn': 'Выставить ресурс на продажу',
+                'resourcemarket.sellTitle': 'Выставить ресурс на продажу',
+                'resourcemarket.shardsCard': 'Небесные Осколки', 'resourcemarket.particlesCard': 'Частички',
+                'resourcemarket.amountLabel': 'Количество, шт.',
+                'resourcemarket.ownedHint': 'У тебя есть: {amount} шт.',
+                'resourcemarket.minAmountLabel': 'от {amount} шт.',
+                'resourcemarket.invalidAmount': 'Минимальное количество — {amount} шт.',
+                'resourcemarket.notEnoughOwned': 'Недостаточно ресурса для этого количества',
+                'resourcemarket.listed': 'Ресурс выставлен на продажу', 'resourcemarket.bought': 'Ресурс куплен!',
+                'resourcemarket.minPriceHint': 'Минимальная цена лота — {price} GRAM',
+                'resourcemarket.belowMinPrice': 'Цена ниже минимальной — {price} GRAM',
                 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
@@ -1917,6 +1972,24 @@
                 'market.sectionEmpty': 'Nobody is selling here yet — check back later',
                 'market.noOwnListings': 'You have no listings on the market yet',
                 'market.bestPrice': 'best price',
+                'market.deptEagles': '🦅 Eagles', 'market.deptEquip': '🛡️ Equipment', 'market.deptResources': '💠 Resources',
+                'equipmarket.sellBtn': 'List equipment for sale',
+                'equipmarket.noEligible': 'No equipment items to sell',
+                'equipmarket.sellTitle': 'List equipment for sale',
+                'equipmarket.listed': 'Item listed for sale', 'equipmarket.bought': 'Item purchased!',
+                'equipmarket.minPriceHint': 'Minimum price for this grade — {price} GRAM',
+                'equipmarket.belowMinPrice': 'Price is below the minimum for this grade — {price} GRAM',
+                'resourcemarket.sellBtn': 'List a resource for sale',
+                'resourcemarket.sellTitle': 'List a resource for sale',
+                'resourcemarket.shardsCard': 'Sky Shards', 'resourcemarket.particlesCard': 'Particles',
+                'resourcemarket.amountLabel': 'Amount',
+                'resourcemarket.ownedHint': 'You have: {amount}',
+                'resourcemarket.minAmountLabel': 'from {amount}',
+                'resourcemarket.invalidAmount': 'Minimum amount is {amount}',
+                'resourcemarket.notEnoughOwned': 'Not enough of this resource for that amount',
+                'resourcemarket.listed': 'Resource listed for sale', 'resourcemarket.bought': 'Resource purchased!',
+                'resourcemarket.minPriceHint': 'Minimum price for this listing — {price} GRAM',
+                'resourcemarket.belowMinPrice': 'Price is below the minimum — {price} GRAM',
                 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
@@ -2087,7 +2160,9 @@
             wallet: '',          // адрес кошелька игрока
             operations: [],      // последние пополнения и выводы
             ops: 0,              // версия баланса на сервере
-            marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
+            marketListings: [],  // активные лоты P2P-рынка орлов (см. loadMarketListings)
+            equipMarketListings: [],    // лоты рынка снаряжения (см. loadEquipMarketListings)
+            resourceMarketListings: [], // лоты рынка ресурсов — Осколки/частички (см. loadResourceMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, eaglesSold: 0 }, // общий (не персональный!) остаток лимитов купца, кэш с сервера
             nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
@@ -4506,6 +4581,475 @@
             }
         }
 
+        // ---------- Рынок: главное меню отделов (Орлы/Снаряжение/Ресурсы) ----------
+        // Три независимых P2P-рынка на одной вкладке — каждый отдел хранит
+        // свои лоты/вкладки/модалку отдельно (marketXxx для орлов уже выше,
+        // equipMarketXxx и resourceMarketXxx ниже), переключатель только
+        // прячет/показывает готовые панели и подгружает лоты активного отдела.
+        let marketDept = 'eagles'; // 'eagles' | 'equip' | 'resources'
+
+        function switchMarketDept(dept) {
+            haptic.select();
+            marketDept = dept;
+            document.querySelectorAll('#marketDeptBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.dept === dept));
+            document.getElementById('marketDeptEagles').classList.toggle('active', dept === 'eagles');
+            document.getElementById('marketDeptEquip').classList.toggle('active', dept === 'equip');
+            document.getElementById('marketDeptResources').classList.toggle('active', dept === 'resources');
+            refreshActiveMarketDept();
+        }
+
+        function refreshActiveMarketDept() {
+            if (marketDept === 'eagles') loadMarketListings();
+            else if (marketDept === 'equip') loadEquipMarketListings();
+            else loadResourceMarketListings();
+        }
+
+        // ---------- Рынок снаряжения — по аналогии с рынком орлов выше:
+        // вкладки по грейду вместо редкости, свои лоты — только на «Твои
+        // лоты», GRAM списывается/зачисляется сервером атомарно (см.
+        // EQUIP_MARKET_COMMISSION в main.py). ----------
+        let equipMarketListingsLoaded = false;
+        let equipMarketActiveGrade = null; // грейд снаряжения или 'mine'
+        let equipMarketSellChoice = null;  // { type, grade } или null
+
+        function eligibleEquipItems() {
+            const items = [];
+            nestTypeOrder().forEach(type => {
+                (CONFIG.nest.grades || []).forEach(grade => {
+                    const count = nestInventoryCount(type, grade);
+                    if (count > 0) items.push({ type, grade, count });
+                });
+            });
+            return items;
+        }
+
+        function equipMarketMinPrice(grade) {
+            return Number((CONFIG.equip_market.min_price_by_grade || {})[grade]) || 0;
+        }
+
+        function renderEquipMarketTabs() {
+            const bar = document.getElementById('equipMarketTabBar');
+            if (!bar) return;
+            const grades = CONFIG.nest.grades || [];
+            if (!equipMarketActiveGrade) equipMarketActiveGrade = grades[0];
+            bar.innerHTML = grades.map(grade => `
+                <div class="market-tab-item rarity-name ${equipMarketActiveGrade === grade ? 'active' : ''}" style="color:${nestGradeColor(grade)}" onclick="switchEquipMarketTab('${grade}')">${nestGradeLabel(grade)}</div>
+            `).join('') + `
+                <div class="market-tab-item ${equipMarketActiveGrade === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchEquipMarketTab('mine')">${t('market.myListings')}</div>
+            `;
+        }
+
+        function switchEquipMarketTab(tabId) {
+            equipMarketActiveGrade = tabId;
+            haptic.select();
+            renderEquipMarket();
+        }
+
+        function equipListingLabel(l) {
+            const meta = CONFIG.nest.item_types[l.item_type] || {};
+            return (meta.names && meta.names[l.grade]) || meta.label || l.item_type;
+        }
+
+        function renderEquipMarket() {
+            const body = document.getElementById('equipMarketBody');
+            if (!body) return;
+            renderEquipMarketTabs();
+            if (offlineOnly) { body.innerHTML = `<div class="market-locked"><p>${t('market.onlineOnly')}</p></div>`; return; }
+            if (!equipMarketListingsLoaded) { body.innerHTML = `<div class="market-locked"><p>${t('market.loading')}</p></div>`; return; }
+
+            const listings = state.equipMarketListings || [];
+
+            if (equipMarketActiveGrade === 'mine') {
+                const mine = listings.filter(l => String(l.seller_id) === String(state.userId));
+                body.innerHTML = mine.length ? mine.map(l => `
+                    <div class="card glass-panel market-card">
+                        <div class="nest-equip-ic" style="background:${nestGradeColor(l.grade)}33">${nestItemIconMarkup(l.item_type, l.grade)}</div>
+                        <div class="card-info">
+                            <h3 class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)}</h3>
+                            <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
+                        </div>
+                        <button class="btn-action" onclick="cancelEquipMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                    </div>
+                `).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
+                return;
+            }
+
+            const rows = listings
+                .filter(l => l.grade === equipMarketActiveGrade && String(l.seller_id) !== String(state.userId))
+                .sort((a, b) => a.price_gram - b.price_gram);
+
+            body.innerHTML = `
+                <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(equipMarketMinPrice(equipMarketActiveGrade)) })}</p>
+                ${rows.length ? rows.map((l, idx) => `
+                    <div class="card glass-panel market-card">
+                        <div class="nest-equip-ic" style="background:${nestGradeColor(l.grade)}33">${nestItemIconMarkup(l.item_type, l.grade)}</div>
+                        <div class="card-info">
+                            <h3 class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
+                            <p style="font-size:12px; color:var(--text-muted)">${l.seller_name || t('market.seller')}</p>
+                        </div>
+                        <button class="btn-action btn-buy" onclick="buyEquipMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                    </div>
+                `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
+            `;
+        }
+
+        async function loadEquipMarketListings() {
+            if (offlineOnly || !state.userId) { renderEquipMarket(); return; }
+            try {
+                const response = await fetch(`api/market/equip/listings?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('equip market fetch failed');
+                const data = await response.json();
+                state.equipMarketListings = data.listings || [];
+            } catch (e) {
+                // офлайн/сервер недоступен — оставляем то, что уже было в кэше
+            }
+            equipMarketListingsLoaded = true;
+            renderEquipMarket();
+        }
+
+        function openEquipMarketSell() {
+            if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
+            if (!eligibleEquipItems().length) { toast(t('equipmarket.noEligible')); haptic.notify('warning'); return; }
+            equipMarketSellChoice = null;
+            renderEquipMarketSell();
+            document.getElementById('equipMarketSellModal').classList.add('open');
+        }
+
+        function closeEquipMarketSell() {
+            document.getElementById('equipMarketSellModal').classList.remove('open');
+        }
+
+        function selectEquipMarketSellChoice(type, grade) {
+            equipMarketSellChoice = { type, grade };
+            renderEquipMarketSell();
+        }
+
+        function renderEquipMarketSell() {
+            const items = eligibleEquipItems();
+            if (!items.length) { closeEquipMarketSell(); return; }
+            if (!equipMarketSellChoice || !items.some(it => it.type === equipMarketSellChoice.type && it.grade === equipMarketSellChoice.grade)) {
+                equipMarketSellChoice = { type: items[0].type, grade: items[0].grade };
+            }
+            const minPrice = equipMarketMinPrice(equipMarketSellChoice.grade);
+            const priceValue = document.getElementById('equipMarketSellPrice');
+            const price = Math.max(Number(priceValue ? priceValue.value : 0) || minPrice, minPrice);
+
+            document.getElementById('equipMarketSellBody').innerHTML = `
+                <h2>${t('equipmarket.sellTitle')}</h2>
+                <div class="lang-options">
+                    ${items.map(it => {
+                        const color = nestGradeColor(it.grade);
+                        const active = it.type === equipMarketSellChoice.type && it.grade === equipMarketSellChoice.grade;
+                        return `<button class="lang-option ${active ? 'active' : ''}" onclick="selectEquipMarketSellChoice('${it.type}','${it.grade}')">
+                            <div class="nest-equip-ic" style="background:${color}33">${nestItemIconMarkup(it.type, it.grade)}</div>
+                            <span class="rarity-name" style="color:${color}">${CONFIG.nest.item_types[it.type].names[it.grade]}</span>
+                            <span style="margin-left:auto; color:var(--text-muted)">×${it.count}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <div class="pay-label">${t('market.priceLabel')}</div>
+                <input class="pay-input" id="equipMarketSellPrice" type="number" inputmode="decimal" min="${minPrice}" step="0.01" value="${price}">
+                <p class="pay-warning">${t('equipmarket.minPriceHint', { price: fmtGram(minPrice) })}</p>
+                <p class="pay-warning">${t('market.commissionHint', { pct: Math.round((CONFIG.equip_market.commission || 0) * 100) })}</p>
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="confirmEquipMarketSell()">${t('market.listBtn')}</button>
+                    <button class="btn-action" onclick="closeEquipMarketSell()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmEquipMarketSell() {
+            const price = Number(document.getElementById('equipMarketSellPrice').value) || 0;
+            const minPrice = equipMarketMinPrice(equipMarketSellChoice.grade);
+            if (price <= 0) { toast(t('market.invalidPrice')); return; }
+            if (price < minPrice) { toast(t('equipmarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
+            try {
+                const response = await fetch('api/market/equip/list', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({
+                        user_id: state.userId, item_type: equipMarketSellChoice.type,
+                        grade: equipMarketSellChoice.grade, price_gram: price,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); return; }
+                state.nest.inventory = data.inventory;
+                closeEquipMarketSell();
+                haptic.notify('success');
+                toast(t('equipmarket.listed'));
+                renderAll();
+                loadEquipMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function buyEquipMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/equip/buy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadEquipMarketListings(); return; }
+                state.coins = data.coins;
+                state.nest.inventory = data.inventory;
+                haptic.notify('success');
+                spawnBurst(12);
+                toast(t('equipmarket.bought'));
+                renderAll();
+                loadEquipMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function cancelEquipMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/equip/cancel', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadEquipMarketListings(); return; }
+                state.nest.inventory = data.inventory;
+                haptic.notify('success');
+                toast(t('market.cancelled'));
+                renderAll();
+                loadEquipMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        // ---------- Рынок ресурсов — целые Небесные Осколки и целые
+        // частички снаряжения, продаются партиями (amount штук за один
+        // лот), а не поштучно как снаряжение/орлы. ----------
+        let resourceMarketListingsLoaded = false;
+        let resourceMarketActiveTab = null; // 'shards' | 'particles' | 'mine'
+        let resourceMarketSellResource = null; // 'shards' | 'particles'
+
+        function resourceLabel(resource) {
+            return resource === 'shards' ? t('resourcemarket.shardsCard') : t('resourcemarket.particlesCard');
+        }
+
+        function resourceIconMarkup(resource) {
+            return resource === 'shards'
+                ? '<img class="market-eagle" src="assets/nest-shard-v2.jpg" alt="">'
+                : '<img class="market-eagle" src="assets/nest-particle.jpg" alt="">';
+        }
+
+        function resourceOwned(resource) {
+            return resource === 'shards' ? (state.nest.shardCount || 0) : (state.nest.particles || 0);
+        }
+
+        function resourceMarketMinAmount(resource) {
+            return Number((CONFIG.resource_market.min_amount || {})[resource]) || 1;
+        }
+
+        function resourceMarketMinPrice(resource) {
+            return Number((CONFIG.resource_market.min_price || {})[resource]) || 0;
+        }
+
+        function renderResourceMarketTabs() {
+            const bar = document.getElementById('resourceMarketTabBar');
+            if (!bar) return;
+            if (!resourceMarketActiveTab) resourceMarketActiveTab = 'shards';
+            const tabs = [
+                { id: 'shards', label: t('resourcemarket.shardsCard') },
+                { id: 'particles', label: t('resourcemarket.particlesCard') },
+            ];
+            bar.innerHTML = tabs.map(tab => `
+                <div class="market-tab-item ${resourceMarketActiveTab === tab.id ? 'active' : ''}" onclick="switchResourceMarketTab('${tab.id}')">${tab.label}</div>
+            `).join('') + `
+                <div class="market-tab-item ${resourceMarketActiveTab === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchResourceMarketTab('mine')">${t('market.myListings')}</div>
+            `;
+        }
+
+        function switchResourceMarketTab(tabId) {
+            resourceMarketActiveTab = tabId;
+            haptic.select();
+            renderResourceMarket();
+        }
+
+        function renderResourceMarket() {
+            const body = document.getElementById('resourceMarketBody');
+            if (!body) return;
+            renderResourceMarketTabs();
+            if (offlineOnly) { body.innerHTML = `<div class="market-locked"><p>${t('market.onlineOnly')}</p></div>`; return; }
+            if (!resourceMarketListingsLoaded) { body.innerHTML = `<div class="market-locked"><p>${t('market.loading')}</p></div>`; return; }
+
+            const listings = state.resourceMarketListings || [];
+
+            if (resourceMarketActiveTab === 'mine') {
+                const mine = listings.filter(l => String(l.seller_id) === String(state.userId));
+                body.innerHTML = mine.length ? mine.map(l => `
+                    <div class="card glass-panel market-card">
+                        ${resourceIconMarkup(l.resource)}
+                        <div class="card-info">
+                            <h3>${l.amount}× ${resourceLabel(l.resource)}</h3>
+                            <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
+                        </div>
+                        <button class="btn-action" onclick="cancelResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                    </div>
+                `).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
+                return;
+            }
+
+            const rows = listings
+                .filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) !== String(state.userId))
+                .sort((a, b) => a.price_gram - b.price_gram);
+
+            body.innerHTML = `
+                <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}</p>
+                ${rows.length ? rows.map((l, idx) => `
+                    <div class="card glass-panel market-card">
+                        ${resourceIconMarkup(l.resource)}
+                        <div class="card-info">
+                            <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
+                            <p style="font-size:12px; color:var(--text-muted)">${l.seller_name || t('market.seller')}</p>
+                        </div>
+                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                    </div>
+                `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
+            `;
+        }
+
+        async function loadResourceMarketListings() {
+            if (offlineOnly || !state.userId) { renderResourceMarket(); return; }
+            try {
+                const response = await fetch(`api/market/resources/listings?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('resource market fetch failed');
+                const data = await response.json();
+                state.resourceMarketListings = data.listings || [];
+            } catch (e) {
+                // офлайн/сервер недоступен — оставляем то, что уже было в кэше
+            }
+            resourceMarketListingsLoaded = true;
+            renderResourceMarket();
+        }
+
+        function openResourceMarketSell() {
+            if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
+            resourceMarketSellResource = (resourceMarketActiveTab === 'particles') ? 'particles' : 'shards';
+            renderResourceMarketSell();
+            document.getElementById('resourceMarketSellModal').classList.add('open');
+        }
+
+        function closeResourceMarketSell() {
+            document.getElementById('resourceMarketSellModal').classList.remove('open');
+        }
+
+        function selectResourceMarketSellResource(resource) {
+            resourceMarketSellResource = resource;
+            renderResourceMarketSell();
+        }
+
+        function renderResourceMarketSell() {
+            const resource = resourceMarketSellResource;
+            const owned = Math.floor(resourceOwned(resource));
+            const minAmount = resourceMarketMinAmount(resource);
+            const minPrice = resourceMarketMinPrice(resource);
+            const amountEl = document.getElementById('resourceMarketSellAmount');
+            const priceEl = document.getElementById('resourceMarketSellPrice');
+            const amount = Math.max(Number(amountEl ? amountEl.value : 0) || minAmount, minAmount);
+            const price = Math.max(Number(priceEl ? priceEl.value : 0) || minPrice, minPrice);
+
+            document.getElementById('resourceMarketSellBody').innerHTML = `
+                <h2>${t('resourcemarket.sellTitle')}</h2>
+                <div class="lang-options">
+                    <button class="lang-option ${resource === 'shards' ? 'active' : ''}" onclick="selectResourceMarketSellResource('shards')">
+                        ${resourceIconMarkup('shards')}<span>${t('resourcemarket.shardsCard')}</span>
+                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('shards'))}</span>
+                    </button>
+                    <button class="lang-option ${resource === 'particles' ? 'active' : ''}" onclick="selectResourceMarketSellResource('particles')">
+                        ${resourceIconMarkup('particles')}<span>${t('resourcemarket.particlesCard')}</span>
+                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('particles'))}</span>
+                    </button>
+                </div>
+                <div class="pay-label">${t('resourcemarket.amountLabel')}</div>
+                <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}">
+                <div class="pay-label">${t('market.priceLabel')}</div>
+                <input class="pay-input" id="resourceMarketSellPrice" type="number" inputmode="decimal" min="${minPrice}" step="0.01" value="${price}">
+                <p class="pay-warning">${t('resourcemarket.ownedHint', { amount: owned })}</p>
+                <p class="pay-warning">${t('market.commissionHint', { pct: Math.round((CONFIG.resource_market.commission || 0) * 100) })}</p>
+                <div class="pay-actions">
+                    <button class="btn-primary" onclick="confirmResourceMarketSell()">${t('market.listBtn')}</button>
+                    <button class="btn-action" onclick="closeResourceMarketSell()">${t('common.cancel')}</button>
+                </div>
+            `;
+        }
+
+        async function confirmResourceMarketSell() {
+            const resource = resourceMarketSellResource;
+            const amount = Math.floor(Number(document.getElementById('resourceMarketSellAmount').value) || 0);
+            const price = Number(document.getElementById('resourceMarketSellPrice').value) || 0;
+            const minAmount = resourceMarketMinAmount(resource);
+            const minPrice = resourceMarketMinPrice(resource);
+            const owned = Math.floor(resourceOwned(resource));
+            if (amount < minAmount) { toast(t('resourcemarket.invalidAmount', { amount: minAmount })); return; }
+            if (amount > owned) { toast(t('resourcemarket.notEnoughOwned')); return; }
+            if (price <= 0) { toast(t('market.invalidPrice')); return; }
+            if (price < minPrice) { toast(t('resourcemarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
+            try {
+                const response = await fetch('api/market/resources/list', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, resource, amount, price_gram: price }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); return; }
+                state.nest.particles = data.particles;
+                state.nest.shardCount = data.shard_count;
+                closeResourceMarketSell();
+                haptic.notify('success');
+                toast(t('resourcemarket.listed'));
+                renderAll();
+                loadResourceMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function buyResourceMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/resources/buy', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); return; }
+                state.coins = data.coins;
+                state.nest.particles = data.particles;
+                state.nest.shardCount = data.shard_count;
+                haptic.notify('success');
+                spawnBurst(12);
+                toast(t('resourcemarket.bought'));
+                renderAll();
+                loadResourceMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function cancelResourceMarketListing(listingId) {
+            try {
+                const response = await fetch('api/market/resources/cancel', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadResourceMarketListings(); return; }
+                state.nest.particles = data.particles;
+                state.nest.shardCount = data.shard_count;
+                haptic.notify('success');
+                toast(t('market.cancelled'));
+                renderAll();
+                loadResourceMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
         function renderAll() {
             renderHeader();
             renderActiveMonster();
@@ -4513,6 +5057,8 @@
             renderEggs();
             renderMissions();
             renderMarket();
+            renderEquipMarket();
+            renderResourceMarket();
             renderVipRail();
             renderNest();
             updateWheelButton();
@@ -5032,7 +5578,7 @@
 
             if (tabId === 'collection') renderEggs();
             if (tabId === 'missions') renderMissions();
-            if (tabId === 'market') loadMarketListings();
+            if (tabId === 'market') refreshActiveMarketDept();
             if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
             if (tabId === 'nest') { renderNest(); refreshNestShardState(); }
             if (tabId === 'arena') { renderArena(); arenaStartLoop(); } else { arenaStopLoop(); }
@@ -7279,6 +7825,9 @@
         // Резервные минимальные цены по редкости на P2P-рынке (максимум не ограничен).
         const DEFAULT_MARKET_MIN_PRICE = { uncommon: 2, rare: 4, epic: 8, legendary: 16, mythical: 32 };
 
+        // Резервные минимальные цены по грейду на рынке снаряжения.
+        const DEFAULT_EQUIP_MARKET_MIN_PRICE = { grey: 1, green: 2, blue: 4, purple: 8, gold: 16, mythic: 32 };
+
         // Резервные настройки лавки купца (покупка Meat за золото и орлов за GRAM).
         const DEFAULT_MERCHANT = { meat_per_gold: 5, meat_buy_limit: 1000, meat_buy_max_per_purchase: 5, eagle_gram_price: 0.2, eagle_sell_limit: 10 };
 
@@ -7385,6 +7934,14 @@
             if (!cfg.market.min_price_by_tier || typeof cfg.market.min_price_by_tier !== 'object') {
                 cfg.market.min_price_by_tier = DEFAULT_MARKET_MIN_PRICE;
             }
+            cfg.equip_market = Object.assign({ commission: 0.10, min_price_by_grade: DEFAULT_EQUIP_MARKET_MIN_PRICE }, cfg.equip_market);
+            if (!cfg.equip_market.min_price_by_grade || typeof cfg.equip_market.min_price_by_grade !== 'object') {
+                cfg.equip_market.min_price_by_grade = DEFAULT_EQUIP_MARKET_MIN_PRICE;
+            }
+            cfg.resource_market = Object.assign(
+                { commission: 0.10, min_price: { shards: 1, particles: 0.1 }, min_amount: { shards: 1, particles: 1 } },
+                cfg.resource_market
+            );
             cfg.vip = Object.assign({ tiers: DEFAULT_VIP_TIERS }, cfg.vip);
             if (!Array.isArray(cfg.vip.tiers) || !cfg.vip.tiers.length) cfg.vip.tiers = DEFAULT_VIP_TIERS;
             cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);

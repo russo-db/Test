@@ -15,9 +15,12 @@
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
-орлами между игроками), общий (один на всех игроков, не по-пользовательски)
-счётчик лавки купца — merchant_state: {meat_bought, eagles_sold} — и точно
-так же общий кулдаун/суточный лимит покупки Небесного Осколка —
+орлами между игроками), лоты рынка снаряжения (equip_listings — P2P-торговля
+предметами Кузницы по грейдам) и рынка ресурсов (resource_listings —
+P2P-торговля целыми Небесными Осколками и целыми частичками), общий (один
+на всех игроков, не по-пользовательски) счётчик лавки купца —
+merchant_state: {meat_bought, eagles_sold} — и точно так же общий
+кулдаун/суточный лимит покупки Небесного Осколка —
 nest_state: {cooldown_until, day, bought_today}.
 """
 
@@ -48,6 +51,8 @@ class MongoStore:
         self.deposits = client[db_name]["deposits"]
         self.withdrawals = client[db_name]["withdrawals"]
         self.market = client[db_name]["market_listings"]
+        self.equip_market = client[db_name]["equip_listings"]
+        self.resource_market = client[db_name]["resource_listings"]
         self.merchant = client[db_name]["merchant_state"]
         self.nest_global = client[db_name]["nest_state"]
 
@@ -56,6 +61,8 @@ class MongoStore:
         await self.deposits.create_index("user_id")
         await self.withdrawals.create_index("user_id")
         await self.market.create_index("seller_id")
+        await self.equip_market.create_index("seller_id")
+        await self.resource_market.create_index("seller_id")
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
@@ -447,6 +454,199 @@ class MongoStore:
                      "feed_level": feed_levels, "feed_taps": 0})
         await self.users.update_one({"_id": seller_id}, {"$set": {"monsters": farm, "slots": slots}})
         return "ok"
+
+    # --- РЫНОК СНАРЯЖЕНИЯ: P2P-торговля предметами Кузницы по грейдам.
+    # Полностью самодостаточен внутри storage.py (в отличие от рынка
+    # ресурсов ниже) — nest_inventory это просто счётчики по (тип, грейд),
+    # без побочных игровых формул вроде ставки накопления частичек. ---
+
+    async def create_equip_listing(self, seller_id: int, seller_name: str, item_type: str,
+                                    grade: str, price_gram: float, ts: int) -> Optional[str]:
+        """Атомарно списывает 1 шт. предмета из nest_inventory[item_type][grade]
+        и создаёт лот; None — если такого предмета не хватает."""
+        field = f"nest_inventory.{item_type}.{grade}"
+        result = await self.users.update_one(
+            {"_id": seller_id, field: {"$gte": 1}},
+            {"$inc": {field: -1, "ops": 1}},
+        )
+        if result.modified_count == 0:
+            return None
+        listing = {
+            "seller_id": seller_id, "seller_name": seller_name,
+            "item_type": item_type, "grade": grade, "price_gram": price_gram, "created_at": ts,
+        }
+        result = await self.equip_market.insert_one(listing)
+        return str(result.inserted_id)
+
+    async def list_equip_listings(self, limit: int = 200) -> list:
+        cursor = self.equip_market.find().sort("created_at", -1).limit(limit)
+        items = []
+        async for doc in cursor:
+            doc["id"] = str(doc.pop("_id"))
+            items.append(doc)
+        return items
+
+    async def buy_equip_listing(self, buyer_id: int, listing_id: str, commission: float) -> str:
+        """Тот же claim-затем-проверки-затем-откат порядок, что и у
+        buy_listing для орлов, но выдача — простой $inc по nest_inventory,
+        без капасити фермы (снаряжение не занимает слоты)."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.equip_market.find_one_and_delete({"_id": oid})
+        if not listing:
+            return "not_found"
+        if int(listing["seller_id"]) == int(buyer_id):
+            await self.equip_market.insert_one(listing)
+            return "own_listing"
+
+        price = float(listing["price_gram"])
+        result = await self.users.update_one(
+            {"_id": buyer_id, "coins": {"$gte": price}},
+            {"$inc": {"coins": -price, "ops": 1}},
+        )
+        if result.modified_count == 0:
+            await self.equip_market.insert_one(listing)
+            return "insufficient_funds"
+
+        field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
+        await self.users.update_one({"_id": buyer_id}, {"$inc": {field: 1}})
+
+        seller_credit = price * (1 - commission)
+        await self.users.update_one(
+            {"_id": listing["seller_id"]},
+            {"$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1}},
+        )
+        return "ok"
+
+    async def cancel_equip_listing(self, seller_id: int, listing_id: str) -> str:
+        """Снимает лот снаряжения и возвращает предмет в инвентарь продавца."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.equip_market.find_one_and_delete({"_id": oid, "seller_id": seller_id})
+        if not listing:
+            exists = await self.equip_market.find_one({"_id": oid})
+            return "not_owner" if exists else "not_found"
+
+        field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
+        await self.users.update_one({"_id": seller_id}, {"$inc": {field: 1}})
+        return "ok"
+
+    # --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
+    # частичками. В отличие от рынка снаряжения выше, списание/зачисление
+    # самого ресурса делает НЕ этот класс, а main.py._adjust_user_resource —
+    # Осколки завязаны на игровую формулу ставки накопления частичек
+    # (nest_settle_particles), которой в storage.py нет и быть не должно.
+    # Эти методы отвечают только за лот и GRAM, ровно как buy_listing/
+    # cancel_listing выше отвечают только за орла и GRAM. ---
+
+    async def create_resource_listing(self, seller_id: int, seller_name: str, resource: str,
+                                       amount: int, price_gram: float, ts: int) -> str:
+        """Просто создаёт лот — ресурс у продавца уже списан вызывающим
+        кодом (main.py._adjust_user_resource) ДО этого вызова."""
+        listing = {
+            "seller_id": seller_id, "seller_name": seller_name, "resource": resource,
+            "amount": amount, "price_gram": price_gram, "created_at": ts,
+        }
+        result = await self.resource_market.insert_one(listing)
+        return str(result.inserted_id)
+
+    async def list_resource_listings(self, limit: int = 200) -> list:
+        cursor = self.resource_market.find().sort("created_at", -1).limit(limit)
+        items = []
+        async for doc in cursor:
+            doc["id"] = str(doc.pop("_id"))
+            items.append(doc)
+        return items
+
+    async def claim_resource_listing_for_buy(self, buyer_id: int, listing_id: str):
+        """Забирает лот и сразу списывает GRAM с покупателя — атомарно,
+        как и в buy_listing/buy_equip_listing. Возвращает СЛОВАРЬ лота при
+        успехе (ресурс покупателю ещё не зачислен — это отдельный шаг в
+        main.py, см. _adjust_user_resource) либо код отказа: "not_found",
+        "own_listing", "insufficient_funds"."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.resource_market.find_one_and_delete({"_id": oid})
+        if not listing:
+            return "not_found"
+        if int(listing["seller_id"]) == int(buyer_id):
+            await self.resource_market.insert_one(listing)
+            return "own_listing"
+
+        price = float(listing["price_gram"])
+        result = await self.users.update_one(
+            {"_id": buyer_id, "coins": {"$gte": price}},
+            {"$inc": {"coins": -price, "ops": 1}},
+        )
+        if result.modified_count == 0:
+            await self.resource_market.insert_one(listing)
+            return "insufficient_funds"
+
+        listing["id"] = str(listing.pop("_id"))
+        return listing
+
+    async def refund_failed_resource_purchase(self, buyer_id: int, listing: dict) -> None:
+        """Откат claim_resource_listing_for_buy, если main.py не смог зачислить
+        ресурс покупателю после списания GRAM (гонка на 5 попыток) —
+        возвращает GRAM и восстанавливает лот, чтобы деньги не пропали
+        без товара."""
+        price = float(listing["price_gram"])
+        await self.users.update_one({"_id": buyer_id}, {"$inc": {"coins": price, "ops": 1}})
+        await self.restore_resource_listing(listing)
+
+    async def restore_resource_listing(self, listing: dict) -> None:
+        doc = dict(listing)
+        listing_id = doc.pop("id", None)
+        if listing_id is not None:
+            from bson import ObjectId
+            doc["_id"] = ObjectId(listing_id)
+        await self.resource_market.insert_one(doc)
+
+    async def credit_resource_seller(self, seller_id: int, price_gram: float, commission: float) -> None:
+        seller_credit = price_gram * (1 - commission)
+        await self.users.update_one(
+            {"_id": seller_id},
+            {"$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1}},
+        )
+
+    async def take_own_resource_listing(self, seller_id: int, listing_id: str):
+        """Снимает СВОЙ лот ресурса с продажи — как cancel_listing/
+        cancel_equip_listing, возвращает словарь лота или код отказа
+        ("not_found"/"not_owner"); зачисление ресурса продавцу обратно —
+        отдельный шаг в main.py (_adjust_user_resource)."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+
+        listing = await self.resource_market.find_one_and_delete({"_id": oid, "seller_id": seller_id})
+        if not listing:
+            exists = await self.resource_market.find_one({"_id": oid})
+            return "not_owner" if exists else "not_found"
+
+        listing["id"] = str(listing.pop("_id"))
+        return listing
 
     async def credit_deposit(self, tx_hash: str, user_id: int, gram: float, ts: int,
                               referrer_id: Optional[int] = None, referral_gram: float = 0.0) -> bool:
