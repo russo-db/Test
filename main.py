@@ -72,7 +72,7 @@ def apply_config(cfg: dict):
     global EXPEDITIONS_CFG, EXPEDITION_DURATION_HOURS, EXPEDITION_COST_MEAT, EXPEDITION_GOLD_BY_TIER
     global SLOTS_PRICES, VIP_TIERS
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
-    global NEST_CRAFT_COST_PARTICLES, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
+    global NEST_CRAFT_COST_PARTICLES, NEST_CRAFT_COST_GOLD, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
     global NEST_ITEM_TYPES, NEST_TYPE_ORDER, NEST_SHARD_DAILY_LIMIT
 
     CONFIG = cfg
@@ -147,6 +147,7 @@ def apply_config(cfg: dict):
     NEST_SHARD_DAILY_LIMIT = int(NEST_CFG.get("shard_daily_limit", 4))
     NEST_PARTICLE_INTERVAL_HOURS = float(NEST_CFG.get("particle_interval_hours", 24))
     NEST_CRAFT_COST_PARTICLES = int(NEST_CFG.get("craft_cost_particles", 20))
+    NEST_CRAFT_COST_GOLD = float(NEST_CFG.get("craft_cost_gold", 300))
     NEST_UPGRADE_GROUP = int(NEST_CFG.get("upgrade_group", 4))
     NEST_GRADES = list(NEST_CFG.get("grades") or ["grey", "green", "blue", "purple", "gold", "mythic"])
     NEST_GRADE_BONUS = {k: float(v) for k, v in (NEST_CFG.get("grade_bonus_pct") or {}).items()}
@@ -2072,21 +2073,30 @@ async def nest_particles_collect(request: NestAction, x_telegram_init_data: Opti
 
 @app.post("/api/nest/craft")
 async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Крафт серого предмета за частички — случайный тип снаряжения
-    (когти/броня/маска/кольцо) с равным шансом."""
+    """Крафт серого предмета — случайный тип снаряжения (когти/броня/маска/
+    кольцо) с равным шансом, за NEST_CRAFT_COST_PARTICLES частичек снаряжения
+    И NEST_CRAFT_COST_GOLD игрового Золота одновременно — оба ресурса
+    обязательны, проверяются и списываются вместе."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
     def compute(row):
         particles = float(row.get("nest_particles") or 0)
         if particles < NEST_CRAFT_COST_PARTICLES:
             raise HTTPException(status_code=400, detail=f"Нужно {NEST_CRAFT_COST_PARTICLES} частичек")
+        gold = float(row.get("gold") or 0)
+        if gold < NEST_CRAFT_COST_GOLD:
+            raise HTTPException(status_code=400, detail=f"Недостаточно золота ({NEST_CRAFT_COST_GOLD:.0f} 🪙)")
         particles -= NEST_CRAFT_COST_PARTICLES
+        gold -= NEST_CRAFT_COST_GOLD
         item_type = random.choice(NEST_TYPE_ORDER)
         grade = NEST_GRADES[0]
         inventory = normalize_nest_inventory(row.get("nest_inventory"))
         inventory[item_type][grade] += 1
-        fields = {"nest_particles": particles, "nest_inventory": inventory}
-        return fields, {"particles": particles, "inventory": inventory, "item_type": item_type, "grade": grade}
+        fields = {"nest_particles": particles, "gold": gold, "nest_inventory": inventory}
+        return fields, {
+            "particles": particles, "gold": gold,
+            "inventory": inventory, "item_type": item_type, "grade": grade,
+        }
 
     return await run_farm_action(user_id, compute)
 

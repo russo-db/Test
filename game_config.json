@@ -311,6 +311,7 @@
     "shard_daily_limit": 4,
     "particle_interval_hours": 24,
     "craft_cost_particles": 20,
+    "craft_cost_gold": 300,
     "upgrade_group": 4,
     "grades": ["grey", "green", "blue", "purple", "gold", "mythic"],
     "grade_bonus_pct": { "grey": 2, "green": 4, "blue": 8, "purple": 16, "gold": 32, "mythic": 64 },

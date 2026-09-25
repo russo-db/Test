@@ -1618,7 +1618,9 @@
                 'nest.nothingToCollect': 'Пока нечего собирать', 'nest.collected': 'Собрано {amount} ⚙️',
                 'nest.particlesInInventory': 'Частичек в инвентаре',
                 'nest.craftBtn': 'Скрафтить серый предмет ({cost}{icon})',
-                'nest.craftNeedMore': 'Нужно {cost} частичек', 'nest.crafted': 'Получен предмет: {name}',
+                'nest.craftNeedMore': 'Нужно {cost} частичек',
+                'nest.craftNotEnoughGold': 'Недостаточно золота ({cost} 🪙)',
+                'nest.crafted': 'Получен предмет: {name}',
                 'nest.upgradeHeading': 'Улучшение снаряжения (4 → 1, успех 100%)',
                 'nest.upgradeBtn': 'Улучшить', 'nest.upgradeNeedMore': 'Нужно 4 предмета этого грейда',
                 'nest.upgraded': 'Улучшено до: {name}', 'nest.needFour': 'нужно 4', 'nest.maxGrade': 'максимум',
@@ -1827,7 +1829,9 @@
                 'nest.nothingToCollect': 'Nothing to collect yet', 'nest.collected': 'Collected {amount} ⚙️',
                 'nest.particlesInInventory': 'Particles in inventory',
                 'nest.craftBtn': 'Craft a grey item ({cost}{icon})',
-                'nest.craftNeedMore': 'Need {cost} particles', 'nest.crafted': 'Item obtained: {name}',
+                'nest.craftNeedMore': 'Need {cost} particles',
+                'nest.craftNotEnoughGold': 'Not enough Gold ({cost} 🪙)',
+                'nest.crafted': 'Item obtained: {name}',
                 'nest.upgradeHeading': 'Gear upgrade (4 → 1, 100% success)',
                 'nest.upgradeBtn': 'Upgrade', 'nest.upgradeNeedMore': 'Need 4 items of this grade',
                 'nest.upgraded': 'Upgraded to: {name}', 'nest.needFour': 'need 4', 'nest.maxGrade': 'max',
@@ -5246,12 +5250,20 @@
             renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
+            const craftCostGold = CONFIG.nest.craft_cost_gold || 300;
             const have = state.nest.particles;
+            const hasParticles = have >= craftCost;
+            const hasGold = state.gold >= craftCostGold;
             document.getElementById('nestCraftParticles').innerHTML = `${fmt(have)} / ${craftCost}${NEST_PARTICLE_ICON_HTML}`;
             document.getElementById('nestCraftTrack').style.width = Math.min(100, (have / craftCost) * 100) + '%';
             const craftBtn = document.getElementById('nestCraftBtn');
-            craftBtn.innerHTML = t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML });
-            craftBtn.disabled = have < craftCost;
+            // Крафт требует ОБА ресурса сразу (частички + Золото) — если
+            // частичек хватает, а Золота нет, кнопка отдельно называет
+            // именно эту нехватку, а не общую стоимость крафта.
+            craftBtn.innerHTML = (hasParticles && !hasGold)
+                ? t('nest.craftNotEnoughGold', { cost: craftCostGold })
+                : t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML });
+            craftBtn.disabled = !(hasParticles && hasGold);
 
             const grades = CONFIG.nest.grades || [];
             const types = nestTypeOrder();
@@ -6486,6 +6498,7 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('nest.craftNeedMore', { cost: CONFIG.nest.craft_cost_particles })); return; }
                 state.nest.particles = data.particles;
+                state.gold = data.gold;
                 state.nest.inventory = data.inventory;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
@@ -7377,7 +7390,7 @@
             cfg.merchant = Object.assign({}, DEFAULT_MERCHANT, cfg.merchant);
             cfg.nest = Object.assign({
                 shard_price_gram: 3, shard_cooldown_hours: 6, particle_interval_hours: 24,
-                craft_cost_particles: 20, upgrade_group: 4,
+                craft_cost_particles: 20, craft_cost_gold: 300, upgrade_group: 4,
                 grades: ['grey', 'green', 'blue', 'purple', 'gold', 'mythic'],
                 grade_bonus_pct: { grey: 2, green: 4, blue: 8, purple: 16, gold: 32, mythic: 64 },
                 item_types: DEFAULT_NEST_ITEM_TYPES,
