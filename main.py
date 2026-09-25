@@ -684,26 +684,101 @@ def normalize_nest_equipped(raw) -> dict:
 
 
 def normalize_nest_miners(raw) -> List[dict]:
+    """Осколки в Кузнице теперь лишь считаются (см. nest_owned_shards) — у
+    накопления частичек больше нет персонального таймера на каждый осколок
+    (см. nest_pending_particles), поэтому храним только id."""
     miners = []
     if isinstance(raw, list):
         for m in raw:
             if isinstance(m, dict) and m.get("id"):
-                try:
-                    miners.append({"id": str(m["id"]), "last_collect_at": float(m.get("last_collect_at") or 0)})
-                except (TypeError, ValueError):
-                    pass
+                miners.append({"id": str(m["id"])})
     return miners
 
 
-def nest_miner_pending(miner: dict, now: float) -> int:
+def nest_owned_shards(row: dict) -> int:
+    return len(normalize_nest_miners(row.get("nest_miners")))
+
+
+def nest_particle_rate_per_second(owned_shards: int) -> float:
+    """1 осколок = 1 частичка за NEST_PARTICLE_INTERVAL_HOURS часов, поровну
+    размазанная по секундам — суммарная ставка растёт линейно с числом
+    осколков (см. nest_pending_particles)."""
     interval = NEST_PARTICLE_INTERVAL_HOURS * 3600
-    if interval <= 0:
-        return 0
-    return int((now - float(miner.get("last_collect_at") or 0)) // interval)
+    if interval <= 0 or owned_shards <= 0:
+        return 0.0
+    return owned_shards / interval
 
 
-def nest_total_pending(miners: List[dict], now: float) -> int:
-    return sum(nest_miner_pending(m, now) for m in miners)
+def nest_last_claim_of(row: dict, now: float) -> float:
+    """Точка отсчёта накопления. Для новых игроков её сразу проставляет
+    ensure_user; для тех, кто играл ДО перехода на эту формулу (там не было
+    last_claim, был счёт по каждому осколку отдельно — last_collect_at),
+    один раз мигрируем на самый старый last_collect_at среди их осколков,
+    чтобы честно недобранный по старой системе прогресс не сгорел, а
+    досчитался уже по новой формуле (см. reconcile_nest_particles)."""
+    stored = row.get("nest_last_claim")
+    if stored is not None:
+        try:
+            return float(stored)
+        except (TypeError, ValueError):
+            pass
+    raw_miners = row.get("nest_miners")
+    if isinstance(raw_miners, list) and raw_miners:
+        legacy_times = [
+            float(m["last_collect_at"]) for m in raw_miners
+            if isinstance(m, dict) and m.get("last_collect_at")
+        ]
+        if legacy_times:
+            return min(legacy_times)
+    return now
+
+
+def nest_pending_particles(row: dict, now: float) -> float:
+    """Сколько частичек накопилось ПРЯМО СЕЙЧАС, непрерывно и с дробной
+    частью: secondsPassed * (owned_shards / interval). last_claim не
+    двигается сам по себе — только через явный сбор (nest_particles_collect)
+    или пересчёт ставки при смене числа осколков (nest_settle_particles)."""
+    rate = nest_particle_rate_per_second(nest_owned_shards(row))
+    if rate <= 0:
+        return 0.0
+    last_claim = nest_last_claim_of(row, now)
+    return max(0.0, now - last_claim) * rate
+
+
+def nest_settle_particles(row: dict, now: float, new_owned_shards: int) -> float:
+    """Вызывать СТРОГО ДО того, как число осколков в row реально изменится
+    (например, перед покупкой нового) — пересчитывает last_claim под новую
+    ставку так, чтобы уже накопленный (но ещё не собранный) дробный прогресс
+    остался тем же самым числом частичек, а не потерялся и не задвоился
+    из-за смены знаменателя формулы."""
+    pending = nest_pending_particles(row, now)
+    new_rate = nest_particle_rate_per_second(new_owned_shards)
+    if pending <= 0 or new_rate <= 0:
+        return now
+    return now - (pending / new_rate)
+
+
+async def reconcile_nest_particles(user_id: int, row: dict) -> dict:
+    """Одноразовая ленивая миграция на last_claim для игроков, у которых
+    его ещё нет (см. nest_last_claim_of) — вызывается из /api/load, как и
+    accrue_vip_meat/reconcile_pvp_energy. Сама ничего не начисляет, только
+    фиксирует точку отсчёта; дальше копится и собирается через
+    /api/nest/particles/collect."""
+    if row.get("nest_last_claim") is not None:
+        return row
+    now = time.time()
+    last_claim = nest_last_claim_of(row, now)
+    for _ in range(3):
+        ops = int(row.get("ops") or 0)
+        if await store.cas_update(user_id, {"nest_last_claim": last_claim}, ops):
+            row = dict(row)
+            row["nest_last_claim"] = last_claim
+            row["ops"] = ops + 1
+            return row
+        row = await fetch_user(user_id)
+        if row.get("nest_last_claim") is not None:
+            return row
+    return row
 
 
 def nest_next_grade(grade: str) -> Optional[str]:
@@ -719,13 +794,15 @@ async def nest_state_view(row: dict) -> dict:
     сразу, см. store.buy_nest_shard/get_nest_state; частички, инвентарь и
     экипировка остаются личными для каждого игрока."""
     shard = await store.get_nest_state(day_index(), NEST_SHARD_DAILY_LIMIT)
+    now = time.time()
     return {
         "shard_price_gram": NEST_SHARD_PRICE_GRAM,
         "shard_cooldown_until": shard["cooldown_until"],
         "shard_bought_today": shard["bought_today"],
         "shard_daily_limit": shard["daily_limit"],
         "particles": float(row.get("nest_particles") or 0),
-        "miners": normalize_nest_miners(row.get("nest_miners")),
+        "shard_count": nest_owned_shards(row),
+        "last_claim": nest_last_claim_of(row, now),
         "inventory": normalize_nest_inventory(row.get("nest_inventory")),
         "equipped": normalize_nest_equipped(row.get("nest_equipped")),
     }
@@ -909,6 +986,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "wheel_spins_today": 0,
             "nest_miners": [],
             "nest_particles": 0.0,
+            "nest_last_claim": time.time(),
             "nest_inventory": {},
             "nest_equipped": {},
             "pvp_rating": PVP_RATING_START,
@@ -1309,6 +1387,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
     row = await accrue_vip_meat(user_id, row)
     row = await reconcile_queues(user_id, row)
     row = await reconcile_pvp_energy(user_id, row)
+    row = await reconcile_nest_particles(user_id, row)
     farm = read_farm(row["monsters"])
 
     await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
@@ -1658,14 +1737,19 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
     покупок на всех игроков вместе (обнуляется по UTC-суткам, как daily/
     wheel). Купленный осколок достаётся только самому покупателю и навсегда
     остаётся в его Кузнице, пассивно добывая частички (см.
-    nest_miner_pending) — он не расходуется."""
+    nest_pending_particles) — он не расходуется."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    await fetch_user(user_id)
+    row = await fetch_user(user_id)
 
     now = time.time()
+    # Считаем новый last_claim ДО того, как число осколков реально
+    # изменится — иначе новая (более высокая) ставка задним числом
+    # применилась бы ко всему времени с прошлого сбора (см.
+    # nest_settle_particles).
+    new_last_claim = nest_settle_particles(row, now, nest_owned_shards(row) + 1)
     result = await store.buy_nest_shard(
         user_id, now, day_index(now), NEST_SHARD_PRICE_GRAM,
-        NEST_SHARD_COOLDOWN_HOURS * 3600, NEST_SHARD_DAILY_LIMIT,
+        NEST_SHARD_COOLDOWN_HOURS * 3600, NEST_SHARD_DAILY_LIMIT, new_last_claim,
     )
     if result["status"] == "cooldown":
         raise HTTPException(status_code=400, detail="Осколок ещё не готов")
@@ -1686,7 +1770,8 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
         "shard_cooldown_until": result["cooldown_until"],
         "shard_bought_today": result["bought_today"],
         "shard_daily_limit": NEST_SHARD_DAILY_LIMIT,
-        "nest_miners": normalize_nest_miners(row.get("nest_miners")),
+        "shard_count": nest_owned_shards(row),
+        "last_claim": nest_last_claim_of(row, now),
     }
 
 
@@ -1879,25 +1964,28 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
 
 @app.post("/api/nest/particles/collect")
 async def nest_particles_collect(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Собирает накопленные частички со всех осколков — офлайн-safe: время,
-    не кратное 24ч на осколок, не сгорает (last_collect_at сдвигается только
-    на целое число уже собранных интервалов, как и в reconcile_queues)."""
+    """Собирает накопленные частички — только целую часть (см.
+    nest_pending_particles). Дробный остаток не сгорает: last_claim
+    сдвигается вперёд ровно на время уже собранных целых частичек, так что
+    остаток продолжает тикать с той же самой точки, а не обнуляется."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
     def compute(row):
         now = time.time()
-        miners = normalize_nest_miners(row.get("nest_miners"))
-        collected = 0
-        for m in miners:
-            pending = nest_miner_pending(m, now)
-            if pending > 0:
-                collected += pending
-                m["last_collect_at"] += pending * NEST_PARTICLE_INTERVAL_HOURS * 3600
-        if collected <= 0:
+        row = dict(row)
+        row["nest_last_claim"] = nest_last_claim_of(row, now)
+        pending = nest_pending_particles(row, now)
+        stable = int(pending)  # pending всегда >= 0, так что int() == floor()
+        if stable < 1:
             raise HTTPException(status_code=400, detail="Пока нечего собирать")
-        particles = float(row.get("nest_particles") or 0) + collected
-        fields = {"nest_miners": miners, "nest_particles": particles}
-        return fields, {"collected": collected, "particles": particles, "nest_miners": miners}
+        rate = nest_particle_rate_per_second(nest_owned_shards(row))
+        new_last_claim = now - (pending - stable) / rate
+        particles = float(row.get("nest_particles") or 0) + stable
+        fields = {"nest_particles": particles, "nest_last_claim": new_last_claim}
+        return fields, {
+            "collected": stable, "particles": particles,
+            "last_claim": new_last_claim, "shard_count": nest_owned_shards(row),
+        }
 
     return await run_farm_action(user_id, compute)
 
@@ -2726,9 +2814,10 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
 async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Depends(require_admin)):
     """Начисляет игроку N Небесных Осколков напрямую, в обход общего (на
     всех игроков) кулдауна и суточного лимита покупки — это админский
-    подарок, а не покупка. Каждый осколок — отдельный "майнер" в
-    nest_miners, который сразу начинает добывать частички (last_collect_at
-    = сейчас), точно как купленный за GRAM."""
+    подарок, а не покупка. Осколки сразу учитываются в общей ставке
+    накопления частичек (см. nest_pending_particles), как и купленные за
+    GRAM; last_claim пересчитывается ДО добавления (nest_settle_particles),
+    чтобы уже накопленный дробный прогресс не потерялся."""
     doc = await store.get(user_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Игрок не найден")
@@ -2736,11 +2825,12 @@ async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Dep
     count = max(1, min(int(body.count), 100))
     now = time.time()
     miners = normalize_nest_miners(doc.get("nest_miners"))
+    new_last_claim = nest_settle_particles(doc, now, len(miners) + count)
     for i in range(count):
-        miners.append({"id": f"admin-{user_id}-{int(now * 1000)}-{i}", "last_collect_at": now})
+        miners.append({"id": f"admin-{user_id}-{int(now * 1000)}-{i}"})
 
-    await store.update(user_id, {"nest_miners": miners})
-    return {"nest_miners": miners}
+    await store.update(user_id, {"nest_miners": miners, "nest_last_claim": new_last_claim})
+    return {"nest_miners": miners, "shard_count": len(miners), "last_claim": new_last_claim}
 
 
 @app.post("/admin/api/players/{user_id}/grant_item")

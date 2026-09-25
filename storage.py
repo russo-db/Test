@@ -5,9 +5,10 @@
     missions, slots, referrals, referred_by, last_seen,
     daily_day, daily_last, daily_cycles, eggs_board, eggs_board_unlocked, eggs_queue, wallet, ops,
     vip_tier, vip_expires_at, vip_last_meat_at, wheel_day, wheel_spins_today,
-    nest_miners, nest_particles, nest_inventory, nest_equipped
+    nest_miners, nest_particles, nest_last_claim, nest_inventory, nest_equipped
     (Гнездо Воинов: добыча частичек, крафт/улучшение снаряжения, экипировка —
-    личные для каждого игрока)
+    личные для каждого игрока; nest_last_claim — точка отсчёта непрерывного
+    накопления частичек, см. nest_pending_particles в main.py)
     pvp_rating (Арена: рейтинг для Топ-100, старт 1000, +25/-15 за победу/поражение)
     pvp_energy, pvp_energy_day (Арена: энергия на вход в бой, потолок 10,
     пополняется раз в UTC-сутки; day — номер суток последнего пополнения)
@@ -30,7 +31,7 @@ FIELDS = (
     "active_slot", "missions", "slots", "referrals", "referred_by", "last_seen",
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
-    "nest_miners", "nest_particles", "nest_inventory", "nest_equipped", "pvp_rating",
+    "nest_miners", "nest_particles", "nest_last_claim", "nest_inventory", "nest_equipped", "pvp_rating",
     "pvp_energy", "pvp_energy_day",
 )
 
@@ -190,7 +191,7 @@ class MongoStore:
         }
 
     async def buy_nest_shard(self, user_id: int, now: float, today: int, price_gram: float,
-                              cooldown_seconds: float, daily_limit: int) -> dict:
+                              cooldown_seconds: float, daily_limit: int, new_last_claim: float) -> dict:
         """Небесный Осколок — общий (не персональный) ресурс: доступен строго
         1 за раз НА ВСЕХ игроков, а суточный лимит покупок тоже один общий
         счётчик (обнуляется по UTC-суткам). Двухфазный подход, как и у
@@ -217,10 +218,14 @@ class MongoStore:
         if reserve.modified_count == 0:
             return {"status": "conflict"}
 
-        miner = {"id": f"{user_id}-{int(now * 1000)}", "last_collect_at": now}
+        miner = {"id": f"{user_id}-{int(now * 1000)}"}
         charge = await self.users.update_one(
             {"_id": user_id, "coins": {"$gte": price_gram}},
-            {"$inc": {"coins": -price_gram, "ops": 1}, "$push": {"nest_miners": miner}},
+            {
+                "$inc": {"coins": -price_gram, "ops": 1},
+                "$push": {"nest_miners": miner},
+                "$set": {"nest_last_claim": new_last_claim},
+            },
         )
         if charge.modified_count == 0:
             # Откат безопасен: пока наш резерв держит общий кулдаун, никто

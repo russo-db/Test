@@ -1137,8 +1137,8 @@
                 <div class="glass-panel nest-card">
                     <div class="stat-row"><span data-i18n="nest.minersInWork">Осколков в работе</span><b id="nestMinerCount">0</b></div>
                     <div class="nest-miners-row" id="nestMinersRow"></div>
-                    <div class="stat-row"><span data-i18n="nest.readyToCollect">Готово к сбору</span><b id="nestPendingParticles">0 <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt=""></b></div>
-                    <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCollectBtn" onclick="nestCollectParticles()" data-i18n="nest.collectBtn">Собрать частички</button>
+                    <div class="stat-row"><span data-i18n="nest.readyToCollect">Готово к сбору</span><b id="nestPendingParticles">0.00 <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt=""></b></div>
+                    <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCollectBtn" onclick="nestCollectParticles()" disabled data-i18n="nest.collectBtn">Собрать частички</button>
                 </div>
 
                 <div class="glass-panel nest-card">
@@ -1613,10 +1613,9 @@
                 'nest.shardCooldownLabel': 'Следующий осколок через',
                 'nest.shardPurchased': 'Небесный Осколок куплен — отправлен в Кузницу',
                 'nest.shardBoughtToday': 'Сегодня куплено: {count} / {limit} (лимит один на всех игроков)',
-                'nest.nextParticleLabel': 'Частичка через',
                 'nest.shardDailyLimitReached': 'Суточный лимит осколков исчерпан — приходи завтра',
-                'nest.minersInWork': 'Осколков в работе', 'nest.noMiners': 'нет осколков',
-                'nest.readyToCollect': 'Готово к сбору', 'nest.collectBtn': 'Собрать частички',
+                'nest.minersInWork': 'Осколков в Кузнице', 'nest.noMiners': 'нет осколков',
+                'nest.readyToCollect': 'Накоплено частичек', 'nest.collectBtn': 'Собрать частички',
                 'nest.nothingToCollect': 'Пока нечего собирать', 'nest.collected': 'Собрано {amount} ⚙️',
                 'nest.particlesInInventory': 'Частичек в инвентаре',
                 'nest.craftBtn': 'Скрафтить серый предмет ({cost}{icon})',
@@ -1823,10 +1822,9 @@
                 'nest.shardCooldownLabel': 'Next shard in',
                 'nest.shardPurchased': 'Sky Shard purchased — sent to the Forge',
                 'nest.shardBoughtToday': 'Bought today: {count} / {limit} (shared limit for all players)',
-                'nest.nextParticleLabel': 'Next particle in',
                 'nest.shardDailyLimitReached': "Today's shard limit is reached — come back tomorrow",
-                'nest.minersInWork': 'Shards at work', 'nest.noMiners': 'no shards',
-                'nest.readyToCollect': 'Ready to collect', 'nest.collectBtn': 'Collect particles',
+                'nest.minersInWork': 'Shards in the Forge', 'nest.noMiners': 'no shards',
+                'nest.readyToCollect': 'Particles accumulated', 'nest.collectBtn': 'Collect particles',
                 'nest.nothingToCollect': 'Nothing to collect yet', 'nest.collected': 'Collected {amount} ⚙️',
                 'nest.particlesInInventory': 'Particles in inventory',
                 'nest.craftBtn': 'Craft a grey item ({cost}{icon})',
@@ -2089,7 +2087,7 @@
             marketListings: [],  // активные лоты P2P-рынка (см. loadMarketListings)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, eaglesSold: 0 }, // общий (не персональный!) остаток лимитов купца, кэш с сервера
-            nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, miners: [], inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка
+            nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} } // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
         };
 
         let botUsername = '';
@@ -5095,26 +5093,28 @@
             return ((state.nest.inventory[type] || {})[grade]) || 0;
         }
 
-        function nestMinerPending(miner, nowSec) {
+        // Ставка накопления: 1 осколок = 1 частичка за particle_interval_hours
+        // часов, поровну размазанная по секундам — суммарная ставка растёт
+        // линейно с числом осколков (см. nest_particle_rate_per_second в main.py).
+        function nestParticleRatePerSecond() {
             const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
             if (interval <= 0) return 0;
-            return Math.floor((nowSec - (miner.lastCollectAt || 0)) / interval);
+            return (state.nest.shardCount || 0) / interval;
         }
 
-        function nestTotalPending(nowSec) {
-            return state.nest.miners.reduce((sum, m) => sum + nestMinerPending(m, nowSec), 0);
-        }
-
-        // Сколько секунд осталось до ближайшей следующей частички среди всех
-        // осколков игрока (независимо от того, сколько уже накопилось и
-        // ждёт сбора) — null, если осколков ещё нет вовсе.
-        function nestNextParticleSeconds(nowSec) {
-            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
-            if (!state.nest.miners.length || interval <= 0) return null;
-            return Math.min(...state.nest.miners.map(m => {
-                const elapsed = (nowSec - (m.lastCollectAt || 0)) % interval;
-                return interval - elapsed;
-            }));
+        // Сколько частичек накопилось ПРЯМО СЕЙЧАС — непрерывно, с дробной
+        // частью. state.nest.lastClaim — серверный якорь (см. syncFromServer/
+        // nestCollectParticles/nestBuyShard), а секунды с него считаем локально
+        // через Date.now(), как и остальные тикающие таймеры Гнезда/Арены.
+        // lastClaim не двигается сам по себе — только явным сбором или
+        // покупкой нового осколка (сервер пересчитывает его в этот момент,
+        // см. nest_settle_particles), поэтому пересчитывать здесь нечего
+        // сверх текущей ставки и разницы во времени.
+        function nestPendingParticles(nowSec) {
+            const rate = nestParticleRatePerSecond();
+            if (rate <= 0) return 0;
+            const secondsPassed = Math.max(0, nowSec - (state.nest.lastClaim || nowSec));
+            return secondsPassed * rate;
         }
 
         function renderNest() {
@@ -5149,14 +5149,6 @@
             const el = document.getElementById('nestShardCard');
             if (!el) return;
             const now = Date.now() / 1000;
-            // Таймер до следующей частички не завязан на сигнатуру покупки
-            // осколка (та ловит только куплен/лимит/кулдаун) — тикает всегда,
-            // пока есть хоть один осколок.
-            const timerValEl = document.getElementById('nestParticleTimerVal');
-            if (timerValEl) {
-                const nextParticle = nestNextParticleSeconds(now);
-                timerValEl.textContent = nextParticle == null ? '—' : formatCountdown(nextParticle);
-            }
             if (nestShardSignature(now) !== nestShardSig) { renderNestShard(); return; }
             const limitReached = (state.nest.shardBoughtToday || 0) >= (state.nest.shardDailyLimit || 4);
             const ready = now >= (state.nest.shardCooldownUntil || 0);
@@ -5179,17 +5171,12 @@
             const limit = state.nest.shardDailyLimit || 4;
             const boughtToday = state.nest.shardBoughtToday || 0;
             const limitReached = boughtToday >= limit;
-            const nextParticle = nestNextParticleSeconds(now);
             const header = `
                 <div class="nest-shard-top">
                     <div class="nest-shard-icon"><img src="assets/nest-shard-v2.jpg" alt=""></div>
                     <div>
                         <div class="nest-shard-title">${t('nest.shardTitle')}</div>
                         <div class="nest-shard-sub">${t('nest.shardSub', { price: fmtGram(price) })}</div>
-                    </div>
-                    <div class="nest-particle-timer">
-                        <div class="nest-particle-timer-label">${t('nest.nextParticleLabel')}</div>
-                        <div class="nest-particle-timer-val" id="nestParticleTimerVal">${nextParticle == null ? '—' : formatCountdown(nextParticle)}</div>
                     </div>
                 </div>
                 <div class="nest-shard-daily">${t('nest.shardBoughtToday', { count: boughtToday, limit })}</div>`;
@@ -5218,54 +5205,46 @@
         let nestMinerSig = '';
 
         function nestMinerSignature() {
-            return state.nest.miners.map(m => m.id + ':' + m.lastCollectAt).join(',');
+            return state.nest.shardCount + ':' + state.nest.lastClaim;
         }
 
-        // Полоски заполнения и счётчик «готово к сбору» тикают каждую секунду
-        // сами по себе — количество осколков и их last_collect_at меняются
-        // только после покупки/сбора (оба уже зовут полный renderNestForge и
-        // тем самым обновляют nestMinerSig), так что здесь никогда не нужно
-        // трогать innerHTML.
+        // Счётчик накопленных частичек тикает каждую секунду сам по себе —
+        // shardCount/lastClaim меняются только после покупки осколка или
+        // сбора (оба уже зовут полный renderNestForge и тем самым обновляют
+        // nestMinerSig), так что здесь никогда не нужно трогать innerHTML
+        // самих тайлов осколков, только текст/disabled счётчика и кнопки.
         function tickNestForge() {
             const minersRow = document.getElementById('nestMinersRow');
             if (!minersRow) return;
             if (nestMinerSignature() !== nestMinerSig) { renderNestForge(); return; }
-            const now = Date.now() / 1000;
-            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
-            const tiles = minersRow.querySelectorAll('.nest-miner');
-            state.nest.miners.forEach((m, i) => {
-                const tile = tiles[i];
-                if (!tile) return;
-                const pending = nestMinerPending(m, now);
-                const progress = interval > 0 ? ((now - m.lastCollectAt) % interval) / interval : 0;
-                const pct = pending > 0 ? 100 : Math.round(progress * 100);
-                const fill = tile.querySelector('.nest-miner-fill');
-                const span = tile.querySelector('span');
-                if (fill) fill.style.height = pct + '%';
-                if (span) span.textContent = pending > 0 ? '✨' : '💎';
-            });
+            renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
+        }
+
+        // Обновляет только «Накоплено частичек: X.XX» и disabled кнопки
+        // сбора — вызывается и каждую секунду (tickNestForge), и сразу после
+        // полного рендера (renderNestForge), чтобы не дублировать формулу.
+        function renderNestPendingLabel(pending) {
             const pendingEl = document.getElementById('nestPendingParticles');
-            if (pendingEl) pendingEl.innerHTML = nestTotalPending(now) + NEST_PARTICLE_ICON_HTML;
+            if (pendingEl) pendingEl.innerHTML = pending.toFixed(2) + NEST_PARTICLE_ICON_HTML;
+            const collectBtn = document.getElementById('nestCollectBtn');
+            if (collectBtn) collectBtn.disabled = Math.floor(pending) < 1;
         }
 
         function renderNestForge() {
             const minerCountEl = document.getElementById('nestMinerCount');
             if (!minerCountEl) return;
-            const now = Date.now() / 1000;
-            const interval = (CONFIG.nest.particle_interval_hours || 24) * 3600;
-            const miners = state.nest.miners;
-            minerCountEl.textContent = miners.length;
+            const shardCount = state.nest.shardCount || 0;
+            minerCountEl.textContent = shardCount;
             nestMinerSig = nestMinerSignature();
 
-            let rows = miners.map(m => {
-                const pending = nestMinerPending(m, now);
-                const progress = interval > 0 ? ((now - m.lastCollectAt) % interval) / interval : 0;
-                const pct = pending > 0 ? 100 : Math.round(progress * 100);
-                return `<div class="nest-miner"><div class="nest-miner-fill" style="height:${pct}%"></div><span>${pending > 0 ? '✨' : '💎'}</span></div>`;
-            }).join('');
-            if (!miners.length) rows = `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
+            // Осколки больше не тикают по отдельности (см. nestPendingParticles
+            // — общая непрерывная ставка на все сразу), тайлы здесь чисто
+            // декоративные, просто по числу осколков в собственности.
+            const rows = shardCount
+                ? Array.from({ length: Math.min(shardCount, 60) }, () => `<div class="nest-miner"><span>💎</span></div>`).join('')
+                : `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
             document.getElementById('nestMinersRow').innerHTML = rows;
-            document.getElementById('nestPendingParticles').innerHTML = nestTotalPending(now) + NEST_PARTICLE_ICON_HTML;
+            renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
             const have = state.nest.particles;
@@ -6436,7 +6415,8 @@
                 state.nest.shardCooldownUntil = data.shard_cooldown_until;
                 state.nest.shardBoughtToday = data.shard_bought_today || 0;
                 state.nest.shardDailyLimit = data.shard_daily_limit || state.nest.shardDailyLimit;
-                state.nest.miners = (data.nest_miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at }));
+                state.nest.shardCount = data.shard_count;
+                state.nest.lastClaim = data.last_claim;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 toast(t('nest.shardPurchased'));
@@ -6470,6 +6450,10 @@
 
         async function nestCollectParticles() {
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            // Дробный остаток нельзя забрать — кнопка и так задизейблена ниже
+            // 1 частички (см. renderNestPendingLabel), но защищаемся и тут на
+            // случай гонки с истёкшим отрисовкой тиком.
+            if (Math.floor(nestPendingParticles(Date.now() / 1000)) < 1) return;
             if (farmActionBusy.has('nest-collect')) return;
             farmActionBusy.add('nest-collect');
             try {
@@ -6480,7 +6464,8 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('nest.nothingToCollect')); return; }
                 state.nest.particles = data.particles;
-                state.nest.miners = (data.nest_miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at }));
+                state.nest.lastClaim = data.last_claim;
+                if (typeof data.shard_count === 'number') state.nest.shardCount = data.shard_count;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 toast(t('nest.collected', { amount: data.collected }));
@@ -7064,7 +7049,8 @@
                 state.nest.shardBoughtToday = data.nest.shard_bought_today || 0;
                 state.nest.shardDailyLimit = data.nest.shard_daily_limit || state.nest.shardDailyLimit;
                 state.nest.particles = data.nest.particles || 0;
-                state.nest.miners = (data.nest.miners || []).map(m => ({ id: m.id, lastCollectAt: m.last_collect_at || 0 }));
+                state.nest.shardCount = data.nest.shard_count || 0;
+                state.nest.lastClaim = data.nest.last_claim || 0;
                 state.nest.inventory = data.nest.inventory || {};
                 state.nest.equipped = data.nest.equipped || {};
             }
