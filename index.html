@@ -945,7 +945,6 @@
         .lb-crown { flex: 0 0 22px; font-size: 16px; text-align: center; }
         .lb-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .lb-rating { flex: 0 0 auto; font-size: 12px; font-weight: 800; color: var(--accent-amber); font-variant-numeric: tabular-nums; }
-        .lb-tier-badge { flex: 0 0 auto; font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
         .lb-podium-row.lb-rank-1 { background: linear-gradient(135deg, rgba(255, 215, 0, 0.28), rgba(255, 215, 0, 0.06)); border-color: rgba(255, 215, 0, 0.5); }
         .lb-podium-row.lb-rank-2 { background: linear-gradient(135deg, rgba(200, 210, 224, 0.26), rgba(200, 210, 224, 0.05)); border-color: rgba(200, 210, 224, 0.5); }
         .lb-podium-row.lb-rank-3 { background: linear-gradient(135deg, rgba(205, 127, 50, 0.28), rgba(205, 127, 50, 0.06)); border-color: rgba(205, 127, 50, 0.5); }
@@ -6282,18 +6281,17 @@
                 const data = await response.json();
                 leaderboardMyRank = data.my_rank;
                 if (typeof data.my_rating === 'number') state.pvpRating = data.my_rating;
+                // Только место, никнейм и рейтинг — редкость/грейд орла
+                // сервер больше вообще не присылает (см. arena_leaderboard в
+                // main.py), чтобы через Топ-100 нельзя было подсмотреть силу
+                // чужой птицы.
                 return (data.top || []).map(e => ({
-                    name: e.name, rating: e.pvp_rating, bestTier: e.best_tier,
+                    name: e.name, rating: e.pvp_rating,
                     isMe: e.user_id === state.userId,
                 }));
             } catch (error) {
                 return null;
             }
-        }
-
-        function arenaTierBadge(tierId) {
-            const tier = CONFIG.tiers.find(x => x.id === tierId) || CONFIG.tiers[0];
-            return `<span class="lb-tier-badge" style="background:${tier.color}22; color:${tier.color}; border-color:${tier.color}66">${tier.name}</span>`;
         }
 
         function arenaLeaderboardRowHtml(entry, rank) {
@@ -6302,14 +6300,12 @@
                 return `<div class="lb-podium-row lb-rank-${rank} ${entry.isMe ? 'lb-me' : ''}">
                     <span class="lb-crown">${crown}</span>
                     <span class="lb-name">${entry.name}</span>
-                    ${arenaTierBadge(entry.bestTier)}
                     <span class="lb-rating">${entry.rating}</span>
                 </div>`;
             }
             return `<div class="lb-row ${entry.isMe ? 'lb-me' : ''}">
                 <span class="lb-rank">#${rank}</span>
                 <span class="lb-name">${entry.name}</span>
-                ${arenaTierBadge(entry.bestTier)}
                 <span class="lb-rating">${entry.rating}</span>
             </div>`;
         }

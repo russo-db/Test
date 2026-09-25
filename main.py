@@ -1937,13 +1937,17 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     row = await fetch_user(user_id)
     my_rating = pvp_rating_of(row)
 
+    # Абсолютная анонимность Топ-100: только место, ник и очки — редкость/
+    # грейд орла (best_tier) намеренно не отдаём вообще, иначе по нему можно
+    # было бы вычислить силу чужой птицы прямо из таблицы лидеров, даже не
+    # заходя в бой (см. также двухфазный подбор соперника — arena_opponent/
+    # arena_reveal — построенный на той же идее).
     top_docs = await store.get_leaderboard(100)
     top = [
         {
             "user_id": doc["user_id"],
             "name": doc["name"] or f"Игрок {doc['user_id']}",
             "pvp_rating": int(doc["pvp_rating"]),
-            "best_tier": best_owned_tier(doc.get("monsters")),
         }
         for doc in top_docs
     ]
@@ -1958,8 +1962,84 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
         "top": top,
         "my_rank": my_rank,
         "my_rating": my_rating,
-        "my_best_tier": best_owned_tier(row.get("monsters")),
     }
+
+
+# --- ПРИЗЫ ТУРНИРА АРЕНЫ (награда по итоговым местам Топ-50) ---
+
+ARENA_TOP_REWARDS = {
+    1: {"gram": 50, "shards": 10, "particles": 0},
+    2: {"gram": 30, "shards": 4, "particles": 0},
+    3: {"gram": 20, "shards": 2, "particles": 0},
+    4: {"gram": 10, "shards": 1, "particles": 0},
+    5: {"gram": 3, "shards": 1, "particles": 0},
+}
+
+
+def arena_tournament_reward(rank: int) -> dict:
+    """Приз турнира Арены по итоговому месту в Топ-50 (см.
+    distribute_arena_rewards). GRAMM начисляется строго на внутриигровой
+    баланс (coins) — тот же баланс, которым игрок платит за всё внутри
+    игры, — а НЕ отправляется на внешний TON-кошелёк; кошелёк/операции
+    вывода здесь вообще не участвуют."""
+    if rank in ARENA_TOP_REWARDS:
+        return dict(ARENA_TOP_REWARDS[rank])
+    if 6 <= rank <= 10:
+        return {"gram": 0, "shards": 1, "particles": 0}
+    if 11 <= rank <= 20:
+        return {"gram": 0, "shards": 0, "particles": 10}
+    if 21 <= rank <= 50:
+        return {"gram": 0, "shards": 0, "particles": 1}
+    return {"gram": 0, "shards": 0, "particles": 0}
+
+
+async def distribute_arena_rewards() -> dict:
+    """Начисляет призы турнира Арены по текущему Топ-50 (см.
+    arena_tournament_reward) каждому награждённому — GRAMM на внутренний
+    баланс (coins), Небесные Осколки в Кузницу (с пересчётом last_claim
+    ДО добавления, как и в admin_grant_shards/nest_shard_buy — иначе
+    пересчёт ставки задним числом обнулил бы или задвоил уже накопленный
+    дробный прогресс, см. nest_settle_particles) и/или целые частички
+    снаряжения (nest_particles) напрямую. Рейтинг игроков не сбрасывает —
+    вызывающий (админ-эндпоинт ниже) решает, когда именно «конец
+    турнира» и нужно ли после этого обнулять места отдельно."""
+    top_docs = await store.get_leaderboard(50)
+    now = time.time()
+    awarded = []
+    for rank, doc in enumerate(top_docs, start=1):
+        reward = arena_tournament_reward(rank)
+        if not (reward["gram"] or reward["shards"] or reward["particles"]):
+            continue
+        user_id = doc["user_id"]
+        row = await store.get(user_id)
+        if not row:
+            continue
+
+        fields = {}
+        if reward["gram"]:
+            fields["coins"] = float(row.get("coins") or 0) + reward["gram"]
+        if reward["shards"]:
+            miners = normalize_nest_miners(row.get("nest_miners"))
+            new_last_claim = nest_settle_particles(row, now, len(miners) + reward["shards"])
+            for i in range(reward["shards"]):
+                miners.append({"id": f"reward-{user_id}-{int(now * 1000)}-{i}"})
+            fields["nest_miners"] = miners
+            fields["nest_last_claim"] = new_last_claim
+        if reward["particles"]:
+            fields["nest_particles"] = float(row.get("nest_particles") or 0) + reward["particles"]
+
+        await store.update(user_id, fields)
+        awarded.append({"user_id": user_id, "rank": rank, **reward})
+
+    return {"rewarded": len(awarded), "details": awarded}
+
+
+@app.post("/admin/api/arena/distribute_rewards")
+async def admin_distribute_arena_rewards(_: None = Depends(require_admin)):
+    """Ручной запуск начисления призов турнира Арены по текущему Топ-50 —
+    жми из админки по факту окончания турнира (см. distribute_arena_rewards).
+    Места/рейтинг игроков этим не сбрасываются."""
+    return await distribute_arena_rewards()
 
 
 @app.post("/api/nest/particles/collect")
