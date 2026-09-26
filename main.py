@@ -663,7 +663,7 @@ def pvp_energy_of(row: dict):
     ПОДНИМАЕТ энергию в новые сутки, никогда не отнимает задонатенное
     сверх потолка. Чистая функция, ничего не пишет в БД сама (см.
     reconcile_pvp_energy для персистентного пополнения на /api/load и
-    arena_spend_energy/arena_buy_energy для трат)."""
+    arena_fight/arena_buy_energy для трат)."""
     energy = row.get("pvp_energy")
     energy = float(PVP_ENERGY_MAX) if energy is None else float(energy)
     last_day = row.get("pvp_energy_day")
@@ -1310,13 +1310,9 @@ class NestUnequipAction(BaseModel):
     item_type: str
 
 
-class ArenaResult(BaseModel):
+class ArenaFightRequest(BaseModel):
     user_id: int
-    won: bool
-
-
-class ArenaReveal(BaseModel):
-    user_id: int
+    tier_id: str
     match_token: str
 
 
@@ -1911,97 +1907,156 @@ async def arena_opponent(user_id: int, x_telegram_init_data: Optional[str] = Hea
     """Подбор соперника на Арене по месту в общей Таблице лидеров (PvP-рейтинг),
     а не по редкости орла — см. store.find_ladder_opponent: случайный игрок
     либо из ближайших ARENA_LADDER_ABOVE_COUNT мест НАД текущим игроком, либо
-    в пределах ±ARENA_LADDER_RATING_RANGE очков рейтинга.
+    в пределах ±ARENA_LADDER_RATING_RANGE очков рейтинга. Если рядом никого
+    нет — матч всё равно выдаётся, просто is_bot=true (дикий орёл; см.
+    arena_fight, который и сгенерирует его статы, когда бой реально начнётся).
 
     КРИТИЧНО ДЛЯ БЕЗОПАСНОСТИ: на этом шаге отдаётся ТОЛЬКО округлённый до
     сотен рейтинг и одноразовый match_token — ни ник, ни точный рейтинг, ни
     редкость орла, ни снаряжение соперника клиенту не передаются. Иначе
     точная цифра рейтинга однозначно вычисляла бы конкретного игрока в
-    Топ-100 ещё ДО начала боя. Точные данные раскрывает только
-    /api/arena/reveal, который клиент дёргает в момент реального запуска
-    анимации боя (см. arena_reveal)."""
-    authenticate(x_telegram_init_data, user_id)
+    Топ-100 ещё ДО начала боя. Сам бой и его итог — тоже не на этом шаге:
+    единственная точка, где что-либо реально решается — /api/arena/fight,
+    вызываемый клиентом строго в момент запуска анимации (см. arena_fight)."""
+    user_id = authenticate(x_telegram_init_data, user_id)
     row = await fetch_user(user_id)
     my_rating = pvp_rating_of(row)
 
     opponent = await store.find_ladder_opponent(
         user_id, my_rating, ARENA_LADDER_ABOVE_COUNT, ARENA_LADDER_RATING_RANGE,
     )
-    if not opponent:
-        return {"found": False}
 
     _prune_arena_matches()
     token = secrets.token_urlsafe(16)
     ARENA_PENDING_MATCHES[token] = {
         "user_id": user_id,
-        "opponent_id": opponent["user_id"],
+        "opponent_id": opponent["user_id"] if opponent else None,
         "expires_at": time.time() + ARENA_MATCH_TTL_SECONDS,
     }
     return {
         "found": True,
+        "is_bot": opponent is None,
         "match_token": token,
-        "rating_bracket": rating_bracket(opponent["pvp_rating"]),
+        "rating_bracket": rating_bracket(opponent["pvp_rating"]) if opponent else None,
     }
 
 
-@app.post("/api/arena/reveal")
-async def arena_reveal(request: ArenaReveal, x_telegram_init_data: Optional[str] = Header(None)):
-    """Раскрывает реального соперника, подобранного arena_opponent, по
-    одноразовому match_token — вызывается клиентом строго в момент запуска
-    анимации боя, не раньше. Токен привязан к user_id (нельзя раскрыть чужой
-    подбор) и одноразовый (удаляется сразу при чтении), а протухшие токены
-    в ARENA_PENDING_MATCHES не проходят проверку expires_at."""
+def _arena_bot_stats(rng: random.Random, tier_id: str) -> dict:
+    """Дикий орёл-заглушка — порт клиентского arenaGenerateBotOpponent:
+    базовые статы редкости, которой сражается игрок, ±15% каждая независимо.
+    Раньше это подставлял себе сам клиент безо всякого сервера; теперь для
+    авторитетного боя сервер обязан сгенерировать те же числа сам — иначе
+    игрок мог бы просто заявить о победе над ботом, которого сам же ослабил."""
+    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
+    v = lambda: 0.85 + rng.random() * 0.3
+    return {
+        "hp": round(base["hp"] * v()), "atk": round(base["atk"] * v()),
+        "def": round(base["def"] * v()), "crit": round(base["crit"] * v(), 1),
+        "spd": round(base["spd"] * v()),
+    }
+
+
+def arena_battle_simulate(seed: str, player: dict, enemy: dict) -> dict:
+    """1v1 бой Арены — порт клиентского arenaStartBattle/arenaRollDamage,
+    теперь единственный источник истины для исхода (раньше бой полностью
+    отыгрывался на клиенте, а сервер лишь принимал заявленный им won —
+    см. историю /api/arena/result). player/enemy — {"stats"}; кто ходит
+    первым решает скорость (при равной — 50/50), дальше стороны меняются
+    ходом за ходом, как и в клиентском цикле. Лог из одних только "attack"
+    (без "enter" — фигурант ровно один на сторону, замены нет, в отличие от
+    очереди 10х10 в Битве Кланов) клиент проигрывает как анимацию, так что
+    визуал 1-в-1 совпадает с тем, что реально произошло."""
+    rng = random.Random(seed)
+    a_hp, b_hp = player["stats"]["hp"], enemy["stats"]["hp"]
+    a_stats, b_stats = player["stats"], enemy["stats"]
+
+    if a_stats["spd"] > b_stats["spd"]:
+        attacker_side = "player"
+    elif b_stats["spd"] > a_stats["spd"]:
+        attacker_side = "enemy"
+    else:
+        attacker_side = "player" if rng.random() < 0.5 else "enemy"
+
+    log = []
+    guard = 0
+    while a_hp > 0 and b_hp > 0 and guard < 2000:
+        guard += 1
+        attacker_stats = a_stats if attacker_side == "player" else b_stats
+        defender_stats = b_stats if attacker_side == "player" else a_stats
+        dmg, crit = _clan_roll_damage(rng, attacker_stats, defender_stats)
+        if attacker_side == "player":
+            b_hp = max(0, b_hp - dmg)
+            defender_hp = b_hp
+        else:
+            a_hp = max(0, a_hp - dmg)
+            defender_hp = a_hp
+        log.append({"side": attacker_side, "value": dmg, "crit": crit, "defender_hp": defender_hp})
+        attacker_side = "enemy" if attacker_side == "player" else "player"
+
+    return {"winner": "player" if a_hp > 0 else "enemy", "log": log}
+
+
+@app.post("/api/arena/fight")
+async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Единственная точка, где реально решается бой Арены. Раньше это были
+    три независимых, ничем не связанных друг с другом вызова:
+    /api/arena/spend_energy списывал энергию, клиент сам отыгрывал бой у
+    себя в JS, а /api/arena/result просто ЗАПИСЫВАЛ заявленный клиентом
+    won — ни один из них не проверял, что остальные два действительно
+    произошли. Это позволяло накрутить PvP-рейтинг (а через сезонные
+    награды — и реальный GRAM) прямыми запросами без единого настоящего
+    боя. Теперь: одноразовый match_token из /api/arena/opponent обязателен
+    и сгорает при первом использовании (анти-повтор), энергия проверяется и
+    списывается сервером в том же атомарном шаге, что и рейтинг (см.
+    run_farm_action), а исход считает arena_battle_simulate — тем же
+    портом клиентской формулы урона, что и Битва Кланов, только 1 на 1."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    if request.tier_id not in TIER_INDEX:
+        raise HTTPException(status_code=400, detail="Неизвестная редкость")
+
+    row = await fetch_user(user_id)
+    if not any(m.get("id") == request.tier_id for m in read_farm(row.get("monsters"))):
+        raise HTTPException(status_code=400, detail="Нет орла этой редкости")
+
     match = ARENA_PENDING_MATCHES.pop(request.match_token, None)
     if not match or match["user_id"] != user_id or match["expires_at"] < time.time():
-        return {"found": False}
+        raise HTTPException(status_code=400, detail="Соперник устарел — попробуй ещё раз")
 
-    opponent_row = await store.get(match["opponent_id"])
-    if not opponent_row:
-        return {"found": False}
+    equipped = normalize_nest_equipped(row.get("nest_equipped"))
+    player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id))}
 
-    tier_id = best_owned_tier(opponent_row.get("monsters"))
-    equipped = normalize_nest_equipped(opponent_row.get("nest_equipped")).get(tier_id, {})
-    return {
-        "found": True,
-        "name": opponent_row.get("name") or f"Игрок {match['opponent_id']}",
-        "tier_id": tier_id,
-        "equipped": equipped,
-        "pvp_rating": pvp_rating_of(opponent_row),
-    }
+    opponent_id = match.get("opponent_id")
+    is_bot = opponent_id is None
+    if is_bot:
+        enemy_stats = _arena_bot_stats(random.Random(request.match_token), request.tier_id)
+        enemy_name, enemy_tier_id = None, request.tier_id
+    else:
+        opponent_row = await store.get(opponent_id)
+        if not opponent_row:
+            raise HTTPException(status_code=400, detail="Соперник уже недоступен")
+        enemy_tier_id = best_owned_tier(opponent_row.get("monsters"))
+        enemy_equipped = normalize_nest_equipped(opponent_row.get("nest_equipped")).get(enemy_tier_id, {})
+        enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_equipped)
+        enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
+    enemy_fighter = {"stats": enemy_stats}
 
+    result = arena_battle_simulate(request.match_token, player_fighter, enemy_fighter)
+    player_won = result["winner"] == "player"
 
-@app.post("/api/arena/result")
-async def arena_result(request: ArenaResult, x_telegram_init_data: Optional[str] = Header(None)):
-    """Итог боя на Арене (визуальный автобой) резолвится на клиенте — сюда
-    приходит только won: сервер лишь сохраняет прирост/потерю PvP-рейтинга
-    для Топ-100 (+PVP_RATING_WIN за победу, -PVP_RATING_LOSS за поражение,
-    не ниже 0)."""
-    user_id = authenticate(x_telegram_init_data, request.user_id)
-    row = await fetch_user(user_id)
-    current = pvp_rating_of(row)
-    delta = PVP_RATING_WIN if request.won else -PVP_RATING_LOSS
-    new_rating = max(0, current + delta)
-    await store.update(user_id, {"pvp_rating": new_rating})
-    return {"pvp_rating": new_rating}
-
-
-@app.post("/api/arena/spend_energy")
-async def arena_spend_energy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Списывает PVP_ENERGY_COST энергии за вход в бой на Арене — клиент
-    вызывает это ровно один раз на каждый реальный запуск боя
-    (arenaStartBattle), что для реального соперника, что для дикого орла.
-    До списания пересчитывает суточное пополнение (см. pvp_energy_of), так
-    что заход после долгого перерыва сперва honestly увидит полную шкалу."""
-    user_id = authenticate(x_telegram_init_data, request.user_id)
-
-    def compute(row):
-        energy, day = pvp_energy_of(row)
+    def compute(fresh_row):
+        energy, day = pvp_energy_of(fresh_row)
         if energy < PVP_ENERGY_COST:
             raise HTTPException(status_code=400, detail="Нет энергии")
         energy -= PVP_ENERGY_COST
-        fields = {"pvp_energy": energy, "pvp_energy_day": day}
-        extra = {"pvp_energy": energy, "energy_reset_at": arena_energy_reset_at(day)}
+        new_rating = max(0, pvp_rating_of(fresh_row) + (PVP_RATING_WIN if player_won else -PVP_RATING_LOSS))
+        fields = {"pvp_energy": energy, "pvp_energy_day": day, "pvp_rating": new_rating}
+        extra = {
+            "won": player_won, "pvp_rating": new_rating, "pvp_energy": energy,
+            "energy_reset_at": arena_energy_reset_at(day), "battle_log": result["log"],
+            "player": {"stats": player_fighter["stats"]},
+            "enemy": {"name": enemy_name, "tier_id": enemy_tier_id, "is_bot": is_bot, "stats": enemy_stats},
+        }
         return fields, extra
 
     return await run_farm_action(user_id, compute)
@@ -2052,7 +2107,7 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     # орла (best_tier) намеренно не отдаём вообще, иначе по нему можно
     # было бы вычислить силу чужой птицы прямо из таблицы лидеров, даже не
     # заходя в бой (см. также двухфазный подбор соперника — arena_opponent/
-    # arena_reveal — построенный на той же идее). limit=None — в таблицу
+    # arena_fight — построенный на той же идее). limit=None — в таблицу
     # попадают ВСЕ игроки, не только верхушка.
     top_docs = await store.get_leaderboard(None)
     top = [

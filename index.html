@@ -2463,8 +2463,8 @@
         const state = {
             userId: 0,
             displayName: '', // @username из Telegram (initProfile) — показывается на Арене рядом со своим орлом
-            pvpRating: 1000, // PvP-рейтинг для Топ-100 Арены (см. arenaReportResult/updateLeaderboard)
-            pvpEnergy: 10, // Энергия Арены — 1 списывается за бой, докупка за золото/GRAM (см. arenaSpendEnergy/arenaBuyEnergy)
+            pvpRating: 1000, // PvP-рейтинг для Топ-100 Арены (см. arenaResolveFight/updateLeaderboard)
+            pvpEnergy: 10, // Энергия Арены — 1 списывается за бой, докупка за золото/GRAM (см. arenaResolveFight/arenaBuyEnergy)
             pvpEnergyResetAt: 0, // когда энергия пополнится до максимума (следующая полночь UTC)
             arenaSeasonEndsAt: 0, // когда текущий 20-дневный сезон Арены закончится (см. renderLeaderboardSeasonLine)
             coins: 0,
@@ -6280,7 +6280,7 @@
         const ARENA_HURT_DUR = 0.36;
         const ARENA_TURN_GAP = 0.55;
         const ARENA_GRAVITY = 1500;
-        const ARENA_RATING_WIN = 25;  // прирост PvP-рейтинга за победу (см. arenaReportResult)
+        const ARENA_RATING_WIN = 25;  // прирост PvP-рейтинга за победу (см. arenaResolveFight)
         const ARENA_RATING_LOSS = 15; // потеря PvP-рейтинга за поражение (итог не ниже 0)
         const PVP_ENERGY_MAX = 10;          // потолок суточного пополнения энергии Арены (см. main.py)
         const PVP_ENERGY_COST = 1;          // энергии списывается за один вход в бой
@@ -6307,7 +6307,7 @@
                 this.maxHp = opts.stats.hp;
                 this.hp = opts.stats.hp;
                 this.idlePhase = opts.idlePhase;
-                // Соперник до раскрытия (см. arenaRevealOpponent): рисуется как
+                // Соперник до раскрытия (см. arenaResolveFight): рисуется как
                 // силуэт-загадка, ХП и ник в UI показываются замаскированными.
                 this.masked = !!opts.masked;
                 this.ratingBracket = opts.ratingBracket || null;
@@ -6413,7 +6413,7 @@
         let arenaPlayerEagle = null;
         let arenaEnemyEagle = null;
         // Замаскированный подбор до раскрытия: { isBot, matchToken, ratingBracket }
-        // либо { isBot: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaRevealOpponent.
+        // либо { isBot: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaResolveFight.
         let arenaOpponentPending = null;
         let arenaBattleActive = false;
         let arenaSpeedMultiplier = 1; // 1 или 2 — ×2 ускоряет и анимацию, и паузы между ударами (см. arenaToggleSpeed)
@@ -6481,57 +6481,134 @@
         // лидеров это уже позволяет. Поэтому до старта боя соперник
         // отображается как «Неизвестный Воин» с силуэтом-загадкой (см.
         // arenaDrawMysteryEagle/arenaUpdateHpUI), а его реальные данные
-        // раскрывает только arenaRevealOpponent() — строго в момент запуска
+        // раскрывает только arenaResolveFight() — строго в момент запуска
         // анимации боя, не раньше.
         //
         // Если сервер недоступен или рядом по рейтингу пока никого нет —
         // дикий орёл (заглушка на основе тира, который выбрал сам игрок);
         // боту раскрывать нечего, он не привязан к реальному игроку.
         async function arenaFetchOpponentPreview(tierId) {
-            if (offlineOnly || !state.userId) return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
+            // offlineOnly: нет сервера, который мог бы авторитетно посчитать
+            // бой, — единственный случай, где клиент решает исход сам
+            // (см. arenaResolveFight).
+            if (offlineOnly || !state.userId) return { isBot: true, offline: true, bot: arenaGenerateBotOpponent(tierId) };
             try {
                 const response = await fetch(`api/arena/opponent?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('arena opponent fetch failed');
                 const data = await response.json();
-                if (!data.found) return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
-                return { isBot: false, matchToken: data.match_token, ratingBracket: data.rating_bracket };
+                if (!data.found) return { isBot: true, offline: true, bot: arenaGenerateBotOpponent(tierId) };
+                // Даже для бота теперь есть matchToken — сервер сам сгенерирует
+                // и посчитает его статы в момент боя (см. arena_fight), плюс
+                // локальная заглушка bot только для превью силуэта до старта.
+                return {
+                    isBot: !!data.is_bot, matchToken: data.match_token,
+                    ratingBracket: data.rating_bracket, bot: data.is_bot ? arenaGenerateBotOpponent(tierId) : null,
+                };
             } catch (error) {
-                return { isBot: true, bot: arenaGenerateBotOpponent(tierId) };
+                return { isBot: true, offline: true, bot: arenaGenerateBotOpponent(tierId) };
             }
         }
 
-        // Раскрывает реального соперника перед самым стартом боя: меняет
-        // замаскированный силуэт на настоящего arenaEnemyEagle с реальным
-        // спрайтом/ником/статами. Если токен успел протухнуть или сервер
-        // недоступен — на этом же месте подставляется дикий орёл, чтобы бой
-        // в любом случае мог начаться.
-        async function arenaRevealOpponent() {
+        // Единственная точка, где реально решается бой Арены. Раньше исход
+        // считал сам клиент (случайные удары в while-цикле), а сервер лишь
+        // ЗАПИСЫВАЛ то, что клиент ему сообщал (won: true/false) — это позволяло
+        // накрутить рейтинг прямыми запросами без единого настоящего боя. Теперь
+        // сервер сам списывает энергию, считает бой той же формулой уроном/крит
+        // и меняет рейтинг — одним атомарным вызовом (см. /api/arena/fight в
+        // main.py), привязанным к одноразовому match_token из
+        // arenaFetchOpponentPreview (анти-повтор: тот же токен второй раз не
+        // сработает). Возвращает {won, battleLog, player, enemy, pvpRating,
+        // pvpEnergy, energyResetAt} или null, если бой не состоялся (нет
+        // энергии, токен протух, сеть недоступна) — в этом случае вызывающий
+        // обязан откатить попытку, ничего не воспроизводя.
+        async function arenaResolveFight() {
             const pending = arenaOpponentPending;
-            const old = arenaEnemyEagle;
-            if (!pending || pending.isBot || !old) return;
-
-            const buildFrom = (name, oppTier, stats) => new ArenaEagle({
-                label: `${name} · ${oppTier.monsters[0].name}`, side: 'enemy',
-                img: arenaGetImage(oppTier.monsters[0].sprite), masked: false,
-                x: old.baseX, y: old.baseY, facing: -1, size: old.size, stats, idlePhase: old.idlePhase,
-            });
-
-            try {
-                const response = await fetch('api/arena/reveal', {
-                    method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, match_token: pending.matchToken }),
-                });
-                if (!response.ok) throw new Error('arena reveal failed');
-                const data = await response.json();
-                if (!data.found) throw new Error('match expired');
-                const oppTier = CONFIG.tiers.find(x => x.id === data.tier_id) || CONFIG.tiers[0];
-                arenaEnemyEagle = buildFrom(data.name, oppTier, nestComputeStatsFromEquipped(oppTier.id, data.equipped));
-            } catch (error) {
-                const bot = arenaGenerateBotOpponent(arenaSelectedTierId);
-                const oppTier = CONFIG.tiers.find(x => x.id === bot.monster.tier) || CONFIG.tiers[0];
-                arenaEnemyEagle = buildFrom(bot.name, oppTier, bot.stats);
+            if (offlineOnly || !state.userId || !pending || pending.offline) {
+                return arenaResolveFightOffline();
             }
-            pending.isBot = true; // уже раскрыт — арена больше не должна его маскировать
+            if (!pending.matchToken) return null;
+            try {
+                const response = await fetch('api/arena/fight', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, tier_id: arenaSelectedTierId, match_token: pending.matchToken }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
+                    toast(data.detail || t('arena.noEnergy'));
+                    return null;
+                }
+                return {
+                    won: data.won, battleLog: data.battle_log || [],
+                    player: data.player, enemy: data.enemy,
+                    pvpRating: data.pvp_rating, pvpEnergy: data.pvp_energy, energyResetAt: data.energy_reset_at,
+                };
+            } catch (error) {
+                toast(t('market.serverError'));
+                return null;
+            }
+        }
+
+        // Офлайн-фолбэк (нет сервера — тестовый режим/сеть недоступна): единственный
+        // случай, где бой всё ещё честно считается на клиенте, потому что считать
+        // его больше просто негде. Формат результата — тот же, что и у серверного
+        // ответа, чтобы дальше по коду не было разветвления на online/offline.
+        function arenaResolveFightOffline() {
+            if (state.pvpEnergy < PVP_ENERGY_COST) return null;
+            state.pvpEnergy = Math.max(0, state.pvpEnergy - PVP_ENERGY_COST);
+
+            const pending = arenaOpponentPending;
+            const bot = (pending && pending.bot) || arenaGenerateBotOpponent(arenaSelectedTierId);
+            const playerStats = arenaPlayerEagle.stats;
+            const enemyStats = bot.stats;
+            const log = [];
+            let aHp = playerStats.hp, bHp = enemyStats.hp;
+            let attackerSide = playerStats.spd > enemyStats.spd ? 'player'
+                : enemyStats.spd > playerStats.spd ? 'enemy'
+                : (Math.random() < 0.5 ? 'player' : 'enemy');
+            let guard = 0;
+            while (aHp > 0 && bHp > 0 && guard++ < 2000) {
+                const atkStats = attackerSide === 'player' ? playerStats : enemyStats;
+                const defStats = attackerSide === 'player' ? enemyStats : playerStats;
+                const dmg = arenaRollDamage(atkStats, defStats);
+                if (attackerSide === 'player') bHp = Math.max(0, bHp - dmg.value); else aHp = Math.max(0, aHp - dmg.value);
+                log.push({ side: attackerSide, value: dmg.value, crit: dmg.crit, defender_hp: attackerSide === 'player' ? bHp : aHp });
+                attackerSide = attackerSide === 'player' ? 'enemy' : 'player';
+            }
+
+            const won = aHp > 0;
+            state.pvpRating = Math.max(0, Math.round(state.pvpRating) + (won ? ARENA_RATING_WIN : -ARENA_RATING_LOSS));
+            saveLocally();
+            return {
+                won, battleLog: log, player: { stats: playerStats },
+                enemy: { name: bot.name, tier_id: bot.monster.tier, is_bot: true, stats: enemyStats },
+                pvpRating: state.pvpRating, pvpEnergy: state.pvpEnergy, energyResetAt: state.pvpEnergyResetAt,
+            };
+        }
+
+        // Меняет замаскированный силуэт (или предварительную локальную заглядку
+        // бота) на авторитетные данные, пришедшие вместе с исходом боя
+        // (arenaResolveFight) — те же статы, что реально решили бой, а не
+        // локальная догадка клиента (иначе полоски ХП разъехались бы с уроном
+        // из battle_log).
+        function arenaApplyFightVisuals(fightResult) {
+            const old = arenaEnemyEagle;
+            if (old && fightResult.enemy) {
+                const enemy = fightResult.enemy;
+                const oppTier = CONFIG.tiers.find(x => x.id === enemy.tier_id) || CONFIG.tiers[0];
+                const label = enemy.is_bot
+                    ? `${t('arena.wildOpponent')} · ${oppTier.monsters[0].name}`
+                    : `${enemy.name} · ${oppTier.monsters[0].name}`;
+                arenaEnemyEagle = new ArenaEagle({
+                    label, side: 'enemy', img: arenaGetImage(oppTier.monsters[0].sprite), masked: false,
+                    x: old.baseX, y: old.baseY, facing: -1, size: old.size, stats: enemy.stats, idlePhase: old.idlePhase,
+                });
+            }
+            if (arenaPlayerEagle && fightResult.player) {
+                arenaPlayerEagle.stats = fightResult.player.stats;
+                arenaPlayerEagle.maxHp = fightResult.player.stats.hp;
+                arenaPlayerEagle.hp = fightResult.player.stats.hp;
+            }
             arenaUpdateHpUI();
         }
 
@@ -6569,7 +6646,7 @@
         // замаскированный предпросмотр соперника по рейтингу через сервер
         // (см. arenaFetchOpponentPreview), сбрасывает орлов в стойку ожидания,
         // обновляет полоски ХП и убирает баннер финала. Раскрытие реального
-        // соперника — только в arenaRevealOpponent(), при старте боя.
+        // соперника — только в arenaResolveFight(), при старте боя.
         async function arenaResetScene() {
             const canvas = document.getElementById('arenaCanvas');
             if (!canvas) return;
@@ -6782,7 +6859,7 @@
             ctx.restore();
         }
 
-        // Соперник ещё не раскрыт (см. arenaRevealOpponent) — вместо реального
+        // Соперник ещё не раскрыт (см. arenaResolveFight) — вместо реального
         // спрайта рисуем силуэт-загадку, чтобы редкость/вид орла нельзя было
         // угадать по картинке до самого начала боя.
         function arenaDrawMysteryEagle(ctx, e) {
@@ -6896,11 +6973,15 @@
             return { value: Math.max(1, Math.round(value)), crit };
         }
 
-        function arenaPerformAttack(attacker, defender) {
+        // forcedDmg — {value, crit} уже посчитанный сервером ход из battle_log
+        // (см. arenaResolveFight): онлайн-бой больше не решает урон сам, а
+        // только проигрывает анимацию под уже известный, авторитетный исход.
+        // Без forcedDmg (офлайн-режим без сервера) считает как раньше — сам.
+        function arenaPerformAttack(attacker, defender, forcedDmg) {
             return new Promise((resolve) => {
                 attacker.startAttack(defender);
                 setTimeout(() => {
-                    const dmg = arenaRollDamage(attacker.stats, defender.stats);
+                    const dmg = forcedDmg || arenaRollDamage(attacker.stats, defender.stats);
                     defender.hp = Math.max(0, defender.hp - dmg.value);
                     arenaUpdateHpUI();
 
@@ -6949,49 +7030,50 @@
             const startBtn = document.getElementById('arenaStartBtn');
             startBtn.disabled = true;
 
-            // Списываем энергию сразу — один вход в бой стоит PVP_ENERGY_COST
-            // независимо от исхода (см. /api/arena/spend_energy). Если списание
-            // не удалось (сервер отказал — гонка с другой вкладкой и т.п.),
-            // бой не начинается вовсе.
-            if (!(await arenaSpendEnergy())) {
+            await arenaResetScene(); // свежий соперник на каждый бой (в т.ч. «Начать бой заново»)
+            startBtn.disabled = true;
+
+            // Один атомарный серверный вызов решает всё разом: списывает энергию,
+            // раскрывает реального соперника и считает исход боя (см.
+            // arenaResolveFight) — до этого момента ни ник, ни точный рейтинг,
+            // ни редкость орла соперника на клиент не передавались.
+            document.getElementById('arenaLog').textContent = t('arena.revealing');
+            const fightResult = await arenaResolveFight();
+            if (!fightResult) {
                 arenaBattleActive = false;
                 startBtn.disabled = false;
                 arenaApplyEnergyGate();
                 return;
             }
-
-            await arenaResetScene(); // свежий соперник на каждый бой (в т.ч. «Начать бой заново»)
-            startBtn.disabled = true;
-
-            // Раскрываем реального соперника строго сейчас — не раньше. До этого
-            // момента ни ник, ни точный рейтинг, ни редкость его орла на клиент
-            // не передавались (см. arenaFetchOpponentPreview/arenaRevealOpponent).
-            document.getElementById('arenaLog').textContent = t('arena.revealing');
-            await arenaRevealOpponent();
+            arenaApplyFightVisuals(fightResult);
+            state.pvpEnergy = fightResult.pvpEnergy; // списано сервером ещё до анимации — отражаем сразу
+            if (typeof fightResult.energyResetAt === 'number') state.pvpEnergyResetAt = fightResult.energyResetAt;
+            renderArenaEnergyBar();
 
             document.getElementById('arenaLog').textContent = t('arena.battleStart');
             await arenaSleep(500 / arenaSpeedMultiplier);
 
-            let attacker = arenaPlayerEagle, defender = arenaEnemyEagle;
-            if (arenaEnemyEagle.stats.spd > arenaPlayerEagle.stats.spd) { attacker = arenaEnemyEagle; defender = arenaPlayerEagle; }
-            else if (arenaEnemyEagle.stats.spd === arenaPlayerEagle.stats.spd && Math.random() < 0.5) { attacker = arenaEnemyEagle; defender = arenaPlayerEagle; }
-
-            while (arenaPlayerEagle.hp > 0 && arenaEnemyEagle.hp > 0) {
-                await arenaPerformAttack(attacker, defender);
+            // Проигрываем УЖЕ ИЗВЕСТНЫЙ, авторитетно посчитанный бой ход за
+            // ходом — arenaPerformAttack здесь только анимирует готовое
+            // значение урона из battle_log, а не решает его сам.
+            for (const entry of fightResult.battleLog) {
+                const attacker = entry.side === 'player' ? arenaPlayerEagle : arenaEnemyEagle;
+                const defender = entry.side === 'player' ? arenaEnemyEagle : arenaPlayerEagle;
+                await arenaPerformAttack(attacker, defender, { value: entry.value, crit: entry.crit });
                 if (defender.hp <= 0) break;
                 await arenaSleep(ARENA_TURN_GAP * 1000 / arenaSpeedMultiplier);
-                const tmp = attacker; attacker = defender; defender = tmp;
             }
 
-            const winner = arenaPlayerEagle.hp > 0 ? arenaPlayerEagle : arenaEnemyEagle;
-            const loser = winner === arenaPlayerEagle ? arenaEnemyEagle : arenaPlayerEagle;
+            const playerWon = fightResult.won;
+            const winner = playerWon ? arenaPlayerEagle : arenaEnemyEagle;
+            const loser = playerWon ? arenaEnemyEagle : arenaPlayerEagle;
             document.getElementById('arenaLog').textContent = t('arena.defeated', { name: loser.label });
             loser.startDying();
             winner.startVictory();
             await arenaSleep(1500 / arenaSpeedMultiplier);
 
-            const playerWon = winner === arenaPlayerEagle;
-            arenaReportResult(playerWon); // сетевой вызов идёт параллельно, не блокирует анимацию
+            state.pvpRating = fightResult.pvpRating;
+            saveLocally();
             const bannerTitle = document.getElementById('arenaBannerTitle');
             bannerTitle.textContent = playerWon ? t('arena.winTitle') : t('arena.loseTitle');
             bannerTitle.className = 'arena-banner-title ' + (playerWon ? 'win' : 'lose');
@@ -7005,32 +7087,6 @@
             startBtn.disabled = false;
             startBtn.textContent = t('arena.restartBtn');
             arenaApplyEnergyGate(); // энергия закончилась именно этим боем — сразу блокируем кнопку
-        }
-
-        // Сохраняет итог боя как изменение PvP-рейтинга (+25 победа / -15
-        // поражение, не ниже 0). Сам бой уже полностью отыгран на клиенте —
-        // сервер здесь не пересчитывает исход, только фиксирует рейтинг для
-        // Топ-100 (см. /api/arena/result). Офлайн — считаем то же самое
-        // локально, чтобы рейтинг не терялся визуально при тестировании.
-        async function arenaReportResult(won) {
-            const delta = won ? ARENA_RATING_WIN : -ARENA_RATING_LOSS;
-            if (offlineOnly || !state.userId) {
-                state.pvpRating = Math.max(0, Math.round(state.pvpRating) + delta);
-                saveLocally();
-                return;
-            }
-            try {
-                const response = await fetch('api/arena/result', {
-                    method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, won }),
-                });
-                if (!response.ok) throw new Error('arena result failed');
-                const data = await response.json();
-                if (typeof data.pvp_rating === 'number') state.pvpRating = data.pvp_rating;
-            } catch (error) {
-                state.pvpRating = Math.max(0, Math.round(state.pvpRating) + delta);
-            }
-            saveLocally();
         }
 
         /* ---------- Энергия Арены ---------- */
@@ -7091,43 +7147,6 @@
 
         function closeArenaEnergyShop() {
             document.getElementById('arenaEnergyModal').classList.remove('open');
-        }
-
-        // Списывает PVP_ENERGY_COST перед стартом боя. Возвращает true, если
-        // бой можно начинать. Офлайн/без сервера — считаем локально, как и
-        // остальные офлайн-ветки Арены (см. arenaReportResult).
-        async function arenaSpendEnergy() {
-            if (state.pvpEnergy < PVP_ENERGY_COST) return false;
-            if (offlineOnly || !state.userId) {
-                state.pvpEnergy = Math.max(0, state.pvpEnergy - PVP_ENERGY_COST);
-                renderArenaEnergyBar();
-                saveLocally();
-                return true;
-            }
-            try {
-                const response = await fetch('api/arena/spend_energy', {
-                    method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId }),
-                });
-                const data = await response.json();
-                if (!response.ok) {
-                    if (typeof data.pvp_energy === 'number') state.pvpEnergy = data.pvp_energy;
-                    renderArenaEnergyBar();
-                    toast(data.detail || t('arena.noEnergy'));
-                    return false;
-                }
-                state.pvpEnergy = data.pvp_energy;
-                if (typeof data.energy_reset_at === 'number') state.pvpEnergyResetAt = data.energy_reset_at;
-                if (typeof data.ops === 'number') state.ops = data.ops;
-                renderArenaEnergyBar();
-                saveLocally();
-                return true;
-            } catch (error) {
-                state.pvpEnergy = Math.max(0, state.pvpEnergy - PVP_ENERGY_COST);
-                renderArenaEnergyBar();
-                saveLocally();
-                return true;
-            }
         }
 
         // Докупка энергии за золото или GRAM — без потолка (см. /api/arena/buy_energy).
