@@ -992,6 +992,23 @@
         .clan-header-name { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .clan-header-power { font-size: 12px; color: var(--accent-amber); font-weight: 700; }
         .clan-leave-btn { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #ef6a6a; background: none; border: 1px solid rgba(239, 106, 106, 0.4); border-radius: 10px; padding: 6px 10px; cursor: pointer; }
+        .clan-rank-btn { flex: 0 0 auto; width: 34px; height: 34px; font-size: 16px; line-height: 1; background: rgba(255, 204, 77, 0.08); border: 1px solid rgba(255, 204, 77, 0.35); border-radius: 10px; cursor: pointer; }
+
+        .clan-rank-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-height: 60vh; overflow-y: auto; }
+        .clan-rank-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); }
+        .clan-rank-row.is-mine { border-color: var(--accent-amber); box-shadow: 0 0 12px rgba(255, 204, 77, 0.25); }
+
+        .clan-app-list { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; max-height: 60vh; overflow-y: auto; }
+        .clan-app-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); }
+        .clan-app-info { flex: 1; min-width: 0; }
+        .clan-app-name { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-app-eagle { font-size: 11.5px; margin-top: 2px; }
+        .clan-app-actions { flex: 0 0 auto; display: flex; gap: 6px; }
+        .clan-app-accept, .clan-app-reject {
+            font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 10px; border: none; cursor: pointer;
+        }
+        .clan-app-accept { background: var(--accent-slime); color: #06280f; }
+        .clan-app-reject { background: rgba(239, 106, 106, 0.18); color: #ef6a6a; border: 1px solid rgba(239, 106, 106, 0.4); }
 
         .clan-top-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
         .clan-top-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); }
@@ -1285,6 +1302,7 @@
                     <div class="clan-header-name" id="clanHeaderName" data-i18n="clan.heading">Кланы</div>
                     <div class="clan-header-power" id="clanHeaderPower"></div>
                 </div>
+                <button class="clan-rank-btn" id="clanRankBtn" style="display:none;" onclick="openClanRanking()" title="Рейтинг кланов">🏆</button>
                 <button class="clan-leave-btn" id="clanLeaveBtn" style="display:none;" onclick="leaveClan()" data-i18n="clan.leaveBtn">Выйти</button>
             </div>
 
@@ -1311,6 +1329,10 @@
                 <div class="subtab-panel active" id="clanSubMine">
                     <p class="clan-slots-hint" id="clanSlotsHint"></p>
                     <div class="clan-member-list" id="clanMemberList"></div>
+                    <button class="btn-action" id="clanApplicationsBtn" onclick="openClanApplications()" style="display:none;width:100%;margin-bottom:10px;">
+                        <span data-i18n="clan.reviewApplicationsBtn">📋 Рассмотрение заявок</span>
+                        <span id="clanApplicationsCount"></span>
+                    </button>
                     <button class="btn-action" id="clanOpenSlotBtn" onclick="openClanSlotBuy()" style="display:none;width:100%;margin-bottom:10px;">
                         <span data-i18n="clan.openSlotBtn">Открыть место</span>
                         <span id="clanOpenSlotCost"></span>
@@ -1642,6 +1664,16 @@
     <!-- CLAN OPEN-SLOT MODAL -->
     <div class="modal-backdrop" id="clanSlotModal" onclick="if (event.target === this) closeClanSlotBuy()">
         <div class="modal-box glass-panel pay-box" id="clanSlotBody"></div>
+    </div>
+
+    <!-- CLAN RANKING MODAL (постоянный доступ к Топу кланов для лидера и участников) -->
+    <div class="modal-backdrop" id="clanRankingModal" onclick="if (event.target === this) closeClanRanking()">
+        <div class="modal-box glass-panel pay-box" id="clanRankingBody"></div>
+    </div>
+
+    <!-- CLAN APPLICATIONS MODERATION MODAL (только для лидера) -->
+    <div class="modal-backdrop" id="clanApplicationsModal" onclick="if (event.target === this) closeClanApplications()">
+        <div class="modal-box glass-panel pay-box" id="clanApplicationsBody"></div>
     </div>
 
     <div class="modal-backdrop" id="tokenModal" onclick="if (event.target === this) closeTokenInfo()">
@@ -2056,8 +2088,17 @@
                 'clan.namePlaceholder': 'Название клана', 'clan.nameRequired': 'Введите название клана',
                 'clan.createFailed': 'Не удалось создать клан', 'clan.created': 'Клан создан!',
                 'clan.topHeading': 'Топ кланов', 'clan.noClansYet': 'Кланов пока нет — создай первый!',
-                'clan.joinBtn': 'Войти', 'clan.joinFailed': 'Не удалось вступить в клан', 'clan.joined': 'Вы вступили в клан!',
+                'clan.applyBtn': 'Подать заявку', 'clan.applicationSent': 'Заявка отправлена',
+                'clan.applicationSentToast': 'Заявка отправлена — жди решения лидера клана',
+                'clan.applyFailed': 'Не удалось подать заявку',
                 'clan.onlineOnly': 'Кланы доступны только при подключении к серверу',
+                'clan.rankingHeading': '🏆 Рейтинг кланов',
+                'clan.reviewApplicationsBtn': '📋 Рассмотрение заявок',
+                'clan.noApplicationsYet': 'Пока нет заявок на вступление',
+                'clan.levelShort': 'ур. {level}',
+                'clan.acceptBtn': 'Принять', 'clan.rejectBtn': 'Отклонить',
+                'clan.acceptFailed': 'Не удалось принять заявку', 'clan.applicantAccepted': 'Игрок принят в клан!',
+                'clan.rejectFailed': 'Не удалось отклонить заявку', 'clan.applicantRejected': 'Заявка отклонена',
                 'clan.leaveBtn': 'Выйти', 'clan.leaveConfirm': 'Точно покинуть клан?',
                 'clan.leaveFailed': 'Не удалось покинуть клан', 'clan.left': 'Вы покинули клан',
                 'clan.tabMine': 'Мой Клан', 'clan.tabLineup': 'Расстановка', 'clan.tabBattle': 'Битва Кланов', 'clan.tabLive': 'Прямой Эфир',
@@ -2325,8 +2366,17 @@
                 'clan.namePlaceholder': 'Clan name', 'clan.nameRequired': 'Enter a clan name',
                 'clan.createFailed': 'Failed to create clan', 'clan.created': 'Clan created!',
                 'clan.topHeading': 'Top clans', 'clan.noClansYet': 'No clans yet — create the first one!',
-                'clan.joinBtn': 'Join', 'clan.joinFailed': 'Failed to join clan', 'clan.joined': 'You joined the clan!',
+                'clan.applyBtn': 'Apply', 'clan.applicationSent': 'Application sent',
+                'clan.applicationSentToast': 'Application sent — waiting for the clan leader\'s decision',
+                'clan.applyFailed': 'Failed to send application',
                 'clan.onlineOnly': 'Clans only work when connected to the server',
+                'clan.rankingHeading': '🏆 Clan ranking',
+                'clan.reviewApplicationsBtn': '📋 Review applications',
+                'clan.noApplicationsYet': 'No applications yet',
+                'clan.levelShort': 'lvl. {level}',
+                'clan.acceptBtn': 'Accept', 'clan.rejectBtn': 'Reject',
+                'clan.acceptFailed': 'Failed to accept application', 'clan.applicantAccepted': 'Player accepted into the clan!',
+                'clan.rejectFailed': 'Failed to reject application', 'clan.applicantRejected': 'Application rejected',
                 'clan.leaveBtn': 'Leave', 'clan.leaveConfirm': 'Leave the clan for sure?',
                 'clan.leaveFailed': 'Failed to leave clan', 'clan.left': 'You left the clan',
                 'clan.tabMine': 'My Clan', 'clan.tabLineup': 'Lineup', 'clan.tabBattle': 'Clan Battle', 'clan.tabLive': 'Live',
@@ -8414,6 +8464,7 @@
             document.getElementById('clanPreJoin').style.display = inClan ? 'none' : '';
             document.getElementById('clanMyClanWrap').style.display = inClan ? '' : 'none';
             document.getElementById('clanLeaveBtn').style.display = inClan ? 'inline-block' : 'none';
+            document.getElementById('clanRankBtn').style.display = inClan ? '' : 'none';
 
             if (inClan) {
                 document.getElementById('clanHeaderName').textContent = clanData.name;
@@ -8466,15 +8517,49 @@
                 return;
             }
             box.innerHTML = clanTopCache.map((clan, i) => {
-                const joinable = clan.member_count < clan.open_slots;
                 return `<div class="clan-top-row">
                     <span class="clan-top-rank">#${i + 1}</span>
                     <span class="clan-top-name">${clan.name}</span>
                     <span class="clan-top-power">💪 ${fmt(clan.clan_power)}</span>
                     <span style="font-size:11px;color:var(--text-muted);">${clan.member_count}/${clan.open_slots}</span>
-                    <button class="clan-top-join" ${joinable ? '' : 'disabled'} onclick="joinClan('${clan.id}')">${t('clan.joinBtn')}</button>
+                    <button class="clan-top-join" ${clan.applied ? 'disabled' : ''} onclick="applyToClan('${clan.id}')">
+                        ${clan.applied ? t('clan.applicationSent') : t('clan.applyBtn')}
+                    </button>
                 </div>`;
             }).join('');
+        }
+
+        // ---------- Рейтинг Кланов — постоянный доступ и лидеру, и рядовым
+        // участникам через 🏆 в шапке экрана «Кланы» (см. renderClanScreen). ----------
+
+        async function openClanRanking() {
+            document.getElementById('clanRankingBody').innerHTML = `<h2>${t('clan.rankingHeading')}</h2><div class="clan-rank-list" id="clanRankingList"></div>`;
+            document.getElementById('clanRankingModal').classList.add('open');
+            try {
+                const response = await fetch(`api/clan/top?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                renderClanRankingList(data.clans || []);
+            } catch (e) {
+                document.getElementById('clanRankingList').innerHTML = `<p class="clan-empty-hint">${t('market.serverError')}</p>`;
+            }
+        }
+
+        function closeClanRanking() {
+            document.getElementById('clanRankingModal').classList.remove('open');
+        }
+
+        function renderClanRankingList(clans) {
+            const list = document.getElementById('clanRankingList');
+            if (!list) return;
+            if (!clans.length) { list.innerHTML = `<p class="clan-empty-hint">${t('clan.noClansYet')}</p>`; return; }
+            list.innerHTML = clans.map((clan, i) => `
+                <div class="clan-rank-row ${clanData && clan.id === clanData.id ? 'is-mine' : ''}">
+                    <span class="clan-top-rank">#${i + 1}</span>
+                    <span class="clan-top-name">${clan.name}</span>
+                    <span class="clan-top-power">💪 ${fmt(clan.clan_power)}</span>
+                    <span style="font-size:11px;color:var(--text-muted);">${clan.member_count}/${clan.member_limit}</span>
+                </div>
+            `).join('');
         }
 
         function openCreateClanModal() {
@@ -8520,17 +8605,17 @@
             }
         }
 
-        async function joinClan(clanId) {
+        async function applyToClan(clanId) {
             try {
-                const response = await fetch('api/clan/join', {
+                const response = await fetch('api/clan/apply', {
                     method: 'POST', headers: apiHeaders(),
                     body: JSON.stringify({ user_id: state.userId, clan_id: clanId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('clan.joinFailed')); haptic.notify('warning'); return; }
+                if (!response.ok) { toast(data.detail || t('clan.applyFailed')); haptic.notify('warning'); return; }
                 haptic.notify('success');
-                toast(t('clan.joined'));
-                await loadClanMine();
+                toast(t('clan.applicationSentToast'));
+                await loadClanTop(); // обновляем applied-флаг у карточки клана
             } catch (e) {
                 toast(t('market.serverError'));
             }
@@ -8579,6 +8664,14 @@
             } else {
                 openBtn.style.display = 'none';
             }
+
+            const appsBtn = document.getElementById('clanApplicationsBtn');
+            if (clanIsLeader) {
+                appsBtn.style.display = '';
+                document.getElementById('clanApplicationsCount').textContent = ` (${clanData.applications_count || 0})`;
+            } else {
+                appsBtn.style.display = 'none';
+            }
         }
 
         function openClanSlotBuy() {
@@ -8615,6 +8708,90 @@
                 haptic.notify('success');
                 toast(t('clan.slotOpened'));
                 renderHeader();
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        // ---------- Рассмотрение заявок (только лидер) ----------
+
+        async function openClanApplications() {
+            document.getElementById('clanApplicationsBody').innerHTML = `<h2>${t('clan.reviewApplicationsBtn')}</h2><div class="clan-app-list" id="clanApplicationsList"></div>`;
+            document.getElementById('clanApplicationsModal').classList.add('open');
+            await loadClanApplications();
+        }
+
+        function closeClanApplications() {
+            document.getElementById('clanApplicationsModal').classList.remove('open');
+        }
+
+        async function loadClanApplications() {
+            const list = document.getElementById('clanApplicationsList');
+            if (!list) return;
+            try {
+                const response = await fetch(`api/clan/applications?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) throw new Error('applications fetch failed');
+                const data = await response.json();
+                renderClanApplicationsList(data.applications || []);
+            } catch (e) {
+                list.innerHTML = `<p class="clan-empty-hint">${t('market.serverError')}</p>`;
+            }
+        }
+
+        function renderClanApplicationsList(applications) {
+            const list = document.getElementById('clanApplicationsList');
+            if (!list) return;
+            if (!applications.length) {
+                list.innerHTML = `<p class="clan-empty-hint">${t('clan.noApplicationsYet')}</p>`;
+                return;
+            }
+            list.innerHTML = applications.map(app => {
+                const eagle = app.strongest_eagle;
+                const eagleHtml = eagle
+                    ? `<span style="color:${clanTierColor(eagle.tier_id)}">${clanTierLabel(eagle.tier_id)}</span> · ${t('clan.levelShort', { level: eagle.feed_level })}`
+                    : t('clan.noEaglesForLineup');
+                return `<div class="clan-app-card">
+                    <div class="clan-app-info">
+                        <div class="clan-app-name">${app.name || ('#' + app.user_id)}</div>
+                        <div class="clan-app-eagle">${eagleHtml}</div>
+                    </div>
+                    <div class="clan-app-actions">
+                        <button class="clan-app-accept" onclick="acceptClanApplication(${app.user_id})">${t('clan.acceptBtn')}</button>
+                        <button class="clan-app-reject" onclick="rejectClanApplication(${app.user_id})">${t('clan.rejectBtn')}</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function acceptClanApplication(applicantId) {
+            try {
+                const response = await fetch('api/clan/applications/accept', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, applicant_id: applicantId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.acceptFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.applicantAccepted'));
+                await loadClanApplications();
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function rejectClanApplication(applicantId) {
+            try {
+                const response = await fetch('api/clan/applications/reject', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, applicant_id: applicantId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.rejectFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.applicantRejected'));
+                await loadClanApplications();
                 await loadClanMine();
             } catch (e) {
                 toast(t('market.serverError'));

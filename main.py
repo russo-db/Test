@@ -2178,13 +2178,18 @@ class ClanCreateRequest(BaseModel):
     name: str
 
 
-class ClanJoinRequest(BaseModel):
+class ClanApplyRequest(BaseModel):
     user_id: int
     clan_id: str
 
 
 class ClanAction(BaseModel):
     user_id: int
+
+
+class ClanApplicantAction(BaseModel):
+    user_id: int
+    applicant_id: int
 
 
 class ClanBurnRequest(BaseModel):
@@ -2216,7 +2221,19 @@ def clan_view(clan: dict) -> dict:
         "clan_power": float(clan.get("clan_power") or 0),
         "lineup_submissions": clan.get("lineup_submissions") or {},
         "approved_lineup": clan.get("approved_lineup") or [],
+        "applications_count": len(clan.get("applications") or []),
     }
+
+
+def strongest_eagle_info(row: dict) -> Optional[dict]:
+    """Самый сильный орёл на ферме игрока — по редкости (тир), при равной
+    редкости по уровню откорма. Нужен модерации заявок в клане, чтобы лидер
+    видел, кого именно принимает, не открывая профиль кандидата отдельно."""
+    farm = read_farm(row.get("monsters"))
+    if not farm:
+        return None
+    best = max(farm, key=lambda m: (TIER_INDEX.get(MONSTER_TIER.get(m["id"]), 0), int(m.get("feed_level") or 0)))
+    return {"tier_id": MONSTER_TIER.get(best["id"]), "feed_level": int(best.get("feed_level") or 1)}
 
 
 def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict]) -> dict:
@@ -2572,11 +2589,19 @@ async def clan_mine(user_id: int, x_telegram_init_data: Optional[str] = Header(N
 
 @app.get("/api/clan/top")
 async def clan_top(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Топ кланов по силе — превью с кнопкой входа для тех, кто ещё ни в
-    одном клане не состоит."""
-    authenticate(x_telegram_init_data, user_id)
+    """Топ кланов по силе, отсортированный строго по убыванию clan_power —
+    тот же порядок, что и посев турнирной сетки Топ-32 (см.
+    build_clan_bracket). Каждому клану добавлен флаг applied — подавал ли
+    ЭТОТ игрок заявку именно сюда (см. apply_to_clan), чтобы кнопка
+    «Вступить» на клиенте сразу показывала «Заявка отправлена»."""
+    user_id = authenticate(x_telegram_init_data, user_id)
     clans = await store.list_top_clans(100)
-    return {"clans": [clan_view(c) for c in clans]}
+    out = []
+    for c in clans:
+        view = clan_view(c)
+        view["applied"] = user_id in (c.get("applications") or [])
+        out.append(view)
+    return {"clans": out}
 
 
 @app.post("/api/clan/create")
@@ -2600,23 +2625,89 @@ async def clan_create(request: ClanCreateRequest, x_telegram_init_data: Optional
     return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
 
 
-@app.post("/api/clan/join")
-async def clan_join(request: ClanJoinRequest, x_telegram_init_data: Optional[str] = Header(None)):
-    """Свободное вступление в клан с открытым местом — без одобрения
-    лидера (см. join_clan в storage.py)."""
+@app.post("/api/clan/apply")
+async def clan_apply(request: ClanApplyRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Подаёт заявку на вступление в клан — не вступает сразу, ждёт решения
+    клан-лидера (см. /api/clan/applications/accept и /reject). Разрешено
+    только игроку без своего клана; сама заявка ничем не ограничена по
+    заполненности клана — доступность мест проверяется лидером при приёме."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    if row.get("clan_id"):
+        raise HTTPException(status_code=400, detail="Вы уже состоите в клане")
 
-    result = await store.join_clan(user_id, request.clan_id)
+    result = await store.apply_to_clan(user_id, request.clan_id)
+    if result != "ok":
+        raise HTTPException(status_code=400, detail="Клан не найден")
+    return {"status": "success"}
+
+
+@app.get("/api/clan/applications")
+async def clan_applications(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Список заявок на вступление в СВОЙ клан — только для лидера
+    («Рассмотрение заявок» во вкладке «Мой Клан»). На каждой карточке —
+    никнейм и самый сильный орёл кандидата (см. strongest_eagle_info),
+    чтобы решение о приёме принималось не вслепую."""
+    user_id = authenticate(x_telegram_init_data, user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    clan = await store.get_clan(clan_id)
+    if not clan or clan.get("leader_id") != user_id:
+        raise HTTPException(status_code=403, detail="Список заявок доступен только лидеру клана")
+
+    applicants = []
+    for applicant_id in clan.get("applications") or []:
+        applicant_row = await store.get(applicant_id)
+        if not applicant_row:
+            continue
+        applicants.append({
+            "user_id": applicant_id, "name": applicant_row.get("name") or "",
+            "strongest_eagle": strongest_eagle_info(applicant_row),
+        })
+    return {"applications": applicants}
+
+
+@app.post("/api/clan/applications/accept")
+async def clan_application_accept(request: ClanApplicantAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер принимает заявку — кандидат становится участником, только если
+    в клане ещё есть открытое место (см. accept_clan_application)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    result = await store.accept_clan_application(clan_id, user_id, request.applicant_id, CLAN_MEMBER_LIMIT)
     if result != "ok":
         messages = {
             "not_found": "Клан не найден",
+            "not_leader": "Принимать заявки может только лидер клана",
+            "not_applied": "Этот игрок уже не подавал заявку",
             "no_open_slot": "В клане нет свободных мест",
-            "already_in_clan": "Вы уже состоите в клане",
+            "already_in_clan": "Игрок уже вступил в другой клан",
         }
-        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось вступить в клан"))
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось принять заявку"))
 
-    clan = await store.get_clan(request.clan_id)
-    return {"status": "success", "clan_id": request.clan_id, "clan": clan_view(clan)}
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "clan": clan_view(clan)}
+
+
+@app.post("/api/clan/applications/reject")
+async def clan_application_reject(request: ClanApplicantAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер отклоняет заявку — кандидат просто убирается из списка
+    ожидающих, ничего другого не меняется."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    ok = await store.reject_clan_application(clan_id, user_id, request.applicant_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Не удалось отклонить заявку")
+    return {"status": "success"}
 
 
 @app.post("/api/clan/leave")
