@@ -1492,7 +1492,23 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
     row = await reconcile_nest_particles(user_id, row)
     farm = read_farm(row["monsters"])
 
-    await store.update(user_id, {"monsters": farm, "last_seen": int(time.time())})
+    # CAS, не голый store.update: между чтением row выше и этой записью
+    # игрок мог успеть покормить орла/собрать яйцо в параллельном запросе
+    # (тапы идут своим CAS-путём — см. run_farm_action), и наивная
+    # перезапись monsters здесь стёрла бы этот параллельный тап. При
+    # конфликте просто пропускаем миграцию формы фермы в БД на этот раз —
+    # ничего не портит: read_farm() и так нормализует её на каждом чтении,
+    # это лишь ленивая персистентная миграция старых сохранений.
+    for _ in range(3):
+        ops = int(row.get("ops") or 0)
+        fields = {"monsters": farm, "last_seen": int(time.time())}
+        if await store.cas_update(user_id, fields, ops):
+            row = dict(row)
+            row.update(fields)
+            row["ops"] = ops + 1
+            break
+        row = await fetch_user(user_id)
+        farm = read_farm(row["monsters"])
 
     return {
         "user_id": user_id,
@@ -2180,21 +2196,33 @@ async def distribute_arena_rewards() -> dict:
         if not row:
             continue
 
-        fields = {}
-        if reward["gram"]:
-            fields["coins"] = float(row.get("coins") or 0) + reward["gram"]
-        if reward["shards"]:
-            miners = normalize_nest_miners(row.get("nest_miners"))
-            new_last_claim = nest_settle_particles(row, now, len(miners) + reward["shards"])
-            for i in range(reward["shards"]):
-                miners.append({"id": f"reward-{user_id}-{int(now * 1000)}-{i}"})
-            fields["nest_miners"] = miners
-            fields["nest_last_claim"] = new_last_claim
-        if reward["particles"]:
-            fields["nest_particles"] = float(row.get("nest_particles") or 0) + reward["particles"]
+        # CAS по ops, а не голый store.update: награда — это ПРИБАВКА к тому,
+        # что уже было (row.coins + reward), а не абсолютное значение, поэтому
+        # если между чтением и записью игрок успел что-то потратить/получить
+        # сам, наивная перезапись стёрла бы это параллельное изменение. При
+        # конфликте перечитываем и складываем награду заново поверх свежего
+        # состояния — тот же принцип, что и в accrue_vip_meat/reconcile_queues.
+        for _ in range(3):
+            ops = int(row.get("ops") or 0)
+            fields = {}
+            if reward["gram"]:
+                fields["coins"] = float(row.get("coins") or 0) + reward["gram"]
+            if reward["shards"]:
+                miners = normalize_nest_miners(row.get("nest_miners"))
+                new_last_claim = nest_settle_particles(row, now, len(miners) + reward["shards"])
+                for i in range(reward["shards"]):
+                    miners.append({"id": f"reward-{user_id}-{int(now * 1000)}-{i}"})
+                fields["nest_miners"] = miners
+                fields["nest_last_claim"] = new_last_claim
+            if reward["particles"]:
+                fields["nest_particles"] = float(row.get("nest_particles") or 0) + reward["particles"]
 
-        await store.update(user_id, fields)
-        awarded.append({"user_id": user_id, "rank": rank, **reward})
+            if await store.cas_update(user_id, fields, ops):
+                awarded.append({"user_id": user_id, "rank": rank, **reward})
+                break
+            row = await store.get(user_id)
+            if not row:
+                break
 
     return {"rewarded": len(awarded), "details": awarded}
 
