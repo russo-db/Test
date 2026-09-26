@@ -1027,6 +1027,7 @@
         .clan-member-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .clan-member-tier { flex: 0 0 auto; font-size: 11px; font-weight: 700; }
         .clan-member-power { flex: 0 0 auto; font-size: 11.5px; font-weight: 800; color: var(--accent-amber); white-space: nowrap; }
+        .clan-member-kick-btn { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; padding: 5px 9px; border-radius: 9px; background: rgba(239, 106, 106, 0.18); color: #ef6a6a; border: 1px solid rgba(239, 106, 106, 0.4); }
         .clan-slots-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
 
         .clan-lineup-tiers { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -2103,6 +2104,8 @@
                 'clan.rejectFailed': 'Не удалось отклонить заявку', 'clan.applicantRejected': 'Заявка отклонена',
                 'clan.leaveBtn': 'Выйти', 'clan.leaveConfirm': 'Точно покинуть клан?',
                 'clan.leaveFailed': 'Не удалось покинуть клан', 'clan.left': 'Вы покинули клан',
+                'clan.kickBtn': 'Исключить', 'clan.kickConfirm': 'Исключить {name} из клана?',
+                'clan.kickFailed': 'Не удалось исключить участника', 'clan.kicked': 'Игрок исключён из клана',
                 'clan.tabMine': 'Мой Клан', 'clan.tabLineup': 'Расстановка', 'clan.tabBattle': 'Битва Кланов', 'clan.tabLive': 'Прямой Эфир',
                 'clan.slotsHint': 'Участников: {count} · открыто мест: {open}/{max}',
                 'clan.openSlotBtn': 'Открыть место', 'clan.openSlotConfirm': 'Открыть дополнительное место за {cost} GRAM?',
@@ -2381,6 +2384,8 @@
                 'clan.rejectFailed': 'Failed to reject application', 'clan.applicantRejected': 'Application rejected',
                 'clan.leaveBtn': 'Leave', 'clan.leaveConfirm': 'Leave the clan for sure?',
                 'clan.leaveFailed': 'Failed to leave clan', 'clan.left': 'You left the clan',
+                'clan.kickBtn': 'Kick', 'clan.kickConfirm': 'Kick {name} out of the clan?',
+                'clan.kickFailed': 'Failed to kick member', 'clan.kicked': 'Player kicked from the clan',
                 'clan.tabMine': 'My Clan', 'clan.tabLineup': 'Lineup', 'clan.tabBattle': 'Clan Battle', 'clan.tabLive': 'Live',
                 'clan.slotsHint': 'Members: {count} · open slots: {open}/{max}',
                 'clan.openSlotBtn': 'Open a slot', 'clan.openSlotConfirm': 'Open an extra slot for {cost} GRAM?',
@@ -8651,6 +8656,24 @@
             }
         }
 
+        async function kickClanMember(memberId) {
+            const name = clanMemberNames[String(memberId)] || `#${memberId}`;
+            if (!confirm(t('clan.kickConfirm', { name }))) return;
+            try {
+                const response = await fetch('api/clan/kick', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, member_id: memberId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.kickFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.kicked'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
         async function leaveClan() {
             if (!confirm(t('clan.leaveConfirm'))) return;
             try {
@@ -8687,12 +8710,14 @@
                 const name = clanMemberNames[String(uid)] || `#${uid}`;
                 const power = clanMemberPower[String(uid)] || 0;
                 const submission = clanData.lineup_submissions[String(uid)];
+                const canKick = clanIsLeader && !isLeader;
                 return `<div class="clan-member-row ${isLeader ? 'is-leader' : ''}">
                     <span class="clan-member-rank">#${i + 1}</span>
                     <span class="clan-member-crown">${isLeader ? '👑' : '🦅'}</span>
                     <span class="clan-member-name">${name}</span>
                     ${submission ? `<span class="clan-member-tier" style="color:${clanTierColor(submission.tier_id)}">${clanTierLabel(submission.tier_id)}</span>` : ''}
                     <span class="clan-member-power">🔥 ${clanPowerLabel(power)}</span>
+                    ${canKick ? `<button class="clan-member-kick-btn" onclick="kickClanMember(${uid})">${t('clan.kickBtn')}</button>` : ''}
                 </div>`;
             }).join('');
 

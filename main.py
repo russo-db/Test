@@ -2276,6 +2276,11 @@ class ClanApplicantAction(BaseModel):
     applicant_id: int
 
 
+class ClanKickRequest(BaseModel):
+    user_id: int
+    member_id: int
+
+
 class ClanBurnRequest(BaseModel):
     user_id: int
     monster_id: str
@@ -2794,6 +2799,31 @@ async def clan_application_reject(request: ClanApplicantAction, x_telegram_init_
     if not ok:
         raise HTTPException(status_code=400, detail="Не удалось отклонить заявку")
     return {"status": "success"}
+
+
+@app.post("/api/clan/kick")
+async def clan_kick(request: ClanKickRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер исключает участника из клана (см. kick_clan_member) —
+    вышвырнутый теряет clan_id, но его личный burned_power при этом
+    навсегда остаётся при нём (см. модель личной силы игрока)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    result = await store.kick_clan_member(user_id, clan_id, request.member_id)
+    if result != "ok":
+        messages = {
+            "not_found": "Клан не найден",
+            "not_leader": "Исключать участников может только лидер клана",
+            "not_member": "Этот игрок не состоит в вашем клане",
+            "cannot_kick_self": "Лидер не может исключить сам себя",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось исключить участника"))
+
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "clan": clan_view(clan)}
 
 
 @app.post("/api/clan/leave")

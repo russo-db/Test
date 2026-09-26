@@ -1035,6 +1035,37 @@ class MongoStore:
         await self.users.update_one({"_id": user_id}, {"$set": {"clan_id": None}})
         return "ok"
 
+    async def kick_clan_member(self, leader_id: int, clan_id: str, target_id: int) -> str:
+        """Лидер исключает участника из клана. Лидер не может исключить
+        сам себя (для этого есть leave_clan, с передачей лидерства) —
+        проверяем это до похода в базу, иначе conditional update ниже
+        бы совпал и вышвырнул лидера без всякой передачи лидерства."""
+        if target_id == leader_id:
+            return "cannot_kick_self"
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return "not_found"
+
+        result = await self.clans.update_one(
+            {"_id": oid, "leader_id": leader_id, "members": target_id},
+            {"$pull": {"members": target_id}, "$unset": {f"lineup_submissions.{target_id}": ""}},
+        )
+        if result.modified_count == 0:
+            clan = await self.clans.find_one({"_id": oid})
+            if not clan:
+                return "not_found"
+            if clan.get("leader_id") != leader_id:
+                return "not_leader"
+            if target_id not in (clan.get("members") or []):
+                return "not_member"
+            return "failed"
+
+        await self.users.update_one({"_id": target_id, "clan_id": clan_id}, {"$set": {"clan_id": None}})
+        return "ok"
+
     async def open_clan_slot(self, user_id: int, clan_id: str, price_gram: float, member_limit: int) -> str:
         from bson import ObjectId
         from bson.errors import InvalidId
