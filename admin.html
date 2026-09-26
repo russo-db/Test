@@ -103,6 +103,20 @@
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 
+    /* --- турнир кланов --- */
+    .size-chip { background: #161d2e; border: 1px solid #2a3350; }
+    .size-chip.active { background: #f0b429; color: #1a1408; font-weight: 700; border-color: #f0b429; }
+    .tourney-round { margin-bottom: 18px; }
+    .tourney-round h4 { margin: 0 0 8px; font-size: 13px; color: #8b96b3; text-transform: uppercase; letter-spacing: 0.04em; }
+    .tourney-match { display: flex; align-items: center; gap: 10px; background: #161d2e; border: 1px solid #2a3350;
+        border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
+    .tourney-match .day { flex: 0 0 60px; color: #8b96b3; font-size: 12px; }
+    .tourney-match .side { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tourney-match .side.win { color: #4ade80; font-weight: 700; }
+    .tourney-match .side.empty { color: #4a5578; }
+    .tourney-match .vs { flex: 0 0 20px; color: #4a5578; text-align: center; }
+    .tourney-match .countdown { flex: 0 0 auto; font-size: 11.5px; color: #f0b429; white-space: nowrap; }
+
     /* --- мобильный интерфейс --- */
     @media (max-width: 780px) {
         #app { flex-direction: column; min-height: 100vh; }
@@ -181,6 +195,7 @@
             <button class="nav-btn" data-page="players">👥 Игроки</button>
             <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+            <button class="nav-btn" data-page="tournament">🏆 Турнир Кланов</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -252,6 +267,25 @@
                 <button class="primary" id="configSave">Сохранить</button>
             </div>
             <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
+        </div>
+
+        <div class="page" id="page-tournament">
+            <h2>Турнир Кланов</h2>
+            <p class="muted">
+                Релизный режим: играют только РЕАЛЬНЫЕ кланы сервера — никакая генерация ботов/NPC не используется.
+                Кланы копят силу (clan_power) до старта; выбери масштаб и запусти турнир, когда наберётся достаточно кланов.
+            </p>
+            <div class="card-grid" id="tournamentStatsGrid"></div>
+
+            <div id="tournamentSetup">
+                <h3 style="margin:24px 0 10px;">Запуск нового турнира</h3>
+                <div class="toolbar" id="tournamentSizeRow"></div>
+                <div id="tournamentWarning" style="color:#ff6b6b; margin:6px 0 12px; min-height:16px;"></div>
+                <button class="primary" id="tournamentStartBtn">[Админ] Утвердить состав и Запустить Турнир</button>
+            </div>
+
+            <h3 style="margin:24px 0 10px;">Текущая сетка</h3>
+            <div id="tournamentBracketWrap"></div>
         </div>
     </div>
 </div>
@@ -340,6 +374,8 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'players') loadPlayers();
         if (btn.dataset.page === 'withdrawals') loadWithdrawals();
         if (btn.dataset.page === 'config') loadConfig();
+        if (btn.dataset.page === 'tournament') loadTournamentStatus();
+        else tournamentStopCountdowns();
     };
 });
 
@@ -805,6 +841,139 @@ document.getElementById('configSave').onclick = async () => {
     } catch (e) {
         if (e.message !== 'unauthorized') errEl.textContent = e.message;
     }
+};
+
+/* ---------- турнир кланов (только реальные кланы, без ботов/NPC) ---------- */
+const TOURNEY_ROUND_LABELS = {
+    r32: '1/16 финала', r16: '1/8 финала', r8: '1/4 финала',
+    r4: '1/2 финала', r3rd: 'За 3-е место', final: 'Финал',
+};
+let tournamentState = { data: null, selectedSize: 32 };
+let tournamentCountdownTimer = null;
+
+async function loadTournamentStatus() {
+    try {
+        tournamentState.data = await api('/admin/api/clan_tournament');
+        renderTournamentPage();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+function tournamentIsRunning() {
+    const t = tournamentState.data && tournamentState.data.tournament;
+    return !!(t && !t.finished);
+}
+
+function renderTournamentPage() {
+    const data = tournamentState.data;
+    if (!data) return;
+    const t = data.tournament;
+
+    document.getElementById('tournamentStatsGrid').innerHTML = `
+        <div class="stat-card">
+            <div class="label">Реальных кланов на сервере</div>
+            <div class="value">${fmtNum(data.clan_count)}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Статус турнира</div>
+            <div class="value">${!t ? 'Не запущен' : (t.finished ? 'Завершён' : 'Идёт')}</div>
+        </div>
+        ${t ? `
+        <div class="stat-card">
+            <div class="label">Масштаб / турнир №</div>
+            <div class="value">Топ-${t.size} · №${t.cycle + 1}</div>
+        </div>` : ''}
+    `;
+
+    document.getElementById('tournamentSetup').classList.toggle('hidden', tournamentIsRunning());
+
+    const sizeRow = document.getElementById('tournamentSizeRow');
+    sizeRow.innerHTML = data.sizes.map(size => `
+        <button class="size-chip ${tournamentState.selectedSize === size ? 'active' : ''}" data-size="${size}">ТОП-${size} кланов</button>
+    `).join('');
+    sizeRow.querySelectorAll('[data-size]').forEach(btn => {
+        btn.onclick = () => {
+            tournamentState.selectedSize = Number(btn.dataset.size);
+            renderTournamentPage();
+        };
+    });
+
+    const warnEl = document.getElementById('tournamentWarning');
+    const startBtn = document.getElementById('tournamentStartBtn');
+    if (data.clan_count < tournamentState.selectedSize) {
+        warnEl.textContent = `Недостаточно кланов для этого режима: нужно ${tournamentState.selectedSize}, сейчас зарегистрировано ${data.clan_count}. Выбери меньший масштаб.`;
+        startBtn.disabled = true;
+    } else {
+        warnEl.textContent = '';
+        startBtn.disabled = false;
+    }
+
+    renderTournamentBracket(t);
+}
+
+function tournamentStopCountdowns() {
+    if (tournamentCountdownTimer) { clearInterval(tournamentCountdownTimer); tournamentCountdownTimer = null; }
+}
+
+function fmtCountdown(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function renderTournamentBracket(t) {
+    const wrap = document.getElementById('tournamentBracketWrap');
+    tournamentStopCountdowns();
+    if (!t || !t.bracket || !t.bracket.length) {
+        wrap.innerHTML = '<p class="muted">Турнир ещё не запущен — состав заморозится сразу после нажатия кнопки старта.</p>';
+        return;
+    }
+    const rounds = [];
+    t.bracket.forEach((m, i) => {
+        let group = rounds[rounds.length - 1];
+        if (!group || group.round !== m.round) { group = { round: m.round, matches: [] }; rounds.push(group); }
+        group.matches.push(Object.assign({}, m, { index: i }));
+    });
+    wrap.innerHTML = rounds.map(group => `
+        <div class="tourney-round">
+            <h4>${TOURNEY_ROUND_LABELS[group.round] || group.round}</h4>
+            ${group.matches.map(m => `
+                <div class="tourney-match" data-start="${m.start_time}" data-resolved="${m.resolved}">
+                    <span class="day">День ${m.day}</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_a_id ? 'win' : ''} ${!m.clan_a_id ? 'empty' : ''}">${m.clan_a_name || '—'}</span>
+                    <span class="vs">vs</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_b_id ? 'win' : ''} ${!m.clan_b_id ? 'empty' : ''}">${m.clan_b_name || '—'}</span>
+                    <span class="countdown" data-countdown></span>
+                </div>
+            `).join('')}
+        </div>
+    `).join('');
+    tournamentTickCountdowns();
+    tournamentCountdownTimer = setInterval(tournamentTickCountdowns, 1000);
+}
+
+function tournamentTickCountdowns() {
+    const now = Date.now() / 1000;
+    document.querySelectorAll('.tourney-match').forEach(el => {
+        const cd = el.querySelector('[data-countdown]');
+        if (!cd) return;
+        if (el.dataset.resolved === 'true') { cd.textContent = '✓ сыграно'; return; }
+        const remaining = Number(el.dataset.start) - now;
+        cd.textContent = remaining > 0 ? fmtCountdown(remaining) : 'идёт сейчас';
+    });
+}
+
+document.getElementById('tournamentStartBtn').onclick = async () => {
+    const size = tournamentState.selectedSize;
+    if (!confirm(`Запустить турнир на ${size} кланов? Состав заморозится немедленно и больше не изменится.`)) return;
+    try {
+        await api('/admin/api/clan_tournament/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ size }),
+        });
+        toast('Турнир запущен!');
+        loadTournamentStatus();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 };
 
 checkAuth();

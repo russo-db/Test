@@ -50,13 +50,17 @@ burned_power (см. поле игрока выше) всех ТЕКУЩИХ уч
 — только если есть открытое место) или отклонить (reject_clan_application);
 заявка живёт в applications, пока лидер её не разрешит, а все заявки игрока
 разом снимаются, как только он создаёт собственный клан (см. create_clan).
-Раз в
-CLAN_TOURNAMENT_DAYS дней 32 сильнейших клана автоматически входят в
-турнирную сетку на вылет — clan_tournament: {_id: "current", cycle,
-start_at, bracket: [{round, day, clan_a_id, clan_a_name, clan_b_id,
-clan_b_name, resolved, winner_id, winner_name, battle_log}...]} (см.
-reconcile_clan_tournament в main.py — та же логика лениво продвигаемого
-по дням турнира, что и у сезона Арены).
+Турнир кланов — РЕЛИЗНАЯ механика, никаких ботов/NPC: участвуют только
+реальные кланы сервера, и турнир запускается ТОЛЬКО вручную админом
+(см. /admin/api/clan_tournament/start в main.py), выбравшим масштаб
+8/16/32 (CLAN_TOURNAMENT_SIZES) — берутся ровно первые size сильнейших
+кланов по clan_power, состав замораживается на весь турнир —
+clan_tournament: {_id: "current", cycle, size, start_at, bracket:
+[{round, day, clan_a_id, clan_a_name, clan_b_id, clan_b_name, resolved,
+winner_id, winner_name, battle_log}...]} (см. try_launch_clan_tournament
+и reconcile_clan_tournament в main.py — турнир только лениво
+ПРОДВИГАЕТСЯ по дням/матчам между запусками, но никогда не запускается
+и не перезапускается сам).
 """
 
 import os
@@ -1174,30 +1178,46 @@ class MongoStore:
         )
         return result.modified_count > 0
 
-    # --- Турнирная сетка кланов (см. reconcile_clan_tournament в main.py) ---
+    # --- Турнирная сетка кланов, запускается ТОЛЬКО вручную админом (см.
+    # /admin/api/clan_tournament/start и reconcile_clan_tournament в main.py) ---
+
+    async def count_clans(self) -> int:
+        """Сколько РЕАЛЬНЫХ кланов сейчас на сервере — админ-панель
+        показывает это число рядом с селектором масштаба турнира и
+        блокирует запуск, если их меньше выбранного масштаба."""
+        return await self.clans.count_documents({})
 
     async def get_clan_tournament(self) -> Optional[dict]:
         return await self.clan_tournament.find_one({"_id": "current"})
 
-    async def try_start_clan_tournament(self, cycle: int, start_at: float, bracket: list) -> bool:
-        """Атомарно начинает новый турнирный цикл — true только у ОДНОГО
-        из конкурентных вызовов (та же гонка, что и у смены сезона Арены),
-        не перезаписывая уже идущий турнир того же (или более нового)
-        цикла. Документ создаётся лениво при самом первом обращении
-        (upsert), без розыгрыша "нулевого" турнира."""
+    async def try_launch_clan_tournament(self, bracket: list, size: int, start_at: float) -> str:
+        """Админ вручную запускает турнир (кнопка «Утвердить состав и
+        Запустить Турнир») — атомарно разрешает запуск только если
+        предыдущего турнира нет вовсе, ИЛИ он уже полностью завершён
+        (финальный матч resolved); иначе отказывает — "already_running".
+        При повторном запуске 'cycle' — просто счётчик версий документа
+        (нужен клиенту для подписи "Турнир №N"), не привязан к
+        календарному циклу: турнир больше не запускается сам."""
         existing = await self.clan_tournament.find_one({"_id": "current"})
         if existing is None:
             await self.clan_tournament.update_one(
                 {"_id": "current"},
-                {"$setOnInsert": {"cycle": cycle, "start_at": start_at, "bracket": bracket}},
+                {"$setOnInsert": {"cycle": 0, "size": size, "start_at": start_at, "bracket": bracket}},
                 upsert=True,
             )
-            return False
+            fresh = await self.clan_tournament.find_one({"_id": "current"})
+            return "ok" if fresh and fresh.get("start_at") == start_at and fresh.get("size") == size \
+                else "already_running"
+
+        if not (existing["bracket"] and existing["bracket"][-1].get("resolved")):
+            return "already_running"
+
+        prev_cycle = int(existing.get("cycle", 0))
         result = await self.clan_tournament.update_one(
-            {"_id": "current", "cycle": {"$lt": cycle}},
-            {"$set": {"cycle": cycle, "start_at": start_at, "bracket": bracket}},
+            {"_id": "current", "cycle": prev_cycle, f"bracket.{len(existing['bracket']) - 1}.resolved": True},
+            {"$set": {"cycle": prev_cycle + 1, "size": size, "start_at": start_at, "bracket": bracket}},
         )
-        return result.modified_count > 0
+        return "ok" if result.modified_count > 0 else "already_running"
 
     async def resolve_clan_match(self, match_index: int, winner_id: Optional[str],
                                   winner_name: Optional[str], battle_log: list) -> bool:

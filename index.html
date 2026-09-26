@@ -1051,6 +1051,7 @@
         .clan-match-side span:first-child { overflow: hidden; text-overflow: ellipsis; }
         .clan-match-side.is-winner { background: rgba(74, 222, 128, 0.18); font-weight: 800; }
         .clan-match-side.is-empty { color: var(--text-muted); font-style: italic; }
+        .clan-match-countdown { text-align: center; font-size: 9.5px; font-weight: 800; color: var(--accent-amber); margin-top: 2px; }
 
         .clan-replay-picker { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
         .clan-replay-pick-btn { text-align: left; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -1761,6 +1762,11 @@
     <div id="toast"></div>
 
     <script>
+        // Релизный режим: игровые сутки == РОВНО 24 реальных часа везде, без
+        // ускорений для тестов/QA — используется, в частности, обратным
+        // отсчётом до открытия матчей турнира кланов (см. clanBracketTickCountdowns).
+        const IS_PRODUCTION_MODE = true;
+
         // Outside Telegram (e.g. a browser tab) the SDK is missing - fall back to a no-op stub.
         const noop = () => {};
         const tg = (window.Telegram && window.Telegram.WebApp) || {
@@ -2130,7 +2136,8 @@
                 'clan.round32': '1/16 финала', 'clan.round16': '1/8 финала', 'clan.round8': '1/4 финала',
                 'clan.round4': '1/2 финала', 'clan.round3rd': 'За 3-е место', 'clan.roundFinal': 'Финал',
                 'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Турнир загружается…',
-                'clan.tournamentCycle': 'Турнирный цикл №{cycle}', 'clan.dayLabel': 'День {day}',
+                'clan.tournamentCycle': 'Турнир №{cycle}', 'clan.dayLabel': 'День {day}',
+                'clan.matchLiveNow': '🔴 Идёт сейчас',
                 'clan.liveSubtitle': 'Выбери разрешённый матч, чтобы посмотреть повтор боя 10х10',
                 'clan.noMatchesYet': 'Разрешённых матчей пока нет',
                 'clan.matchNotFound': 'Матч не найден', 'clan.matchNotReady': 'Матч ещё не разрешён',
@@ -2413,7 +2420,8 @@
                 'clan.round32': 'Round of 32', 'clan.round16': 'Round of 16', 'clan.round8': 'Quarterfinals',
                 'clan.round4': 'Semifinals', 'clan.round3rd': '3rd place', 'clan.roundFinal': 'Final',
                 'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Loading tournament…',
-                'clan.tournamentCycle': 'Tournament cycle #{cycle}', 'clan.dayLabel': 'Day {day}',
+                'clan.tournamentCycle': 'Tournament #{cycle}', 'clan.dayLabel': 'Day {day}',
+                'clan.matchLiveNow': '🔴 Live now',
                 'clan.liveSubtitle': 'Pick a resolved match to watch the 10v10 battle replay',
                 'clan.noMatchesYet': 'No resolved matches yet',
                 'clan.matchNotFound': 'Match not found', 'clan.matchNotReady': 'Match not resolved yet',
@@ -8444,11 +8452,12 @@
         let clanCreateNameDraft = '';
         let clanLineupTierChoice = null;
         let clanLineupApprovePicked = new Set();
-        let clanTournamentData = null;  // { cycle, start_at, bracket } без battle_log — см. loadClanTournament
+        let clanTournamentData = null;  // { cycle, size, start_at, bracket } без battle_log — см. loadClanTournament
         let clanReplayMatch = null;      // разрешённый матч с battle_log — см. openClanReplay
         let clanReplayCursor = 0;
         let clanReplayPlaying = false;
         let clanReplayTimer = null;
+        let clanBracketCountdownTimer = null;  // тикающий обратный отсчёт до start_time матчей — см. renderClanBracket
 
         function clanTierColor(tierId) { return tierById(tierId).color; }
         function clanTierLabel(tierId) { return tierById(tierId).name; }
@@ -8477,6 +8486,7 @@
         function closeClanScreen() {
             haptic.select();
             clanReplayStopAuto();
+            clanBracketStopCountdown();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
         }
@@ -8530,6 +8540,7 @@
             haptic.select();
             activeClanTab = id;
             if (id !== 'live') clanReplayStopAuto();
+            if (id !== 'battle') clanBracketStopCountdown();
             document.querySelectorAll('#clanTabBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.clantab === id));
             document.getElementById('clanSubMine').classList.toggle('active', id === 'mine');
             document.getElementById('clanSubLineup').classList.toggle('active', id === 'lineup');
@@ -9058,9 +9069,30 @@
             return `<div class="clan-match-side ${isWinner ? 'is-winner' : ''}"><span>${name}</span></div>`;
         }
 
+        function clanFmtCountdown(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        // Группирует плоский bracket по последовательным значениям match.round —
+        // работает для ЛЮБОГО масштаба турнира (8/16/32), без привязки к
+        // фиксированным индексам: раскладку выбирает админ (см. admin.html).
+        function clanBracketRounds(bracket) {
+            const rounds = [];
+            bracket.forEach((m, i) => {
+                let group = rounds[rounds.length - 1];
+                if (!group || group.key !== m.round) { group = { key: m.round, items: [] }; rounds.push(group); }
+                group.items.push({ match: m, index: i });
+            });
+            return rounds;
+        }
+
         function renderClanBracket() {
             const box = document.getElementById('clanBracket');
             if (!box) return;
+            clanBracketStopCountdown();
             if (!clanTournamentData || !clanTournamentData.bracket || !clanTournamentData.bracket.length) {
                 box.innerHTML = `<p class="clan-empty-hint">${t('clan.tournamentLoading')}</p>`;
                 document.getElementById('clanTournamentSubtitle').textContent = '';
@@ -9069,24 +9101,49 @@
             const bracket = clanTournamentData.bracket;
             document.getElementById('clanTournamentSubtitle').textContent = t('clan.tournamentCycle', { cycle: clanTournamentData.cycle + 1 });
 
-            const rounds = [
-                { key: 'r32', from: 0, to: 16 }, { key: 'r16', from: 16, to: 24 },
-                { key: 'r8', from: 24, to: 28 }, { key: 'r4', from: 28, to: 30 },
-                { key: 'r3rd', from: 30, to: 31 }, { key: 'final', from: 31, to: 32 },
-            ];
-            box.innerHTML = rounds.map(round => {
-                const matches = bracket.slice(round.from, round.to);
-                return `<div class="clan-round-col">
-                    <div class="clan-round-title">${t(CLAN_ROUND_LABELS[round.key])}</div>
-                    ${matches.map((m, i) => `
-                        <div class="clan-match-card ${m.resolved ? 'resolved' : ''}" onclick="openClanReplay(${round.from + i})">
+            box.innerHTML = clanBracketRounds(bracket).map(round => `
+                <div class="clan-round-col">
+                    <div class="clan-round-title">${t(CLAN_ROUND_LABELS[round.key] || round.key)}</div>
+                    ${round.items.map(({ match: m, index }) => `
+                        <div class="clan-match-card ${m.resolved ? 'resolved' : ''}" onclick="openClanReplay(${index})"
+                             data-start="${m.start_time || 0}" data-resolved="${m.resolved}">
                             <div class="clan-match-day">${t('clan.dayLabel', { day: m.day })}</div>
                             ${clanMatchSideHtml(m, 'a')}
                             ${clanMatchSideHtml(m, 'b')}
+                            ${m.clan_a_id && m.clan_b_id ? `<div class="clan-match-countdown" data-countdown></div>` : ''}
                         </div>
                     `).join('')}
-                </div>`;
-            }).join('');
+                </div>
+            `).join('');
+
+            clanBracketTickCountdowns();
+            clanBracketCountdownTimer = setInterval(clanBracketTickCountdowns, 1000);
+        }
+
+        function clanBracketStopCountdown() {
+            if (clanBracketCountdownTimer) { clearInterval(clanBracketCountdownTimer); clanBracketCountdownTimer = null; }
+        }
+
+        // Тикающий обратный отсчёт до открытия каждого матча (start_time) —
+        // ОДИН реальный игровой день == 24 реальных часа (IS_PRODUCTION_MODE).
+        // Когда отсчёт доходит до нуля, подтягиваем сетку заново, чтобы
+        // подхватить свежерешённый матч без ручного обновления вкладки.
+        function clanBracketTickCountdowns() {
+            const now = Date.now() / 1000;
+            let anyJustOpened = false;
+            document.querySelectorAll('#clanBracket .clan-match-card').forEach(card => {
+                const cd = card.querySelector('[data-countdown]');
+                if (!cd) return;
+                if (card.dataset.resolved === 'true') { cd.textContent = ''; return; }
+                const remaining = Number(card.dataset.start) - now;
+                if (remaining > 0) {
+                    cd.textContent = clanFmtCountdown(remaining);
+                } else {
+                    cd.textContent = t('clan.matchLiveNow');
+                    if (!card.dataset.notifiedOpen) { card.dataset.notifiedOpen = '1'; anyJustOpened = true; }
+                }
+            });
+            if (anyJustOpened && activeClanTab === 'battle') loadClanTournament();
         }
 
         // ---------- Вкладка «Прямой Эфир» ----------
