@@ -1022,9 +1022,11 @@
         .clan-member-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
         .clan-member-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; }
         .clan-member-row.is-leader { border-color: rgba(255, 204, 77, 0.4); }
+        .clan-member-rank { flex: 0 0 20px; font-size: 11.5px; font-weight: 800; color: var(--text-muted); }
         .clan-member-crown { flex: 0 0 18px; font-size: 14px; }
         .clan-member-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .clan-member-tier { flex: 0 0 auto; font-size: 11px; font-weight: 700; }
+        .clan-member-power { flex: 0 0 auto; font-size: 11.5px; font-weight: 800; color: var(--accent-amber); white-space: nowrap; }
         .clan-slots-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
 
         .clan-lineup-tiers { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -8403,6 +8405,7 @@
         /* ---------- Кланы ---------- */
         let clanData = null;            // клан текущего игрока, или null — см. loadClanMine
         let clanMemberNames = {};       // { user_id: name } для участников своего клана
+        let clanMemberPower = {};       // { user_id: burned_power } — личный вклад в силу клана, см. renderMyClanTab
         let clanIsLeader = false;
         let clanTopCache = [];          // топ кланов для входного экрана
         let activeClanTab = 'mine';     // 'mine' | 'lineup' | 'battle' | 'live'
@@ -8417,6 +8420,13 @@
 
         function clanTierColor(tierId) { return tierById(tierId).color; }
         function clanTierLabel(tierId) { return tierById(tierId).name; }
+
+        // Точная (без сокращений K/M — в отличие от fmt()) цифра личного
+        // вклада в силу клана — burned_power всегда целое число очков.
+        function clanPowerLabel(power) {
+            const n = Math.round(power);
+            return LANG === 'en' ? `${n} power` : `${n} ${plural(n, 'очко силы', 'очка силы', 'очков силы')}`;
+        }
 
         // Орлы 7 уровня — те же, что уже нельзя дальше кормить (см. FEED_LEVELS);
         // в отличие от eligibleMarketEagles, обычная (common) редкость тоже подходит.
@@ -8441,7 +8451,7 @@
 
         async function loadClanMine() {
             if (offlineOnly || !state.userId) {
-                clanData = null; clanMemberNames = {}; clanIsLeader = false;
+                clanData = null; clanMemberNames = {}; clanMemberPower = {}; clanIsLeader = false;
                 renderClanScreen();
                 return;
             }
@@ -8450,10 +8460,11 @@
                 const data = await response.json();
                 clanData = data.clan || null;
                 clanMemberNames = data.member_names || {};
+                clanMemberPower = data.member_power || {};
                 clanIsLeader = !!data.is_leader;
                 state.clanId = data.clan_id || null;
             } catch (e) {
-                clanData = null; clanMemberNames = {}; clanIsLeader = false;
+                clanData = null; clanMemberNames = {}; clanMemberPower = {}; clanIsLeader = false;
             }
             renderClanScreen();
             if (!clanData) loadClanTop(); else loadClanTournament();
@@ -8646,14 +8657,23 @@
             document.getElementById('clanSlotsHint').textContent = t('clan.slotsHint', {
                 count: clanData.member_count, open: clanData.open_slots, max: cfg.member_limit,
             });
-            document.getElementById('clanMemberList').innerHTML = clanData.members.map(uid => {
+            // Локальный ТОП клана — строго по убыванию личного вклада в силу
+            // (burned_power), топ-1 сжигатель всегда вверху списка, вне
+            // зависимости от того, кто из них лидер.
+            const rankedMembers = clanData.members.slice().sort(
+                (a, b) => (clanMemberPower[String(b)] || 0) - (clanMemberPower[String(a)] || 0)
+            );
+            document.getElementById('clanMemberList').innerHTML = rankedMembers.map((uid, i) => {
                 const isLeader = uid === clanData.leader_id;
                 const name = clanMemberNames[String(uid)] || `#${uid}`;
+                const power = clanMemberPower[String(uid)] || 0;
                 const submission = clanData.lineup_submissions[String(uid)];
                 return `<div class="clan-member-row ${isLeader ? 'is-leader' : ''}">
+                    <span class="clan-member-rank">#${i + 1}</span>
                     <span class="clan-member-crown">${isLeader ? '👑' : '🦅'}</span>
                     <span class="clan-member-name">${name}</span>
                     ${submission ? `<span class="clan-member-tier" style="color:${clanTierColor(submission.tier_id)}">${clanTierLabel(submission.tier_id)}</span>` : ''}
+                    <span class="clan-member-power">🔥 ${clanPowerLabel(power)}</span>
                 </div>`;
             }).join('');
 

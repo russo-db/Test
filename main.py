@@ -1061,6 +1061,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "pvp_energy": PVP_ENERGY_MAX,
             "pvp_energy_day": day_index(),
             "clan_id": None,
+            "burned_power": 0.0,
         }
     )
 
@@ -2576,14 +2577,16 @@ async def clan_mine(user_id: int, x_telegram_init_data: Optional[str] = Header(N
         return {"clan_id": None, "clan": None}
 
     member_names = {}
+    member_power = {}
     for member_id in clan.get("members") or []:
         member_row = await store.get(member_id)
         if member_row:
             member_names[str(member_id)] = member_row.get("name") or ""
+            member_power[str(member_id)] = float(member_row.get("burned_power") or 0)
 
     return {
         "clan_id": clan_id, "clan": clan_view(clan), "is_leader": clan.get("leader_id") == user_id,
-        "member_names": member_names,
+        "member_names": member_names, "member_power": member_power,
     }
 
 
@@ -2755,8 +2758,11 @@ async def clan_open_slot(request: ClanAction, x_telegram_init_data: Optional[str
 @app.post("/api/clan/burn")
 async def clan_burn(request: ClanBurnRequest, x_telegram_init_data: Optional[str] = Header(None)):
     """Безвозвратно сжигает полностью прокачанного (FEED_LEVELS уровня)
-    орла с фермы игрока на силу его клана — прибавка зависит от редкости
-    орла (см. CLAN_BURN_POWER_BY_TIER)."""
+    орла с фермы игрока — очки идут на ЕГО ЛИЧНЫЙ burned_power (прибавка
+    зависит от редкости орла, см. CLAN_BURN_POWER_BY_TIER) и остаются с
+    ним навсегда, даже если он потом покинет клан. Сила клана нигде явно
+    не увеличивается — она считается на лету суммой burned_power текущих
+    участников (см. get_clan)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     row = await fetch_user(user_id)
     clan_id = row.get("clan_id")
@@ -2768,12 +2774,16 @@ async def clan_burn(request: ClanBurnRequest, x_telegram_init_data: Optional[str
     if not power:
         raise HTTPException(status_code=400, detail="Этого орла нельзя пожертвовать клану")
 
-    farm = await store.burn_eagle_for_clan_power(user_id, clan_id, request.monster_id, FEED_LEVELS, power)
+    farm = await store.burn_eagle_for_clan_power(user_id, request.monster_id, FEED_LEVELS, power)
     if farm is None:
         raise HTTPException(status_code=400, detail="Нет такого прокачанного орла (7 ур.) на ферме")
 
     clan = await store.get_clan(clan_id)
-    return {"status": "success", "monsters": read_farm(farm), "clan": clan_view(clan)}
+    fresh = await store.get(user_id)
+    return {
+        "status": "success", "monsters": read_farm(farm), "clan": clan_view(clan),
+        "burned_power": float(fresh.get("burned_power") or 0),
+    }
 
 
 @app.post("/api/clan/lineup/submit")

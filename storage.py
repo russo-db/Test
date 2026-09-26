@@ -15,6 +15,11 @@
     пополняется раз в UTC-сутки; day — номер суток последнего пополнения)
     clan_id (Кланы: ObjectId клана, в котором состоит игрок, строкой; None —
     не состоит ни в одном; см. clans ниже)
+    burned_power (Кланы: личный, НАВСЕГДА закреплённый за игроком вклад в
+    силу клана — очки за сожжённых орлов 7 уровня, см.
+    burn_eagle_for_clan_power. Не обнуляется при выходе/исключении из клана
+    и продолжает считаться, даже если игрок сейчас ни в одном клане не
+    состоит — просто временно ни в чью clan_power не входит)
 
 Кроме игроков хранятся пополнения (deposits, ключ — хэш транзакции TON),
 заявки на вывод (withdrawals), лоты рынка (market_listings — P2P-торговля
@@ -30,10 +35,17 @@ reconcile_arena_season в main.py — раз в ARENA_SEASON_DAYS суток Т�
 получает призы и PvP-рейтинг сбрасывается всем игрокам).
 
 Кланы — clans: {name, leader_id, members: [user_id...], open_slots,
-clan_power, applications: [user_id...], lineup_submissions: {user_id:
-{tier_id}}, approved_lineup: [{user_id, tier_id}...]} — до 15 участников,
-силу качают сжиганием орлов 7 уровня (см. burn_eagle_for_clan_power в
-main.py). Вступление — через заявку (см. apply_to_clan): игрок без клана
+applications: [user_id...], lineup_submissions: {user_id: {tier_id}},
+approved_lineup: [{user_id, tier_id}...]} — до 15 участников. clan_power
+НЕ хранится в документе клана — это производная величина, сумма личного
+burned_power (см. поле игрока выше) всех ТЕКУЩИХ участников, считается на
+лету в get_clan/list_top_clans: вышедший игрок сразу перестаёт вносить
+вклад в свой бывший клан, принятый — сразу начинает вносить вклад в новый,
+без единого места, где эту сумму нужно было бы вручную инкрементить/
+декрементить (и, соответственно, без риска рассинхронизации). Сжигание
+орла 7 уровня начисляет очки исключительно на аккаунт сжёгшего игрока
+(см. burn_eagle_for_clan_power в main.py). Вступление — через заявку
+(см. apply_to_clan): игрок без клана
 подаёт заявку в любой клан, лидер сам решает, принять (accept_clan_application
 — только если есть открытое место) или отклонить (reject_clan_application);
 заявка живёт в applications, пока лидер её не разрешит, а все заявки игрока
@@ -59,7 +71,7 @@ FIELDS = (
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
     "nest_miners", "nest_particles", "nest_last_claim", "nest_inventory", "nest_equipped", "pvp_rating",
-    "pvp_energy", "pvp_energy_day", "clan_id",
+    "pvp_energy", "pvp_energy_day", "clan_id", "burned_power",
 )
 
 
@@ -90,7 +102,6 @@ class MongoStore:
         await self.market.create_index("seller_id")
         await self.equip_market.create_index("seller_id")
         await self.resource_market.create_index("seller_id")
-        await self.clans.create_index("clan_power")
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
@@ -864,7 +875,7 @@ class MongoStore:
         (код, clan_id|None)."""
         clan_doc = {
             "name": name, "leader_id": user_id, "members": [user_id],
-            "open_slots": open_slots, "clan_power": 0.0, "created_at": time.time(),
+            "open_slots": open_slots, "created_at": time.time(),
             "lineup_submissions": {}, "approved_lineup": [], "applications": [],
         }
         result = await self.clans.insert_one(clan_doc)
@@ -885,6 +896,16 @@ class MongoStore:
         await self.clans.update_many({}, {"$pull": {"applications": user_id}})
         return "ok", clan_id
 
+    async def _sum_burned_power(self, member_ids: list) -> float:
+        """Сила клана считается на лету — сумма личного burned_power (см.
+        документ игрока) всех перечисленных (ТЕКУЩИХ) участников."""
+        if not member_ids:
+            return 0.0
+        total = 0.0
+        async for row in self.users.find({"_id": {"$in": member_ids}}, {"burned_power": 1}):
+            total += float(row.get("burned_power") or 0)
+        return total
+
     async def get_clan(self, clan_id: str) -> Optional[dict]:
         from bson import ObjectId
         from bson.errors import InvalidId
@@ -897,12 +918,25 @@ class MongoStore:
             return None
         doc = dict(doc)
         doc["id"] = str(doc.pop("_id"))
+        doc["clan_power"] = await self._sum_burned_power(doc.get("members") or [])
         return doc
 
     async def list_top_clans(self, limit: int = 100) -> list:
-        cursor = self.clans.find().sort("clan_power", -1).limit(limit)
+        """Топ кланов по силе — $lookup считает clan_power каждого клана
+        прямо в базе (сумма burned_power его текущих members) и сортирует
+        по нему, так что подгружать/суммировать участников на стороне
+        Python (и держать поле clan_power синхронным вручную) не нужно."""
+        pipeline = [
+            {"$lookup": {
+                "from": "users", "localField": "members", "foreignField": "_id", "as": "_members",
+            }},
+            {"$addFields": {"clan_power": {"$sum": "$_members.burned_power"}}},
+            {"$project": {"_members": 0}},
+            {"$sort": {"clan_power": -1}},
+            {"$limit": limit},
+        ]
         out = []
-        async for doc in cursor:
+        async for doc in self.clans.aggregate(pipeline):
             doc = dict(doc)
             doc["id"] = str(doc.pop("_id"))
             out.append(doc)
@@ -1030,23 +1064,18 @@ class MongoStore:
             return "insufficient_funds"
         return "ok"
 
-    async def burn_eagle_for_clan_power(self, user_id: int, clan_id: str, monster_id: str,
+    async def burn_eagle_for_clan_power(self, user_id: int, monster_id: str,
                                          feed_levels: int, power: float) -> Optional[list]:
         """Сжигает первого попавшегося полностью прокачанного орла нужного
         вида с фермы (та же оптимистичная блокировка по monsters, что и в
-        create_listing для орлов) и начисляет клану power очков силы.
-        Возвращает обновлённый список monsters или None, если такого орла
-        нет. Начисление силы клана — простой $inc, без отдельного отката:
-        если бы он не удался (крайне маловероятно), орёл всё равно уже
-        сожжён — тот же уровень риска, что и в остальных двухшаговых
-        операциях этого файла."""
-        from bson import ObjectId
-        from bson.errors import InvalidId
-        try:
-            oid = ObjectId(clan_id)
-        except InvalidId:
-            return None
-
+        create_listing для орлов) и начисляет power очков ЛИЧНОГО
+        burned_power сжёгшего игрока — одним атомарным update вместе со
+        снятием орла с фермы. Клан здесь ни при чём: его сила теперь не
+        хранится, а считается на лету суммой burned_power текущих
+        участников (см. get_clan/list_top_clans), так что этот вклад
+        учтётся автоматически, а при выходе из клана останется при
+        игроке навсегда. Возвращает обновлённый список monsters или None,
+        если такого орла нет."""
         doc = await self.users.find_one({"_id": user_id}, {"monsters": 1})
         farm = list((doc or {}).get("monsters") or [])
         idx = next((i for i, m in enumerate(farm)
@@ -1056,12 +1085,11 @@ class MongoStore:
         original = farm[:]
         farm.pop(idx)
         result = await self.users.update_one(
-            {"_id": user_id, "monsters": original}, {"$set": {"monsters": farm}}
+            {"_id": user_id, "monsters": original},
+            {"$set": {"monsters": farm}, "$inc": {"burned_power": power}},
         )
         if result.modified_count == 0:
             return None
-
-        await self.clans.update_one({"_id": oid}, {"$inc": {"clan_power": power}})
         return farm
 
     async def submit_clan_lineup(self, clan_id: str, user_id: int, tier_id: str) -> bool:
