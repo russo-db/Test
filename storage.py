@@ -1035,6 +1035,31 @@ class MongoStore:
         await self.users.update_one({"_id": user_id}, {"$set": {"clan_id": None}})
         return "ok"
 
+    async def disband_clan(self, leader_id: int, clan_id: str) -> str:
+        """Лидер распускает клан целиком — клан удаляется, ВСЕ участники
+        (включая самого лидера) теряют clan_id. find_one_and_delete с
+        условием leader_id атомарно совмещает проверку прав и удаление:
+        под гонкой (например, параллельный leave_clan последнего
+        участника) удаление сработает только один раз."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return "not_found"
+
+        clan = await self.clans.find_one_and_delete({"_id": oid, "leader_id": leader_id})
+        if not clan:
+            still_exists = await self.clans.find_one({"_id": oid})
+            if not still_exists:
+                return "not_found"
+            return "not_leader"
+
+        members = clan.get("members") or []
+        if members:
+            await self.users.update_many({"_id": {"$in": members}}, {"$set": {"clan_id": None}})
+        return "ok"
+
     async def kick_clan_member(self, leader_id: int, clan_id: str, target_id: int) -> str:
         """Лидер исключает участника из клана. Лидер не может исключить
         сам себя (для этого есть leave_clan, с передачей лидерства) —

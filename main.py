@@ -2842,6 +2842,28 @@ async def clan_leave(request: ClanAction, x_telegram_init_data: Optional[str] = 
     return {"status": "success"}
 
 
+@app.post("/api/clan/disband")
+async def clan_disband(request: ClanAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер распускает клан целиком — клан удаляется, все участники
+    (включая лидера) остаются без клана (см. disband_clan). Личный
+    burned_power каждого участника при этом не теряется — он навсегда
+    привязан к аккаунту, а не к клану."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    row = await fetch_user(user_id)
+    clan_id = row.get("clan_id")
+    if not clan_id:
+        raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+
+    result = await store.disband_clan(user_id, clan_id)
+    if result != "ok":
+        messages = {
+            "not_found": "Клан не найден",
+            "not_leader": "Распустить клан может только лидер",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось распустить клан"))
+    return {"status": "success"}
+
+
 @app.post("/api/clan/open_slot")
 async def clan_open_slot(request: ClanAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Лидер платит CLAN_SLOT_PRICE_GRAM GRAM за одно дополнительное место

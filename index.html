@@ -992,6 +992,7 @@
         .clan-header-name { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .clan-header-power { font-size: 12px; color: var(--accent-amber); font-weight: 700; }
         .clan-leave-btn { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #ef6a6a; background: none; border: 1px solid rgba(239, 106, 106, 0.4); border-radius: 10px; padding: 6px 10px; cursor: pointer; }
+        .clan-disband-btn { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #fff; background: #ef6a6a; border: 1px solid #ef6a6a; border-radius: 10px; padding: 6px 10px; cursor: pointer; }
         .clan-rank-btn { flex: 0 0 auto; width: 34px; height: 34px; font-size: 16px; line-height: 1; background: rgba(255, 204, 77, 0.08); border: 1px solid rgba(255, 204, 77, 0.35); border-radius: 10px; cursor: pointer; }
 
         .clan-rank-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-height: 60vh; overflow-y: auto; }
@@ -1306,6 +1307,7 @@
                     <div class="clan-header-power" id="clanHeaderPower"></div>
                 </div>
                 <button class="clan-rank-btn" id="clanRankBtn" style="display:none;" onclick="openClanRanking()" title="Рейтинг кланов">🏆</button>
+                <button class="clan-disband-btn" id="clanDisbandBtn" style="display:none;" onclick="disbandClan()" data-i18n="clan.disbandBtn">Распустить</button>
                 <button class="clan-leave-btn" id="clanLeaveBtn" style="display:none;" onclick="leaveClan()" data-i18n="clan.leaveBtn">Выйти</button>
             </div>
 
@@ -2106,6 +2108,9 @@
                 'clan.leaveFailed': 'Не удалось покинуть клан', 'clan.left': 'Вы покинули клан',
                 'clan.kickBtn': 'Исключить', 'clan.kickConfirm': 'Исключить {name} из клана?',
                 'clan.kickFailed': 'Не удалось исключить участника', 'clan.kicked': 'Игрок исключён из клана',
+                'clan.disbandBtn': 'Распустить',
+                'clan.disbandConfirm': 'Распустить клан? Клан будет удалён безвозвратно, все участники (включая вас) останутся без клана. Личная сила каждого сохранится.',
+                'clan.disbandFailed': 'Не удалось распустить клан', 'clan.disbanded': 'Клан распущен',
                 'clan.tabMine': 'Мой Клан', 'clan.tabLineup': 'Расстановка', 'clan.tabBattle': 'Битва Кланов', 'clan.tabLive': 'Прямой Эфир',
                 'clan.slotsHint': 'Участников: {count} · открыто мест: {open}/{max}',
                 'clan.openSlotBtn': 'Открыть место', 'clan.openSlotConfirm': 'Открыть дополнительное место за {cost} GRAM?',
@@ -2386,6 +2391,9 @@
                 'clan.leaveFailed': 'Failed to leave clan', 'clan.left': 'You left the clan',
                 'clan.kickBtn': 'Kick', 'clan.kickConfirm': 'Kick {name} out of the clan?',
                 'clan.kickFailed': 'Failed to kick member', 'clan.kicked': 'Player kicked from the clan',
+                'clan.disbandBtn': 'Disband',
+                'clan.disbandConfirm': 'Disband the clan? It will be permanently deleted and every member (including you) will be left without a clan. Everyone keeps their personal power.',
+                'clan.disbandFailed': 'Failed to disband clan', 'clan.disbanded': 'Clan disbanded',
                 'clan.tabMine': 'My Clan', 'clan.tabLineup': 'Lineup', 'clan.tabBattle': 'Clan Battle', 'clan.tabLive': 'Live',
                 'clan.slotsHint': 'Members: {count} · open slots: {open}/{max}',
                 'clan.openSlotBtn': 'Open a slot', 'clan.openSlotConfirm': 'Open an extra slot for {cost} GRAM?',
@@ -8500,6 +8508,7 @@
             document.getElementById('clanMyClanWrap').style.display = inClan ? '' : 'none';
             document.getElementById('clanLeaveBtn').style.display = inClan ? 'inline-block' : 'none';
             document.getElementById('clanRankBtn').style.display = inClan ? '' : 'none';
+            document.getElementById('clanDisbandBtn').style.display = (inClan && clanIsLeader) ? 'inline-block' : 'none';
 
             if (inClan) {
                 document.getElementById('clanHeaderName').textContent = clanData.name;
@@ -8668,6 +8677,23 @@
                 if (!response.ok) { toast(data.detail || t('clan.kickFailed')); haptic.notify('warning'); return; }
                 haptic.notify('success');
                 toast(t('clan.kicked'));
+                await loadClanMine();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
+        async function disbandClan() {
+            if (!confirm(t('clan.disbandConfirm'))) return;
+            try {
+                const response = await fetch('api/clan/disband', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('clan.disbandFailed')); haptic.notify('warning'); return; }
+                haptic.notify('success');
+                toast(t('clan.disbanded'));
                 await loadClanMine();
             } catch (e) {
                 toast(t('market.serverError'));
