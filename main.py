@@ -2651,19 +2651,24 @@ async def _clan_roster_fighters(clan: Optional[dict]) -> list:
     """Собирает боевых бойцов клана из его approved_lineup — для каждой
     записи {user_id, tier_id} подтягивает текущее снаряжение владельца в
     Кузнице на этой редкости и считает итоговые статы (combat_eagle_stats).
-    Игрок, покинувший клан или не имеющий орла этой редкости уже, просто
-    выпадает из состава (его лучше было не звать на бой без свежего
-    подтверждения — но сама расстановка это отдельно проверяет при подаче)."""
+    Проверяется В МОМЕНТ МАТЧА, а не при подаче/утверждении расстановки:
+    в бой выходит только нынешний участник клана, у которого орёл этой
+    редкости всё ещё есть на ферме. Ушедший/исключённый игрок или продавший
+    (сжёгший) орла просто выпадает из состава; если не осталось никого,
+    клан считается «без состава» (см. _advance_clan_bracket)."""
     if not clan:
         return []
+    members = set(clan.get("members") or [])
     fighters = []
     for entry in (clan.get("approved_lineup") or [])[:CLAN_ROSTER_SIZE]:
         user_id = entry.get("user_id")
         tier_id = entry.get("tier_id")
-        if tier_id not in TIER_INDEX or user_id is None:
+        if tier_id not in TIER_INDEX or user_id is None or user_id not in members:
             continue
         row = await store.get(user_id)
         if not row:
+            continue
+        if not any(m.get("id") == tier_id for m in read_farm(row.get("monsters"))):
             continue
         equipped = normalize_nest_equipped(row.get("nest_equipped"))
         fighters.append({
@@ -2770,6 +2775,34 @@ async def current_clan_tournament() -> Optional[dict]:
     return tournament
 
 
+CLAN_ROSTER_LOCKED_DETAIL = (
+    "Клан участвует в турнире — состав заморожен: нельзя принимать, исключать, "
+    "выходить или распускать клан до выбывания или конца турнира"
+)
+
+
+async def clan_roster_locked(clan_id: str) -> bool:
+    """Клан ещё в турнире — стоит в слоте хотя бы одного несыгранного
+    матча (победитель сразу переносится в слот следующего матча, см.
+    _advance_clan_bracket), значит его состав заморожен. Выбывший клан
+    (проиграл и дальше по сетке не идёт) и все кланы после конца турнира
+    снова свободны. Сначала продвигаем сетку, чтобы уже назревший, но ещё
+    не разыгранный проигрыш не держал клан запертым."""
+    await reconcile_clan_tournament()
+    tournament = await current_clan_tournament()
+    if not tournament:
+        return False
+    return any(
+        not m.get("resolved") and clan_id in (m.get("clan_a_id"), m.get("clan_b_id"))
+        for m in tournament["bracket"]
+    )
+
+
+async def ensure_clan_roster_unlocked(clan_id: str) -> None:
+    if await clan_roster_locked(clan_id):
+        raise HTTPException(status_code=400, detail=CLAN_ROSTER_LOCKED_DETAIL)
+
+
 async def reconcile_clan_tournament() -> None:
     """Продвигает уже запущенный админом турнир (см.
     /admin/api/clan_tournament/start) — разрешает все назревшие матчи
@@ -2807,6 +2840,7 @@ async def clan_mine(user_id: int, x_telegram_init_data: Optional[str] = Header(N
     return {
         "clan_id": clan_id, "clan": clan_view(clan), "is_leader": clan.get("leader_id") == user_id,
         "member_names": member_names, "member_power": member_power,
+        "roster_locked": await clan_roster_locked(clan_id),
     }
 
 
@@ -2901,6 +2935,7 @@ async def clan_application_accept(request: ClanApplicantAction, x_telegram_init_
     clan_id = row.get("clan_id")
     if not clan_id:
         raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    await ensure_clan_roster_unlocked(clan_id)
 
     result = await store.accept_clan_application(clan_id, user_id, request.applicant_id, CLAN_MEMBER_LIMIT)
     if result != "ok":
@@ -2943,6 +2978,7 @@ async def clan_kick(request: ClanKickRequest, x_telegram_init_data: Optional[str
     clan_id = row.get("clan_id")
     if not clan_id:
         raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    await ensure_clan_roster_unlocked(clan_id)
 
     result = await store.kick_clan_member(user_id, clan_id, request.member_id)
     if result != "ok":
@@ -2967,6 +3003,7 @@ async def clan_leave(request: ClanAction, x_telegram_init_data: Optional[str] = 
     clan_id = row.get("clan_id")
     if not clan_id:
         raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    await ensure_clan_roster_unlocked(clan_id)
 
     result = await store.leave_clan(user_id, clan_id)
     if result != "ok":
@@ -2985,6 +3022,7 @@ async def clan_disband(request: ClanAction, x_telegram_init_data: Optional[str] 
     clan_id = row.get("clan_id")
     if not clan_id:
         raise HTTPException(status_code=400, detail="Вы не состоите в клане")
+    await ensure_clan_roster_unlocked(clan_id)
 
     result = await store.disband_clan(user_id, clan_id)
     if result != "ok":
