@@ -309,12 +309,15 @@
 
             <div style="margin-top:28px; border-top:1px solid #202840; padding-top:18px;">
                 <h3 style="margin:0 0 6px;">🤖 Тестовые клан-боты</h3>
-                <p class="muted">Полностью реальные клановые записи (участвуют в общем рейтинге и попадают в турнир при запуске наравне со всеми), но состоят из фейковых игроков — ничего общего с реальными аккаунтами. Удобно, чтобы самому обкатать турнир, не дожидаясь регистрации 32 живых кланов.</p>
+                <p class="muted">Полностью реальные клановые записи (участвуют в общем рейтинге и попадают в турнир при запуске наравне со всеми), но состоят из фейковых игроков — ничего общего с реальными аккаунтами. Удобно, чтобы самому обкатать турнир, не дожидаясь регистрации 32 живых кланов.
+                    Каждый бот сразу готов к бою 10 на 10 в «Прямом Эфире»: минимум 10 участников, у каждого орёл 7-го уровня
+                    со снаряжением и утверждённая расстановка. Чем выше сила клана, тем реже орлы и лучше снаряжение
+                    (&lt;300 — обычные/серое … ≥4000 — мифические). В арене и её таблице лидеров боты не участвуют.</p>
 
                 <div class="field-row">
                     <label>Название <input id="botClanName" value="Bot Clan" style="width:160px;"></label>
                     <label>Сила клана <input id="botClanPower" type="number" min="0" value="1000" style="width:100px;"></label>
-                    <label>Участников <input id="botClanMembers" type="number" min="1" max="15" value="5" style="width:80px;"></label>
+                    <label>Участников (мин. 10) <input id="botClanMembers" type="number" min="10" max="15" value="10" style="width:80px;"></label>
                     <button id="botClanCreateBtn" style="align-self:flex-end;">+ Создать один</button>
                 </div>
 
@@ -322,12 +325,13 @@
                     <label>Сколько кланов <input id="botBulkCount" type="number" min="1" max="32" value="31" style="width:80px;"></label>
                     <label>Мин. сила <input id="botBulkMin" type="number" min="0" value="100" style="width:90px;"></label>
                     <label>Макс. сила <input id="botBulkMax" type="number" min="0" value="5000" style="width:90px;"></label>
-                    <label>Участников (каждый) <input id="botBulkMembers" type="number" min="1" max="15" value="10" style="width:80px;"></label>
+                    <label>Участников (каждый, мин. 10) <input id="botBulkMembers" type="number" min="10" max="15" value="10" style="width:80px;"></label>
                     <button class="primary" id="botBulkCreateBtn" style="align-self:flex-end;">Создать массово (полное поле для теста)</button>
                 </div>
 
                 <div class="toolbar">
                     <span id="botClanStatus" class="muted"></span>
+                    <button id="botClanEquipBtn" title="Для ботов, созданных до появления снаряжения (то же делается само при перезапуске сервера)">🦅 Одеть старых ботов</button>
                     <button class="danger" id="botClanClearBtn">🗑 Удалить всех ботов</button>
                 </div>
             </div>
@@ -992,6 +996,14 @@ document.getElementById('botBulkCreateBtn').onclick = async () => {
             body: JSON.stringify({ count, min_power, max_power, member_count }),
         });
         toast(`Создано ботов: ${data.created}`);
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+};
+
+document.getElementById('botClanEquipBtn').onclick = async () => {
+    try {
+        const data = await api('/admin/api/clans/bots/equip', { method: 'POST' });
+        toast(data.equipped ? `Одето клан-ботов: ${data.equipped}` : 'Все клан-боты уже готовы к бою');
         loadClans();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 };

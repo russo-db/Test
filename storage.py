@@ -773,7 +773,7 @@ class MongoStore:
         и везде в Арене."""
         above_pipeline = [
             {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
-            {"$match": {"_id": {"$ne": exclude_user_id}, "_rating": {"$gt": my_rating}}},
+            {"$match": {"_id": {"$ne": exclude_user_id}, "is_bot": {"$ne": True}, "_rating": {"$gt": my_rating}}},
             {"$sort": {"_rating": 1}},
             {"$limit": above_count},
             {"$project": {"name": 1, "monsters": 1, "nest_equipped": 1, "pvp_rating": "$_rating"}},
@@ -781,7 +781,7 @@ class MongoStore:
         nearby_pipeline = [
             {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
             {"$match": {
-                "_id": {"$ne": exclude_user_id},
+                "_id": {"$ne": exclude_user_id}, "is_bot": {"$ne": True},
                 "_rating": {"$gte": my_rating - rating_range, "$lte": my_rating + rating_range},
             }},
             {"$sample": {"size": 20}},
@@ -813,6 +813,7 @@ class MongoStore:
         награды за призовые места читают monsters отдельно, только для
         того самого игрока, а не для всей таблицы разом."""
         pipeline = [
+            {"$match": {"is_bot": {"$ne": True}}},  # тестовые клан-боты — не игроки Арены
             {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
             {"$sort": {"_rating": -1}},
         ]
@@ -832,7 +833,7 @@ class MongoStore:
         место игрока, не попавшего в Топ-100."""
         pipeline = [
             {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
-            {"$match": {"_rating": {"$gt": rating}}},
+            {"$match": {"_rating": {"$gt": rating}, "is_bot": {"$ne": True}}},
             {"$count": "n"},
         ]
         async for doc in self.users.aggregate(pipeline):
@@ -1388,6 +1389,23 @@ class MongoStore:
         lowest = await self.users.find({"_id": {"$lt": 0}}, {"_id": 1}).sort("_id", 1).limit(1).to_list(1)
         return (lowest[0]["_id"] - 1) if lowest else -1
 
+    async def _insert_bot_user(self, uid: int, label: str, burned_power: float,
+                               clan_id: Optional[str] = None) -> None:
+        await self.users.insert_one({
+            "_id": uid, "name": label, "is_bot": True,
+            "coins": 0.0, "total_earned": 0.0, "mnstr": 0.0, "gold": 0.0,
+            "monsters": [], "farm_queue": [], "active_slot": 0, "missions": [], "slots": 3,
+            "referrals": 0, "referred_by": None, "last_seen": 0,
+            "daily_day": 0, "daily_last": 0, "daily_cycles": 0,
+            "eggs_board": [], "eggs_board_unlocked": 0, "eggs_queue": [], "wallet": "", "ops": 0,
+            "vip_tier": "", "vip_expires_at": 0, "vip_last_meat_at": 0,
+            "wheel_day": 0, "wheel_spins_today": 0,
+            "nest_miners": [], "nest_particles": 0.0, "nest_last_claim": 0,
+            "nest_inventory": {}, "nest_equipped": {},
+            "pvp_rating": 1000, "pvp_energy": 0, "pvp_energy_day": 0,
+            "clan_id": clan_id, "burned_power": burned_power,
+        })
+
     async def create_bot_clan(self, name: str, clan_power: float, member_count: int) -> str:
         """Создаёт ОДИН тестовый клан-бота с заданной силой — see
         clear_bot_clans для отката. Каждый бот — обычный документ users с
@@ -1396,27 +1414,16 @@ class MongoStore:
         его текущих участников — та же формула _sum_burned_power, что и у
         реальных кланов) равна запрошенной. Бот никогда не проходит
         authenticate() и не появляется в игре — это чистые данные для
-        посева турнирной сетки и списков рейтинга."""
+        посева турнирной сетки и списков рейтинга. Орлов и утверждённую
+        расстановку ему выдаёт equip_bot_clan (см. create_equipped_bot_clan
+        в main.py)."""
         member_count = max(1, member_count)
         share = clan_power / member_count
         member_ids = []
         for i in range(member_count):
             uid = await self._next_bot_user_id()
             label = f"🤖 {name} #{i + 1}" if member_count > 1 else f"🤖 {name}"
-            await self.users.insert_one({
-                "_id": uid, "name": label, "is_bot": True,
-                "coins": 0.0, "total_earned": 0.0, "mnstr": 0.0, "gold": 0.0,
-                "monsters": [], "farm_queue": [], "active_slot": 0, "missions": [], "slots": 3,
-                "referrals": 0, "referred_by": None, "last_seen": 0,
-                "daily_day": 0, "daily_last": 0, "daily_cycles": 0,
-                "eggs_board": [], "eggs_board_unlocked": 0, "eggs_queue": [], "wallet": "", "ops": 0,
-                "vip_tier": "", "vip_expires_at": 0, "vip_last_meat_at": 0,
-                "wheel_day": 0, "wheel_spins_today": 0,
-                "nest_miners": [], "nest_particles": 0.0, "nest_last_claim": 0,
-                "nest_inventory": {}, "nest_equipped": {},
-                "pvp_rating": 1000, "pvp_energy": 0, "pvp_energy_day": 0,
-                "clan_id": None, "burned_power": share,
-            })
+            await self._insert_bot_user(uid, label, share)
             member_ids.append(uid)
 
         clan_doc = {
@@ -1429,6 +1436,47 @@ class MongoStore:
         clan_id = str(result.inserted_id)
         await self.users.update_many({"_id": {"$in": member_ids}}, {"$set": {"clan_id": clan_id}})
         return clan_id
+
+    async def equip_bot_clan(self, clan_id: str, loadouts: list) -> bool:
+        """«Одевает» тестовый клан-бот для настоящего боя 10х10: при нехватке
+        участников добирает ботов (с burned_power 0 — clan_power клана не
+        меняется), кладёт i-му боту на ферму ровно одного орла из
+        loadouts[i]["farm_slot"] со снаряжением loadouts[i]["equipped"] на
+        эту редкость и записывает клану утверждённую расстановку
+        (approved_lineup + lineup_submissions) — ту же, что утвердил бы
+        лидер через /api/clan/lineup/approve. Повторный вызов просто
+        перезаписывает всё тем же. Реальных кланов не касается (is_bot)."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        clan = await self.clans.find_one({"_id": oid, "is_bot": True})
+        if not clan:
+            return False
+        members = list(clan.get("members") or [])
+        name = clan.get("name") or "Bot Clan"
+        while len(members) < len(loadouts):
+            uid = await self._next_bot_user_id()
+            await self._insert_bot_user(uid, f"🤖 {name} #{len(members) + 1}", 0.0, clan_id)
+            members.append(uid)
+
+        lineup, submissions = [], {}
+        for uid, loadout in zip(members, loadouts):
+            tier_id = loadout["tier_id"]
+            await self.users.update_one(
+                {"_id": uid, "is_bot": True},
+                {"$set": {"monsters": [loadout["farm_slot"]], "nest_equipped": {tier_id: loadout["equipped"]}}},
+            )
+            lineup.append({"user_id": uid, "tier_id": tier_id})
+            submissions[str(uid)] = {"tier_id": tier_id}
+        await self.clans.update_one({"_id": oid}, {"$set": {
+            "members": members, "approved_lineup": lineup, "lineup_submissions": submissions,
+            "open_slots": max(int(clan.get("open_slots") or 0), len(members)),
+        }})
+        return True
 
     async def list_bot_clans(self) -> list:
         out = []

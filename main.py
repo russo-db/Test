@@ -4402,6 +4402,71 @@ async def admin_list_clans(search: str = "", limit: int = 50, offset: int = 0,
 # автоматическом турнире Топ-32 наравне со всеми), но помечены is_bot=True
 # и полностью изолированы от реальных игроков (свои фейковые user_id).
 # Удаляются одним действием через /admin/api/clans/bots/clear.
+#
+# Каждый клан-бот сразу «одет» для настоящего боя 10х10 в «Прямом Эфире»:
+# CLAN_ROSTER_SIZE ботов-участников, у каждого на ферме один орёл
+# максимального уровня (FEED_LEVELS) с полным комплектом снаряжения на эту
+# редкость, и утверждённая расстановка (approved_lineup) — ровно то, что
+# сервер проверяет в момент матча (_clan_roster_fighters). Статы бойцов
+# (hp/atk/def/crit/spd) нигде не хранятся — их, как и у живых игроков,
+# считает combat_eagle_stats из редкости и снаряжения.
+
+# clan_power бота → базовая редкость его бойцов (индекс в CONFIG["tiers"]) и
+# грейд снаряжения: <300 обычная/серое … ≥4000 мифическая/мифическое. Двое
+# первых бойцов на редкость выше, трое последних — ниже, чтобы бой был
+# разнообразным, а сильный по clan_power бот был сильнее и в бою.
+BOT_POWER_TIER_STEPS = (300, 800, 1500, 2500, 4000)
+
+
+def bot_clan_roster_size() -> int:
+    return max(1, min(CLAN_ROSTER_SIZE, CLAN_MEMBER_LIMIT))
+
+
+def bot_clan_loadouts(clan_power: float) -> list:
+    """Снаряжение бойцов клан-бота — список по одному на бойца:
+    {tier_id, farm_slot (орёл макс. уровня в формате read_farm), equipped
+    ({claws/armor/mask/ring: грейд})}."""
+    tiers = list(TIER_INDEX)
+    base = sum(1 for step in BOT_POWER_TIER_STEPS if clan_power >= step)
+    size = bot_clan_roster_size()
+    loadouts = []
+    for i in range(size):
+        offset = 1 if i < 2 else (-1 if i >= size - 3 else 0)
+        tier_idx = min(max(base + offset, 0), len(tiers) - 1)
+        tier_id = tiers[tier_idx]
+        grade = NEST_GRADES[min(tier_idx, len(NEST_GRADES) - 1)]
+        loadouts.append({
+            "tier_id": tier_id,
+            "farm_slot": {"id": tier_id, "next_egg_at": 0, "feed_level": FEED_LEVELS,
+                          "feed_taps": 0, "expedition_until": 0},
+            "equipped": {item_type: grade for item_type in NEST_TYPE_ORDER},
+        })
+    return loadouts
+
+
+async def create_equipped_bot_clan(name: str, clan_power: float, member_count: int) -> str:
+    """Клан-бот, сразу готовый к бою: не меньше bot_clan_roster_size()
+    участников, орлы, снаряжение и утверждённая расстановка."""
+    clan_id = await store.create_bot_clan(name, clan_power, max(member_count, bot_clan_roster_size()))
+    await store.equip_bot_clan(clan_id, bot_clan_loadouts(clan_power))
+    return clan_id
+
+
+async def migrate_bot_clan_rosters() -> int:
+    """Одноразовая по сути миграция (запускается при старте сервера, см.
+    startup_event, и кнопкой в админке): находит клан-ботов, созданных до
+    появления снаряжения, у которых в момент матча набралось бы меньше
+    bot_clan_roster_size() бойцов, и «одевает» их. Уже одетых не трогает,
+    так что повторные перезапуски ничего не меняют. Возвращает, сколько
+    кланов одето."""
+    fixed = 0
+    for clan in await store.list_bot_clans():
+        if len(await _clan_roster_fighters(clan)) >= bot_clan_roster_size():
+            continue
+        if await store.equip_bot_clan(clan["id"], bot_clan_loadouts(float(clan.get("clan_power") or 0))):
+            fixed += 1
+    return fixed
+
 
 @app.post("/admin/api/clans/bots")
 async def admin_create_bot_clan(body: AdminCreateBotClan, _: None = Depends(require_admin)):
@@ -4410,7 +4475,7 @@ async def admin_create_bot_clan(body: AdminCreateBotClan, _: None = Depends(requ
     name = (body.name or "").strip()[:24] or "Bot Clan"
     power = max(0.0, float(body.clan_power))
     count = max(1, min(int(body.member_count), CLAN_MEMBER_LIMIT))
-    clan_id = await store.create_bot_clan(name, power, count)
+    clan_id = await create_equipped_bot_clan(name, power, count)
     clan = await store.get_clan(clan_id)
     return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
 
@@ -4429,7 +4494,7 @@ async def admin_bulk_create_bot_clans(body: AdminBulkCreateBotClans, _: None = D
     created = 0
     for _i in range(count):
         power = random.uniform(lo, hi)
-        await store.create_bot_clan(f"Bot Clan {random.randint(1000, 9999)}", power, member_count)
+        await create_equipped_bot_clan(f"Bot Clan {random.randint(1000, 9999)}", power, member_count)
         created += 1
     return {"status": "success", "created": created}
 
@@ -4442,6 +4507,13 @@ async def admin_list_bot_clans(_: None = Depends(require_admin)):
         "clan_power": float(c.get("clan_power") or 0),
     } for c in clans]
     return {"items": items, "total": len(items)}
+
+
+@app.post("/admin/api/clans/bots/equip")
+async def admin_equip_bot_clans(_: None = Depends(require_admin)):
+    """То же, что миграция при старте сервера — одевает клан-ботов без
+    готовой расстановки, не дожидаясь перезапуска."""
+    return {"status": "success", "equipped": await migrate_bot_clan_rosters()}
 
 
 @app.post("/admin/api/clans/bots/clear")
@@ -4721,6 +4793,12 @@ async def startup_event():
     except Exception as e:
         print(f"[storage] init() FAILED: {type(e).__name__}: {e}")
         raise
+    try:
+        equipped = await migrate_bot_clan_rosters()
+        if equipped:
+            print(f"[bots] одето клан-ботов для боя 10х10: {equipped}")
+    except Exception as e:  # тестовые данные не должны мешать запуску игры
+        print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
     else:
