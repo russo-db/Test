@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkyLords GRAMM — Sandbox Турнира Кланов (ИЗОЛИРОВАННЫЙ, НЕ для игроков)</title>
+<style>
+    /* ЭТОТ ФАЙЛ — ОТДЕЛЬНЫЙ ОТЛАДОЧНЫЙ СТЕНД. Он не подключён к index.html,
+       main.py или storage.py и никогда не грузится реальными игроками —
+       вся генерация NPC-ботов живёт ТОЛЬКО здесь, в релизной игре ботов
+       в турнире кланов нет (см. build_clan_bracket в main.py). */
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        background: #0b0f1a; color: #e7ecf5; min-height: 100vh;
+    }
+    button {
+        font: inherit; cursor: pointer; border: none; border-radius: 8px;
+        padding: 8px 13px; background: #232c47; color: #e7ecf5;
+    }
+    button:hover { background: #2e3a5c; }
+    button.primary { background: #f0b429; color: #1a1408; font-weight: 700; }
+    button.primary:hover { background: #ffc94a; }
+    button.danger { background: #7a2b2b; }
+    button.danger:hover { background: #a03a3a; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    select, input {
+        font: inherit; background: #131a29; color: #e7ecf5; border: 1px solid #2a3350;
+        border-radius: 6px; padding: 5px 7px;
+    }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    .muted { color: #8b96b3; font-size: 12.5px; }
+
+    /* --- admin bar --- */
+    #adminBar {
+        position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; gap: 14px;
+        align-items: center; justify-content: space-between; background: #131a29;
+        border-bottom: 1px solid #2a3350; padding: 10px 16px;
+    }
+    .admin-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #dayIndicator { font-weight: 700; font-size: 13px; color: #f0b429; }
+    #genStatus { font-size: 12px; color: #8b96b3; }
+
+    /* --- tabs --- */
+    #tabBar { display: flex; gap: 6px; padding: 10px 16px 0; border-bottom: 1px solid #202840; }
+    .tab-btn { background: none; border-radius: 10px 10px 0 0; color: #8b96b3; padding: 9px 16px; }
+    .tab-btn.active { background: #161d2e; color: #fff; font-weight: 700; }
+    .tab-page { display: none; padding: 18px 16px 40px; max-width: 1100px; margin: 0 auto; }
+    .tab-page.active { display: block; }
+    .panel { background: #161d2e; border: 1px solid #2a3350; border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+
+    /* --- мой клан: конструктор --- */
+    .field-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+    .field-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8b96b3; }
+    .eagle-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    .eagle-card { background: #131a29; border: 1px solid #2a3350; border-radius: 10px; padding: 10px; font-size: 12px; }
+    .eagle-card .eagle-title { font-weight: 700; margin-bottom: 6px; font-size: 12.5px; }
+    .eagle-card select { width: 100%; margin-bottom: 5px; font-size: 11.5px; }
+    .eagle-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 11px; color: #c3cbdd; }
+    .eagle-stats span { background: #0f1626; border-radius: 5px; padding: 2px 6px; }
+
+    /* --- турнирная сетка --- */
+    .bracket-box { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; }
+    .round-col { display: flex; flex-direction: column; gap: 10px; justify-content: center; flex: 0 0 168px; }
+    .round-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #8b96b3; text-align: center; }
+    .match-card { background: #131a29; border: 1px solid #2a3350; border-radius: 10px; padding: 7px 9px; font-size: 11px; cursor: pointer; }
+    .match-card:hover { border-color: #f0b429; }
+    .match-card.resolved { border-color: rgba(74, 222, 128, 0.4); }
+    .match-card.has-player { box-shadow: 0 0 0 2px #f0b429 inset; }
+    .match-day { text-align: center; color: #8b96b3; font-size: 9.5px; margin-bottom: 3px; }
+    .match-side { display: flex; justify-content: space-between; gap: 4px; padding: 2px 4px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .match-side.win { background: rgba(74, 222, 128, 0.18); font-weight: 800; }
+    .match-side.empty { color: #4a5578; font-style: italic; }
+    .match-side.is-player { color: #f0b429; }
+
+    /* --- прямой эфир --- */
+    .live-picker { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; margin-bottom: 12px; }
+    .live-pick-btn { text-align: left; background: #131a29; border: 1px solid #2a3350; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+    .live-pick-btn.is-player { border-color: #f0b429; }
+    #liveCanvas { width: 100%; max-width: 640px; height: 260px; border-radius: 12px; background: #05070d; border: 1px solid #2a3350; display: block; margin: 0 auto; }
+    #liveLog { text-align: center; font-size: 12.5px; color: #c3cbdd; min-height: 18px; margin-top: 8px; }
+    #liveBanner { text-align: center; font-size: 16px; font-weight: 800; margin-top: 6px; min-height: 22px; }
+    #liveBanner.win { color: #4ade80; }
+    #liveBanner.lose { color: #ef6a6a; }
+    .live-controls { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div id="adminBar">
+    <div class="admin-group">
+        <button id="btnPrepareBots">🧪 Подготовить тест (31 бот)</button>
+        <button id="btnStart" class="primary">[Админ] Заполнить сетку ТОП-32 и Начать Турнир</button>
+        <button id="btnReset" class="danger">🔄 Сбросить стенд</button>
+        <span id="genStatus"></span>
+    </div>
+    <div class="admin-group">
+        <span id="dayIndicator">Текущий игровой день: — / 24 | Текущий этап: —</span>
+    </div>
+    <div class="admin-group">
+        <button id="btnPause">▶ Запустить таймер</button>
+        <button id="btnSpeed">Скорость: ×1 (1 день = 60с)</button>
+    </div>
+</div>
+
+<div id="tabBar">
+    <button class="tab-btn active" data-tab="mine">1. Мой Клан</button>
+    <button class="tab-btn" data-tab="battle">3. Битва Кланов</button>
+    <button class="tab-btn" data-tab="live">4. Прямой Эфир</button>
+</div>
+
+<div id="tab-mine" class="tab-page active">
+    <div class="panel">
+        <h2>Мой Клан</h2>
+        <p class="muted">Собери свой клан из 10 орлов — статы считаются ТОЧНО той же формулой, что и в бою (combat_eagle_stats: база тира + % бонус снаряжения). 31 клан-бот генерируется автоматически той же формулой со случайными тирами/снаряжением.</p>
+        <div class="field-row">
+            <label>Название клана <input id="myClanName" value="Мой Клан" style="width:220px;"></label>
+            <label>Сила клана (clan_power)
+                <input id="myClanPower" type="number" value="0" style="width:120px;">
+            </label>
+            <button id="btnRecalcPower" type="button">Пересчитать по орлам</button>
+        </div>
+        <div id="myEagleGrid" class="eagle-grid"></div>
+    </div>
+</div>
+
+<div id="tab-battle" class="tab-page">
+    <div class="panel">
+        <h2>Битва Кланов — сетка ТОП-32</h2>
+        <p class="muted" id="battleSubtitle">Нажми «Заполнить сетку ТОП-32 и Начать Турнир» в панели наверху.</p>
+        <div id="bracketBox" class="bracket-box"></div>
+    </div>
+</div>
+
+<div id="tab-live" class="tab-page">
+    <div class="panel">
+        <h2>Прямой Эфир — 10×10, «Царь горы»</h2>
+        <p class="muted">Матчи с участием твоего клана открываются здесь автоматически и разыгрываются в реальном времени. Любой уже сыгранный матч можно пересмотреть из списка ниже.</p>
+        <div id="livePicker" class="live-picker"></div>
+        <div id="liveStage" style="display:none;">
+            <canvas id="liveCanvas" width="640" height="260"></canvas>
+            <div id="liveLog"></div>
+            <div id="liveBanner"></div>
+            <div class="live-controls">
+                <button id="livePlayBtn">▶</button>
+                <button id="liveStepBtn">Шаг</button>
+                <button id="liveRestartBtn">Заново</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// =====================================================================
+// ДАННЫЕ И ФОРМУЛЫ — порт РЕАЛЬНЫХ формул боя из main.py (combat_eagle_stats,
+// _clan_roll_damage, clan_battle_simulate) и game_config.json
+// (combat_base_stats, nest.grade_bonus_pct, nest.item_types). Ничего не
+// придумано — статы ботов и игрока считаются теми же формулами, что и в
+// продовой игре, просто с случайными входными тирами/снаряжением у ботов.
+// =====================================================================
+
+const TIERS = [
+    { id: 'common',    name: 'Обычный',     color: '#94a3b8', burnPower: 1 },
+    { id: 'uncommon',  name: 'Необычный',   color: '#10b981', burnPower: 3 },
+    { id: 'rare',      name: 'Редкий',      color: '#0ea5e9', burnPower: 15 },
+    { id: 'epic',      name: 'Эпический',   color: '#a855f7', burnPower: 50 },
+    { id: 'legendary', name: 'Легендарный', color: '#f59e0b', burnPower: 250 },
+    { id: 'mythical',  name: 'Мифический',  color: '#ef4444', burnPower: 1000 },
+];
+const TIER_BY_ID = Object.fromEntries(TIERS.map(t => [t.id, t]));
+
+// Из game_config.json -> combat_base_stats (см. COMBAT_BASE_STATS в main.py).
+const COMBAT_BASE_STATS = {
+    common:    { hp: 100, atk: 10, def: 8,  crit: 5,  spd: 10 },
+    uncommon:  { hp: 150, atk: 16, def: 13, crit: 7,  spd: 14 },
+    rare:      { hp: 220, atk: 25, def: 20, crit: 10, spd: 20 },
+    epic:      { hp: 320, atk: 38, def: 32, crit: 14, spd: 26 },
+    legendary: { hp: 460, atk: 56, def: 48, crit: 19, spd: 34 },
+    mythical:  { hp: 650, atk: 80, def: 70, crit: 25, spd: 44 },
+};
+
+// Из game_config.json -> nest.grades / nest.grade_bonus_pct / nest.item_types.
+const NEST_GRADES = ['grey', 'green', 'blue', 'purple', 'gold', 'mythic'];
+const NEST_GRADE_BONUS = { grey: 10, green: 20, blue: 35, purple: 50, gold: 70, mythic: 90 };
+const NEST_GRADE_LABEL = { grey: 'Серый', green: 'Зелёный', blue: 'Синий', purple: 'Фиолетовый', gold: 'Золотой', mythic: 'Мифический' };
+// slot -> какой стат бонусит (claws->atk, armor->def, mask->crit, ring->hp+spd).
+const EQUIP_SLOTS = [
+    { key: 'claws', label: 'Когти',  stat: 'atk' },
+    { key: 'armor', label: 'Броня',  stat: 'def' },
+    { key: 'mask',  label: 'Маска',  stat: 'crit' },
+    { key: 'ring',  label: 'Амулет', stat: 'hpspd' },
+];
+
+// Точный порт combat_eagle_stats(tier_id, equipped_for_tier) из main.py.
+function combatEagleStats(tierId, equipped) {
+    const base = COMBAT_BASE_STATS[tierId] || COMBAT_BASE_STATS.common;
+    const bonus = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
+    EQUIP_SLOTS.forEach(slot => {
+        const grade = equipped[slot.key];
+        if (!grade) return;
+        const pct = NEST_GRADE_BONUS[grade] || 0;
+        if (slot.stat === 'atk') bonus.atk += pct;
+        else if (slot.stat === 'def') bonus.def += pct;
+        else if (slot.stat === 'crit') bonus.crit += pct;
+        else if (slot.stat === 'hpspd') { bonus.hp += pct; bonus.spd += pct; }
+    });
+    return {
+        hp: Math.round(base.hp * (1 + bonus.hp / 100)),
+        atk: Math.round(base.atk * (1 + bonus.atk / 100)),
+        def: Math.round(base.def * (1 + bonus.def / 100)),
+        crit: Math.round(base.crit * (1 + bonus.crit / 100) * 10) / 10,
+        speed: Math.round(base.spd * (1 + bonus.spd / 100)),
+    };
+}
+
+// Собирает орла ({hp,atk,def,speed,crit,equipment}) как просил заказчик —
+// equipment — массив надетых предметов с их бонусом, не просто grade-строки.
+function makeEagle(tierId, equipped, name) {
+    const stats = combatEagleStats(tierId, equipped);
+    return {
+        name, tierId,
+        hp: stats.hp, maxHp: stats.hp,
+        atk: stats.atk, def: stats.def, speed: stats.speed, crit: stats.crit,
+        equipment: EQUIP_SLOTS.map(slot => ({
+            slot: slot.key, label: slot.label, grade: equipped[slot.key] || null,
+            bonusPct: equipped[slot.key] ? NEST_GRADE_BONUS[equipped[slot.key]] : 0,
+        })),
+    };
+}
+
+// Точный порт _clan_roll_damage(rng, attacker_stats, defender_stats) из main.py.
+function rollDamage(rng, attacker, defender) {
+    const critChance = Math.max(0, Math.min(0.6, (attacker.crit || 0) / 100));
+    const crit = rng() < critChance;
+    const raw = attacker.atk * (100 / (100 + defender.def));
+    let value = raw * (0.85 + rng() * 0.3);
+    if (crit) value *= 1.8;
+    return { dmg: Math.max(1, Math.round(value)), crit };
+}
+
+// Детерминированный PRNG (mulberry32-стиль) из строкового seed — то же самое,
+// зачем в main.py используется random.Random(seed): один и тот же матч даёт
+// один и тот же результат при повторном прогоне (удобно для дебага).
+function seededRng(seedStr) {
+    let h = 1779033703 ^ seedStr.length;
+    for (let i = 0; i < seedStr.length; i++) {
+        h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
+    }
+    return function () {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        h ^= h >>> 16;
+        return (h >>> 0) / 4294967296;
+    };
+}
+
+// Точный порт clan_battle_simulate(seed, roster_a, roster_b) из main.py —
+// king of the hill: только текущие передние бойцы дерутся, победитель дуэли
+// продолжает с ТЕКУЩИМ (не восстановленным) HP, очерёдность первого удара в
+// каждой новой дуэли решает сравнение speed.
+function simulateClanBattle(seed, rosterA, rosterB) {
+    const rng = seededRng(seed);
+    const queueA = rosterA.map(f => Object.assign({}, f));
+    const queueB = rosterB.map(f => Object.assign({}, f));
+    if (!queueA.length || !queueB.length) {
+        if (queueA.length && !queueB.length) return { winner: 'a', log: [] };
+        if (queueB.length && !queueA.length) return { winner: 'b', log: [] };
+        return { winner: null, log: [] };
+    }
+
+    const log = [];
+    function enter(side, fighter) {
+        log.push({ type: 'enter', side, name: fighter.name, tierId: fighter.tierId, hp: fighter.hp, maxHp: fighter.maxHp });
+    }
+    let curA = queueA.shift();
+    let curB = queueB.shift();
+    enter('a', curA); enter('b', curB);
+
+    let guard = 0;
+    while (guard++ < 20000) {
+        let attackerSide;
+        if (curA.speed > curB.speed) attackerSide = 'a';
+        else if (curB.speed > curA.speed) attackerSide = 'b';
+        else attackerSide = rng() < 0.5 ? 'a' : 'b';
+
+        while (curA.hp > 0 && curB.hp > 0) {
+            const attacker = attackerSide === 'a' ? curA : curB;
+            const defender = attackerSide === 'a' ? curB : curA;
+            const { dmg, crit } = rollDamage(rng, attacker, defender);
+            defender.hp = Math.max(0, defender.hp - dmg);
+            log.push({ type: 'attack', side: attackerSide, value: dmg, crit, defenderHp: defender.hp });
+            if (defender.hp <= 0) break;
+            attackerSide = attackerSide === 'a' ? 'b' : 'a';
+        }
+
+        if (curA.hp <= 0) {
+            log.push({ type: 'death', side: 'a', name: curA.name });
+            if (!queueA.length) return { winner: 'b', log };
+            curA = queueA.shift(); enter('a', curA);
+        } else if (curB.hp <= 0) {
+            log.push({ type: 'death', side: 'b', name: curB.name });
+            if (!queueB.length) return { winner: 'a', log };
+            curB = queueB.shift(); enter('b', curB);
+        }
+    }
+    return { winner: null, log }; // защитный предел, на практике недостижим
+}
+
+// Точный порт _clan_seed_order(n) из main.py.
+function clanSeedOrder(n) {
+    let order = [1, 2];
+    while (order.length < n) {
+        const size = order.length;
+        const next = [];
+        order.forEach(s => next.push(s, size * 2 + 1 - s));
+        order = next;
+    }
+    return order;
+}
+
+// Структура турнирной сетки Топ-32 на 24 дня — тот же костяк, что и
+// CLAN_ROUND_SPECS/CLAN_ROUND_OFFSETS в main.py.
+const ROUND_SPECS = [
+    { key: 'r32', count: 16, dayStart: 1, perDay: 2 },
+    { key: 'r16', count: 8, dayStart: 9, perDay: 1 },
+    { key: 'r8', count: 4, dayStart: 17, perDay: 1 },
+    { key: 'r4', count: 2, dayStart: 21, perDay: 1 },
+];
+const ROUND_OFFSETS = { r32: [0, 16], r16: [16, 8], r8: [24, 4], r4: [28, 2], r3rd: [30, 1], final: [31, 1] };
+const ROUND_LABELS = { r32: '1/16 финала', r16: '1/8 финала', r8: '1/4 финала', r4: '1/2 финала', r3rd: 'За 3-е место', final: 'Финал' };
+
+function buildClanBracket(sortedClans) {
+    const n = 32;
+    const seeds = clanSeedOrder(n);
+    const slots = new Array(n).fill(null);
+    seeds.forEach((seed, i) => { slots[i] = sortedClans[seed - 1] || null; });
+
+    const bracket = [];
+    ROUND_SPECS.forEach((spec, roundIdx) => {
+        for (let i = 0; i < spec.count; i++) {
+            const a = roundIdx === 0 ? slots[2 * i] : null;
+            const b = roundIdx === 0 ? slots[2 * i + 1] : null;
+            bracket.push({
+                round: spec.key, day: spec.dayStart + Math.floor(i / spec.perDay),
+                aId: a ? a.id : null, aName: a ? a.name : null,
+                bId: b ? b.id : null, bName: b ? b.name : null,
+                resolved: false, winnerId: null, winnerName: null, log: [],
+            });
+        }
+    });
+    bracket.push({ round: 'r3rd', day: 23, aId: null, aName: null, bId: null, bName: null, resolved: false, winnerId: null, winnerName: null, log: [] });
+    bracket.push({ round: 'final', day: 24, aId: null, aName: null, bId: null, bName: null, resolved: false, winnerId: null, winnerName: null, log: [] });
+    return bracket;
+}
+
+function nextMatchForWinner(roundKey, localIdx) {
+    const map = { r32: 16, r16: 24, r8: 28 };
+    if (map[roundKey] !== undefined) return [map[roundKey] + Math.floor(localIdx / 2), localIdx % 2 === 0 ? 'a' : 'b'];
+    if (roundKey === 'r4') return [31, localIdx === 0 ? 'a' : 'b'];
+    return null;
+}
+function nextMatchForLoser(roundKey, localIdx) {
+    if (roundKey === 'r4') return [30, localIdx === 0 ? 'a' : 'b'];
+    return null;
+}
+
+function stageForDay(day) {
+    if (day <= 0) return '—';
+    if (day <= 8) return ROUND_LABELS.r32;
+    if (day <= 16) return ROUND_LABELS.r16;
+    if (day <= 20) return ROUND_LABELS.r8;
+    if (day <= 22) return ROUND_LABELS.r4;
+    if (day === 23) return ROUND_LABELS.r3rd;
+    return ROUND_LABELS.final;
+}
+
+// =====================================================================
+// ГЕНЕРАЦИЯ 31 БОТА — ТОЛЬКО здесь, в изолированном стенде. В релизной
+// игре (main.py/build_clan_bracket) ботов нет и не будет.
+// =====================================================================
+
+const BOT_NAME_PREFIX = ['Небесные', 'Огненные', 'Ледяные', 'Стальные', 'Кровавые', 'Теневые', 'Золотые', 'Грозовые', 'Древние', 'Алые'];
+const BOT_NAME_SUFFIX = ['Стражи', 'Клинки', 'Орлы', 'Легион', 'Крылья', 'Охотники', 'Титаны', 'Ястребы', 'Владыки', 'Штормы'];
+
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+function randomEquippedSlots() {
+    const eq = {};
+    EQUIP_SLOTS.forEach(slot => {
+        // ~15% шанс пустого слота — не все ростеры ботов идеально укомплектованы,
+        // остальное — случайный грейд снаряжения.
+        eq[slot.key] = Math.random() < 0.15 ? null : pick(NEST_GRADES);
+    });
+    return eq;
+}
+
+function generateBotClan(index) {
+    const power = randInt(100, 5000);
+    const name = `${pick(BOT_NAME_PREFIX)} ${pick(BOT_NAME_SUFFIX)} №${index + 1}`;
+    const roster = [];
+    for (let i = 0; i < 10; i++) {
+        const tierId = pick(TIERS).id;
+        roster.push(makeEagle(tierId, randomEquippedSlots(), `${name} — Орёл #${i + 1}`));
+    }
+    return { id: `bot${index + 1}`, name, power, roster, isBot: true };
+}
+
+function generateAllBots() {
+    return Array.from({ length: 31 }, (_, i) => generateBotClan(i));
+}
+
+// =====================================================================
+// СОСТОЯНИЕ СТЕНДА
+// =====================================================================
+
+const state = {
+    bots: [],
+    allClans: [],       // 32 клана (31 бот + игрок), отсортированные по power desc
+    bracket: [],
+    day: 0,
+    started: false,
+    paused: true,
+    speedMult: 1,       // 1x = 60с/день, 4x = 15с/день, 10x = 6с/день
+    dayTimer: null,
+    liveMatch: null,    // { idx, match } — текущий просматриваемый/автопроигрываемый матч
+    liveCursor: 0,
+    livePlaying: false,
+    liveTimer: null,
+};
+
+function getClan(id) { return state.allClans.find(c => c.id === id) || null; }
+
+// =====================================================================
+// «МОЙ КЛАН» — конструктор из 10 орлов
+// =====================================================================
+
+let myEagleConfigs = Array.from({ length: 10 }, () => ({ tierId: 'epic', equipped: { claws: 'gold', armor: 'gold', mask: 'gold', ring: 'gold' } }));
+
+function renderMyEagleGrid() {
+    const grid = document.getElementById('myEagleGrid');
+    grid.innerHTML = myEagleConfigs.map((cfg, i) => {
+        const stats = combatEagleStats(cfg.tierId, cfg.equipped);
+        return `
+            <div class="eagle-card">
+                <div class="eagle-title">Орёл #${i + 1}</div>
+                <select data-eagle="${i}" data-field="tierId">
+                    ${TIERS.map(t => `<option value="${t.id}" ${t.id === cfg.tierId ? 'selected' : ''}>${t.name}</option>`).join('')}
+                </select>
+                ${EQUIP_SLOTS.map(slot => `
+                    <select data-eagle="${i}" data-field="equip" data-slot="${slot.key}">
+                        <option value="">${slot.label}: нет</option>
+                        ${NEST_GRADES.map(g => `<option value="${g}" ${cfg.equipped[slot.key] === g ? 'selected' : ''}>${slot.label}: ${NEST_GRADE_LABEL[g]}</option>`).join('')}
+                    </select>
+                `).join('')}
+                <div class="eagle-stats">
+                    <span>❤️ ${stats.hp}</span><span>⚔️ ${stats.atk}</span>
+                    <span>🛡️ ${stats.def}</span><span>⚡ ${stats.speed}</span><span>🎯 ${stats.crit}%</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    grid.querySelectorAll('select').forEach(sel => {
+        sel.onchange = () => {
+            const i = Number(sel.dataset.eagle);
+            if (sel.dataset.field === 'tierId') myEagleConfigs[i].tierId = sel.value;
+            else myEagleConfigs[i].equipped[sel.dataset.slot] = sel.value || null;
+            renderMyEagleGrid();
+        };
+    });
+}
+
+function buildPlayerClan() {
+    const name = document.getElementById('myClanName').value.trim() || 'Мой Клан';
+    const power = Number(document.getElementById('myClanPower').value) || 0;
+    const roster = myEagleConfigs.map((cfg, i) => makeEagle(cfg.tierId, cfg.equipped, `${name} — Орёл #${i + 1}`));
+    return { id: 'player', name, power, roster, isPlayer: true };
+}
+
+function recalcMyClanPower() {
+    const sum = myEagleConfigs.reduce((total, cfg) => total + (TIER_BY_ID[cfg.tierId]?.burnPower || 0), 0);
+    document.getElementById('myClanPower').value = sum;
+}
+
+// =====================================================================
+// ЗАПУСК ТУРНИРА / ПРОДВИЖЕНИЕ ДНЕЙ
+// =====================================================================
+
+function prepareBots() {
+    state.bots = generateAllBots();
+    document.getElementById('genStatus').textContent = `✅ 31 бот-клан сгенерирован (сила 100–5000, по 10 орлов 7 ур.)`;
+}
+
+function startTournament() {
+    if (!state.bots.length) prepareBots();
+    const player = buildPlayerClan();
+    state.allClans = [...state.bots, player].sort((a, b) => b.power - a.power);
+    state.bracket = buildClanBracket(state.allClans);
+    state.day = 0;
+    state.started = true;
+    const canKeepRunning = advanceToDay(1);
+    // Автоматически запускаем ход часов, ТОЛЬКО если день 1 сам не
+    // потребовал паузы (матч с игроком нужно досмотреть, либо турнир
+    // уже завершился на первом же дне).
+    if (canKeepRunning) setPaused(false);
+}
+
+// Разрешает все матчи, чей день <= targetDay и кто ещё не resolved — та же
+// логика продвижения по сетке, что и _advance_clan_bracket в main.py: бот-бот
+// матчи считаются МГНОВЕННО, матч с игроком дополнительно форсит вкладку
+// «Прямой Эфир» и живое проигрывание уже готового лога. Возвращает true,
+// если часы можно (и нужно) продолжать автоматически идти дальше — false,
+// если день сам потребовал паузы (матч игрока или конец турнира).
+function advanceToDay(targetDay) {
+    state.day = targetDay;
+    let playerMatchIdx = null;
+    state.bracket.forEach((match, idx) => {
+        if (match.resolved || match.day > state.day) return;
+        const aId = match.aId, bId = match.bId;
+        let winnerId = null, winnerName = null, log = [];
+        if (aId && bId) {
+            const clanA = getClan(aId), clanB = getClan(bId);
+            const result = simulateClanBattle(`${idx}`, clanA.roster, clanB.roster);
+            log = result.log;
+            if (result.winner === 'a') { winnerId = aId; winnerName = clanA.name; }
+            else if (result.winner === 'b') { winnerId = bId; winnerName = clanB.name; }
+        } else if (aId) { winnerId = aId; winnerName = match.aName; }
+        else if (bId) { winnerId = bId; winnerName = match.bName; }
+
+        match.resolved = true; match.winnerId = winnerId; match.winnerName = winnerName; match.log = log;
+        if (aId === 'player' || bId === 'player') playerMatchIdx = idx;
+
+        const roundKey = match.round;
+        const localIdx = idx - ROUND_OFFSETS[roundKey][0];
+        if (winnerId) {
+            const target = nextMatchForWinner(roundKey, localIdx);
+            if (target) {
+                const [ti, slot] = target;
+                state.bracket[ti][`${slot}Id`] = winnerId;
+                state.bracket[ti][`${slot}Name`] = winnerName;
+            }
+        }
+        if (roundKey === 'r4') {
+            const loserId = winnerId === aId ? bId : (winnerId === bId ? aId : null);
+            const loserName = loserId === bId ? match.bName : match.aName;
+            const target = nextMatchForLoser(roundKey, localIdx);
+            if (target && loserId) {
+                const [ti, slot] = target;
+                state.bracket[ti][`${slot}Id`] = loserId;
+                state.bracket[ti][`${slot}Name`] = loserName;
+            }
+        }
+    });
+
+    renderBattleTab();
+    renderLivePicker();
+    renderAdminBar();
+    if (playerMatchIdx !== null) forceOpenLiveMatch(playerMatchIdx);
+
+    if (isTournamentDone() || playerMatchIdx !== null) {
+        setPaused(true);
+        return false;
+    }
+    return true;
+}
+
+function isTournamentDone() {
+    const last = state.bracket[state.bracket.length - 1];
+    return !!(last && last.resolved);
+}
+
+function tickClock() {
+    if (state.paused || !state.started) return;
+    advanceToDay(state.day + 1);
+}
+
+function scheduleClock() {
+    clearTimeout(state.dayTimer);
+    if (state.paused || !state.started || isTournamentDone()) return;
+    state.dayTimer = setTimeout(() => { tickClock(); scheduleClock(); }, 60000 / state.speedMult);
+}
+
+function setPaused(paused) {
+    state.paused = paused;
+    document.getElementById('btnPause').textContent = paused ? '▶ Запустить таймер' : '⏸ Пауза';
+    if (!paused) scheduleClock(); else clearTimeout(state.dayTimer);
+}
+
+function cycleSpeed() {
+    const order = [1, 4, 10];
+    const idx = order.indexOf(state.speedMult);
+    state.speedMult = order[(idx + 1) % order.length];
+    document.getElementById('btnSpeed').textContent = `Скорость: ×${state.speedMult} (1 день = ${Math.round(60 / state.speedMult)}с)`;
+    if (!state.paused) scheduleClock();
+}
+
+function resetSandbox() {
+    clearTimeout(state.dayTimer);
+    clearInterval(state.liveTimer);
+    state.bots = []; state.allClans = []; state.bracket = [];
+    state.day = 0; state.started = false; state.paused = true;
+    state.liveMatch = null; state.liveCursor = 0; state.livePlaying = false;
+    document.getElementById('genStatus').textContent = '';
+    document.getElementById('btnPause').textContent = '▶ Запустить таймер';
+    renderAdminBar();
+    renderBattleTab();
+    renderLivePicker();
+    document.getElementById('liveStage').style.display = 'none';
+}
+
+// =====================================================================
+// РЕНДЕР — админ-бар / сетка / прямой эфир
+// =====================================================================
+
+function renderAdminBar() {
+    document.getElementById('dayIndicator').textContent =
+        `Текущий игровой день: ${state.day || '—'} / 24 | Текущий этап: ${stageForDay(state.day)}`;
+}
+
+function clanSideHtml(match, side) {
+    const id = match[`${side}Id`], name = match[`${side}Name`];
+    if (!id) return `<div class="match-side empty">TBD</div>`;
+    const isWinner = match.resolved && match.winnerId === id;
+    const isPlayer = id === 'player';
+    return `<div class="match-side ${isWinner ? 'win' : ''} ${isPlayer ? 'is-player' : ''}">${name}</div>`;
+}
+
+function renderBattleTab() {
+    const box = document.getElementById('bracketBox');
+    const subtitle = document.getElementById('battleSubtitle');
+    if (!state.bracket.length) {
+        box.innerHTML = '';
+        subtitle.textContent = 'Нажми «Заполнить сетку ТОП-32 и Начать Турнир» в панели наверху.';
+        return;
+    }
+    subtitle.textContent = `32 клана (31 бот + твой) отсортированы по clan_power и расставлены по сетке — сильнейший встречает слабейшего в своей половине.`;
+    const rounds = [];
+    state.bracket.forEach((m, i) => {
+        let group = rounds[rounds.length - 1];
+        if (!group || group.key !== m.round) { group = { key: m.round, items: [] }; rounds.push(group); }
+        group.items.push({ match: m, index: i });
+    });
+    box.innerHTML = rounds.map(round => `
+        <div class="round-col">
+            <div class="round-title">${ROUND_LABELS[round.key]}</div>
+            ${round.items.map(({ match: m, index }) => `
+                <div class="match-card ${m.resolved ? 'resolved' : ''} ${m.aId === 'player' || m.bId === 'player' ? 'has-player' : ''}"
+                     onclick="onMatchCardClick(${index})">
+                    <div class="match-day">День ${m.day}</div>
+                    ${clanSideHtml(m, 'a')}
+                    ${clanSideHtml(m, 'b')}
+                </div>
+            `).join('')}
+        </div>
+    `).join('');
+}
+
+function onMatchCardClick(idx) {
+    const match = state.bracket[idx];
+    if (!match.resolved || !match.aId || !match.bId) return;
+    switchTab('live');
+    openLiveMatch(idx);
+}
+
+function renderLivePicker() {
+    const box = document.getElementById('livePicker');
+    const resolved = state.bracket.map((m, i) => ({ m, i })).filter(x => x.m.resolved && x.m.aId && x.m.bId);
+    if (!resolved.length) {
+        box.innerHTML = `<p class="muted">Разрешённых матчей пока нет.</p>`;
+        return;
+    }
+    box.innerHTML = resolved.map(({ m, i }) => `
+        <button class="live-pick-btn ${m.aId === 'player' || m.bId === 'player' ? 'is-player' : ''}" onclick="openLiveMatch(${i})">
+            ${ROUND_LABELS[m.round]} · День ${m.day} · ${m.aName} vs ${m.bName}
+            ${m.winnerId ? ` — 🏆 ${m.winnerName}` : ''}
+        </button>
+    `).join('');
+}
+
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+    document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === `tab-${tabId}`));
+}
+
+function forceOpenLiveMatch(idx) {
+    switchTab('live');
+    openLiveMatch(idx, /* autoplay */ true);
+}
+
+function openLiveMatch(idx, autoplay) {
+    const match = state.bracket[idx];
+    state.liveMatch = { idx, match };
+    state.liveCursor = 0;
+    stopLiveAuto();
+    document.getElementById('liveStage').style.display = '';
+    document.getElementById('liveBanner').textContent = '';
+    document.getElementById('liveBanner').className = '';
+    drawLiveFrame();
+    if (autoplay) toggleLivePlay(true);
+}
+
+function stopLiveAuto() {
+    state.livePlaying = false;
+    clearInterval(state.liveTimer);
+    state.liveTimer = null;
+    const btn = document.getElementById('livePlayBtn');
+    if (btn) btn.textContent = '▶';
+}
+
+function toggleLivePlay(forcePlay) {
+    if (!state.liveMatch) return;
+    if (state.livePlaying && !forcePlay) { stopLiveAuto(); return; }
+    state.livePlaying = true;
+    document.getElementById('livePlayBtn').textContent = '⏸';
+    state.liveTimer = setInterval(() => {
+        const log = state.liveMatch.match.log;
+        if (state.liveCursor >= log.length) { stopLiveAuto(); return; }
+        state.liveCursor++;
+        drawLiveFrame();
+    }, 450);
+}
+
+function liveStepOnce() {
+    if (!state.liveMatch) return;
+    if (state.liveCursor < state.liveMatch.match.log.length) state.liveCursor++;
+    drawLiveFrame();
+}
+
+function liveRestart() {
+    if (!state.liveMatch) return;
+    state.liveCursor = 0;
+    stopLiveAuto();
+    document.getElementById('liveBanner').textContent = '';
+    document.getElementById('liveBanner').className = '';
+    drawLiveFrame();
+}
+
+// Восстанавливает снимок состояния боя на момент cursor — проходит лог с
+// начала (та же техника, что и clanReplayStateAt в index.html).
+function liveStateAt(log, cursor) {
+    let a = null, b = null, lastHit = null;
+    for (let i = 0; i < cursor; i++) {
+        const entry = log[i];
+        if (entry.type === 'enter') {
+            const fighter = { name: entry.name, tierId: entry.tierId, hp: entry.hp, maxHp: entry.maxHp };
+            if (entry.side === 'a') a = fighter; else b = fighter;
+        } else if (entry.type === 'attack') {
+            if (entry.side === 'a' && b) b.hp = entry.defenderHp;
+            else if (entry.side === 'b' && a) a.hp = entry.defenderHp;
+            lastHit = entry;
+        }
+    }
+    return { a, b, lastHit };
+}
+
+function drawFighterBox(ctx, fighter, x, flashSide, currentSide) {
+    const w = 230, y = 40, h = 170;
+    ctx.strokeStyle = '#2a3350'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, w, h);
+    if (!fighter) {
+        ctx.fillStyle = '#4a5578'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('—', x + w / 2, y + h / 2);
+        return;
+    }
+    const tier = TIER_BY_ID[fighter.tierId] || TIERS[0];
+    ctx.fillStyle = tier.color; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(fighter.name.length > 24 ? fighter.name.slice(0, 24) + '…' : fighter.name, x + 10, y + 22);
+    ctx.fillStyle = '#8b96b3'; ctx.font = '11px sans-serif';
+    ctx.fillText(tier.name, x + 10, y + 38);
+
+    const barX = x + 10, barY = y + 50, barW = w - 20, barH = 14;
+    ctx.fillStyle = '#0f1626'; ctx.fillRect(barX, barY, barW, barH);
+    const pct = Math.max(0, Math.min(1, fighter.hp / fighter.maxHp));
+    ctx.fillStyle = pct > 0.5 ? '#4ade80' : pct > 0.2 ? '#f0b429' : '#ef6a6a';
+    ctx.fillRect(barX, barY, barW * pct, barH);
+    ctx.strokeStyle = '#2a3350'; ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#fff'; ctx.font = '10.5px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`${Math.max(0, Math.round(fighter.hp))} / ${fighter.maxHp}`, barX + barW / 2, barY + barH - 3);
+
+    if (flashSide === currentSide) {
+        ctx.strokeStyle = '#f0b429'; ctx.lineWidth = 3;
+        ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+    }
+}
+
+function drawLiveFrame() {
+    const canvas = document.getElementById('liveCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!state.liveMatch) return;
+    const { match } = state.liveMatch;
+    const snap = liveStateAt(match.log, state.liveCursor);
+
+    ctx.fillStyle = '#8b96b3'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('VS', canvas.width / 2, 130);
+
+    drawFighterBox(ctx, snap.a, 40, snap.lastHit && snap.lastHit.side === 'b' ? 'a' : null, 'a');
+    drawFighterBox(ctx, snap.b, canvas.width - 40 - 230, snap.lastHit && snap.lastHit.side === 'a' ? 'b' : null, 'b');
+
+    const logLine = document.getElementById('liveLog');
+    const entry = match.log[state.liveCursor - 1];
+    if (entry) {
+        if (entry.type === 'enter') logLine.textContent = `⚔️ ${entry.name} выходит в бой (${TIER_BY_ID[entry.tierId]?.name || entry.tierId})`;
+        else if (entry.type === 'attack') logLine.textContent = `${entry.crit ? '💥 КРИТ! ' : ''}Урон: ${entry.value}`;
+        else if (entry.type === 'death') logLine.textContent = `☠️ ${entry.name} выбывает`;
+    } else {
+        logLine.textContent = 'Бой начинается…';
+    }
+
+    if (state.liveCursor >= match.log.length) {
+        const banner = document.getElementById('liveBanner');
+        const iAmA = match.aId === 'player', iAmB = match.bId === 'player';
+        if (iAmA || iAmB) {
+            const won = match.winnerId === 'player';
+            banner.textContent = won ? '🏆 ПОБЕДА!' : '💀 ПОРАЖЕНИЕ';
+            banner.className = won ? 'win' : 'lose';
+        } else {
+            banner.textContent = `Победитель: ${match.winnerName}`;
+            banner.className = '';
+        }
+    }
+}
+
+// =====================================================================
+// ПОДКЛЮЧЕНИЕ КНОПОК / ИНИЦИАЛИЗАЦИЯ
+// =====================================================================
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => switchTab(btn.dataset.tab);
+});
+
+document.getElementById('btnPrepareBots').onclick = prepareBots;
+document.getElementById('btnStart').onclick = startTournament;
+document.getElementById('btnReset').onclick = resetSandbox;
+document.getElementById('btnPause').onclick = () => setPaused(!state.paused);
+document.getElementById('btnSpeed').onclick = cycleSpeed;
+document.getElementById('btnRecalcPower').onclick = recalcMyClanPower;
+document.getElementById('livePlayBtn').onclick = () => toggleLivePlay(false);
+document.getElementById('liveStepBtn').onclick = liveStepOnce;
+document.getElementById('liveRestartBtn').onclick = liveRestart;
+
+// «При запуске модуля... автоматически создай 31 тестовый клан».
+prepareBots();
+recalcMyClanPower();
+renderMyEagleGrid();
+renderAdminBar();
+</script>
+</body>
+</html>
