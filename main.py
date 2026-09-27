@@ -1425,6 +1425,18 @@ class AdminFeatureToggle(BaseModel):
     maintenance_enabled: bool
 
 
+class AdminClanRename(BaseModel):
+    name: str
+
+
+class AdminClanSetSlots(BaseModel):
+    open_slots: int
+
+
+class AdminClanKick(BaseModel):
+    user_id: int
+
+
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
@@ -4201,6 +4213,115 @@ async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require
         "missions_enabled": MISSIONS_ENABLED,
         "maintenance_enabled": MAINTENANCE_ENABLED,
     }
+
+
+# --- АДМИН: УПРАВЛЕНИЕ КЛАНАМИ ---
+
+@app.get("/admin/api/clans")
+async def admin_list_clans(search: str = "", limit: int = 50, offset: int = 0,
+                            _: None = Depends(require_admin)):
+    clans, total = await store.list_clans_admin(search, limit, offset)
+    items = [{
+        "id": c["id"], "name": c.get("name") or "", "leader_id": c.get("leader_id"),
+        "member_count": len(c.get("members") or []), "member_limit": CLAN_MEMBER_LIMIT,
+        "open_slots": int(c.get("open_slots") or 0), "clan_power": float(c.get("clan_power") or 0),
+        "applications_count": len(c.get("applications") or []), "created_at": c.get("created_at"),
+    } for c in clans]
+    return {"items": items, "total": total}
+
+
+@app.get("/admin/api/clans/{clan_id}")
+async def admin_get_clan(clan_id: str, _: None = Depends(require_admin)):
+    """Полная карточка клана для админ-панели: состав с именами и личным
+    burned_power каждого, заявки на вступление (с самым сильным орлом
+    заявителя), расстановка — то же самое, что видит лидер клана внутри
+    игры, плюс created_at для сортировки."""
+    clan = await store.get_clan(clan_id)
+    if not clan:
+        raise HTTPException(status_code=404, detail="Клан не найден")
+
+    member_names, member_power = {}, {}
+    for uid in clan.get("members") or []:
+        row = await store.get(uid)
+        if row:
+            member_names[str(uid)] = row.get("name") or ""
+            member_power[str(uid)] = float(row.get("burned_power") or 0)
+
+    applicants = []
+    for uid in clan.get("applications") or []:
+        row = await store.get(uid)
+        if row:
+            applicants.append({"user_id": uid, "name": row.get("name") or "", "strongest_eagle": strongest_eagle_info(row)})
+
+    return {
+        "id": clan["id"], "name": clan.get("name") or "", "leader_id": clan.get("leader_id"),
+        "members": clan.get("members") or [], "member_names": member_names, "member_power": member_power,
+        "member_limit": CLAN_MEMBER_LIMIT, "open_slots": int(clan.get("open_slots") or 0),
+        "clan_power": float(clan.get("clan_power") or 0), "applications": applicants,
+        "approved_lineup": clan.get("approved_lineup") or [], "lineup_submissions": clan.get("lineup_submissions") or {},
+        "created_at": clan.get("created_at"),
+    }
+
+
+@app.post("/admin/api/clans/{clan_id}/rename")
+async def admin_rename_clan(clan_id: str, body: AdminClanRename, _: None = Depends(require_admin)):
+    name = (body.name or "").strip()[:24]
+    if not name:
+        raise HTTPException(status_code=400, detail="Название не может быть пустым")
+    if not await store.admin_rename_clan(clan_id, name):
+        raise HTTPException(status_code=404, detail="Клан не найден")
+    return {"status": "success", "name": name}
+
+
+@app.post("/admin/api/clans/{clan_id}/set_slots")
+async def admin_set_clan_slots(clan_id: str, body: AdminClanSetSlots, _: None = Depends(require_admin)):
+    slots = max(0, min(CLAN_MEMBER_LIMIT, int(body.open_slots)))
+    if not await store.admin_set_clan_open_slots(clan_id, slots):
+        raise HTTPException(status_code=404, detail="Клан не найден")
+    return {"status": "success", "open_slots": slots}
+
+
+@app.post("/admin/api/clans/{clan_id}/kick")
+async def admin_kick_clan_member(clan_id: str, body: AdminClanKick, _: None = Depends(require_admin)):
+    """Админ принудительно исключает ЛЮБОГО участника (включая лидера —
+    лидерство при этом переходит следующему по списку, см. leave_clan)."""
+    result = await store.leave_clan(body.user_id, clan_id)
+    if result != "ok":
+        raise HTTPException(status_code=400, detail="Не удалось исключить участника (уже не в этом клане?)")
+    return {"status": "success"}
+
+
+@app.post("/admin/api/clans/{clan_id}/disband")
+async def admin_force_disband_clan(clan_id: str, _: None = Depends(require_admin)):
+    """Админ распускает ЛЮБОЙ клан без проверки лидерства — см.
+    store.admin_disband_clan (в отличие от disband_clan, которым может
+    воспользоваться только сам лидер)."""
+    if not await store.admin_disband_clan(clan_id):
+        raise HTTPException(status_code=404, detail="Клан не найден")
+    return {"status": "success"}
+
+
+# --- АДМИН: МОНИТОРИНГ ТУРНИРА КЛАНОВ ---
+# Только просмотр текущего состояния сетки/дня + ручной триггер продвижения.
+# Сам механизм запуска турнира НЕ меняется здесь (остаётся автоматическим
+# по календарному циклу, см. reconcile_clan_tournament).
+
+@app.get("/admin/api/clan_tournament")
+async def admin_clan_tournament_view(_: None = Depends(require_admin)):
+    tournament = await store.get_clan_tournament()
+    if not tournament:
+        return {"tournament": None}
+    bracket = [{k: v for k, v in m.items() if k != "battle_log"} for m in tournament["bracket"]]
+    return {"tournament": {"cycle": tournament["cycle"], "start_at": tournament["start_at"], "bracket": bracket}}
+
+
+@app.post("/admin/api/clan_tournament/reconcile")
+async def admin_clan_tournament_reconcile(_: None = Depends(require_admin)):
+    """Немедленно продвигает турнир (те же назревшие матчи, что и так
+    разрешились бы при следующем обращении игрока к /api/clan/tournament)
+    — удобно админу, чтобы не ждать чужого запроса после правки багов."""
+    await reconcile_clan_tournament()
+    return await admin_clan_tournament_view()
 
 
 # --- TELEGRAM BOT LOGIC ---

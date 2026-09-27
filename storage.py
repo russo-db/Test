@@ -1254,6 +1254,66 @@ class MongoStore:
     async def count_players(self, search: str = "") -> int:
         return await self.users.count_documents(self._search_query(search))
 
+    # --- Админ: управление кланами (список/детали/модерация) ---
+
+    def _clan_name_query(self, search: str) -> dict:
+        search = (search or "").strip()
+        return {"name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
+
+    async def list_clans_admin(self, search: str = "", limit: int = 50, offset: int = 0) -> tuple:
+        """Список кланов для админ-панели с поиском по названию — сила
+        клана считается на лету той же суммой burned_power участников,
+        что и get_clan/list_top_clans."""
+        query = self._clan_name_query(search)
+        total = await self.clans.count_documents(query)
+        out = []
+        cursor = self.clans.find(query).sort("created_at", -1).skip(offset).limit(limit)
+        async for doc in cursor:
+            doc = dict(doc)
+            doc["id"] = str(doc.pop("_id"))
+            doc["clan_power"] = await self._sum_burned_power(doc.get("members") or [])
+            out.append(doc)
+        return out, total
+
+    async def admin_rename_clan(self, clan_id: str, name: str) -> bool:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        result = await self.clans.update_one({"_id": oid}, {"$set": {"name": name}})
+        return result.matched_count > 0
+
+    async def admin_set_clan_open_slots(self, clan_id: str, open_slots: int) -> bool:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        result = await self.clans.update_one({"_id": oid}, {"$set": {"open_slots": open_slots}})
+        return result.matched_count > 0
+
+    async def admin_disband_clan(self, clan_id: str) -> bool:
+        """Админ распускает ЛЮБОЙ клан без проверки лидерства (в отличие
+        от disband_clan, вызываемого самим лидером) — та же механика:
+        клан удаляется, у всех участников снимается clan_id, их личный
+        burned_power при этом не трогается."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(clan_id)
+        except InvalidId:
+            return False
+        clan = await self.clans.find_one_and_delete({"_id": oid})
+        if not clan:
+            return False
+        members = clan.get("members") or []
+        if members:
+            await self.users.update_many({"_id": {"$in": members}}, {"$set": {"clan_id": None}})
+        return True
+
     async def count_online(self, since_ts: float) -> int:
         return await self.users.count_documents({"last_seen": {"$gte": since_ts}})
 

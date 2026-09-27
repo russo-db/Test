@@ -103,6 +103,27 @@
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 
+    /* --- турнир кланов --- */
+    .tourney-round { margin-bottom: 18px; }
+    .tourney-round h4 { margin: 0 0 8px; font-size: 13px; color: #8b96b3; text-transform: uppercase; letter-spacing: 0.04em; }
+    .tourney-match { display: flex; align-items: center; gap: 10px; background: #161d2e; border: 1px solid #2a3350;
+        border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
+    .tourney-match.resolved { border-color: rgba(74, 222, 128, 0.35); }
+    .tourney-match .day { flex: 0 0 60px; color: #8b96b3; font-size: 12px; }
+    .tourney-match .side { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tourney-match .side.win { color: #4ade80; font-weight: 700; }
+    .tourney-match .side.empty { color: #4a5578; }
+    .tourney-match .vs { flex: 0 0 20px; color: #4a5578; text-align: center; }
+
+    /* --- кланы: детальная карточка --- */
+    .member-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+    .member-row { display: flex; align-items: center; gap: 8px; background: #131a29; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+    .member-row .grow { flex: 1; }
+    .member-row .power { color: #f0b429; font-weight: 700; font-size: 12px; }
+    .member-row button { padding: 4px 9px; font-size: 12px; }
+    .app-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+    .app-row { display: flex; align-items: center; gap: 8px; background: #131a29; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+
     /* --- мобильный интерфейс --- */
     @media (max-width: 780px) {
         #app { flex-direction: column; min-height: 100vh; }
@@ -181,6 +202,8 @@
             <button class="nav-btn" data-page="players">👥 Игроки</button>
             <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+            <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
+            <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -253,13 +276,50 @@
             </div>
             <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
         </div>
+
+        <div class="page" id="page-clans">
+            <h2>Кланы</h2>
+            <div class="toolbar">
+                <input id="clanSearch" placeholder="Поиск по названию клана">
+                <button id="clanSearchBtn">Найти</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Название</th><th>Лидер</th><th>Участников</th><th>Сила (clan_power)</th>
+                        <th>Заявок</th><th>Мест открыто</th><th></th>
+                    </tr></thead>
+                    <tbody id="clansBody"></tbody>
+                </table>
+            </div>
+            <div class="pager">
+                <button id="clansPrev">← Назад</button>
+                <span id="clansPageInfo" class="muted"></span>
+                <button id="clansNext">Вперёд →</button>
+            </div>
+        </div>
+
+        <div class="page" id="page-tournament">
+            <h2>Турнир Кланов</h2>
+            <p class="muted">Турнир Топ-32 запускается и продвигается автоматически по календарному циклу — здесь только просмотр текущего состояния и ручной толчок к продвижению (не ждать, пока какой-то игрок откроет вкладку «Битва Кланов»).</p>
+            <div class="card-grid" id="tournamentStatsGrid"></div>
+            <div class="toolbar">
+                <button id="tournamentRefreshBtn">Обновить</button>
+                <button class="primary" id="tournamentReconcileBtn">Продвинуть сейчас</button>
+            </div>
+            <h3 style="margin-top:24px;">Сетка</h3>
+            <div id="tournamentBracketWrap"></div>
+        </div>
     </div>
 </div>
 
 <div id="modalRoot"></div>
 
 <script>
-const state = { playersOffset: 0, playersLimit: 50, playersTotal: 0, playersSearch: '' };
+const state = {
+    playersOffset: 0, playersLimit: 50, playersTotal: 0, playersSearch: '',
+    clansOffset: 0, clansLimit: 50, clansTotal: 0, clansSearch: '',
+};
 
 async function api(path, opts) {
     const res = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
@@ -340,6 +400,8 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'players') loadPlayers();
         if (btn.dataset.page === 'withdrawals') loadWithdrawals();
         if (btn.dataset.page === 'config') loadConfig();
+        if (btn.dataset.page === 'clans') loadClans();
+        if (btn.dataset.page === 'tournament') loadTournament();
     };
 });
 
@@ -805,6 +867,220 @@ document.getElementById('configSave').onclick = async () => {
     } catch (e) {
         if (e.message !== 'unauthorized') errEl.textContent = e.message;
     }
+};
+
+/* ---------- кланы ---------- */
+async function loadClans() {
+    try {
+        const params = new URLSearchParams({ search: state.clansSearch, limit: state.clansLimit, offset: state.clansOffset });
+        const data = await api('/admin/api/clans?' + params);
+        state.clansTotal = data.total;
+        document.getElementById('clansBody').innerHTML = data.items.map(c => `
+            <tr>
+                <td data-label="Название">${c.name || '—'}</td>
+                <td data-label="Лидер">#${c.leader_id}</td>
+                <td data-label="Участников">${c.member_count}/${c.member_limit}</td>
+                <td data-label="Сила (clan_power)">${fmtNum(c.clan_power)}</td>
+                <td data-label="Заявок">${c.applications_count}</td>
+                <td data-label="Мест открыто">${c.open_slots}</td>
+                <td class="td-action"><button data-open-clan="${c.id}">Открыть</button></td>
+            </tr>
+        `).join('') || '<tr><td colspan="7" class="muted">Кланов не найдено</td></tr>';
+        document.querySelectorAll('[data-open-clan]').forEach(btn => {
+            btn.onclick = () => openClanModal(btn.dataset.openClan);
+        });
+        const from = data.total ? state.clansOffset + 1 : 0;
+        const to = Math.min(state.clansOffset + state.clansLimit, data.total);
+        document.getElementById('clansPageInfo').textContent = `${from}–${to} из ${data.total}`;
+        document.getElementById('clansPrev').disabled = state.clansOffset <= 0;
+        document.getElementById('clansNext').disabled = to >= data.total;
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('clanSearchBtn').onclick = () => {
+    state.clansSearch = document.getElementById('clanSearch').value.trim();
+    state.clansOffset = 0;
+    loadClans();
+};
+document.getElementById('clanSearch').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('clanSearchBtn').click();
+});
+document.getElementById('clansPrev').onclick = () => {
+    state.clansOffset = Math.max(0, state.clansOffset - state.clansLimit);
+    loadClans();
+};
+document.getElementById('clansNext').onclick = () => {
+    state.clansOffset += state.clansLimit;
+    loadClans();
+};
+
+async function openClanModal(clanId) {
+    let clan;
+    try { clan = await api(`/admin/api/clans/${clanId}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    renderClanModal(clan);
+}
+
+function renderClanModal(clan) {
+    document.getElementById('modalRoot').innerHTML = `
+        <div class="modal-backdrop" id="clanModalBackdrop">
+            <div class="modal">
+                <button class="close-x" id="clanModalClose">✕</button>
+                <h3>Клан: ${clan.name}</h3>
+                <div class="field-row">
+                    <label>Название <input id="cfName" value="${(clan.name || '').replace(/"/g, '&quot;')}"></label>
+                    <label>Открыто мест (0–${clan.member_limit}) <input id="cfSlots" type="number" min="0" max="${clan.member_limit}" value="${clan.open_slots}"></label>
+                    <button id="clanSaveBtn" style="align-self:flex-end;">Сохранить</button>
+                </div>
+                <p class="muted">Лидер: #${clan.leader_id} · Сила клана: ${fmtNum(clan.clan_power)} · Участников: ${clan.members.length}/${clan.member_limit}</p>
+
+                <b>Участники</b>
+                <div class="member-list" id="clanMemberList"></div>
+
+                <b style="display:block; margin-top:14px;">Заявки на вступление (${clan.applications.length})</b>
+                <div class="app-list">
+                    ${clan.applications.length ? clan.applications.map(a => `
+                        <div class="app-row"><span class="grow">${a.name || ('#' + a.user_id)}</span>
+                        <span class="muted">${a.strongest_eagle ? (a.strongest_eagle.tier_id + ' · ур. ' + a.strongest_eagle.feed_level) : 'нет орлов'}</span></div>
+                    `).join('') : '<div class="muted" style="padding:4px 0;">Заявок нет</div>'}
+                </div>
+
+                <div class="modal-actions">
+                    <button class="danger" id="clanDisbandBtn">Распустить клан</button>
+                    <button id="clanModalCancel">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    `;
+    renderClanMemberList(clan);
+    document.getElementById('clanModalClose').onclick = closeClanModal;
+    document.getElementById('clanModalCancel').onclick = closeClanModal;
+    document.getElementById('clanModalBackdrop').addEventListener('click', e => {
+        if (e.target.id === 'clanModalBackdrop') closeClanModal();
+    });
+    document.getElementById('clanSaveBtn').onclick = () => saveClanFields(clan);
+    document.getElementById('clanDisbandBtn').onclick = () => disbandClanAdmin(clan.id, clan.name);
+}
+
+function renderClanMemberList(clan) {
+    const list = document.getElementById('clanMemberList');
+    list.innerHTML = clan.members.map(uid => {
+        const name = clan.member_names[String(uid)] || `#${uid}`;
+        const power = clan.member_power[String(uid)] || 0;
+        const isLeader = uid === clan.leader_id;
+        return `
+            <div class="member-row">
+                <span class="grow">${isLeader ? '👑 ' : ''}${name}${isLeader ? ' (лидер)' : ''}</span>
+                <span class="power">🔥 ${fmtNum(power)}</span>
+                <button data-kick="${uid}">Исключить</button>
+            </div>`;
+    }).join('') || '<div class="muted" style="padding:4px 0;">Участников нет</div>';
+    list.querySelectorAll('[data-kick]').forEach(btn => {
+        btn.onclick = () => kickClanMemberAdmin(clan.id, Number(btn.dataset.kick));
+    });
+}
+
+async function saveClanFields(clan) {
+    const name = document.getElementById('cfName').value.trim();
+    const slots = Number(document.getElementById('cfSlots').value) || 0;
+    try {
+        if (name && name !== clan.name) {
+            await api(`/admin/api/clans/${clan.id}/rename`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+            });
+        }
+        if (slots !== clan.open_slots) {
+            await api(`/admin/api/clans/${clan.id}/set_slots`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ open_slots: slots }),
+            });
+        }
+        toast('Сохранено');
+        openClanModal(clan.id);
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+async function kickClanMemberAdmin(clanId, userId) {
+    if (!confirm(`Исключить игрока #${userId} из клана?`)) return;
+    try {
+        await api(`/admin/api/clans/${clanId}/kick`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId }),
+        });
+        toast('Игрок исключён');
+        openClanModal(clanId);
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+async function disbandClanAdmin(clanId, name) {
+    if (!confirm(`Распустить клан «${name}»? Это необратимо — клан будет удалён, все участники останутся без клана.`)) return;
+    try {
+        await api(`/admin/api/clans/${clanId}/disband`, { method: 'POST' });
+        toast('Клан распущен');
+        closeClanModal();
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+function closeClanModal() {
+    document.getElementById('modalRoot').innerHTML = '';
+}
+
+/* ---------- турнир кланов ---------- */
+const TOURNEY_ROUND_LABELS = {
+    r32: '1/16 финала', r16: '1/8 финала', r8: '1/4 финала',
+    r4: '1/2 финала', r3rd: 'За 3-е место', final: 'Финал',
+};
+
+async function loadTournament() {
+    try {
+        const data = await api('/admin/api/clan_tournament');
+        renderTournament(data.tournament);
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+function renderTournament(t) {
+    const grid = document.getElementById('tournamentStatsGrid');
+    if (!t) {
+        grid.innerHTML = `<div class="stat-card"><div class="label">Статус</div><div class="value">Ещё не запущен</div></div>`;
+        document.getElementById('tournamentBracketWrap').innerHTML = '<p class="muted">Турнир начнётся автоматически по календарному циклу.</p>';
+        return;
+    }
+    const day = Math.max(1, Math.min(24, Math.floor((Date.now() / 1000 - t.start_at) / 86400) + 1));
+    const finished = t.bracket.length > 0 && t.bracket[t.bracket.length - 1].resolved;
+    grid.innerHTML = `
+        <div class="stat-card"><div class="label">Цикл</div><div class="value">№${t.cycle + 1}</div></div>
+        <div class="stat-card"><div class="label">День</div><div class="value">${day} / 24</div></div>
+        <div class="stat-card"><div class="label">Статус</div><div class="value">${finished ? 'Завершён' : 'Идёт'}</div></div>
+    `;
+
+    const rounds = [];
+    t.bracket.forEach(m => {
+        let group = rounds[rounds.length - 1];
+        if (!group || group.key !== m.round) { group = { key: m.round, items: [] }; rounds.push(group); }
+        group.items.push(m);
+    });
+    document.getElementById('tournamentBracketWrap').innerHTML = rounds.map(group => `
+        <div class="tourney-round">
+            <h4>${TOURNEY_ROUND_LABELS[group.key] || group.key}</h4>
+            ${group.items.map(m => `
+                <div class="tourney-match ${m.resolved ? 'resolved' : ''}">
+                    <span class="day">День ${m.day}</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_a_id ? 'win' : ''} ${!m.clan_a_id ? 'empty' : ''}">${m.clan_a_name || 'TBD'}</span>
+                    <span class="vs">vs</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_b_id ? 'win' : ''} ${!m.clan_b_id ? 'empty' : ''}">${m.clan_b_name || 'TBD'}</span>
+                </div>
+            `).join('')}
+        </div>
+    `).join('');
+}
+
+document.getElementById('tournamentRefreshBtn').onclick = loadTournament;
+document.getElementById('tournamentReconcileBtn').onclick = async () => {
+    try {
+        const data = await api('/admin/api/clan_tournament/reconcile', { method: 'POST' });
+        renderTournament(data.tournament);
+        toast('Турнир продвинут');
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 };
 
 checkAuth();
