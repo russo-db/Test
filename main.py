@@ -1437,6 +1437,19 @@ class AdminClanKick(BaseModel):
     user_id: int
 
 
+class AdminCreateBotClan(BaseModel):
+    name: str
+    clan_power: float
+    member_count: int = 1
+
+
+class AdminBulkCreateBotClans(BaseModel):
+    count: int
+    min_power: float = 100
+    max_power: float = 5000
+    member_count: int = 10
+
+
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
@@ -4299,6 +4312,62 @@ async def admin_force_disband_clan(clan_id: str, _: None = Depends(require_admin
     if not await store.admin_disband_clan(clan_id):
         raise HTTPException(status_code=404, detail="Клан не найден")
     return {"status": "success"}
+
+
+# --- АДМИН: ТЕСТОВЫЕ КЛАН-БОТЫ ---
+# Только для ручного тестирования турнирного пайплайна самим админом — эти
+# кланы полностью реальны для сервера (участвуют в /api/clan/top и в
+# автоматическом турнире Топ-32 наравне со всеми), но помечены is_bot=True
+# и полностью изолированы от реальных игроков (свои фейковые user_id).
+# Удаляются одним действием через /admin/api/clans/bots/clear.
+
+@app.post("/admin/api/clans/bots")
+async def admin_create_bot_clan(body: AdminCreateBotClan, _: None = Depends(require_admin)):
+    """Один тестовый клан-бот с заданной силой — для проверки конкретного
+    сценария (например, клан ровно на нужном месте посева)."""
+    name = (body.name or "").strip()[:24] or "Bot Clan"
+    power = max(0.0, float(body.clan_power))
+    count = max(1, min(int(body.member_count), CLAN_MEMBER_LIMIT))
+    clan_id = await store.create_bot_clan(name, power, count)
+    clan = await store.get_clan(clan_id)
+    return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
+
+
+@app.post("/admin/api/clans/bots/bulk")
+async def admin_bulk_create_bot_clans(body: AdminBulkCreateBotClans, _: None = Depends(require_admin)):
+    """Массово создаёт count тестовых клан-ботов со случайной clan_power в
+    [min_power, max_power] — быстрый способ набрать полное поле (напр. 31
+    клан) для обкатки турнира Топ-32/16/8, не дожидаясь регистрации
+    реальных кланов."""
+    count = max(1, min(int(body.count), 32))
+    member_count = max(1, min(int(body.member_count), CLAN_MEMBER_LIMIT))
+    lo, hi = float(body.min_power), float(body.max_power)
+    if lo > hi:
+        lo, hi = hi, lo
+    created = 0
+    for _i in range(count):
+        power = random.uniform(lo, hi)
+        await store.create_bot_clan(f"Bot Clan {random.randint(1000, 9999)}", power, member_count)
+        created += 1
+    return {"status": "success", "created": created}
+
+
+@app.get("/admin/api/clans/bots")
+async def admin_list_bot_clans(_: None = Depends(require_admin)):
+    clans = await store.list_bot_clans()
+    items = [{
+        "id": c["id"], "name": c.get("name") or "", "member_count": len(c.get("members") or []),
+        "clan_power": float(c.get("clan_power") or 0),
+    } for c in clans]
+    return {"items": items, "total": len(items)}
+
+
+@app.post("/admin/api/clans/bots/clear")
+async def admin_clear_bot_clans(_: None = Depends(require_admin)):
+    """Удаляет ВСЕ тестовые клан-боты одним действием — откат после
+    тестирования, реальных игроков не касается."""
+    removed = await store.clear_bot_clans()
+    return {"status": "success", "removed": removed}
 
 
 # --- АДМИН: МОНИТОРИНГ ТУРНИРА КЛАНОВ ---

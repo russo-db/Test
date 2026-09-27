@@ -1314,6 +1314,80 @@ class MongoStore:
             await self.users.update_many({"_id": {"$in": members}}, {"$set": {"clan_id": None}})
         return True
 
+    # --- Админ: тестовые клан-боты для обкатки турнирного пайплайна без
+    # реальных игроков. is_bot=True на клане И на его фейковых участниках —
+    # легко отличить от реальных данных и удалить одним действием. ---
+
+    async def _next_bot_user_id(self) -> int:
+        """Следующий свободный ID для тестового бота — ОТРИЦАТЕЛЬНЫЙ.
+        Реальные Telegram user_id всегда положительны, так что коллизия
+        с настоящим игроком исключена в принципе, без доп. проверок."""
+        lowest = await self.users.find({"_id": {"$lt": 0}}, {"_id": 1}).sort("_id", 1).limit(1).to_list(1)
+        return (lowest[0]["_id"] - 1) if lowest else -1
+
+    async def create_bot_clan(self, name: str, clan_power: float, member_count: int) -> str:
+        """Создаёт ОДИН тестовый клан-бота с заданной силой — see
+        clear_bot_clans для отката. Каждый бот — обычный документ users с
+        отрицательным _id и is_bot=True; burned_power делится поровну между
+        member_count ботами, так что clan_power клана (сумма burned_power
+        его текущих участников — та же формула _sum_burned_power, что и у
+        реальных кланов) равна запрошенной. Бот никогда не проходит
+        authenticate() и не появляется в игре — это чистые данные для
+        посева турнирной сетки и списков рейтинга."""
+        member_count = max(1, member_count)
+        share = clan_power / member_count
+        member_ids = []
+        for i in range(member_count):
+            uid = await self._next_bot_user_id()
+            label = f"🤖 {name} #{i + 1}" if member_count > 1 else f"🤖 {name}"
+            await self.users.insert_one({
+                "_id": uid, "name": label, "is_bot": True,
+                "coins": 0.0, "total_earned": 0.0, "mnstr": 0.0, "gold": 0.0,
+                "monsters": [], "farm_queue": [], "active_slot": 0, "missions": [], "slots": 3,
+                "referrals": 0, "referred_by": None, "last_seen": 0,
+                "daily_day": 0, "daily_last": 0, "daily_cycles": 0,
+                "eggs_board": [], "eggs_board_unlocked": 0, "eggs_queue": [], "wallet": "", "ops": 0,
+                "vip_tier": "", "vip_expires_at": 0, "vip_last_meat_at": 0,
+                "wheel_day": 0, "wheel_spins_today": 0,
+                "nest_miners": [], "nest_particles": 0.0, "nest_last_claim": 0,
+                "nest_inventory": {}, "nest_equipped": {},
+                "pvp_rating": 1000, "pvp_energy": 0, "pvp_energy_day": 0,
+                "clan_id": None, "burned_power": share,
+            })
+            member_ids.append(uid)
+
+        clan_doc = {
+            "name": name, "leader_id": member_ids[0], "members": member_ids,
+            "open_slots": member_count, "created_at": time.time(),
+            "lineup_submissions": {}, "approved_lineup": [], "applications": [],
+            "is_bot": True,
+        }
+        result = await self.clans.insert_one(clan_doc)
+        clan_id = str(result.inserted_id)
+        await self.users.update_many({"_id": {"$in": member_ids}}, {"$set": {"clan_id": clan_id}})
+        return clan_id
+
+    async def list_bot_clans(self) -> list:
+        out = []
+        async for doc in self.clans.find({"is_bot": True}):
+            doc = dict(doc)
+            doc["id"] = str(doc.pop("_id"))
+            doc["clan_power"] = await self._sum_burned_power(doc.get("members") or [])
+            out.append(doc)
+        return out
+
+    async def clear_bot_clans(self) -> int:
+        """Удаляет ВСЕ тестовые клан-боты и их фейковых пользователей
+        разом — полный откат create_bot_clan, реальных игроков не
+        касается (фильтр всегда is_bot=True)."""
+        bot_clans = await self.clans.find({"is_bot": True}).to_list(None)
+        member_ids = [uid for c in bot_clans for uid in (c.get("members") or [])]
+        if bot_clans:
+            await self.clans.delete_many({"is_bot": True})
+        if member_ids:
+            await self.users.delete_many({"_id": {"$in": member_ids}})
+        return len(bot_clans)
+
     async def count_online(self, since_ts: float) -> int:
         return await self.users.count_documents({"last_seen": {"$gte": since_ts}})
 

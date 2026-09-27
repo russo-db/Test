@@ -297,6 +297,31 @@
                 <span id="clansPageInfo" class="muted"></span>
                 <button id="clansNext">Вперёд →</button>
             </div>
+
+            <div style="margin-top:28px; border-top:1px solid #202840; padding-top:18px;">
+                <h3 style="margin:0 0 6px;">🤖 Тестовые клан-боты</h3>
+                <p class="muted">Полностью реальные клановые записи (участвуют в общем рейтинге и автоматическом турнире Топ-32 наравне со всеми), но состоят из фейковых игроков — ничего общего с реальными аккаунтами. Удобно, чтобы самому обкатать турнир, не дожидаясь регистрации 32 живых кланов.</p>
+
+                <div class="field-row">
+                    <label>Название <input id="botClanName" value="Bot Clan" style="width:160px;"></label>
+                    <label>Сила клана <input id="botClanPower" type="number" min="0" value="1000" style="width:100px;"></label>
+                    <label>Участников <input id="botClanMembers" type="number" min="1" max="15" value="5" style="width:80px;"></label>
+                    <button id="botClanCreateBtn" style="align-self:flex-end;">+ Создать один</button>
+                </div>
+
+                <div class="field-row">
+                    <label>Сколько кланов <input id="botBulkCount" type="number" min="1" max="32" value="31" style="width:80px;"></label>
+                    <label>Мин. сила <input id="botBulkMin" type="number" min="0" value="100" style="width:90px;"></label>
+                    <label>Макс. сила <input id="botBulkMax" type="number" min="0" value="5000" style="width:90px;"></label>
+                    <label>Участников (каждый) <input id="botBulkMembers" type="number" min="1" max="15" value="10" style="width:80px;"></label>
+                    <button class="primary" id="botBulkCreateBtn" style="align-self:flex-end;">Создать массово (полное поле для теста)</button>
+                </div>
+
+                <div class="toolbar">
+                    <span id="botClanStatus" class="muted"></span>
+                    <button class="danger" id="botClanClearBtn">🗑 Удалить всех ботов</button>
+                </div>
+            </div>
         </div>
 
         <div class="page" id="page-tournament">
@@ -895,7 +920,55 @@ async function loadClans() {
         document.getElementById('clansPrev').disabled = state.clansOffset <= 0;
         document.getElementById('clansNext').disabled = to >= data.total;
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    loadBotClanStatus();
 }
+
+async function loadBotClanStatus() {
+    try {
+        const data = await api('/admin/api/clans/bots');
+        document.getElementById('botClanStatus').textContent = `Сейчас тестовых ботов: ${data.total}`;
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+
+document.getElementById('botClanCreateBtn').onclick = async () => {
+    const name = document.getElementById('botClanName').value.trim() || 'Bot Clan';
+    const clan_power = Number(document.getElementById('botClanPower').value) || 0;
+    const member_count = Number(document.getElementById('botClanMembers').value) || 1;
+    try {
+        await api('/admin/api/clans/bots', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, clan_power, member_count }),
+        });
+        toast('Бот-клан создан');
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+};
+
+document.getElementById('botBulkCreateBtn').onclick = async () => {
+    const count = Number(document.getElementById('botBulkCount').value) || 1;
+    const min_power = Number(document.getElementById('botBulkMin').value) || 0;
+    const max_power = Number(document.getElementById('botBulkMax').value) || 0;
+    const member_count = Number(document.getElementById('botBulkMembers').value) || 1;
+    if (!confirm(`Создать ${count} тестовых кланов-ботов? Они будут видны в общем рейтинге и попадут в реальный автоматический турнир Топ-32.`)) return;
+    try {
+        const data = await api('/admin/api/clans/bots/bulk', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count, min_power, max_power, member_count }),
+        });
+        toast(`Создано ботов: ${data.created}`);
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+};
+
+document.getElementById('botClanClearBtn').onclick = async () => {
+    if (!confirm('Удалить ВСЕХ тестовых клан-ботов? Реальных игроков это не затронет.')) return;
+    try {
+        const data = await api('/admin/api/clans/bots/clear', { method: 'POST' });
+        toast(`Удалено ботов: ${data.removed}`);
+        loadClans();
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+};
+
 document.getElementById('clanSearchBtn').onclick = () => {
     state.clansSearch = document.getElementById('clanSearch').value.trim();
     state.clansOffset = 0;
