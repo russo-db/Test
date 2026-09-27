@@ -402,7 +402,7 @@ function toast(message, isError) {
     el.className = 'toast' + (isError ? ' error' : '');
     el.textContent = message;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
+    setTimeout(() => el.remove(), isError ? 8000 : 3500);
 }
 
 function showLogin() {
@@ -1004,6 +1004,7 @@ document.getElementById('botClanEquipBtn').onclick = async () => {
     try {
         const data = await api('/admin/api/clans/bots/equip', { method: 'POST' });
         toast(data.equipped ? `Одето клан-ботов: ${data.equipped}` : 'Все клан-боты уже готовы к бою');
+        (data.errors || []).forEach(err => toast(`Не удалось одеть «${err.clan}»: ${err.error}`, true));
         loadClans();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 };

@@ -5,6 +5,7 @@ import re
 import secrets
 import time
 import asyncio
+import traceback
 from typing import List, Optional
 
 import httpx
@@ -1470,6 +1471,20 @@ app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), na
 # отвечают 503 — админка и статика (страница, конфиг, ассеты) продолжают
 # работать как обычно, чтобы экран техработ на клиенте мог загрузиться.
 MAINTENANCE_ALLOWED_PATHS = {"/api/maintenance"}
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    """Непойманная ошибка сервера. Полный traceback — в лог хостинга. Админке
+    (/admin/api/...) отдаём ещё и тип/текст ошибки, чтобы вместо голого
+    «Ошибка 500» было видно, что именно сломалось; игровой API деталей
+    наружу не раскрывает."""
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    if request.url.path.startswith("/admin/api/"):
+        detail = f"Ошибка сервера: {type(exc).__name__}: {exc}"[:500]
+    else:
+        detail = "Внутренняя ошибка сервера"
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 @app.middleware("http")
@@ -4565,13 +4580,25 @@ async def migrate_bot_clan_rosters() -> int:
     bot_clan_roster_size() бойцов, и «одевает» их. Уже одетых не трогает,
     так что повторные перезапуски ничего не меняют. Возвращает, сколько
     кланов одето."""
-    fixed = 0
-    for clan in await store.list_bot_clans():
-        if len(await _clan_roster_fighters(clan)) >= bot_clan_roster_size():
-            continue
-        if await store.equip_bot_clan(clan["id"], bot_clan_loadouts(float(clan.get("clan_power") or 0))):
-            fixed += 1
+    fixed, _errors = await _migrate_bot_clan_rosters_detailed()
     return fixed
+
+
+async def _migrate_bot_clan_rosters_detailed() -> tuple:
+    """То же, что migrate_bot_clan_rosters, но кланы обрабатываются по
+    одному: ошибка на одном клане (например, повреждённый документ) не
+    мешает одеть остальные и возвращается списком [(имя, текст ошибки)]."""
+    fixed, errors = 0, []
+    for clan in await store.list_bot_clans():
+        try:
+            if len(await _clan_roster_fighters(clan)) >= bot_clan_roster_size():
+                continue
+            if await store.equip_bot_clan(clan["id"], bot_clan_loadouts(float(clan.get("clan_power") or 0))):
+                fixed += 1
+        except Exception as e:
+            traceback.print_exception(type(e), e, e.__traceback__)
+            errors.append((clan.get("name") or clan.get("id"), f"{type(e).__name__}: {e}"[:200]))
+    return fixed, errors
 
 
 @app.post("/admin/api/clans/bots")
@@ -4619,7 +4646,8 @@ async def admin_list_bot_clans(_: None = Depends(require_admin)):
 async def admin_equip_bot_clans(_: None = Depends(require_admin)):
     """То же, что миграция при старте сервера — одевает клан-ботов без
     готовой расстановки, не дожидаясь перезапуска."""
-    return {"status": "success", "equipped": await migrate_bot_clan_rosters()}
+    fixed, errors = await _migrate_bot_clan_rosters_detailed()
+    return {"status": "success", "equipped": fixed, "errors": [{"clan": n, "error": e} for n, e in errors]}
 
 
 @app.post("/admin/api/clans/bots/clear")
