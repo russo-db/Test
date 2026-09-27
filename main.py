@@ -4568,9 +4568,9 @@ def bot_clan_loadouts(clan_power: float) -> list:
 async def create_equipped_bot_clan(name: str, clan_power: float, member_count: int) -> str:
     """Клан-бот, сразу готовый к бою: не меньше bot_clan_roster_size()
     участников, орлы, снаряжение и утверждённая расстановка."""
-    clan_id = await store.create_bot_clan(name, clan_power, max(member_count, bot_clan_roster_size()))
-    await store.equip_bot_clan(clan_id, bot_clan_loadouts(clan_power))
-    return clan_id
+    return await store.create_bot_clan(
+        name, clan_power, max(member_count, bot_clan_roster_size()), bot_clan_loadouts(clan_power),
+    )
 
 
 async def migrate_bot_clan_rosters() -> int:

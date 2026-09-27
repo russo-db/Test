@@ -100,6 +100,7 @@ class MongoStore:
         self.arena_season = client[db_name]["arena_season"]
         self.clans = client[db_name]["clans"]
         self.clan_tournament = client[db_name]["clan_tournament"]
+        self.counters = client[db_name]["counters"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -1387,16 +1388,28 @@ class MongoStore:
     # реальных игроков. is_bot=True на клане И на его фейковых участниках —
     # легко отличить от реальных данных и удалить одним действием. ---
 
-    async def _next_bot_user_id(self) -> int:
-        """Следующий свободный ID для тестового бота — ОТРИЦАТЕЛЬНЫЙ.
-        Реальные Telegram user_id всегда положительны, так что коллизия
-        с настоящим игроком исключена в принципе, без доп. проверок."""
-        lowest = await self.users.find({"_id": {"$lt": 0}}, {"_id": 1}).sort("_id", 1).limit(1).to_list(1)
-        return (lowest[0]["_id"] - 1) if lowest else -1
+    async def _alloc_bot_user_ids(self, count: int) -> list:
+        """Атомарно выделяет count новых ID для тестовых ботов —
+        ОТРИЦАТЕЛЬНЫЕ (реальные Telegram user_id всегда положительны).
+        Счётчик counters.bot_user_id сдвигается одним $inc, поэтому два
+        одновременных запроса (двойное нажатие «Создать массово») получают
+        непересекающиеся блоки. $min перед этим опускает счётчик ниже уже
+        существующих ботов (в т.ч. созданных до появления счётчика)."""
+        from pymongo import ReturnDocument
 
-    async def _insert_bot_user(self, uid: int, label: str, burned_power: float,
-                               clan_id: Optional[str] = None) -> None:
-        await self.users.insert_one({
+        lowest = await self.users.find({"_id": {"$lt": 0}}, {"_id": 1}).sort("_id", 1).limit(1).to_list(1)
+        floor = lowest[0]["_id"] if lowest else 0
+        await self.counters.update_one({"_id": "bot_user_id"}, {"$min": {"value": floor}}, upsert=True)
+        doc = await self.counters.find_one_and_update(
+            {"_id": "bot_user_id"}, {"$inc": {"value": -count}}, return_document=ReturnDocument.AFTER,
+        )
+        end = int(doc["value"])
+        return list(range(end + count - 1, end - 1, -1))
+
+    @staticmethod
+    def _bot_user_doc(uid: int, label: str, burned_power: float, clan_id: Optional[str],
+                      loadout: Optional[dict] = None) -> dict:
+        doc = {
             "_id": uid, "name": label, "is_bot": True,
             "coins": 0.0, "total_earned": 0.0, "mnstr": 0.0, "gold": 0.0,
             "monsters": [], "farm_queue": [], "active_slot": 0, "missions": [], "slots": 3,
@@ -1409,9 +1422,14 @@ class MongoStore:
             "nest_inventory": {}, "nest_equipped": {},
             "pvp_rating": 1000, "pvp_energy": 0, "pvp_energy_day": 0,
             "clan_id": clan_id, "burned_power": burned_power,
-        })
+        }
+        if loadout:
+            doc["monsters"] = [dict(loadout["farm_slot"])]
+            doc["nest_equipped"] = {loadout["tier_id"]: dict(loadout["equipped"])}
+        return doc
 
-    async def create_bot_clan(self, name: str, clan_power: float, member_count: int) -> str:
+    async def create_bot_clan(self, name: str, clan_power: float, member_count: int,
+                              loadouts: Optional[list] = None) -> str:
         """Создаёт ОДИН тестовый клан-бота с заданной силой — see
         clear_bot_clans для отката. Каждый бот — обычный документ users с
         отрицательным _id и is_bot=True; burned_power делится поровну между
@@ -1419,27 +1437,31 @@ class MongoStore:
         его текущих участников — та же формула _sum_burned_power, что и у
         реальных кланов) равна запрошенной. Бот никогда не проходит
         authenticate() и не появляется в игре — это чистые данные для
-        посева турнирной сетки и списков рейтинга. Орлов и утверждённую
-        расстановку ему выдаёт equip_bot_clan (см. create_equipped_bot_clan
-        в main.py)."""
-        member_count = max(1, member_count)
+        посева турнирной сетки и списков рейтинга. loadouts (см.
+        bot_clan_loadouts в main.py) — орлы/снаряжение первых участников и
+        утверждённая из них расстановка, записываются сразу при создании.
+        Всего ~5 запросов к базе на клан (блок ID, клан, все боты разом)."""
+        loadouts = list(loadouts or [])
+        member_count = max(1, member_count, len(loadouts))
         share = clan_power / member_count
-        member_ids = []
-        for i in range(member_count):
-            uid = await self._next_bot_user_id()
-            label = f"🤖 {name} #{i + 1}" if member_count > 1 else f"🤖 {name}"
-            await self._insert_bot_user(uid, label, share)
-            member_ids.append(uid)
-
+        member_ids = await self._alloc_bot_user_ids(member_count)
+        lineup = [{"user_id": uid, "tier_id": lo["tier_id"]} for uid, lo in zip(member_ids, loadouts)]
         clan_doc = {
             "name": name, "leader_id": member_ids[0], "members": member_ids,
             "open_slots": member_count, "created_at": time.time(),
-            "lineup_submissions": {}, "approved_lineup": [], "applications": [],
+            "lineup_submissions": {str(e["user_id"]): {"tier_id": e["tier_id"]} for e in lineup},
+            "approved_lineup": lineup, "applications": [],
             "is_bot": True,
         }
         result = await self.clans.insert_one(clan_doc)
         clan_id = str(result.inserted_id)
-        await self.users.update_many({"_id": {"$in": member_ids}}, {"$set": {"clan_id": clan_id}})
+        await self.users.insert_many([
+            self._bot_user_doc(
+                uid, f"🤖 {name} #{i + 1}" if member_count > 1 else f"🤖 {name}", share, clan_id,
+                loadouts[i] if i < len(loadouts) else None,
+            )
+            for i, uid in enumerate(member_ids)
+        ])
         return clan_id
 
     async def equip_bot_clan(self, clan_id: str, loadouts: list) -> bool:
@@ -1463,10 +1485,14 @@ class MongoStore:
             return False
         members = list(clan.get("members") or [])
         name = clan.get("name") or "Bot Clan"
-        while len(members) < len(loadouts):
-            uid = await self._next_bot_user_id()
-            await self._insert_bot_user(uid, f"🤖 {name} #{len(members) + 1}", 0.0, clan_id)
-            members.append(uid)
+        missing = len(loadouts) - len(members)
+        if missing > 0:
+            new_ids = await self._alloc_bot_user_ids(missing)
+            await self.users.insert_many([
+                self._bot_user_doc(uid, f"🤖 {name} #{len(members) + i + 1}", 0.0, clan_id)
+                for i, uid in enumerate(new_ids)
+            ])
+            members.extend(new_ids)
 
         lineup, submissions = [], {}
         for uid, loadout in zip(members, loadouts):

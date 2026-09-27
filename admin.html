@@ -970,18 +970,30 @@ async function loadBotClanStatus() {
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
 
+// Пока запрос идёт, кнопка неактивна и подписана «Создаю…» — повторное
+// нажатие не отправит второй параллельный запрос.
+async function withBusyButton(btn, busyText, fn) {
+    if (btn.disabled) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = busyText;
+    try { await fn(); } finally { btn.disabled = false; btn.textContent = label; }
+}
+
 document.getElementById('botClanCreateBtn').onclick = async () => {
     const name = document.getElementById('botClanName').value.trim() || 'Bot Clan';
     const clan_power = Number(document.getElementById('botClanPower').value) || 0;
     const member_count = Number(document.getElementById('botClanMembers').value) || 1;
-    try {
-        await api('/admin/api/clans/bots', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, clan_power, member_count }),
-        });
-        toast('Бот-клан создан');
-        loadClans();
-    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    await withBusyButton(document.getElementById('botClanCreateBtn'), 'Создаю…', async () => {
+        try {
+            await api('/admin/api/clans/bots', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, clan_power, member_count }),
+            });
+            toast('Бот-клан создан');
+            loadClans();
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
 };
 
 document.getElementById('botBulkCreateBtn').onclick = async () => {
@@ -989,25 +1001,27 @@ document.getElementById('botBulkCreateBtn').onclick = async () => {
     const min_power = Number(document.getElementById('botBulkMin').value) || 0;
     const max_power = Number(document.getElementById('botBulkMax').value) || 0;
     const member_count = Number(document.getElementById('botBulkMembers').value) || 1;
-    if (!confirm(`Создать ${count} тестовых кланов-ботов? Они будут видны в общем рейтинге и попадут в реальный автоматический турнир Топ-32.`)) return;
-    try {
-        const data = await api('/admin/api/clans/bots/bulk', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ count, min_power, max_power, member_count }),
-        });
-        toast(`Создано ботов: ${data.created}`);
-        loadClans();
-    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    if (!confirm(`Создать ${count} тестовых кланов-ботов? Они будут видны в общем рейтинге и попадут в турнир при следующем запуске.`)) return;
+    await withBusyButton(document.getElementById('botBulkCreateBtn'), `Создаю ${count} кланов…`, async () => {
+        try {
+            const data = await api('/admin/api/clans/bots/bulk', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count, min_power, max_power, member_count }),
+            });
+            toast(`Создано ботов: ${data.created}`);
+            loadClans();
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
 };
 
-document.getElementById('botClanEquipBtn').onclick = async () => {
+document.getElementById('botClanEquipBtn').onclick = () => withBusyButton(document.getElementById('botClanEquipBtn'), 'Одеваю…', async () => {
     try {
         const data = await api('/admin/api/clans/bots/equip', { method: 'POST' });
         toast(data.equipped ? `Одето клан-ботов: ${data.equipped}` : 'Все клан-боты уже готовы к бою');
         (data.errors || []).forEach(err => toast(`Не удалось одеть «${err.clan}»: ${err.error}`, true));
         loadClans();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
-};
+});
 
 document.getElementById('botClanClearBtn').onclick = async () => {
     if (!confirm('Удалить ВСЕХ тестовых клан-ботов? Реальных игроков это не затронет.')) return;
