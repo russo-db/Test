@@ -2702,8 +2702,9 @@ async def _advance_clan_bracket(tournament: dict) -> None:
         battle_log: list = []
 
         if a_id and b_id:
-            fighters_a = await _clan_roster_fighters(await store.get_clan(a_id))
-            fighters_b = await _clan_roster_fighters(await store.get_clan(b_id))
+            clan_a, clan_b = await store.get_clan(a_id), await store.get_clan(b_id)
+            fighters_a = await _clan_roster_fighters(clan_a)
+            fighters_b = await _clan_roster_fighters(clan_b)
             if fighters_a and fighters_b:
                 result = clan_battle_simulate(f"{tournament['cycle']}:{idx}", fighters_a, fighters_b)
                 battle_log = result["log"]
@@ -2715,6 +2716,17 @@ async def _advance_clan_bracket(tournament: dict) -> None:
                 winner_id, winner_name = a_id, match.get("clan_a_name")  # соперник не подал расстановку
             elif fighters_b:
                 winner_id, winner_name = b_id, match.get("clan_b_name")
+            elif clan_a or clan_b:
+                # Расстановку не подал никто (например, тестовые клан-боты) —
+                # проходит сильнейший по clan_power, при равенстве — clan_a
+                # (он выше посеян), чтобы сетка не застревала на «TBD».
+                # Распущенный клан (get_clan → None) проигрывает существующему.
+                power_a = float(clan_a.get("clan_power") or 0) if clan_a else -1.0
+                power_b = float(clan_b.get("clan_power") or 0) if clan_b else -1.0
+                if power_b > power_a:
+                    winner_id, winner_name = b_id, match.get("clan_b_name")
+                else:
+                    winner_id, winner_name = a_id, match.get("clan_a_name")
         elif a_id:
             winner_id, winner_name = a_id, match.get("clan_a_name")  # технический бай
         elif b_id:
