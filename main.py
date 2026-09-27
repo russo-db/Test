@@ -82,7 +82,7 @@ def apply_config(cfg: dict):
     global NEST_ITEM_TYPES, NEST_TYPE_ORDER, NEST_SHARD_DAILY_LIMIT
     global COMBAT_BASE_STATS, CLAN_CFG, CLAN_CREATE_COST_GRAM, CLAN_CREATE_COST_GOLD, CLAN_CREATE_COST_MEAT
     global CLAN_MEMBER_LIMIT, CLAN_INITIAL_OPEN_SLOTS, CLAN_SLOT_PRICE_GRAM, CLAN_BURN_POWER_BY_TIER
-    global CLAN_TOURNAMENT_SIZE, CLAN_TOURNAMENT_DAYS, CLAN_ROSTER_SIZE
+    global CLAN_ROSTER_SIZE
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -196,8 +196,6 @@ def apply_config(cfg: dict):
     CLAN_INITIAL_OPEN_SLOTS = int(CLAN_CFG.get("initial_open_slots", 2))
     CLAN_SLOT_PRICE_GRAM = float(CLAN_CFG.get("slot_price_gram", 5))
     CLAN_BURN_POWER_BY_TIER = {k: float(v) for k, v in (CLAN_CFG.get("burn_power_by_tier") or {}).items()}
-    CLAN_TOURNAMENT_SIZE = int(CLAN_CFG.get("tournament_size", 32))
-    CLAN_TOURNAMENT_DAYS = int(CLAN_CFG.get("tournament_days", 24))
     CLAN_ROSTER_SIZE = int(CLAN_CFG.get("roster_size", 10))
 
 
@@ -1450,6 +1448,10 @@ class AdminBulkCreateBotClans(BaseModel):
     member_count: int = 10
 
 
+class AdminClanTournamentStart(BaseModel):
+    size: int
+
+
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
@@ -2480,35 +2482,81 @@ def _clan_seed_order(n: int) -> list:
     return order
 
 
-# Структура турнирной сетки Топ-32 на 24 дня (см. build_clan_bracket):
-# раунд -> (сколько матчей, с какого дня начинается, сколько матчей в день).
-CLAN_ROUND_SPECS = [
-    ("r32", 16, 1, 2),   # 1/16 финала — дни 1-8, 2 матча/день
-    ("r16", 8, 9, 1),    # 1/8 финала — дни 9-16, 1 матч/день
-    ("r8", 4, 17, 1),    # 1/4 финала — дни 17-20
-    ("r4", 2, 21, 1),    # 1/2 финала — дни 21-22
-]
-# Индекс первого матча раунда в плоском списке bracket и число матчей в нём.
-CLAN_ROUND_OFFSETS = {"r32": (0, 16), "r16": (16, 8), "r8": (24, 4), "r4": (28, 2), "r3rd": (30, 1), "final": (31, 1)}
+# Турнир кланов сам ботов/NPC не генерирует — участвуют только кланы, уже
+# существующие на сервере, состав замораживается один раз в момент ручного запуска
+# админом (см. /admin/api/clan_tournament/start). Один игровой день ==
+# ровно 24 реальных часа (IS_PRODUCTION_MODE на клиенте — index.html).
+CLAN_TOURNAMENT_SIZES = (8, 16, 32)
+# Матчи открываются строго в это время (UTC) каждого турнирного дня —
+# см. clan_match_start_time.
+CLAN_MATCH_HOUR_UTC = 20
+# Цепочка раундов на вылет от старшего к младшему и их параметры (сколько
+# матчей в раунде и сколько матчей в день) — тот же костяк раскладки,
+# что и в изначальной фиксированной Топ-32 сетке, просто сетка меньшего
+# масштаба (8/16) начинается не с r32, а сразу с соответствующего звена
+# цепочки (см. clan_round_specs_for_size).
+CLAN_ROUND_CHAIN = ["r32", "r16", "r8", "r4"]
+CLAN_ROUND_MATCH_INFO = {"r32": (16, 2), "r16": (8, 1), "r8": (4, 1), "r4": (2, 1)}
 
 
-def build_clan_bracket(clans: list) -> list:
-    """Строит турнирную сетку Топ-32 (см. reconcile_clan_tournament) —
-    только первый раунд получает реальных участников (посев по clan_power,
-    см. _clan_seed_order); все последующие матчи, включая матч за 3-е
-    место и финал, начинаются с пустых слотов, которые заполняются по мере
+def clan_round_specs_for_size(size: int) -> tuple:
+    """Раунды плей-офф для выбранного масштаба турнира (8/16/32) —
+    список (round_key, число_матчей, день_начала, матчей_в_день) плюс
+    день матча за 3-е место. Раскладка размера n начинается прямо со
+    звена 'r{n}' цепочки CLAN_ROUND_CHAIN — раунд «r16» устроен ОДИНАКОВО
+    и в турнире на 32 клана (как второй раунд), и в турнире на 16 (как
+    первый), так что вся арифметика дней ниже переиспользуется как есть."""
+    start = CLAN_ROUND_CHAIN.index(f"r{size}")
+    specs, day = [], 1
+    for round_key in CLAN_ROUND_CHAIN[start:]:
+        match_count, per_day = CLAN_ROUND_MATCH_INFO[round_key]
+        specs.append((round_key, match_count, day, per_day))
+        day += -(-match_count // per_day)  # ceil division
+    return specs, day  # day == день матча за 3-е место; день финала — day+1
+
+
+def clan_round_offsets(size: int) -> dict:
+    """Индекс первого матча каждого раунда в плоском списке bracket и
+    число матчей в нём — производится от size, не хранится отдельно."""
+    specs, day_3rd = clan_round_specs_for_size(size)
+    offsets, idx = {}, 0
+    for round_key, match_count, _, _ in specs:
+        offsets[round_key] = (idx, match_count)
+        idx += match_count
+    offsets["r3rd"] = (idx, 1)
+    offsets["final"] = (idx + 1, 1)
+    return offsets
+
+
+def clan_match_start_time(start_at: float, day: int) -> float:
+    """Абсолютное серверное время открытия матча — полночь дня запуска
+    турнира (start_at) + (day-1) полных суток + CLAN_MATCH_HOUR_UTC часов.
+    Строго фиксированное время дня, как того требует релизная механика
+    (см. CLAN_MATCH_HOUR_UTC)."""
+    return start_at + (day - 1) * 86400 + CLAN_MATCH_HOUR_UTC * 3600
+
+
+def build_clan_bracket(clans: list, size: int) -> list:
+    """Строит турнирную сетку выбранного масштаба (8/16/32 — см.
+    CLAN_TOURNAMENT_SIZES) из уже существующих кланов сервера — сама ботов не
+    генерирует: только первый раунд получает участников (посев по clan_power, см.
+    _clan_seed_order); все последующие матчи, включая матч за 3-е место и
+    финал, начинаются с пустых слотов, которые заполняются по мере
     разрешения предыдущих матчей (см. _advance_clan_bracket). Если
-    зарегистрированных кланов меньше 32 — недостающие места сетки первого
-    раунда становятся техническими «бай» (пустой слот, автопобеда соперника)."""
-    n = CLAN_TOURNAMENT_SIZE
-    seeds = _clan_seed_order(n)
-    slots = [None] * n
+    кланов меньше size — недостающие места сетки первого раунда
+    становятся техническими «бай» (пустой слот, автопобеда соперника).
+    clans должен уже быть отфильтрован/обрезан до top-size вызывающей
+    стороной (см. /admin/api/clan_tournament/start — clan_count >= size
+    проверяется ДО вызова этой функции)."""
+    seeds = _clan_seed_order(size)
+    slots = [None] * size
     for i, seed in enumerate(seeds):
         idx = seed - 1
         slots[i] = clans[idx] if idx < len(clans) else None
 
+    specs, day_3rd = clan_round_specs_for_size(size)
     bracket = []
-    for round_idx, (round_key, match_count, day_start, per_day) in enumerate(CLAN_ROUND_SPECS):
+    for round_idx, (round_key, match_count, day_start, per_day) in enumerate(specs):
         for i in range(match_count):
             a = slots[2 * i] if round_idx == 0 else None
             b = slots[2 * i + 1] if round_idx == 0 else None
@@ -2518,33 +2566,35 @@ def build_clan_bracket(clans: list) -> list:
                 "clan_b_id": b["id"] if b else None, "clan_b_name": b["name"] if b else None,
                 "resolved": False, "winner_id": None, "winner_name": None, "battle_log": [],
             })
-    bracket.append({"round": "r3rd", "day": 23, "clan_a_id": None, "clan_a_name": None,
+    bracket.append({"round": "r3rd", "day": day_3rd, "clan_a_id": None, "clan_a_name": None,
                      "clan_b_id": None, "clan_b_name": None, "resolved": False,
                      "winner_id": None, "winner_name": None, "battle_log": []})
-    bracket.append({"round": "final", "day": 24, "clan_a_id": None, "clan_a_name": None,
+    bracket.append({"round": "final", "day": day_3rd + 1, "clan_a_id": None, "clan_a_name": None,
                      "clan_b_id": None, "clan_b_name": None, "resolved": False,
                      "winner_id": None, "winner_name": None, "battle_log": []})
     return bracket
 
 
-def _clan_next_match_for_winner(round_key: str, local_idx: int) -> Optional[tuple]:
+def _clan_next_match_for_winner(round_key: str, local_idx: int, size: int) -> Optional[tuple]:
     """Куда попадает победитель матча round_key[local_idx] — (индекс
     следующего матча в bracket, слот 'clan_a'/'clan_b'). None — для
     финала и матча за 3-е место (дальше сетки нет)."""
-    next_offset = {"r32": 16, "r16": 24, "r8": 28}.get(round_key)
-    if next_offset is not None:
-        return (next_offset + local_idx // 2, "clan_a" if local_idx % 2 == 0 else "clan_b")
     if round_key == "r4":
-        return (31, "clan_a" if local_idx == 0 else "clan_b")  # финал
-    return None
+        return (clan_round_offsets(size)["final"][0], "clan_a" if local_idx == 0 else "clan_b")
+    if round_key not in CLAN_ROUND_CHAIN:
+        return None  # "r3rd"/"final" сами уже конец сетки
+    chain_pos = CLAN_ROUND_CHAIN.index(round_key)
+    next_key = CLAN_ROUND_CHAIN[chain_pos + 1]
+    next_offset = clan_round_offsets(size)[next_key][0]
+    return (next_offset + local_idx // 2, "clan_a" if local_idx % 2 == 0 else "clan_b")
 
 
-def _clan_next_match_for_loser(round_key: str, local_idx: int) -> Optional[tuple]:
+def _clan_next_match_for_loser(round_key: str, local_idx: int, size: int) -> Optional[tuple]:
     """Проигравший полуфинала (round_key == 'r4') уходит в матч за 3-е
     место — единственный случай, когда исход матча кланов важен и
     победителю, и проигравшему."""
     if round_key == "r4":
-        return (30, "clan_a" if local_idx == 0 else "clan_b")
+        return (clan_round_offsets(size)["r3rd"][0], "clan_a" if local_idx == 0 else "clan_b")
     return None
 
 
@@ -2574,12 +2624,6 @@ async def _clan_roster_fighters(clan: Optional[dict]) -> list:
     return fighters
 
 
-def clan_tournament_cycle_index(moment: Optional[float] = None) -> int:
-    """Порядковый номер турнирного цикла кланов — тот же принцип, что и
-    arena_season_index, но с шагом CLAN_TOURNAMENT_DAYS суток."""
-    return int((moment if moment is not None else time.time()) // (CLAN_TOURNAMENT_DAYS * 86400))
-
-
 async def _advance_clan_bracket(tournament: dict) -> None:
     """Разрешает все матчи текущего турнира, чей день уже наступил и кто
     ещё не resolved — в порядке индекса bracket, так что победитель/
@@ -2594,11 +2638,12 @@ async def _advance_clan_bracket(tournament: dict) -> None:
     now = time.time()
     bracket = tournament["bracket"]
     start_at = tournament["start_at"]
+    size = tournament["size"]
 
     for idx, match in enumerate(bracket):
         if match.get("resolved"):
             continue
-        if start_at + (match.get("day", 1) - 1) * 86400 > now:
+        if clan_match_start_time(start_at, match.get("day", 1)) > now:
             continue
 
         a_id, b_id = match.get("clan_a_id"), match.get("clan_b_id")
@@ -2632,9 +2677,9 @@ async def _advance_clan_bracket(tournament: dict) -> None:
         )
 
         round_key = match["round"]
-        local_idx = idx - CLAN_ROUND_OFFSETS[round_key][0]
+        local_idx = idx - clan_round_offsets(size)[round_key][0]
         if winner_id:
-            target = _clan_next_match_for_winner(round_key, local_idx)
+            target = _clan_next_match_for_winner(round_key, local_idx, size)
             if target:
                 target_idx, slot = target
                 if await store.set_clan_match_participant(target_idx, slot, winner_id, winner_name):
@@ -2643,7 +2688,7 @@ async def _advance_clan_bracket(tournament: dict) -> None:
         if round_key == "r4":
             loser_id = b_id if winner_id == a_id else (a_id if winner_id == b_id else None)
             loser_name = match.get("clan_b_name") if loser_id == b_id else match.get("clan_a_name")
-            target = _clan_next_match_for_loser(round_key, local_idx)
+            target = _clan_next_match_for_loser(round_key, local_idx, size)
             if target and loser_id:
                 target_idx, slot = target
                 if await store.set_clan_match_participant(target_idx, slot, loser_id, loser_name):
@@ -2651,26 +2696,25 @@ async def _advance_clan_bracket(tournament: dict) -> None:
                     bracket[target_idx][f"{slot}_name"] = loser_name
 
 
-async def reconcile_clan_tournament() -> None:
-    """Лениво продвигает турнир кланов — та же гонка-и-победитель схема,
-    что и у reconcile_arena_season: если текущий сохранённый цикл устарел,
-    сначала строим новую сетку по текущему Топ-32 силы (build_clan_bracket)
-    и пробуем её атомарно записать (store.try_start_clan_tournament) —
-    выигрывает ровно один из конкурентных вызовов, остальные просто
-    перечитывают то, что записал победитель. Затем — вне зависимости от
-    того, кто именно запустил цикл — разрешаем все назревшие матчи
-    (_advance_clan_bracket), что дешёвый no-op, пока день очередного матча
-    не наступил."""
-    cycle = clan_tournament_cycle_index()
+async def current_clan_tournament() -> Optional[dict]:
+    """Текущий турнир, запущенный админом, или None. Документ старого
+    автоматического (календарного) турнира без поля size считается
+    отсутствующим: его сетка несовместима с ручной схемой, а новый запуск
+    из админки просто перезапишет его (см. try_launch_clan_tournament)."""
     tournament = await store.get_clan_tournament()
-    if tournament is None or int(tournament.get("cycle", -1)) < cycle:
-        top_clans = await store.list_top_clans(CLAN_TOURNAMENT_SIZE)
-        bracket = build_clan_bracket(top_clans)
-        start_at = cycle * CLAN_TOURNAMENT_DAYS * 86400
-        if await store.try_start_clan_tournament(cycle, start_at, bracket):
-            tournament = {"_id": "current", "cycle": cycle, "start_at": start_at, "bracket": bracket}
-        else:
-            tournament = await store.get_clan_tournament()
+    if not tournament or "size" not in tournament:
+        return None
+    return tournament
+
+
+async def reconcile_clan_tournament() -> None:
+    """Продвигает уже запущенный админом турнир (см.
+    /admin/api/clan_tournament/start) — разрешает все назревшие матчи
+    (_advance_clan_bracket), что дешёвый no-op, пока время очередного
+    матча не наступило. Турнир НЕ запускается и не перезапускается
+    автоматически — пока админ не нажмёт «Запустить Турнир», здесь просто
+    нечего продвигать."""
+    tournament = await current_clan_tournament()
     if tournament:
         await _advance_clan_bracket(tournament)
 
@@ -3009,16 +3053,24 @@ async def clan_lineup_approve(request: ClanLineupApproveRequest, x_telegram_init
 
 @app.get("/api/clan/tournament")
 async def clan_tournament_view(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Турнирная сетка Топ-32 кланов целиком — вкладка «Битва Кланов».
-    battle_log каждого матча здесь не отдаётся (может быть длинным) — за
-    ним отдельно, см. /api/clan/tournament/match/{match_index}."""
+    """Турнирная сетка выбранного админом масштаба целиком — вкладка
+    «Битва Кланов». battle_log каждого матча здесь не отдаётся (может
+    быть длинным) — за ним отдельно, см. /api/clan/tournament/match/
+    {match_index}. Турнир запускается ТОЛЬКО вручную админом (см.
+    /admin/api/clan_tournament/start) — если он ещё не запущен, отдаём
+    пустую сетку. Каждому матчу добавлен абсолютный start_time (эпоха) —
+    клиент считает от него обратный отсчёт до открытия «Прямого Эфира»."""
     authenticate(x_telegram_init_data, user_id)
     await reconcile_clan_tournament()
-    tournament = await store.get_clan_tournament()
+    tournament = await current_clan_tournament()
     if not tournament:
-        return {"cycle": 0, "start_at": 0, "bracket": []}
-    bracket = [{k: v for k, v in match.items() if k != "battle_log"} for match in tournament["bracket"]]
-    return {"cycle": tournament["cycle"], "start_at": tournament["start_at"], "bracket": bracket}
+        return {"cycle": 0, "size": 0, "start_at": 0, "bracket": []}
+    bracket = []
+    for match in tournament["bracket"]:
+        m = {k: v for k, v in match.items() if k != "battle_log"}
+        m["start_time"] = clan_match_start_time(tournament["start_at"], match.get("day", 1))
+        bracket.append(m)
+    return {"cycle": tournament["cycle"], "size": tournament["size"], "start_at": tournament["start_at"], "bracket": bracket}
 
 
 @app.get("/api/clan/tournament/match/{match_index}")
@@ -3027,7 +3079,7 @@ async def clan_tournament_match(match_index: int, user_id: int,
     """Один разрешённый матч турнира вместе с battle_log — вкладка
     «Прямой Эфир» проигрывает его на Canvas дуэль за дуэлью."""
     authenticate(x_telegram_init_data, user_id)
-    tournament = await store.get_clan_tournament()
+    tournament = await current_clan_tournament()
     bracket = (tournament or {}).get("bracket") or []
     if not (0 <= match_index < len(bracket)):
         raise HTTPException(status_code=404, detail="Матч не найден")
@@ -4372,27 +4424,72 @@ async def admin_force_disband_clan(clan_id: str, _: None = Depends(require_admin
     return {"status": "success"}
 
 
-# --- АДМИН: МОНИТОРИНГ ТУРНИРА КЛАНОВ ---
-# Только просмотр текущего состояния сетки/дня + ручной триггер продвижения.
-# Сам механизм запуска турнира НЕ меняется здесь (остаётся автоматическим
-# по календарному циклу, см. reconcile_clan_tournament).
+# --- АДМИН: ТУРНИР КЛАНОВ (ручной запуск) ---
 
 @app.get("/admin/api/clan_tournament")
-async def admin_clan_tournament_view(_: None = Depends(require_admin)):
-    tournament = await store.get_clan_tournament()
-    if not tournament:
-        return {"tournament": None}
-    bracket = [{k: v for k, v in m.items() if k != "battle_log"} for m in tournament["bracket"]]
-    return {"tournament": {"cycle": tournament["cycle"], "start_at": tournament["start_at"], "bracket": bracket}}
+async def admin_clan_tournament_status(_: None = Depends(require_admin)):
+    """Текущее состояние турнира кланов для админ-панели: сколько кланов
+    сейчас на сервере (включая созданных админом тестовых клан-ботов),
+    допустимые масштабы турнира и, если турнир уже запущен, его сетка и
+    статус."""
+    clan_count = await store.count_clans()
+    tournament = await current_clan_tournament()
+    view = None
+    if tournament:
+        finished = bool(tournament["bracket"] and tournament["bracket"][-1].get("resolved"))
+        bracket = []
+        for match in tournament["bracket"]:
+            m = {k: v for k, v in match.items() if k != "battle_log"}
+            m["start_time"] = clan_match_start_time(tournament["start_at"], match.get("day", 1))
+            bracket.append(m)
+        view = {
+            "cycle": tournament["cycle"], "size": tournament["size"],
+            "start_at": tournament["start_at"], "finished": finished, "bracket": bracket,
+        }
+    return {"clan_count": clan_count, "sizes": list(CLAN_TOURNAMENT_SIZES), "tournament": view}
+
+
+@app.post("/admin/api/clan_tournament/start")
+async def admin_start_clan_tournament(body: AdminClanTournamentStart, _: None = Depends(require_admin)):
+    """«[Админ] Утвердить состав и Запустить Турнир»: берёт ровно первые
+    size сильнейших кланов сервера по clan_power (сам турнир ботов не
+    генерирует — только те кланы, что уже есть, в т.ч. созданные админом
+    тестовые), строит сетку и замораживает состав. Если кланов меньше
+    выбранного масштаба — отказывает, не запуская турнир."""
+    if body.size not in CLAN_TOURNAMENT_SIZES:
+        raise HTTPException(status_code=400, detail="Недопустимый масштаб турнира")
+
+    clan_count = await store.count_clans()
+    if clan_count < body.size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недостаточно кланов для этого режима: нужно {body.size}, сейчас зарегистрировано {clan_count}",
+        )
+
+    top_clans = await store.list_top_clans(body.size)
+    bracket = build_clan_bracket(top_clans, body.size)
+    start_at = (int(time.time()) // 86400) * 86400  # полночь UTC текущих суток — день 1 турнира
+    result = await store.try_launch_clan_tournament(bracket, body.size, start_at)
+    if result != "ok":
+        raise HTTPException(status_code=400, detail="Турнир уже идёт — дождитесь его завершения или отмените его")
+    return {"status": "success"}
 
 
 @app.post("/admin/api/clan_tournament/reconcile")
 async def admin_clan_tournament_reconcile(_: None = Depends(require_admin)):
-    """Немедленно продвигает турнир (те же назревшие матчи, что и так
-    разрешились бы при следующем обращении игрока к /api/clan/tournament)
-    — удобно админу, чтобы не ждать чужого запроса после правки багов."""
+    """Немедленно разрешает назревшие матчи — те же, что разрешились бы
+    при следующем обращении игрока к /api/clan/tournament."""
     await reconcile_clan_tournament()
-    return await admin_clan_tournament_view()
+    return await admin_clan_tournament_status()
+
+
+@app.post("/admin/api/clan_tournament/cancel")
+async def admin_cancel_clan_tournament(_: None = Depends(require_admin)):
+    """Отменяет текущий турнир целиком (сетка удаляется, результаты не
+    сохраняются) — чтобы перезапустить его с другим составом/масштабом,
+    не дожидаясь финала. Кланы и игроки не затрагиваются."""
+    await store.cancel_clan_tournament()
+    return {"status": "success"}
 
 
 # --- TELEGRAM BOT LOGIC ---

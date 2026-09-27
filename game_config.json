@@ -350,8 +350,6 @@
     "initial_open_slots": 2,
     "slot_price_gram": 5,
     "burn_power_by_tier": { "common": 1, "uncommon": 3, "rare": 15, "epic": 50, "legendary": 250, "mythical": 1000 },
-    "tournament_size": 32,
-    "tournament_days": 24,
     "roster_size": 10
   },
   "nest": {
