@@ -1450,6 +1450,16 @@ class AdminBulkCreateBotClans(BaseModel):
 
 class AdminClanTournamentStart(BaseModel):
     size: int
+    match_minute: Optional[int] = None  # время матчей, минуты от полуночи UTC; None — CLAN_MATCH_HOUR_UTC
+
+
+class AdminClanTournamentMatchTime(BaseModel):
+    match_minute: int  # минуты от полуночи UTC (0..1439) — для всех ещё не сыгранных матчей
+
+
+class AdminClanMatchTime(BaseModel):
+    start_time: Optional[float] = None  # абсолютное время (эпоха, сек); None — вернуть расписание турнира
+    now: bool = False  # открыть матч прямо сейчас (по серверным часам)
 
 
 # --- FASTAPI SETUP ---
@@ -2487,9 +2497,12 @@ def _clan_seed_order(n: int) -> list:
 # админом (см. /admin/api/clan_tournament/start). Один игровой день ==
 # ровно 24 реальных часа (IS_PRODUCTION_MODE на клиенте — index.html).
 CLAN_TOURNAMENT_SIZES = (8, 16, 32)
-# Матчи открываются строго в это время (UTC) каждого турнирного дня —
-# см. clan_match_start_time.
+# Матчи по умолчанию открываются в это время (UTC) каждого турнирного дня —
+# см. clan_match_start_time. Админ может сменить время матчей всего турнира
+# (поле match_minute документа турнира) или перенести отдельный матч
+# (start_time_override матча) — см. clan_tournament_match_time.
 CLAN_MATCH_HOUR_UTC = 20
+CLAN_MATCH_MINUTE_DEFAULT = CLAN_MATCH_HOUR_UTC * 60
 # Цепочка раундов на вылет от старшего к младшему и их параметры (сколько
 # матчей в раунде и сколько матчей в день) — тот же костяк раскладки,
 # что и в изначальной фиксированной Топ-32 сетке, просто сетка меньшего
@@ -2528,12 +2541,48 @@ def clan_round_offsets(size: int) -> dict:
     return offsets
 
 
-def clan_match_start_time(start_at: float, day: int) -> float:
-    """Абсолютное серверное время открытия матча — полночь дня запуска
-    турнира (start_at) + (day-1) полных суток + CLAN_MATCH_HOUR_UTC часов.
-    Строго фиксированное время дня, как того требует релизная механика
-    (см. CLAN_MATCH_HOUR_UTC)."""
-    return start_at + (day - 1) * 86400 + CLAN_MATCH_HOUR_UTC * 3600
+def clan_match_start_time(start_at: float, day: int, match_minute: int = CLAN_MATCH_MINUTE_DEFAULT) -> float:
+    """Абсолютное серверное время открытия матча по расписанию турнира —
+    полночь дня запуска (start_at) + (day-1) полных суток + match_minute
+    минут (по умолчанию CLAN_MATCH_HOUR_UTC часов)."""
+    return start_at + (day - 1) * 86400 + match_minute * 60
+
+
+def clan_tournament_match_time(tournament: dict, match: dict) -> float:
+    """Фактическое время открытия матча: ручной перенос админом
+    (start_time_override), иначе расписание турнира с его match_minute."""
+    override = match.get("start_time_override")
+    if override is not None:
+        return float(override)
+    return clan_match_start_time(
+        tournament["start_at"], match.get("day", 1),
+        int(tournament.get("match_minute", CLAN_MATCH_MINUTE_DEFAULT)),
+    )
+
+
+def _clan_feeder_indices(size: int) -> dict:
+    """Для каждого матча — индексы матчей, чьи победители/проигравшие
+    заполняют его слоты. Матч не разыгрывается, пока они не сыграны, даже
+    если админ перенёс его раньше них (см. _advance_clan_bracket)."""
+    feeders: dict = {}
+    for round_key, (offset, count) in clan_round_offsets(size).items():
+        for local_idx in range(count):
+            for target in (_clan_next_match_for_winner(round_key, local_idx, size),
+                           _clan_next_match_for_loser(round_key, local_idx, size)):
+                if target:
+                    feeders.setdefault(target[0], []).append(offset + local_idx)
+    return feeders
+
+
+def clan_tournament_view_bracket(tournament: dict) -> list:
+    """Сетка для клиента/админки — без battle_log, с абсолютным start_time
+    каждого матча (см. clan_tournament_match_time)."""
+    bracket = []
+    for match in tournament["bracket"]:
+        m = {k: v for k, v in match.items() if k != "battle_log"}
+        m["start_time"] = clan_tournament_match_time(tournament, match)
+        bracket.append(m)
+    return bracket
 
 
 def build_clan_bracket(clans: list, size: int) -> list:
@@ -2637,14 +2686,16 @@ async def _advance_clan_bracket(tournament: dict) -> None:
     reconcile."""
     now = time.time()
     bracket = tournament["bracket"]
-    start_at = tournament["start_at"]
     size = tournament["size"]
+    feeders = _clan_feeder_indices(size)
 
     for idx, match in enumerate(bracket):
         if match.get("resolved"):
             continue
-        if clan_match_start_time(start_at, match.get("day", 1)) > now:
+        if clan_tournament_match_time(tournament, match) > now:
             continue
+        if any(not bracket[f].get("resolved") for f in feeders.get(idx, [])):
+            continue  # матч перенесён раньше предыдущего раунда — ждём его
 
         a_id, b_id = match.get("clan_a_id"), match.get("clan_b_id")
         winner_id = winner_name = None
@@ -3065,12 +3116,10 @@ async def clan_tournament_view(user_id: int, x_telegram_init_data: Optional[str]
     tournament = await current_clan_tournament()
     if not tournament:
         return {"cycle": 0, "size": 0, "start_at": 0, "bracket": []}
-    bracket = []
-    for match in tournament["bracket"]:
-        m = {k: v for k, v in match.items() if k != "battle_log"}
-        m["start_time"] = clan_match_start_time(tournament["start_at"], match.get("day", 1))
-        bracket.append(m)
-    return {"cycle": tournament["cycle"], "size": tournament["size"], "start_at": tournament["start_at"], "bracket": bracket}
+    return {
+        "cycle": tournament["cycle"], "size": tournament["size"], "start_at": tournament["start_at"],
+        "bracket": clan_tournament_view_bracket(tournament),
+    }
 
 
 @app.get("/api/clan/tournament/match/{match_index}")
@@ -4436,17 +4485,17 @@ async def admin_clan_tournament_status(_: None = Depends(require_admin)):
     tournament = await current_clan_tournament()
     view = None
     if tournament:
-        finished = bool(tournament["bracket"] and tournament["bracket"][-1].get("resolved"))
-        bracket = []
-        for match in tournament["bracket"]:
-            m = {k: v for k, v in match.items() if k != "battle_log"}
-            m["start_time"] = clan_match_start_time(tournament["start_at"], match.get("day", 1))
-            bracket.append(m)
+        finished = bool(tournament["bracket"]) and all(m.get("resolved") for m in tournament["bracket"])
         view = {
             "cycle": tournament["cycle"], "size": tournament["size"],
-            "start_at": tournament["start_at"], "finished": finished, "bracket": bracket,
+            "start_at": tournament["start_at"], "finished": finished,
+            "match_minute": int(tournament.get("match_minute", CLAN_MATCH_MINUTE_DEFAULT)),
+            "bracket": clan_tournament_view_bracket(tournament),
         }
-    return {"clan_count": clan_count, "sizes": list(CLAN_TOURNAMENT_SIZES), "tournament": view}
+    return {
+        "clan_count": clan_count, "sizes": list(CLAN_TOURNAMENT_SIZES),
+        "default_match_minute": CLAN_MATCH_MINUTE_DEFAULT, "tournament": view,
+    }
 
 
 @app.post("/admin/api/clan_tournament/start")
@@ -4458,6 +4507,9 @@ async def admin_start_clan_tournament(body: AdminClanTournamentStart, _: None = 
     выбранного масштаба — отказывает, не запуская турнир."""
     if body.size not in CLAN_TOURNAMENT_SIZES:
         raise HTTPException(status_code=400, detail="Недопустимый масштаб турнира")
+    match_minute = CLAN_MATCH_MINUTE_DEFAULT if body.match_minute is None else body.match_minute
+    if not 0 <= match_minute < 1440:
+        raise HTTPException(status_code=400, detail="Недопустимое время матчей")
 
     clan_count = await store.count_clans()
     if clan_count < body.size:
@@ -4469,7 +4521,7 @@ async def admin_start_clan_tournament(body: AdminClanTournamentStart, _: None = 
     top_clans = await store.list_top_clans(body.size)
     bracket = build_clan_bracket(top_clans, body.size)
     start_at = (int(time.time()) // 86400) * 86400  # полночь UTC текущих суток — день 1 турнира
-    result = await store.try_launch_clan_tournament(bracket, body.size, start_at)
+    result = await store.try_launch_clan_tournament(bracket, body.size, start_at, match_minute)
     if result != "ok":
         raise HTTPException(status_code=400, detail="Турнир уже идёт — дождитесь его завершения или отмените его")
     return {"status": "success"}
@@ -4479,6 +4531,36 @@ async def admin_start_clan_tournament(body: AdminClanTournamentStart, _: None = 
 async def admin_clan_tournament_reconcile(_: None = Depends(require_admin)):
     """Немедленно разрешает назревшие матчи — те же, что разрешились бы
     при следующем обращении игрока к /api/clan/tournament."""
+    await reconcile_clan_tournament()
+    return await admin_clan_tournament_status()
+
+
+@app.post("/admin/api/clan_tournament/match_time")
+async def admin_set_clan_tournament_match_time(body: AdminClanTournamentMatchTime,
+                                               _: None = Depends(require_admin)):
+    """Меняет время дня (UTC), в которое открываются матчи турнира, — для
+    всех ещё не сыгранных матчей без ручного переноса. Если новое время уже
+    прошло, назревшие матчи разыгрываются сразу."""
+    if not 0 <= body.match_minute < 1440:
+        raise HTTPException(status_code=400, detail="Недопустимое время матчей")
+    if not await store.set_clan_tournament_match_minute(body.match_minute):
+        raise HTTPException(status_code=404, detail="Турнир не запущен")
+    await reconcile_clan_tournament()
+    return await admin_clan_tournament_status()
+
+
+@app.post("/admin/api/clan_tournament/match/{match_index}/time")
+async def admin_set_clan_match_time(match_index: int, body: AdminClanMatchTime,
+                                    _: None = Depends(require_admin)):
+    """Переносит один ещё не сыгранный матч на другое время (now — открыть
+    прямо сейчас) или сбрасывает перенос (start_time=None) — матч снова
+    идёт по расписанию турнира. Матч всё равно ждёт, пока сыграны матчи
+    предыдущего раунда, которые заполняют его слоты."""
+    start_time = time.time() if body.now else body.start_time
+    if start_time is not None and start_time <= 0:
+        raise HTTPException(status_code=400, detail="Недопустимое время матча")
+    if not await store.set_clan_match_start_override(match_index, start_time):
+        raise HTTPException(status_code=404, detail="Матч не найден или уже сыгран")
     await reconcile_clan_tournament()
     return await admin_clan_tournament_status()
 

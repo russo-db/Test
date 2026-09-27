@@ -56,9 +56,9 @@ burned_power (см. поле игрока выше) всех ТЕКУЩИХ уч
 (см. /admin/api/clan_tournament/start в main.py), выбравшим масштаб
 8/16/32 (CLAN_TOURNAMENT_SIZES) — берутся ровно первые size сильнейших
 кланов по clan_power, состав замораживается на весь турнир —
-clan_tournament: {_id: "current", cycle, size, start_at, bracket:
+clan_tournament: {_id: "current", cycle, size, start_at, match_minute, bracket:
 [{round, day, clan_a_id, clan_a_name, clan_b_id, clan_b_name, resolved,
-winner_id, winner_name, battle_log}...]} (см. try_launch_clan_tournament
+winner_id, winner_name, battle_log, start_time_override?}...]} (см. try_launch_clan_tournament
 и reconcile_clan_tournament в main.py — турнир только лениво
 ПРОДВИГАЕТСЯ по дням/матчам между запусками, но никогда не запускается
 и не перезапускается сам).
@@ -1191,11 +1191,12 @@ class MongoStore:
     async def get_clan_tournament(self) -> Optional[dict]:
         return await self.clan_tournament.find_one({"_id": "current"})
 
-    async def try_launch_clan_tournament(self, bracket: list, size: int, start_at: float) -> str:
+    async def try_launch_clan_tournament(self, bracket: list, size: int, start_at: float,
+                                         match_minute: int = 20 * 60) -> str:
         """Админ вручную запускает турнир (кнопка «Утвердить состав и
         Запустить Турнир») — атомарно разрешает запуск только если
         предыдущего турнира нет вовсе, ИЛИ он уже полностью завершён
-        (финальный матч resolved); иначе отказывает — "already_running".
+        (сыграны все матчи); иначе отказывает — "already_running".
         При повторном запуске 'cycle' — просто счётчик версий документа
         (нужен клиенту для подписи "Турнир №N"), не привязан к
         календарному циклу: турнир больше не запускается сам."""
@@ -1203,7 +1204,8 @@ class MongoStore:
         if existing is None:
             await self.clan_tournament.update_one(
                 {"_id": "current"},
-                {"$setOnInsert": {"cycle": 0, "size": size, "start_at": start_at, "bracket": bracket}},
+                {"$setOnInsert": {"cycle": 0, "size": size, "start_at": start_at,
+                                  "match_minute": match_minute, "bracket": bracket}},
                 upsert=True,
             )
             fresh = await self.clan_tournament.find_one({"_id": "current"})
@@ -1215,19 +1217,44 @@ class MongoStore:
             # несовместим с ручной схемой, заменяется первым же запуском.
             result = await self.clan_tournament.update_one(
                 {"_id": "current", "size": {"$exists": False}},
-                {"$set": {"cycle": 0, "size": size, "start_at": start_at, "bracket": bracket}},
+                {"$set": {"cycle": 0, "size": size, "start_at": start_at,
+                          "match_minute": match_minute, "bracket": bracket}},
             )
             return "ok" if result.modified_count > 0 else "already_running"
 
-        if not (existing["bracket"] and existing["bracket"][-1].get("resolved")):
+        # Завершён — сыграны ВСЕ матчи (финал может быть перенесён админом
+        # раньше матча за 3-е место, см. set_clan_match_start_override).
+        if not (existing["bracket"] and all(m.get("resolved") for m in existing["bracket"])):
             return "already_running"
 
         prev_cycle = int(existing.get("cycle", 0))
         result = await self.clan_tournament.update_one(
-            {"_id": "current", "cycle": prev_cycle, f"bracket.{len(existing['bracket']) - 1}.resolved": True},
-            {"$set": {"cycle": prev_cycle + 1, "size": size, "start_at": start_at, "bracket": bracket}},
+            {"_id": "current", "cycle": prev_cycle, "bracket.resolved": {"$ne": False}},
+            {"$set": {"cycle": prev_cycle + 1, "size": size, "start_at": start_at,
+                      "match_minute": match_minute, "bracket": bracket}},
         )
         return "ok" if result.modified_count > 0 else "already_running"
+
+    async def set_clan_tournament_match_minute(self, match_minute: int) -> bool:
+        """Админ меняет время дня (минуты от полуночи UTC), в которое
+        открываются матчи текущего турнира. False — турнир не запущен."""
+        result = await self.clan_tournament.update_one(
+            {"_id": "current", "size": {"$exists": True}},
+            {"$set": {"match_minute": match_minute}},
+        )
+        return result.matched_count > 0
+
+    async def set_clan_match_start_override(self, match_index: int, start_time: Optional[float]) -> bool:
+        """Админ переносит один ещё не сыгранный матч на start_time (эпоха)
+        или, при None, возвращает его к расписанию турнира. False — матча с
+        таким индексом нет или он уже разрешён."""
+        field = f"bracket.{match_index}.start_time_override"
+        update = {"$set": {field: start_time}} if start_time is not None else {"$unset": {field: ""}}
+        result = await self.clan_tournament.update_one(
+            {"_id": "current", "size": {"$exists": True}, f"bracket.{match_index}.resolved": False},
+            update,
+        )
+        return result.matched_count > 0
 
     async def cancel_clan_tournament(self) -> None:
         """Админ отменяет текущий турнир — документ удаляется целиком, после

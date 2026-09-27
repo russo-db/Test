@@ -117,6 +117,12 @@
     .tourney-match .side.empty { color: #4a5578; }
     .tourney-match .vs { flex: 0 0 20px; color: #4a5578; text-align: center; }
     .tourney-match .countdown { flex: 0 0 auto; font-size: 11.5px; color: #f0b429; white-space: nowrap; }
+    .tourney-match .when { flex: 0 0 auto; font-size: 11.5px; color: #8b96b3; white-space: nowrap; }
+    .tourney-match .when.moved { color: #7cc4ff; }
+    .tourney-match .time-btn { padding: 3px 8px; font-size: 12px; flex: 0 0 auto; }
+    .time-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+    .time-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8b96b3; }
+    .time-row .hint { font-size: 12px; color: #8b96b3; align-self: center; }
 
     /* --- кланы: детальная карточка --- */
     .member-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
@@ -332,7 +338,8 @@
             <p class="muted">
                 Турнир сам не стартует: выбери масштаб и запусти его вручную. В сетку попадают сильнейшие по clan_power
                 кланы сервера (включая тестовых клан-ботов), состав замораживается в момент запуска. Матчи открываются
-                каждый день в 20:00 UTC.
+                каждый день в выбранное время (по умолчанию 20:00 UTC); время всех матчей или отдельного матча
+                можно поменять и во время турнира — кнопка 🕒 у матча.
             </p>
             <div class="card-grid" id="tournamentStatsGrid"></div>
             <button id="tournamentRefreshBtn">Обновить</button>
@@ -340,13 +347,24 @@
             <div id="tournamentSetup">
                 <h3 style="margin:24px 0 10px;">Запуск нового турнира</h3>
                 <div class="toolbar" id="tournamentSizeRow"></div>
+                <div class="time-row">
+                    <label>Время матчей (UTC) <input type="time" id="tournamentStartTime" value="20:00"></label>
+                    <span class="hint" id="tournamentStartTimeHint"></span>
+                </div>
                 <div id="tournamentWarning" style="color:#ff6b6b; margin:6px 0 12px; min-height:16px;"></div>
                 <button class="primary" id="tournamentStartBtn">[Админ] Утвердить состав и Запустить Турнир</button>
             </div>
 
-            <div class="toolbar" id="tournamentRunningControls" style="margin-top:18px;">
-                <button id="tournamentReconcileBtn">Продвинуть сейчас</button>
-                <button class="danger" id="tournamentCancelBtn">Отменить турнир</button>
+            <div id="tournamentRunningControls" style="margin-top:18px;">
+                <div class="time-row">
+                    <label>Время матчей (UTC) <input type="time" id="tournamentMatchTimeInput"></label>
+                    <button id="tournamentMatchTimeBtn">🕒 Изменить время всех матчей</button>
+                    <span class="hint" id="tournamentMatchTimeHint"></span>
+                </div>
+                <div class="toolbar">
+                    <button id="tournamentReconcileBtn">Продвинуть сейчас</button>
+                    <button class="danger" id="tournamentCancelBtn">Отменить турнир</button>
+                </div>
             </div>
 
             <h3 style="margin:24px 0 10px;">Текущая сетка</h3>
@@ -1121,7 +1139,31 @@ const TOURNEY_ROUND_LABELS = {
     r32: '1/16 финала', r16: '1/8 финала', r8: '1/4 финала',
     r4: '1/2 финала', r3rd: 'За 3-е место', final: 'Финал',
 };
-let tournamentState = { data: null, selectedSize: 32 };
+let tournamentState = { data: null, selectedSize: 32, startTimeTouched: false };
+
+function minuteToHHMM(minute) {
+    return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+function hhmmToMinute(value) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(value || '');
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+// «20:00 UTC = 23:00 по вашему времени» — чтобы не пересчитывать часовой пояс в уме.
+function utcMinuteLocalHint(minute) {
+    if (minute == null) return '';
+    const d = new Date(Date.UTC(2000, 0, 1, Math.floor(minute / 60), minute % 60));
+    return `= ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} по вашему времени`;
+}
+function fmtLocalDateTime(epochSec) {
+    const d = new Date(epochSec * 1000);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function toDatetimeLocalValue(epochSec) {
+    const d = new Date(epochSec * 1000);
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 let tournamentCountdownTimer = null;
 
 async function loadTournamentStatus() {
@@ -1171,6 +1213,16 @@ function renderTournamentPage() {
         };
     });
 
+    const startTimeInput = document.getElementById('tournamentStartTime');
+    if (!tournamentState.startTimeTouched) startTimeInput.value = minuteToHHMM(data.default_match_minute ?? 1200);
+    document.getElementById('tournamentStartTimeHint').textContent = utcMinuteLocalHint(hhmmToMinute(startTimeInput.value));
+    if (t) {
+        const matchTimeInput = document.getElementById('tournamentMatchTimeInput');
+        if (document.activeElement !== matchTimeInput) matchTimeInput.value = minuteToHHMM(t.match_minute);
+        document.getElementById('tournamentMatchTimeHint').textContent = utcMinuteLocalHint(hhmmToMinute(matchTimeInput.value));
+        document.getElementById('tournamentMatchTimeBtn').disabled = t.finished;
+    }
+
     const warnEl = document.getElementById('tournamentWarning');
     const startBtn = document.getElementById('tournamentStartBtn');
     if (data.clan_count < tournamentState.selectedSize) {
@@ -1217,13 +1269,69 @@ function renderTournamentBracket(t) {
                     <span class="side ${m.resolved && m.winner_id === m.clan_a_id ? 'win' : ''} ${!m.clan_a_id ? 'empty' : ''}">${m.clan_a_name || 'TBD'}</span>
                     <span class="vs">vs</span>
                     <span class="side ${m.resolved && m.winner_id === m.clan_b_id ? 'win' : ''} ${!m.clan_b_id ? 'empty' : ''}">${m.clan_b_name || 'TBD'}</span>
+                    <span class="when ${m.start_time_override != null ? 'moved' : ''}" title="${m.start_time_override != null ? 'Перенесён вручную' : 'По расписанию турнира'}">${fmtLocalDateTime(m.start_time)}${m.start_time_override != null ? ' ✎' : ''}</span>
                     <span class="countdown" data-countdown></span>
+                    ${m.resolved ? '' : `<button class="time-btn" data-match-time="${t.bracket.indexOf(m)}" title="Изменить время матча">🕒</button>`}
                 </div>
             `).join('')}
         </div>
     `).join('');
+    wrap.querySelectorAll('[data-match-time]').forEach(btn => {
+        btn.onclick = () => openMatchTimeModal(Number(btn.dataset.matchTime));
+    });
     tournamentTickCountdowns();
     tournamentCountdownTimer = setInterval(tournamentTickCountdowns, 1000);
+}
+
+function openMatchTimeModal(idx) {
+    const t = tournamentState.data && tournamentState.data.tournament;
+    const m = t && t.bracket[idx];
+    if (!m) return;
+    const moved = m.start_time_override != null;
+    document.getElementById('modalRoot').innerHTML = `
+        <div class="modal-backdrop" id="matchTimeBackdrop">
+            <div class="modal" style="max-width:420px;">
+                <button class="close-x" id="matchTimeClose">✕</button>
+                <h3>Время матча</h3>
+                <p class="muted">${TOURNEY_ROUND_LABELS[m.round] || m.round} · День ${m.day}<br>
+                    ${m.clan_a_name || 'TBD'} vs ${m.clan_b_name || 'TBD'}<br>
+                    Сейчас: ${fmtLocalDateTime(m.start_time)} ${moved ? '(перенесён вручную)' : '(по расписанию)'}</p>
+                <div class="field-row">
+                    <label>Новое время (ваше местное) <input type="datetime-local" id="matchTimeInput" value="${toDatetimeLocalValue(m.start_time)}"></label>
+                </div>
+                <p class="muted" style="font-size:12px;">Матч не начнётся раньше, чем сыграны матчи предыдущего раунда, из которых в него выходят кланы.</p>
+                <div class="modal-actions">
+                    ${moved ? '<button id="matchTimeResetBtn">По расписанию</button>' : ''}
+                    <button id="matchTimeNowBtn">▶ Начать сейчас</button>
+                    <button class="primary" id="matchTimeSaveBtn">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    const close = () => { document.getElementById('modalRoot').innerHTML = ''; };
+    document.getElementById('matchTimeClose').onclick = close;
+    document.getElementById('matchTimeBackdrop').addEventListener('click', e => {
+        if (e.target.id === 'matchTimeBackdrop') close();
+    });
+    const send = async (body, okMessage) => {
+        try {
+            tournamentState.data = await api(`/admin/api/clan_tournament/match/${idx}/time`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            });
+            close();
+            renderTournamentPage();
+            toast(okMessage);
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    };
+    document.getElementById('matchTimeSaveBtn').onclick = () => {
+        const value = document.getElementById('matchTimeInput').value;
+        const ms = new Date(value).getTime();
+        if (!value || Number.isNaN(ms)) { toast('Укажите дату и время', true); return; }
+        send({ start_time: ms / 1000 }, 'Время матча изменено');
+    };
+    document.getElementById('matchTimeNowBtn').onclick = () => send({ now: true }, 'Матч открыт');
+    const resetBtn = document.getElementById('matchTimeResetBtn');
+    if (resetBtn) resetBtn.onclick = () => send({ start_time: null }, 'Матч возвращён к расписанию');
 }
 
 function tournamentTickCountdowns() {
@@ -1239,11 +1347,13 @@ function tournamentTickCountdowns() {
 
 document.getElementById('tournamentStartBtn').onclick = async () => {
     const size = tournamentState.selectedSize;
+    if (hhmmToMinute(document.getElementById('tournamentStartTime').value) == null) { toast('Укажите время матчей', true); return; }
     if (!confirm(`Запустить турнир на ${size} кланов? Состав заморозится немедленно и больше не изменится.`)) return;
     try {
+        const matchMinute = hhmmToMinute(document.getElementById('tournamentStartTime').value);
         await api('/admin/api/clan_tournament/start', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ size }),
+            body: JSON.stringify({ size, match_minute: matchMinute }),
         });
         toast('Турнир запущен!');
         loadTournamentStatus();
@@ -1251,6 +1361,26 @@ document.getElementById('tournamentStartBtn').onclick = async () => {
 };
 
 document.getElementById('tournamentRefreshBtn').onclick = loadTournamentStatus;
+document.getElementById('tournamentStartTime').oninput = e => {
+    tournamentState.startTimeTouched = true;
+    document.getElementById('tournamentStartTimeHint').textContent = utcMinuteLocalHint(hhmmToMinute(e.target.value));
+};
+document.getElementById('tournamentMatchTimeInput').oninput = e => {
+    document.getElementById('tournamentMatchTimeHint').textContent = utcMinuteLocalHint(hhmmToMinute(e.target.value));
+};
+document.getElementById('tournamentMatchTimeBtn').onclick = async () => {
+    const matchMinute = hhmmToMinute(document.getElementById('tournamentMatchTimeInput').value);
+    if (matchMinute == null) { toast('Укажите время', true); return; }
+    if (!confirm(`Перенести все ещё не сыгранные матчи на ${minuteToHHMM(matchMinute)} UTC? Матчи, перенесённые вручную (✎), не изменятся. Если это время сегодня уже прошло, назревшие матчи разыграются сразу.`)) return;
+    try {
+        tournamentState.data = await api('/admin/api/clan_tournament/match_time', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ match_minute: matchMinute }),
+        });
+        renderTournamentPage();
+        toast('Время матчей изменено');
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+};
 document.getElementById('tournamentReconcileBtn').onclick = async () => {
     try {
         tournamentState.data = await api('/admin/api/clan_tournament/reconcile', { method: 'POST' });
