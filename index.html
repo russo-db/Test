@@ -1056,10 +1056,29 @@
         .clan-match-side.is-empty { color: var(--text-muted); font-style: italic; }
         .clan-match-countdown { text-align: center; font-size: 9.5px; font-weight: 800; color: var(--accent-amber); margin-top: 2px; }
 
-        .clan-replay-picker { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
+        .clan-replay-picker { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; max-height: 240px; overflow-y: auto; }
+        .clan-replay-pick-btn.is-current { border-color: var(--accent-amber); background: rgba(255, 204, 77, 0.08); }
+        .clan-replay-pick-btn.is-own { box-shadow: inset 3px 0 0 var(--accent-slime); }
+        .clan-pick-badge { margin-right: 4px; }
+        .clan-live-stage { display: flex; flex-direction: column; gap: 8px; }
+        .clan-live-title { text-align: center; font-size: 13px; font-weight: 800; }
+        .clan-live-hud { margin-bottom: 0; }
+        .clan-live-clan { font-size: 10.5px; font-weight: 800; color: var(--accent-amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-live-hud .arena-hp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clan-live-roster { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
+        .clan-live-roster.right { justify-content: flex-end; }
+        .clan-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-slime); box-shadow: 0 0 4px rgba(124, 255, 107, 0.6); }
+        .clan-live-dot.is-out { background: rgba(255, 255, 255, 0.15); box-shadow: none; }
+        .clan-live-badge { position: absolute; top: 10px; left: 10px; padding: 4px 9px; border-radius: 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+        .clan-live-badge.is-live { background: #dc2626; color: #fff; animation: clanLivePulse 1.4s ease-in-out infinite; }
+        .clan-live-badge.is-waiting { background: rgba(255, 204, 77, 0.9); color: #2a1a00; }
+        .clan-live-badge.is-replay { background: rgba(255, 255, 255, 0.14); color: #fff; }
+        .clan-live-duel { position: absolute; top: 10px; right: 10px; font-size: 11px; font-weight: 800; color: rgba(255, 255, 255, 0.75); }
+        @keyframes clanLivePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); } 50% { box-shadow: 0 0 0 7px rgba(220, 38, 38, 0); } }
+        .clan-match-card.is-live { border-color: #dc2626; box-shadow: 0 0 10px rgba(220, 38, 38, 0.35); }
+        .clan-match-card.is-live .clan-match-countdown { color: #ff6b6b; }
         .clan-replay-pick-btn { text-align: left; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 12px; font-weight: 700; cursor: pointer; }
         .clan-replay-canvas-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-        #clanReplayCanvas { width: 100%; max-width: 380px; height: 220px; border-radius: 16px; background: rgba(6, 3, 16, 0.55); border: 1px solid var(--glass-border); }
         .clan-replay-controls { display: flex; gap: 10px; }
         .clan-replay-log { font-size: 12px; color: var(--text-muted); text-align: center; min-height: 16px; }
     </style>
@@ -1372,17 +1391,43 @@
                 </div>
 
                 <div class="subtab-panel" id="clanSubLive">
-                    <p class="subtitle" data-i18n="clan.liveSubtitle">Выбери разрешённый матч, чтобы посмотреть повтор боя 10х10</p>
-                    <div class="clan-replay-picker" id="clanReplayPicker"></div>
-                    <div class="clan-replay-canvas-wrap" id="clanReplayStage" style="display:none;">
-                        <canvas id="clanReplayCanvas" width="380" height="220"></canvas>
-                        <div class="clan-replay-log" id="clanReplayLog"></div>
-                        <div class="clan-replay-controls">
-                            <button class="btn-action" onclick="clanReplayTogglePlay()" id="clanReplayPlayBtn">▶</button>
-                            <button class="btn-action" onclick="clanReplayStep()" data-i18n="clan.replayStep">Шаг</button>
-                            <button class="btn-action" onclick="clanReplayRestart()" data-i18n="clan.replayRestart">Заново</button>
+                    <p class="subtitle" data-i18n="clan.liveSubtitle">Матчи турнира в прямом эфире — бой 10 на 10 идёт в реальном времени</p>
+                    <div class="clan-live-stage" id="clanLiveStage" style="display:none;">
+                        <div class="clan-live-title" id="clanLiveTitle"></div>
+                        <div class="arena-hud clan-live-hud">
+                            <div class="arena-hp-box left">
+                                <div class="clan-live-clan" id="clanLiveHpLeftClan"></div>
+                                <div class="arena-hp-name" id="clanLiveHpLeftName">—</div>
+                                <div class="arena-hp-bar-bg"><div class="arena-hp-bar-fill" id="clanLiveHpLeftFill"></div></div>
+                                <div class="arena-hp-text" id="clanLiveHpLeftText"></div>
+                                <div class="clan-live-roster" id="clanLiveRosterLeft"></div>
+                            </div>
+                            <div class="arena-vs">VS</div>
+                            <div class="arena-hp-box right">
+                                <div class="clan-live-clan" id="clanLiveHpRightClan"></div>
+                                <div class="arena-hp-name" id="clanLiveHpRightName">—</div>
+                                <div class="arena-hp-bar-bg"><div class="arena-hp-bar-fill" id="clanLiveHpRightFill"></div></div>
+                                <div class="arena-hp-text" id="clanLiveHpRightText"></div>
+                                <div class="clan-live-roster right" id="clanLiveRosterRight"></div>
+                            </div>
+                        </div>
+                        <div class="arena-canvas-frame">
+                            <canvas id="clanLiveCanvas" width="720" height="360"></canvas>
+                            <div class="clan-live-badge" id="clanLiveBadge"></div>
+                            <div class="clan-live-duel" id="clanLiveDuel"></div>
+                            <div class="arena-banner" id="clanLiveBanner">
+                                <div class="arena-banner-title win" id="clanLiveBannerTitle"></div>
+                                <div class="arena-banner-sub" id="clanLiveBannerSub"></div>
+                            </div>
+                        </div>
+                        <div class="arena-log" id="clanLiveLog"></div>
+                        <div class="clan-replay-controls" id="clanLiveControls" style="display:none;">
+                            <button class="btn-action" id="clanLivePlayBtn" onclick="clanLiveTogglePause()">⏸</button>
+                            <button class="btn-action" id="clanLiveSpeedBtn" onclick="clanLiveToggleSpeed()">×1</button>
+                            <button class="btn-action" onclick="clanLiveRestart()" data-i18n="clan.watchFromStart">⟲ Сначала</button>
                         </div>
                     </div>
+                    <div class="clan-replay-picker" id="clanReplayPicker"></div>
                 </div>
             </div>
         </div>
@@ -2143,7 +2188,15 @@
                 'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Турнир загружается…',
                 'clan.tournamentCycle': 'Турнир №{cycle}', 'clan.dayLabel': 'День {day}',
                 'clan.matchLiveNow': '🔴 Идёт сейчас',
-                'clan.liveSubtitle': 'Выбери разрешённый матч, чтобы посмотреть повтор боя 10х10',
+                'clan.liveSubtitle': 'Матчи турнира в прямом эфире — бой 10 на 10 идёт в реальном времени',
+                'clan.liveBadge': '🔴 ПРЯМОЙ ЭФИР', 'clan.replayBadge': '⏪ ПОВТОР', 'clan.waitingBadge': '⏳ СКОРО ЭФИР',
+                'clan.liveWaiting': 'Эфир начнётся через {time}', 'clan.liveStarting': 'Эфир начинается…',
+                'clan.liveStartsIn': 'До начала эфира', 'clan.duelLabel': 'Дуэль №{n}',
+                'clan.liveEnter': '{name} ({tier}) выходит на бой', 'clan.liveKO': '{name} выбывает!',
+                'clan.liveHit': '{name}: -{value} HP{crit}', 'clan.critWord': 'Крит!',
+                'clan.matchWonSub': 'побеждает в матче', 'clan.inLive': '🔴 В эфире', 'clan.pickLive': '🔴',
+                'clan.techWinTitle': 'Техническая победа', 'clan.techWinSub': '{name} — у соперника не было состава',
+                'clan.techWinNobody': 'Ни у одного клана не было состава', 'clan.watchFromStart': '⟲ Сначала',
                 'clan.noMatchesYet': 'Разрешённых матчей пока нет',
                 'clan.matchNotFound': 'Матч не найден', 'clan.matchNotReady': 'Матч ещё не разрешён',
                 'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
@@ -2428,7 +2481,15 @@
                 'clan.tbd': 'TBD', 'clan.tournamentLoading': 'Loading tournament…',
                 'clan.tournamentCycle': 'Tournament #{cycle}', 'clan.dayLabel': 'Day {day}',
                 'clan.matchLiveNow': '🔴 Live now',
-                'clan.liveSubtitle': 'Pick a resolved match to watch the 10v10 battle replay',
+                'clan.liveSubtitle': 'Tournament matches live — the 10v10 battle plays out in real time',
+                'clan.liveBadge': '🔴 LIVE', 'clan.replayBadge': '⏪ REPLAY', 'clan.waitingBadge': '⏳ STARTING SOON',
+                'clan.liveWaiting': 'Broadcast starts in {time}', 'clan.liveStarting': 'Broadcast starting…',
+                'clan.liveStartsIn': 'Broadcast starts in', 'clan.duelLabel': 'Duel #{n}',
+                'clan.liveEnter': '{name} ({tier}) enters the fight', 'clan.liveKO': '{name} is knocked out!',
+                'clan.liveHit': '{name}: -{value} HP{crit}', 'clan.critWord': 'Crit!',
+                'clan.matchWonSub': 'wins the match', 'clan.inLive': '🔴 Live', 'clan.pickLive': '🔴',
+                'clan.techWinTitle': 'Technical win', 'clan.techWinSub': '{name} — the opponent had no lineup',
+                'clan.techWinNobody': 'Neither clan had a lineup', 'clan.watchFromStart': '⟲ From start',
                 'clan.noMatchesYet': 'No resolved matches yet',
                 'clan.matchNotFound': 'Match not found', 'clan.matchNotReady': 'Match not resolved yet',
                 'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
@@ -8460,10 +8521,6 @@
         let clanLineupTierChoice = null;
         let clanLineupApprovePicked = new Set();
         let clanTournamentData = null;  // { cycle, size, start_at, bracket } без battle_log — см. loadClanTournament
-        let clanReplayMatch = null;      // разрешённый матч с battle_log — см. openClanReplay
-        let clanReplayCursor = 0;
-        let clanReplayPlaying = false;
-        let clanReplayTimer = null;
         let clanBracketCountdownTimer = null;  // тикающий обратный отсчёт до start_time матчей — см. renderClanBracket
 
         function clanTierColor(tierId) { return tierById(tierId).color; }
@@ -8492,7 +8549,7 @@
 
         function closeClanScreen() {
             haptic.select();
-            clanReplayStopAuto();
+            clanLiveStop();
             clanBracketStopCountdown();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
@@ -8544,10 +8601,10 @@
             }
         }
 
-        function switchClanSubtab(id) {
+        function switchClanSubtab(id, opts) {
             haptic.select();
             activeClanTab = id;
-            if (id !== 'live') clanReplayStopAuto();
+            if (id !== 'live') clanLiveStop();
             if (id !== 'battle') clanBracketStopCountdown();
             document.querySelectorAll('#clanTabBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.clantab === id));
             document.getElementById('clanSubMine').classList.toggle('active', id === 'mine');
@@ -8555,7 +8612,10 @@
             document.getElementById('clanSubBattle').classList.toggle('active', id === 'battle');
             document.getElementById('clanSubLive').classList.toggle('active', id === 'live');
             if (id === 'battle') loadClanTournament();
-            if (id === 'live') renderClanReplayPicker();
+            if (id === 'live') {
+                if (opts && opts.skipAutoPick) renderClanReplayPicker();
+                else clanLiveEnterTab();
+            }
         }
 
         // ---------- Топ кланов / создание / вступление ----------
@@ -9066,6 +9126,7 @@
                 const response = await fetch(`api/clan/tournament?user_id=${state.userId}`, { headers: apiHeaders() });
                 const data = await response.json();
                 clanTournamentData = data;
+                clanSyncClock(data.server_time);
             } catch (e) {
                 clanTournamentData = null;
             }
@@ -9116,8 +9177,8 @@
                 <div class="clan-round-col">
                     <div class="clan-round-title">${t(CLAN_ROUND_LABELS[round.key] || round.key)}</div>
                     ${round.items.map(({ match: m, index }) => `
-                        <div class="clan-match-card ${m.resolved ? 'resolved' : ''}" onclick="openClanReplay(${index})"
-                             data-start="${m.start_time || 0}" data-resolved="${m.resolved}">
+                        <div class="clan-match-card ${m.resolved && !m.live ? 'resolved' : ''} ${m.live ? 'is-live' : ''}" onclick="openClanLive(${index})"
+                             data-start="${m.start_time || 0}" data-resolved="${m.resolved}" data-live="${!!m.live}" data-live-ends="${m.live_ends_at || 0}">
                             <div class="clan-match-day">${t('clan.dayLabel', { day: m.day })}</div>
                             ${clanMatchSideHtml(m, 'a')}
                             ${clanMatchSideHtml(m, 'b')}
@@ -9140,11 +9201,17 @@
         // Когда отсчёт доходит до нуля, подтягиваем сетку заново, чтобы
         // подхватить свежерешённый матч без ручного обновления вкладки.
         function clanBracketTickCountdowns() {
-            const now = Date.now() / 1000;
+            const now = clanServerNow();
             let anyJustOpened = false;
             document.querySelectorAll('#clanBracket .clan-match-card').forEach(card => {
                 const cd = card.querySelector('[data-countdown]');
                 if (!cd) return;
+                if (card.dataset.live === 'true') {
+                    // Эфир идёт — победитель ещё скрыт; по окончании подтянем сетку.
+                    cd.textContent = t('clan.inLive');
+                    if (Number(card.dataset.liveEnds) <= now && !card.dataset.notifiedEnd) { card.dataset.notifiedEnd = '1'; anyJustOpened = true; }
+                    return;
+                }
                 if (card.dataset.resolved === 'true') { cd.textContent = ''; return; }
                 const remaining = Number(card.dataset.start) - now;
                 if (remaining > 0) {
@@ -9158,157 +9225,593 @@
         }
 
         // ---------- Вкладка «Прямой Эфир» ----------
+        // Сервер разрешает матч мгновенно в его start_time, но зритель видит
+        // его в реальном времени: у каждого события battle_log есть смещение
+        // от начала эфира (event_offsets, см. clan_broadcast_schedule в
+        // main.py), весь матч 10х10 идёт ~1.5–2 минуты. Пока эфир идёт, сервер
+        // отдаёт только уже «случившиеся» события и скрывает победителя —
+        // клиент догружает лог каждые пару секунд. Отрисовка — тот же движок,
+        // что и на Арене: спрайты орлов (ArenaEagle), выпад, отдача от удара,
+        // искры, всплывающий урон, тряска экрана, падение выбывшего.
+
+        const CLAN_LIVE_POLL_MS = 2000;
+        let clanServerClockOffset = 0;   // server_time - локальное время, сек (см. clanSyncClock)
+        let clanLive = null;             // текущая трансляция — см. openClanLive
+        let clanLiveFrameHandle = null;
+        let clanLiveTickTimer = null;    // опрос сервера (эфир) / обратный отсчёт (ожидание)
+        let clanLiveOpenToken = 0;
+
+        function clanSyncClock(serverTime) {
+            if (typeof serverTime === 'number') clanServerClockOffset = serverTime - Date.now() / 1000;
+        }
+        function clanServerNow() { return Date.now() / 1000 + clanServerClockOffset; }
+        function clanOtherSide(side) { return side === 'a' ? 'b' : 'a'; }
+        function clanIsOwnMatch(m) { return !!state.clanId && (m.clan_a_id === state.clanId || m.clan_b_id === state.clanId); }
+
+        function clanLiveCanvasSize() {
+            const canvas = document.getElementById('clanLiveCanvas');
+            return { w: canvas.width, h: canvas.height };
+        }
+
+        function clanLiveStop() {
+            if (clanLiveFrameHandle) cancelAnimationFrame(clanLiveFrameHandle);
+            clanLiveFrameHandle = null;
+            if (clanLiveTickTimer) { clearInterval(clanLiveTickTimer); clanLiveTickTimer = null; }
+        }
+
+        function clanLiveVisible() {
+            const screen = document.getElementById('clans');
+            return !!(screen && screen.classList.contains('active') && activeClanTab === 'live');
+        }
+
+        // ---- выбор матча для трансляции ----
+
+        // Что показать при входе во вкладку: матч, который идёт в эфире прямо
+        // сейчас (свой клан в приоритете), иначе ближайший предстоящий матч с
+        // обоими участниками (с обратным отсчётом до начала эфира).
+        function clanLivePickFeatured() {
+            const bracket = (clanTournamentData && clanTournamentData.bracket) || [];
+            const now = clanServerNow();
+            const items = bracket.map((m, i) => ({ m, i }));
+            const live = items.filter(x => x.m.live);
+            const pickOwn = list => list.find(x => clanIsOwnMatch(x.m)) || list[0];
+            if (live.length) return pickOwn(live).i;
+            const upcoming = items
+                .filter(x => !x.m.resolved && x.m.clan_a_id && x.m.clan_b_id && x.m.start_time > now)
+                .sort((x, y) => x.m.start_time - y.m.start_time);
+            if (upcoming.length) {
+                const own = upcoming.find(x => clanIsOwnMatch(x.m));
+                const soonest = upcoming[0];
+                return (own && own.m.start_time - soonest.m.start_time < 3600 ? own : soonest).i;
+            }
+            return null;
+        }
+
+        async function clanLiveEnterTab() {
+            if (!clanTournamentData) await loadClanTournament();
+            renderClanReplayPicker();
+            if (clanLive && (clanLive.mode === 'live' || clanLive.mode === 'waiting' || clanLive.mode === 'replay')) {
+                // Уже смотрим — просто продолжаем (эфир догонит серверное время сам).
+                openClanLive(clanLive.index);
+                return;
+            }
+            const featured = clanLivePickFeatured();
+            if (featured !== null) openClanLive(featured);
+        }
 
         function renderClanReplayPicker() {
             const box = document.getElementById('clanReplayPicker');
             if (!box) return;
             const bracket = (clanTournamentData && clanTournamentData.bracket) || [];
-            const resolved = bracket.map((m, i) => ({ m, i })).filter(x => x.m.resolved && x.m.clan_a_id && x.m.clan_b_id);
-            if (!resolved.length) {
+            const now = clanServerNow();
+            const items = bracket.map((m, i) => ({ m, i })).filter(x => x.m.clan_a_id && x.m.clan_b_id);
+            const live = items.filter(x => x.m.live);
+            const upcoming = items.filter(x => !x.m.resolved && x.m.start_time > now)
+                .sort((x, y) => x.m.start_time - y.m.start_time).slice(0, 4);
+            const replays = items.filter(x => x.m.resolved && !x.m.live);
+            if (!live.length && !upcoming.length && !replays.length) {
                 box.innerHTML = `<p class="clan-empty-hint">${t('clan.noMatchesYet')}</p>`;
                 return;
             }
-            box.innerHTML = resolved.map(({ m, i }) => `
-                <button class="clan-replay-pick-btn" onclick="openClanReplay(${i})">
-                    ${t(CLAN_ROUND_LABELS[m.round])} · ${m.clan_a_name} vs ${m.clan_b_name}
-                    ${m.winner_id ? ` — 🏆 ${m.winner_name}` : ''}
-                </button>
-            `).join('');
+            const row = ({ m, i }, badge, extra) => `
+                <button class="clan-replay-pick-btn ${clanLive && clanLive.index === i ? 'is-current' : ''} ${clanIsOwnMatch(m) ? 'is-own' : ''}" onclick="openClanLive(${i})">
+                    <span class="clan-pick-badge">${badge}</span>
+                    ${t(CLAN_ROUND_LABELS[m.round])} · ${m.clan_a_name} vs ${m.clan_b_name}${extra || ''}
+                </button>`;
+            box.innerHTML =
+                live.map(x => row(x, t('clan.pickLive'))).join('') +
+                upcoming.map(x => row(x, '⏳', ` · ${clanFmtCountdown(Math.max(0, x.m.start_time - now))}`)).join('') +
+                replays.map(x => row(x, '⏪', x.m.winner_id ? ` — 🏆 ${x.m.winner_name}` : '')).join('');
         }
 
-        async function openClanReplay(matchIndex) {
+        // ---- загрузка матча и режимы ----
+
+        async function openClanLive(matchIndex) {
+            // Из «Битвы Кланов» — переключаемся на вкладку без автовыбора матча,
+            // иначе он мог бы перебить тот, по которому кликнул игрок.
+            if (activeClanTab !== 'live') switchClanSubtab('live', { skipAutoPick: true });
+            const token = ++clanLiveOpenToken;
+            let match;
             try {
                 const response = await fetch(`api/clan/tournament/match/${matchIndex}?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) { toast(t('clan.matchNotFound')); return; }
-                const match = await response.json();
-                if (!match.resolved || !match.clan_a_id || !match.clan_b_id) { toast(t('clan.matchNotReady')); return; }
-                clanReplayMatch = match;
-                clanReplayCursor = 0;
-                switchClanSubtab('live');
-                document.getElementById('clanReplayStage').style.display = '';
-                clanReplayRestart();
+                match = await response.json();
             } catch (e) {
                 toast(t('market.serverError'));
+                return;
             }
+            if (token !== clanLiveOpenToken) return;  // игрок уже выбрал другой матч
+            clanSyncClock(match.server_time);
+            clanLiveStop();
+
+            if (!match.clan_a_id || !match.clan_b_id) { toast(t('clan.matchNotReady')); return; }
+            document.getElementById('clanLiveStage').style.display = '';
+
+            if (!match.resolved) {
+                clanLiveStartWaiting(matchIndex, match);
+            } else if (!(match.battle_log || []).length) {
+                clanLiveShowTechWin(matchIndex, match);
+            } else {
+                clanLiveStartBroadcast(matchIndex, match, match.live ? 'live' : 'replay');
+            }
+            renderClanReplayPicker();
         }
 
-        function clanReplayStopAuto() {
-            clanReplayPlaying = false;
-            if (clanReplayTimer) { clearInterval(clanReplayTimer); clanReplayTimer = null; }
-            const btn = document.getElementById('clanReplayPlayBtn');
-            if (btn) btn.textContent = '▶';
+        function clanLiveBase(matchIndex, match, mode) {
+            const events = (match.battle_log || []).slice();
+            let offsets = (match.event_offsets || []).slice();
+            let duration = match.broadcast_duration || 0;
+            if (offsets.length !== events.length) {
+                // Ответ без расписания эфира (старый сервер) — ровный темп по 1.3 с.
+                offsets = events.map((e, i) => i * 1.3);
+                duration = events.length * 1.3 + 1.5;
+            }
+            return {
+                index: matchIndex, match, mode,
+                events, offsets, duration,
+                liveStart: match.live_started_at || 0,
+                animSpeed: arenaClamp(1 / (match.time_scale || 1), 1, 4),
+                replaySpeed: 1, paused: false,
+                playT: 0, cursor: 0, pendingHits: [],
+                fighters: { a: null, b: null }, eagles: { a: null, b: null }, fallen: [],
+                knockouts: { a: 0, b: 0 },
+                rosterSize: { a: match.fighters_a || 10, b: match.fighters_b || 10 },
+                sparks: [], texts: [], shake: { t: 0, dur: 0, mag: 0 },
+                time: 0, lastTs: 0, finished: false,
+            };
         }
 
-        function clanReplayRestart() {
-            if (!clanReplayMatch) return;
-            clanReplayCursor = 0;
-            clanReplayStopAuto();
-            clanReplayDrawFrame();
-        }
-
-        function clanReplayStep() {
-            if (!clanReplayMatch) return;
-            if (clanReplayCursor < clanReplayMatch.battle_log.length) clanReplayCursor++;
-            clanReplayDrawFrame();
-        }
-
-        function clanReplayTogglePlay() {
-            if (!clanReplayMatch) return;
-            if (clanReplayPlaying) { clanReplayStopAuto(); return; }
-            clanReplayPlaying = true;
-            document.getElementById('clanReplayPlayBtn').textContent = '⏸';
-            clanReplayTimer = setInterval(() => {
-                if (!clanReplayMatch || clanReplayCursor >= clanReplayMatch.battle_log.length) { clanReplayStopAuto(); return; }
-                clanReplayCursor++;
-                clanReplayDrawFrame();
-            }, 550);
-        }
-
-        // Восстанавливает состояние боя (текущие бойцы сторон и их HP на
-        // данный момент) проигрыванием лога с начала до clanReplayCursor —
-        // тот же принцип, что и сама серверная симуляция: победивший боец
-        // переносит текущее (не восстановленное) HP в следующую дуэль.
-        function clanReplayStateAt(cursor) {
-            if (!clanReplayMatch) return null;
-            const log = clanReplayMatch.battle_log;
-            let a = null, b = null;
-            let lastHit = null;
-            for (let i = 0; i < cursor && i < log.length; i++) {
-                const e = log[i];
-                if (e.type === 'enter') {
-                    const fighter = { userId: e.user_id, name: e.name, tierId: e.tier_id, hp: e.hp, maxHp: e.max_hp };
-                    if (e.side === 'a') a = fighter; else b = fighter;
-                } else if (e.type === 'attack') {
-                    const defender = e.side === 'a' ? b : a;
-                    if (defender) defender.hp = e.defender_hp;
-                    lastHit = e;
+        function clanLiveStartWaiting(matchIndex, match) {
+            clanLive = clanLiveBase(matchIndex, match, 'waiting');
+            clanLiveSetChrome();
+            clanLiveUpdateHud();
+            document.getElementById('clanLiveBanner').classList.remove('show');
+            let retrying = false;
+            const tick = async () => {
+                if (!clanLive || clanLive.mode !== 'waiting' || clanLive.index !== matchIndex) return;
+                const left = match.start_time - clanServerNow();
+                document.getElementById('clanLiveLog').textContent = left > 0
+                    ? t('clan.liveWaiting', { time: clanFmtCountdown(left) })
+                    : t('clan.liveStarting');
+                clanLiveDrawWaiting(Math.max(0, left));
+                // Время матча наступило — сервер разрешит его на этом же
+                // запросе, и эфир начнётся с первой дуэли.
+                if (left <= 0 && !retrying && clanLiveVisible()) {
+                    retrying = true;
+                    await loadClanTournament();
+                    await openClanLive(matchIndex);
+                    retrying = false;
                 }
-            }
-            return { a, b, lastHit, done: cursor >= log.length };
+            };
+            tick();
+            clanLiveTickTimer = setInterval(tick, 1000);
         }
 
-        function clanReplayDrawFrame() {
-            const canvas = document.getElementById('clanReplayCanvas');
-            if (!canvas || !clanReplayMatch) return;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width, h = canvas.height;
-            ctx.clearRect(0, 0, w, h);
-            ctx.fillStyle = 'rgba(255,255,255,0.03)';
-            ctx.fillRect(0, 0, w, h);
+        function clanLiveShowTechWin(matchIndex, match) {
+            clanLive = clanLiveBase(matchIndex, match, 'techwin');
+            clanLiveSetChrome();
+            clanLiveUpdateHud();
+            clanLiveDrawWaiting(null);
+            document.getElementById('clanLiveLog').textContent = '';
+            clanLiveShowBanner(t('clan.techWinTitle'), match.winner_name
+                ? t('clan.techWinSub', { name: match.winner_name })
+                : t('clan.techWinNobody'));
+        }
 
-            const snap = clanReplayStateAt(clanReplayCursor);
-            const logLine = document.getElementById('clanReplayLog');
-
-            function drawFighter(fighter, x, side) {
-                if (!fighter) {
-                    ctx.font = '11px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.textAlign = 'center';
-                    ctx.fillText('—', x, h / 2);
-                    return;
-                }
-                const color = clanTierColor(fighter.tierId);
-                ctx.beginPath(); ctx.arc(x, h / 2 - 10, 26, 0, Math.PI * 2);
-                ctx.fillStyle = color + '33'; ctx.fill();
-                ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
-                ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-                ctx.fillText('🦅', x, h / 2 - 2);
-
-                ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = '#fff';
-                ctx.fillText(fighter.name || ('#' + fighter.userId), x, h / 2 + 34);
-
-                const barW = 64, barH = 7, pct = Math.max(0, Math.min(1, fighter.hp / (fighter.maxHp || 1)));
-                ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(x - barW / 2, h / 2 + 42, barW, barH);
-                ctx.fillStyle = pct > 0.4 ? '#4ade80' : '#ef6a6a'; ctx.fillRect(x - barW / 2, h / 2 + 42, barW * pct, barH);
-                ctx.font = '9px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                ctx.fillText(`${Math.max(0, Math.round(fighter.hp))}/${fighter.maxHp}`, x, h / 2 + 58);
-
-                if (side && snap.lastHit && snap.lastHit.side !== side && clanReplayCursor > 0
-                    && log_is_recent_hit(side)) {
-                    ctx.font = 'bold 15px sans-serif'; ctx.fillStyle = snap.lastHit.crit ? '#ffcc4d' : '#ff6a6a';
-                    ctx.fillText('-' + snap.lastHit.value, x, h / 2 - 40);
-                }
+        function clanLiveStartBroadcast(matchIndex, match, mode) {
+            clanLive = clanLiveBase(matchIndex, match, mode);
+            document.getElementById('clanLiveBanner').classList.remove('show');
+            if (mode === 'live') {
+                // Присоединились посреди эфира — мгновенно «проматываем» всё,
+                // что уже случилось (кроме последних долей секунды — их
+                // покажем анимацией), и дальше смотрим вживую.
+                clanLiveFastForward(clanServerNow() - clanLive.liveStart);
+                clanLiveTickTimer = setInterval(clanLivePoll, CLAN_LIVE_POLL_MS);
+            } else {
+                clanLive.playT = -0.4;  // повтор — с анимированного выхода первых бойцов
             }
-            function log_is_recent_hit(side) {
-                return snap.lastHit && (side === 'a' ? snap.lastHit.side === 'b' : snap.lastHit.side === 'a');
+            clanLiveSetChrome();
+            clanLiveUpdateHud();
+            if (!clanLive.eagles.a && !clanLive.eagles.b) document.getElementById('clanLiveLog').textContent = t('clan.replayStart');
+            clanLive.lastTs = 0;
+            clanLiveFrameHandle = requestAnimationFrame(clanLiveFrame);
+        }
+
+        async function clanLivePoll() {
+            const live = clanLive;
+            if (!live || live.mode !== 'live') return;
+            if (!clanLiveVisible()) { clanLiveStop(); return; }
+            try {
+                const response = await fetch(`api/clan/tournament/match/${live.index}?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) return;
+                const match = await response.json();
+                if (clanLive !== live) return;
+                clanSyncClock(match.server_time);
+                const log = match.battle_log || [];
+                if (log.length > live.events.length) {
+                    live.events = log.slice();
+                    live.offsets = (match.event_offsets || []).slice();
+                }
+                if (!match.live) {
+                    live.match = match;  // эфир окончен — теперь известен победитель
+                    clearInterval(clanLiveTickTimer); clanLiveTickTimer = null;
+                }
+            } catch (e) { /* следующий опрос догонит */ }
+        }
+
+        // ---- состояние боя ----
+
+        function clanLiveMakeEagle(side, fighter, fromOffscreen) {
+            const { w, h } = clanLiveCanvasSize();
+            const groundY = h * 0.78;
+            const tier = tierById(fighter.tierId);
+            const sprite = tier.monsters && tier.monsters[0] ? tier.monsters[0].sprite : null;
+            const baseX = side === 'a' ? w * 0.24 : w * 0.76;
+            const eagle = new ArenaEagle({
+                label: fighter.name, side: side === 'a' ? 'player' : 'enemy',
+                img: sprite ? arenaGetImage(sprite) : null,
+                x: baseX, y: groundY, facing: side === 'a' ? 1 : -1, size: 96,
+                stats: { hp: fighter.maxHp, atk: 0, def: 0, crit: 0, spd: 0 },
+                idlePhase: side === 'a' ? 0 : 1.7,
+            });
+            eagle.hp = fighter.hp;
+            if (fromOffscreen) {
+                eagle.x = side === 'a' ? -90 : w + 90;
+                eagle.attackFromX = eagle.x;
+                eagle.attackTargetX = baseX;
+                eagle.state = 'returning';
+                eagle.stateT = 0;
             }
+            return eagle;
+        }
 
-            if (snap) {
-                drawFighter(snap.a, w * 0.27, 'a');
-                drawFighter(snap.b, w * 0.73, 'b');
-                ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.textAlign = 'center';
-                ctx.fillText('VS', w / 2, h / 2 - 2);
+        // Применяет событие лога к «логическому» состоянию без анимации.
+        function clanLiveApplyLogical(live, e) {
+            if (e.type === 'enter') {
+                live.fighters[e.side] = { name: e.name, tierId: e.tier_id, hp: e.hp, maxHp: e.max_hp };
+            } else if (e.type === 'attack') {
+                const def = live.fighters[clanOtherSide(e.side)];
+                if (def) def.hp = e.defender_hp;
+            } else if (e.type === 'death') {
+                live.fighters[e.side] = null;
+                live.knockouts[e.side]++;
+            }
+        }
 
-                if (snap.done) {
-                    const winnerName = clanReplayMatch.winner_name || '';
-                    logLine.textContent = t('clan.replayWinner', { name: winnerName });
-                    clanReplayStopAuto();
-                } else if (snap.lastHit) {
-                    logLine.textContent = t('clan.replayHit', {
-                        value: snap.lastHit.value, crit: snap.lastHit.crit ? t('arena.critSuffix') : '',
-                    });
+        function clanLiveFastForward(toT) {
+            const live = clanLive;
+            live.playT = Math.max(0, toT);
+            while (live.cursor < live.events.length && live.offsets[live.cursor] <= live.playT - 0.5) {
+                clanLiveApplyLogical(live, live.events[live.cursor]);
+                live.cursor++;
+            }
+            ['a', 'b'].forEach(side => {
+                const f = live.fighters[side];
+                live.eagles[side] = f && f.hp > 0 ? clanLiveMakeEagle(side, f, false) : null;
+            });
+        }
+
+        function clanLiveSpawnImpact(live, x, y, crit) {
+            live.sparks.push({ x, y, r: 4, maxR: crit ? 46 : 32, life: 0.3, maxLife: 0.3 });
+            const rays = crit ? 10 : 7;
+            for (let i = 0; i < rays; i++) {
+                const a = (Math.PI * 2 * i) / rays + arenaRand(-0.2, 0.2);
+                live.sparks.push({ x, y, ray: true, angle: a, len: arenaRand(10, crit ? 30 : 20), life: 0.22, maxLife: 0.22 });
+            }
+        }
+
+        function clanLiveSpawnDamageText(live, x, y, value, crit) {
+            live.texts.push({
+                x: x + arenaRand(-8, 8), y, vy: -70,
+                text: crit ? `-${value} ${t('clan.critWord')}` : `-${value} HP`,
+                color: crit ? '#ffd76a' : '#ff5757', size: crit ? 20 : 16,
+                life: 1.1, maxLife: 1.1,
+            });
+        }
+
+        // Анимированное проигрывание одного события (с выпадом, ударом и т.д.).
+        function clanLivePlayEvent(live, e) {
+            if (e.type === 'enter') {
+                clanLiveApplyLogical(live, e);
+                if (live.eagles[e.side]) live.fallen.push(live.eagles[e.side]);
+                live.eagles[e.side] = clanLiveMakeEagle(e.side, live.fighters[e.side], true);
+                document.getElementById('clanLiveLog').textContent = t('clan.liveEnter', { name: e.name, tier: clanTierLabel(e.tier_id) });
+            } else if (e.type === 'attack') {
+                const attacker = live.eagles[e.side];
+                const defender = live.eagles[clanOtherSide(e.side)];
+                if (attacker && defender) {
+                    attacker.startAttack(defender);
+                    live.pendingHits.push({ at: live.playT + ARENA_ATTACK_DUR / live.animSpeed, attacker, defender, e });
                 } else {
-                    logLine.textContent = t('clan.replayStart');
+                    clanLiveApplyLogical(live, e);
+                }
+            } else if (e.type === 'death') {
+                const fighter = live.fighters[e.side];
+                clanLiveApplyLogical(live, e);
+                const eagle = live.eagles[e.side];
+                if (eagle && eagle.state !== 'dying' && eagle.state !== 'hurt') eagle.startDying();
+                if (eagle) { live.fallen.push(eagle); live.eagles[e.side] = null; }
+                document.getElementById('clanLiveLog').textContent = t('clan.liveKO', { name: (fighter && fighter.name) || e.name });
+                haptic.impact('light');
+            }
+        }
+
+        function clanLiveResolveHit(live, hit) {
+            const { attacker, defender, e } = hit;
+            clanLiveApplyLogical(live, e);
+            defender.hp = e.defender_hp;
+            const hitX = (attacker.x + defender.baseX) / 2 + attacker.facing * 20;
+            const hitY = defender.y - defender.size * 0.18;
+            clanLiveSpawnImpact(live, hitX, hitY, e.crit);
+            clanLiveSpawnDamageText(live, defender.baseX, defender.baseY - defender.size * 0.5, e.value, e.crit);
+            live.shake = { mag: e.crit ? 13 : 7, dur: e.crit ? 0.3 : 0.22, t: e.crit ? 0.3 : 0.22 };
+            defender.flash = 1;
+            defender.startHurt(attacker.x, e.defender_hp <= 0);
+            attacker.startReturn();
+            document.getElementById('clanLiveLog').textContent = t('clan.liveHit', {
+                name: attacker.label, value: e.value, crit: e.crit ? t('arena.critSuffix') : '',
+            });
+        }
+
+        // ---- кадр ----
+
+        function clanLiveFrame(ts) {
+            const live = clanLive;
+            clanLiveFrameHandle = null;
+            if (!live || (live.mode !== 'live' && live.mode !== 'replay')) return;
+            if (!clanLiveVisible()) { clanLiveStop(); return; }
+            if (!live.lastTs) live.lastTs = ts;
+            const realDt = Math.min(0.05, (ts - live.lastTs) / 1000);
+            live.lastTs = ts;
+
+            const speed = live.mode === 'replay' ? (live.paused ? 0 : live.replaySpeed) : 1;
+            if (live.mode === 'live') {
+                live.playT = Math.max(live.playT, clanServerNow() - live.liveStart);
+            } else if (!live.finished) {
+                live.playT += realDt * speed;
+            }
+
+            while (live.cursor < live.events.length && live.offsets[live.cursor] <= live.playT) {
+                clanLivePlayEvent(live, live.events[live.cursor]);
+                live.cursor++;
+            }
+            for (let i = live.pendingHits.length - 1; i >= 0; i--) {
+                if (live.pendingHits[i].at <= live.playT) {
+                    clanLiveResolveHit(live, live.pendingHits[i]);
+                    live.pendingHits.splice(i, 1);
                 }
             }
+
+            // После финала орлы продолжают «дышать» и искры догорают даже на паузе.
+            const animDt = realDt * live.animSpeed * (live.finished ? 1 : speed);
+            live.time += animDt;
+            const groundY = clanLiveCanvasSize().h * 0.78;
+            ['a', 'b'].forEach(side => { if (live.eagles[side]) live.eagles[side].update(animDt, live.time, groundY); });
+            live.fallen.forEach(e => e.update(animDt, live.time, groundY));
+            live.fallen = live.fallen.filter(e => !e.gone);
+            clanLiveUpdateEffects(live, animDt);
+            clanLiveDraw(live);
+            clanLiveUpdateHud();
+
+            const allPlayed = live.cursor >= live.events.length && !live.pendingHits.length;
+            const logComplete = live.mode === 'replay' || live.events.length >= (live.match.log_total || 0);
+            if (!live.finished && allPlayed && logComplete && live.playT >= live.duration) {
+                clanLiveFinish(live);
+            }
+            clanLiveFrameHandle = requestAnimationFrame(clanLiveFrame);
+        }
+
+        async function clanLiveFinish(live) {
+            live.finished = true;
+            let match = live.match;
+            if (live.mode === 'live' && !match.winner_id) {
+                // Победитель раскрывается сервером только после конца эфира.
+                try {
+                    const response = await fetch(`api/clan/tournament/match/${live.index}?user_id=${state.userId}`, { headers: apiHeaders() });
+                    if (response.ok) match = await response.json();
+                } catch (e) { /* покажем по логу */ }
+            }
+            if (clanLive !== live) return;
+            let winnerName = match.winner_name;
+            if (!winnerName) {
+                const lastDeath = [...live.events].reverse().find(e => e.type === 'death');
+                winnerName = lastDeath ? (clanOtherSide(lastDeath.side) === 'a' ? match.clan_a_name : match.clan_b_name) : '';
+            }
+            live.match = match;
+            live.mode = 'replay';
+            live.paused = true;
+            clanLiveSetChrome();
+            document.getElementById('clanLiveLog').textContent = t('clan.replayWinner', { name: winnerName });
+            clanLiveShowBanner(`🏆 ${winnerName}`, t('clan.matchWonSub'));
+            haptic.notify('success');
+            loadClanTournament();  // сетка теперь покажет победителя
+        }
+
+        function clanLiveUpdateEffects(live, dt) {
+            for (let i = live.sparks.length - 1; i >= 0; i--) {
+                const s = live.sparks[i];
+                s.life -= dt;
+                if (!s.ray) s.r = arenaLerp(s.r, s.maxR, 1 - Math.pow(0.001, dt));
+                if (s.life <= 0) live.sparks.splice(i, 1);
+            }
+            for (let i = live.texts.length - 1; i >= 0; i--) {
+                const f = live.texts[i];
+                f.y += f.vy * dt;
+                f.vy *= 0.94;
+                f.life -= dt;
+                if (f.life <= 0) live.texts.splice(i, 1);
+            }
+            if (live.shake.t > 0) live.shake.t = Math.max(0, live.shake.t - dt);
+        }
+
+        function clanLiveDraw(live) {
+            const canvas = document.getElementById('clanLiveCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const { w, h } = clanLiveCanvasSize();
+            const groundY = h * 0.78;
+            ctx.clearRect(0, 0, w, h);
+            arenaDrawBackground(ctx, w, h, groundY);
+            let off = { x: 0, y: 0 };
+            if (live.shake.t > 0) {
+                const power = (live.shake.t / live.shake.dur) * live.shake.mag;
+                off = { x: arenaRand(-power, power), y: arenaRand(-power, power) };
+            }
+            ctx.save();
+            ctx.translate(off.x, off.y);
+            ['a', 'b'].forEach(side => arenaDrawGround(ctx, live.eagles[side], groundY));
+            live.fallen.forEach(e => arenaDrawEagle(ctx, e));
+            ['a', 'b'].forEach(side => arenaDrawEagle(ctx, live.eagles[side]));
+            for (const s of live.sparks) {
+                const alpha = arenaClamp(s.life / s.maxLife, 0, 1);
+                if (s.ray) {
+                    ctx.strokeStyle = `rgba(255, 244, 200, ${alpha})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.moveTo(s.x, s.y);
+                    ctx.lineTo(s.x + Math.cos(s.angle) * s.len, s.y + Math.sin(s.angle) * s.len); ctx.stroke();
+                } else {
+                    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+                    grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+                    grad.addColorStop(0.4, `rgba(255, 220, 120, ${alpha * 0.8})`);
+                    grad.addColorStop(1, 'rgba(255, 180, 60, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            for (const f of live.texts) {
+                ctx.globalAlpha = arenaClamp(f.life / f.maxLife, 0, 1);
+                ctx.font = `800 ${f.size}px Poppins, Segoe UI, Arial, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+                ctx.strokeText(f.text, f.x, f.y);
+                ctx.fillStyle = f.color;
+                ctx.fillText(f.text, f.x, f.y);
+                ctx.globalAlpha = 1;
+            }
+            ctx.restore();
+        }
+
+        function clanLiveDrawWaiting(secondsLeft) {
+            const canvas = document.getElementById('clanLiveCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const { w, h } = clanLiveCanvasSize();
+            ctx.clearRect(0, 0, w, h);
+            arenaDrawBackground(ctx, w, h, h * 0.78);
+            if (secondsLeft === null) return;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.font = '600 20px Poppins, Segoe UI, Arial, sans-serif';
+            ctx.fillText(t('clan.liveStartsIn'), w / 2, h * 0.4);
+            ctx.fillStyle = '#ffcc4d';
+            ctx.font = '800 52px Poppins, Segoe UI, Arial, sans-serif';
+            ctx.fillText(clanFmtCountdown(secondsLeft), w / 2, h * 0.4 + 60);
+        }
+
+        // ---- HUD / кнопки ----
+
+        function clanLiveSetChrome() {
+            const live = clanLive;
+            if (!live) return;
+            const m = live.match;
+            document.getElementById('clanLiveTitle').textContent =
+                `${t(CLAN_ROUND_LABELS[m.round] || m.round)} · ${m.clan_a_name} vs ${m.clan_b_name}`;
+            const badge = document.getElementById('clanLiveBadge');
+            badge.className = 'clan-live-badge ' + (live.mode === 'live' ? 'is-live' : (live.mode === 'waiting' ? 'is-waiting' : 'is-replay'));
+            badge.textContent = live.mode === 'live' ? t('clan.liveBadge')
+                : (live.mode === 'waiting' ? t('clan.waitingBadge') : t('clan.replayBadge'));
+            // В прямом эфире управления нет — как в настоящей трансляции.
+            document.getElementById('clanLiveControls').style.display = live.mode === 'replay' ? '' : 'none';
+            document.getElementById('clanLivePlayBtn').textContent = live.paused ? '▶' : '⏸';
+            const speedBtn = document.getElementById('clanLiveSpeedBtn');
+            speedBtn.textContent = '×' + live.replaySpeed;
+            speedBtn.classList.toggle('active', live.replaySpeed === 2);
+        }
+
+        function clanLiveRosterDots(side) {
+            const live = clanLive;
+            const total = live.rosterSize[side];
+            const out = live.knockouts[side];
+            let html = '';
+            for (let i = 0; i < total; i++) html += `<span class="clan-live-dot ${i < total - out ? '' : 'is-out'}"></span>`;
+            return html;
+        }
+
+        function clanLiveUpdateHud() {
+            const live = clanLive;
+            if (!live) return;
+            const m = live.match;
+            ['a', 'b'].forEach(side => {
+                const key = side === 'a' ? 'Left' : 'Right';
+                const f = live.fighters[side];
+                const fill = document.getElementById(`clanLiveHp${key}Fill`);
+                const text = document.getElementById(`clanLiveHp${key}Text`);
+                document.getElementById(`clanLiveHp${key}Clan`).textContent = side === 'a' ? m.clan_a_name : m.clan_b_name;
+                document.getElementById(`clanLiveHp${key}Name`).textContent = f ? `${f.name} · ${clanTierLabel(f.tierId)}` : '—';
+                document.getElementById(`clanLiveRoster${key}`).innerHTML = clanLiveRosterDots(side);
+                if (!f) { fill.style.width = '0%'; text.textContent = ''; return; }
+                const pct = arenaClamp(f.hp / f.maxHp, 0, 1);
+                fill.style.width = (pct * 100) + '%';
+                fill.style.background = pct > 0.5
+                    ? 'linear-gradient(90deg, #22c55e, #86efac)'
+                    : (pct > 0.22 ? 'linear-gradient(90deg, #eab308, #fde68a)' : 'linear-gradient(90deg, #dc2626, #ff8a8a)');
+                text.textContent = `${Math.max(0, Math.round(f.hp))} / ${f.maxHp}`;
+            });
+            const duel = Math.min(live.knockouts.a + live.knockouts.b + 1, live.rosterSize.a + live.rosterSize.b - 1);
+            document.getElementById('clanLiveDuel').textContent =
+                (live.mode === 'waiting' || live.mode === 'techwin') ? '' : t('clan.duelLabel', { n: duel });
+        }
+
+        function clanLiveShowBanner(title, sub) {
+            document.getElementById('clanLiveBannerTitle').textContent = title;
+            document.getElementById('clanLiveBannerSub').textContent = sub || '';
+            document.getElementById('clanLiveBanner').classList.add('show');
+        }
+
+        function clanLiveTogglePause() {
+            const live = clanLive;
+            if (!live || live.mode !== 'replay') return;
+            haptic.select();
+            if (live.finished) { clanLiveRestart(); return; }
+            live.paused = !live.paused;
+            clanLiveSetChrome();
+        }
+
+        function clanLiveToggleSpeed() {
+            const live = clanLive;
+            if (!live || live.mode !== 'replay') return;
+            haptic.select();
+            live.replaySpeed = live.replaySpeed === 1 ? 2 : 1;
+            clanLiveSetChrome();
+        }
+
+        function clanLiveRestart() {
+            const live = clanLive;
+            if (!live) return;
+            haptic.select();
+            clanLiveStop();
+            clanLiveStartBroadcast(live.index, live.match, 'replay');
         }
 
         async function boot() {

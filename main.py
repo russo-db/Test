@@ -2574,14 +2574,88 @@ def _clan_feeder_indices(size: int) -> dict:
     return feeders
 
 
-def clan_tournament_view_bracket(tournament: dict) -> list:
+# --- «Прямой Эфир»: матч разрешается сервером мгновенно, но зрителю
+# показывается в реальном времени. У каждого события battle_log есть своё
+# смещение от начала эфира (clan_broadcast_schedule) — одно и то же для
+# сервера и клиента; весь матч 10х10 идёт CLAN_BROADCAST_MIN..MAX секунд.
+# Пока эфир идёт, игровой API не раскрывает ни победителя, ни ещё не
+# «случившиеся» события лога, ни клан, прошедший дальше по сетке.
+CLAN_BROADCAST_MIN_SECONDS = 90.0
+CLAN_BROADCAST_MAX_SECONDS = 120.0
+CLAN_BROADCAST_EVENT_SECONDS = {"enter": 0.6, "attack": 1.3, "death": 1.6}
+CLAN_BROADCAST_TAIL_SECONDS = 1.5   # пауза после последнего удара до объявления победителя
+CLAN_BROADCAST_LOOKAHEAD_SECONDS = 4.0  # сколько лога вперёд отдаём клиенту (он опрашивает каждые ~2 с)
+
+
+def clan_broadcast_schedule(log: list) -> tuple:
+    """(offsets, duration, time_scale): offsets[i] — секунда эфира, в
+    которую начинается событие log[i]; duration — длина всего эфира;
+    time_scale — во сколько раз «базовые» длительности событий растянуты
+    (>1) или сжаты (<1), чтобы уложить матч в MIN..MAX секунд. Пустой лог
+    (техническая победа) — эфира нет, duration == 0."""
+    if not log:
+        return [], 0.0, 1.0
+    raw, t = [], 0.0
+    for event in log:
+        raw.append(t)
+        t += CLAN_BROADCAST_EVENT_SECONDS.get(event.get("type"), 1.0)
+    t += CLAN_BROADCAST_TAIL_SECONDS
+    duration = min(max(t, CLAN_BROADCAST_MIN_SECONDS), CLAN_BROADCAST_MAX_SECONDS)
+    scale = duration / t
+    return [round(x * scale, 3) for x in raw], duration, scale
+
+
+def clan_match_broadcast_window(tournament: dict, match: dict) -> Optional[tuple]:
+    """(начало, конец) эфира разрешённого матча или None, если смотреть
+    нечего. Начало — не раньше start_time и не раньше фактического
+    разрешения (resolved_at): матч, который сервер разыграл позже своего
+    времени (никто не заходил), начинается в эфире с момента разрешения."""
+    if not match.get("resolved"):
+        return None
+    _, duration, _ = clan_broadcast_schedule(match.get("battle_log") or [])
+    if duration <= 0:
+        return None
+    start = max(clan_tournament_match_time(tournament, match), float(match.get("resolved_at") or 0))
+    return start, start + duration
+
+
+def clan_tournament_view_bracket(tournament: dict, hide_live: bool = False, now: Optional[float] = None) -> list:
     """Сетка для клиента/админки — без battle_log, с абсолютным start_time
-    каждого матча (см. clan_tournament_match_time)."""
+    каждого матча (см. clan_tournament_match_time). hide_live (игровой
+    API): у матча, эфир которого ещё идёт, скрыт победитель (live=True,
+    live_started_at/live_ends_at), а клан, уже переставленный им в слот
+    следующего несыгранного матча, снова показан как «TBD» — иначе итог
+    эфира был бы виден в сетке раньше, чем зритель его досмотрит."""
+    now = time.time() if now is None else now
+    size = tournament["size"]
     bracket = []
     for match in tournament["bracket"]:
         m = {k: v for k, v in match.items() if k != "battle_log"}
         m["start_time"] = clan_tournament_match_time(tournament, match)
         bracket.append(m)
+    if not hide_live:
+        return bracket
+
+    offsets = clan_round_offsets(size)
+    for idx, match in enumerate(tournament["bracket"]):
+        window = clan_match_broadcast_window(tournament, match)
+        if not window or now >= window[1]:
+            continue
+        m = bracket[idx]
+        m["live"] = True
+        m["live_started_at"], m["live_ends_at"] = window
+        hidden_winner = m.get("winner_id")
+        m["winner_id"] = m["winner_name"] = None
+        local_idx = idx - offsets[match["round"]][0]
+        for target in (_clan_next_match_for_winner(match["round"], local_idx, size),
+                       _clan_next_match_for_loser(match["round"], local_idx, size)):
+            if not target:
+                continue
+            target_idx, slot = target
+            nxt = bracket[target_idx]
+            if nxt.get("resolved") or not hidden_winner:
+                continue
+            nxt[f"{slot}_id"] = nxt[f"{slot}_name"] = None
     return bracket
 
 
@@ -2705,11 +2779,13 @@ async def _advance_clan_bracket(tournament: dict) -> None:
         a_id, b_id = match.get("clan_a_id"), match.get("clan_b_id")
         winner_id = winner_name = None
         battle_log: list = []
+        roster_sizes = {"fighters_a": 0, "fighters_b": 0}
 
         if a_id and b_id:
             clan_a, clan_b = await store.get_clan(a_id), await store.get_clan(b_id)
             fighters_a = await _clan_roster_fighters(clan_a)
             fighters_b = await _clan_roster_fighters(clan_b)
+            roster_sizes = {"fighters_a": len(fighters_a), "fighters_b": len(fighters_b)}
             if fighters_a and fighters_b:
                 result = clan_battle_simulate(f"{tournament['cycle']}:{idx}", fighters_a, fighters_b)
                 battle_log = result["log"]
@@ -2737,12 +2813,14 @@ async def _advance_clan_bracket(tournament: dict) -> None:
         elif b_id:
             winner_id, winner_name = b_id, match.get("clan_b_name")
 
-        if not await store.resolve_clan_match(idx, winner_id, winner_name, battle_log):
+        if not await store.resolve_clan_match(idx, winner_id, winner_name, battle_log, now, roster_sizes):
             continue  # уже разрешён другим конкурентным вызовом
 
         match["resolved"], match["winner_id"], match["winner_name"], match["battle_log"] = (
             True, winner_id, winner_name, battle_log,
         )
+        match["resolved_at"] = now
+        match.update(roster_sizes)
 
         round_key = match["round"]
         local_idx = idx - clan_round_offsets(size)[round_key][0]
@@ -3164,25 +3242,53 @@ async def clan_tournament_view(user_id: int, x_telegram_init_data: Optional[str]
     authenticate(x_telegram_init_data, user_id)
     await reconcile_clan_tournament()
     tournament = await current_clan_tournament()
+    now = time.time()
     if not tournament:
-        return {"cycle": 0, "size": 0, "start_at": 0, "bracket": []}
+        return {"cycle": 0, "size": 0, "start_at": 0, "bracket": [], "server_time": now}
     return {
         "cycle": tournament["cycle"], "size": tournament["size"], "start_at": tournament["start_at"],
-        "bracket": clan_tournament_view_bracket(tournament),
+        "bracket": clan_tournament_view_bracket(tournament, hide_live=True, now=now), "server_time": now,
     }
 
 
 @app.get("/api/clan/tournament/match/{match_index}")
 async def clan_tournament_match(match_index: int, user_id: int,
                                  x_telegram_init_data: Optional[str] = Header(None)):
-    """Один разрешённый матч турнира вместе с battle_log — вкладка
-    «Прямой Эфир» проигрывает его на Canvas дуэль за дуэлью."""
+    """Один матч турнира для «Прямого Эфира» вместе с battle_log и
+    расписанием эфира (event_offsets — секунда эфира каждого события, см.
+    clan_broadcast_schedule). Пока эфир идёт (live=True), отдаются только
+    события, которые уже «случились» (плюс небольшой запас вперёд для
+    плавности), а победитель скрыт — клиент досматривает остальное,
+    периодически запрашивая этот же адрес. После эфира — весь лог целиком
+    (режим повтора)."""
     authenticate(x_telegram_init_data, user_id)
+    await reconcile_clan_tournament()
     tournament = await current_clan_tournament()
     bracket = (tournament or {}).get("bracket") or []
     if not (0 <= match_index < len(bracket)):
         raise HTTPException(status_code=404, detail="Матч не найден")
-    return bracket[match_index]
+    now = time.time()
+    view = clan_tournament_view_bracket(tournament, hide_live=True, now=now)[match_index]
+    match = bracket[match_index]
+    log = match.get("battle_log") or []
+    offsets, duration, scale = clan_broadcast_schedule(log)
+    view.update({
+        "server_time": now, "broadcast_duration": duration, "time_scale": scale,
+        # Размер составов на момент матча — не из лога: число «enter» у
+        # победителя выдало бы, скольких бойцов ему хватило.
+        "fighters_a": int(match.get("fighters_a") or 0),
+        "fighters_b": int(match.get("fighters_b") or 0),
+        "log_total": len(log),
+    })
+    window = clan_match_broadcast_window(tournament, match)
+    if window:
+        view["live_started_at"], view["live_ends_at"] = window
+    if view.get("live"):
+        visible = sum(1 for o in offsets if o <= now - window[0] + CLAN_BROADCAST_LOOKAHEAD_SECONDS)
+        view["battle_log"], view["event_offsets"] = log[:visible], offsets[:visible]
+    else:
+        view["battle_log"], view["event_offsets"] = log, offsets
+    return view
 
 
 @app.post("/api/nest/particles/collect")

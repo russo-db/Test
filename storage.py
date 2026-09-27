@@ -58,7 +58,8 @@ burned_power (см. поле игрока выше) всех ТЕКУЩИХ уч
 кланов по clan_power, состав замораживается на весь турнир —
 clan_tournament: {_id: "current", cycle, size, start_at, match_minute, bracket:
 [{round, day, clan_a_id, clan_a_name, clan_b_id, clan_b_name, resolved,
-winner_id, winner_name, battle_log, start_time_override?}...]} (см. try_launch_clan_tournament
+winner_id, winner_name, battle_log, resolved_at, fighters_a, fighters_b,
+start_time_override?}...]} (см. try_launch_clan_tournament
 и reconcile_clan_tournament в main.py — турнир только лениво
 ПРОДВИГАЕТСЯ по дням/матчам между запусками, но никогда не запускается
 и не перезапускается сам).
@@ -1264,7 +1265,9 @@ class MongoStore:
         await self.clan_tournament.delete_one({"_id": "current"})
 
     async def resolve_clan_match(self, match_index: int, winner_id: Optional[str],
-                                  winner_name: Optional[str], battle_log: list) -> bool:
+                                  winner_name: Optional[str], battle_log: list,
+                                  resolved_at: Optional[float] = None,
+                                  extra: Optional[dict] = None) -> bool:
         """Атомарно фиксирует исход одного матча — conditional update по
         индексу в массиве bracket, "resolved": False в фильтре гарантирует,
         что при гонке конкурентных запросов исход запишет только один из
@@ -1276,6 +1279,8 @@ class MongoStore:
                 f"bracket.{match_index}.winner_id": winner_id,
                 f"bracket.{match_index}.winner_name": winner_name,
                 f"bracket.{match_index}.battle_log": battle_log,
+                f"bracket.{match_index}.resolved_at": resolved_at if resolved_at is not None else time.time(),
+                **{f"bracket.{match_index}.{k}": v for k, v in (extra or {}).items()},
             }},
         )
         return result.modified_count > 0
