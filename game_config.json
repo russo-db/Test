@@ -352,7 +352,7 @@
     "create_cost_gold": 500,
     "create_cost_meat": 1000,
     "member_limit": 15,
-    "initial_open_slots": 2,
+    "initial_open_slots": 5,
     "slot_price_gram": 5,
     "burn_power_by_tier": { "common": 1, "uncommon": 3, "rare": 15, "epic": 50, "legendary": 250, "mythical": 1000 },
     "roster_size": 10

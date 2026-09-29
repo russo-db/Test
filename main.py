@@ -5003,6 +5003,14 @@ async def startup_event():
         print(f"[storage] init() FAILED: {type(e).__name__}: {e}")
         raise
     try:
+        # Бесплатные стартовые места клана (clans.initial_open_slots) выросли —
+        # кланы, созданные раньше, получают недостающие места бесплатно.
+        raised = await store.raise_clan_open_slots(min(CLAN_INITIAL_OPEN_SLOTS, CLAN_MEMBER_LIMIT))
+        if raised:
+            print(f"[clans] бесплатные места подняты до {CLAN_INITIAL_OPEN_SLOTS} у кланов: {raised}")
+    except Exception as e:
+        print(f"[clans] raise_clan_open_slots FAILED: {type(e).__name__}: {e}")
+    try:
         equipped = await migrate_bot_clan_rosters()
         if equipped:
             print(f"[bots] одето клан-ботов для боя 10х10: {equipped}")

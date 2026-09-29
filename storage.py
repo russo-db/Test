@@ -1176,6 +1176,12 @@ class MongoStore:
         await self.users.update_one({"_id": target_id, "clan_id": clan_id}, {"$set": {"clan_id": None}})
         return "ok"
 
+    async def raise_clan_open_slots(self, minimum: int) -> int:
+        """Поднимает число открытых мест до minimum у всех кланов, где их
+        меньше (бесплатные стартовые места выросли) — остальное не трогает."""
+        result = await self.clans.update_many({"open_slots": {"$lt": minimum}}, {"$set": {"open_slots": minimum}})
+        return result.modified_count
+
     async def open_clan_slot(self, user_id: int, clan_id: str, price_gram: float, member_limit: int) -> str:
         from bson import ObjectId
         from bson.errors import InvalidId
