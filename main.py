@@ -69,6 +69,7 @@ def apply_config(cfg: dict):
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
     global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
     global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
+    global RESOURCE_MARKET_MIN_UNIT_PRICE
     global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
@@ -128,6 +129,11 @@ def apply_config(cfg: dict):
     RESOURCE_MARKET_CFG = CONFIG.get("resource_market") or {}
     RESOURCE_MARKET_COMMISSION = float(RESOURCE_MARKET_CFG.get("commission", 0.10))
     RESOURCE_MARKET_MIN_PRICE = {k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price") or {}).items()}
+    # Минимум за ОДНУ штуку (напр. Небесный Осколок — не дешевле 3 GRAM за
+    # осколок): минимальная цена лота = max(min_price, min_price_per_unit * amount).
+    RESOURCE_MARKET_MIN_UNIT_PRICE = {
+        k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price_per_unit") or {}).items()
+    }
     RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
     ARENA_SEASON_CFG = CONFIG.get("arena_season") or {}
     ARENA_SEASON_DAYS = int(ARENA_SEASON_CFG.get("days", 20))
@@ -4087,6 +4093,11 @@ async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[
     return {"listings": await store.list_resource_listings()}
 
 
+def resource_market_min_lot_price(resource: str, amount: int) -> float:
+    return max(RESOURCE_MARKET_MIN_PRICE.get(resource, 0.0),
+               RESOURCE_MARKET_MIN_UNIT_PRICE.get(resource, 0.0) * amount)
+
+
 @app.post("/api/market/resources/list")
 async def resource_market_list(request: ResourceMarketListRequest, x_telegram_init_data: Optional[str] = Header(None)):
     """Выставляет amount штук ресурса на продажу за GRAM — списывается
@@ -4100,9 +4111,11 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
         raise HTTPException(status_code=400, detail=f"Минимум {min_amount} шт.")
     if not (request.price_gram > 0):
         raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
-    min_price = RESOURCE_MARKET_MIN_PRICE.get(request.resource, 0.0)
-    if request.price_gram < min_price:
-        raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM")
+    min_price = resource_market_min_lot_price(request.resource, amount)
+    if request.price_gram < min_price - 1e-9:
+        unit = RESOURCE_MARKET_MIN_UNIT_PRICE.get(request.resource, 0.0)
+        per_unit = f" ({unit:g} GRAM за штуку × {amount})" if unit * amount >= min_price else ""
+        raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM{per_unit}")
 
     row = await fetch_user(user_id)
     if not await _adjust_user_resource(user_id, request.resource, -amount):

@@ -325,6 +325,7 @@
   "resource_market": {
     "commission": 0.10,
     "min_price": { "shards": 1, "particles": 0.1 },
+    "min_price_per_unit": { "shards": 3 },
     "min_amount": { "shards": 1, "particles": 1 }
   },
   "merchant": {

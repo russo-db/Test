@@ -2048,6 +2048,7 @@
                 'resourcemarket.notEnoughOwned': 'Недостаточно ресурса для этого количества',
                 'resourcemarket.listed': 'Ресурс выставлен на продажу', 'resourcemarket.bought': 'Ресурс куплен!',
                 'resourcemarket.minPriceHint': 'Минимальная цена лота — {price} GRAM',
+                'resourcemarket.minUnitPriceHint': 'Минимум {unit} GRAM за штуку — за {amount} шт. от {price} GRAM',
                 'resourcemarket.belowMinPrice': 'Цена ниже минимальной — {price} GRAM',
                 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
@@ -2341,6 +2342,7 @@
                 'resourcemarket.notEnoughOwned': 'Not enough of this resource for that amount',
                 'resourcemarket.listed': 'Resource listed for sale', 'resourcemarket.bought': 'Resource purchased!',
                 'resourcemarket.minPriceHint': 'Minimum price for this listing — {price} GRAM',
+                'resourcemarket.minUnitPriceHint': 'Minimum {unit} GRAM per unit — {price} GRAM for {amount}',
                 'resourcemarket.belowMinPrice': 'Price is below the minimum — {price} GRAM',
                 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
@@ -5263,8 +5265,31 @@
             return Number((CONFIG.resource_market.min_amount || {})[resource]) || 1;
         }
 
-        function resourceMarketMinPrice(resource) {
-            return Number((CONFIG.resource_market.min_price || {})[resource]) || 0;
+        // Минимальная цена ЛОТА: не ниже min_price и не ниже min_price_per_unit
+        // за каждую штуку (Небесный Осколок — 3 GRAM за осколок), как на сервере.
+        function resourceMarketMinPrice(resource, amount) {
+            const perLot = Number((CONFIG.resource_market.min_price || {})[resource]) || 0;
+            const perUnit = Number((CONFIG.resource_market.min_price_per_unit || {})[resource]) || 0;
+            return Math.max(perLot, perUnit * (amount || 1));
+        }
+
+        function resourceMarketMinPriceHint(resource, amount) {
+            const perUnit = Number((CONFIG.resource_market.min_price_per_unit || {})[resource]) || 0;
+            const minPrice = resourceMarketMinPrice(resource, amount);
+            return perUnit && perUnit * amount >= minPrice
+                ? t('resourcemarket.minUnitPriceHint', { unit: fmtGram(perUnit), amount, price: fmtGram(minPrice) })
+                : t('resourcemarket.minPriceHint', { price: fmtGram(minPrice) });
+        }
+
+        // Количество поменялось — минимальная цена лота тоже (см. min_price_per_unit).
+        function onResourceMarketSellAmountInput() {
+            const resource = resourceMarketSellResource;
+            const amount = Math.max(Math.floor(Number(document.getElementById('resourceMarketSellAmount').value) || 0), 1);
+            const minPrice = resourceMarketMinPrice(resource, amount);
+            const priceEl = document.getElementById('resourceMarketSellPrice');
+            priceEl.min = minPrice;
+            if ((Number(priceEl.value) || 0) < minPrice) priceEl.value = minPrice;
+            document.getElementById('resourceMarketSellMinHint').textContent = resourceMarketMinPriceHint(resource, amount);
         }
 
         function renderResourceMarketTabs() {
@@ -5365,10 +5390,10 @@
             const resource = resourceMarketSellResource;
             const owned = Math.floor(resourceOwned(resource));
             const minAmount = resourceMarketMinAmount(resource);
-            const minPrice = resourceMarketMinPrice(resource);
             const amountEl = document.getElementById('resourceMarketSellAmount');
             const priceEl = document.getElementById('resourceMarketSellPrice');
             const amount = Math.max(Number(amountEl ? amountEl.value : 0) || minAmount, minAmount);
+            const minPrice = resourceMarketMinPrice(resource, amount);
             const price = Math.max(Number(priceEl ? priceEl.value : 0) || minPrice, minPrice);
 
             document.getElementById('resourceMarketSellBody').innerHTML = `
@@ -5384,9 +5409,10 @@
                     </button>
                 </div>
                 <div class="pay-label">${t('resourcemarket.amountLabel')}</div>
-                <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}">
+                <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}" oninput="onResourceMarketSellAmountInput()">
                 <div class="pay-label">${t('market.priceLabel')}</div>
                 <input class="pay-input" id="resourceMarketSellPrice" type="number" inputmode="decimal" min="${minPrice}" step="0.01" value="${price}">
+                <p class="pay-warning" id="resourceMarketSellMinHint">${resourceMarketMinPriceHint(resource, amount)}</p>
                 <p class="pay-warning">${t('resourcemarket.ownedHint', { amount: owned })}</p>
                 <p class="pay-warning">${t('market.commissionHint', { pct: Math.round((CONFIG.resource_market.commission || 0) * 100) })}</p>
                 <div class="pay-actions">
@@ -5401,12 +5427,12 @@
             const amount = Math.floor(Number(document.getElementById('resourceMarketSellAmount').value) || 0);
             const price = Number(document.getElementById('resourceMarketSellPrice').value) || 0;
             const minAmount = resourceMarketMinAmount(resource);
-            const minPrice = resourceMarketMinPrice(resource);
+            const minPrice = resourceMarketMinPrice(resource, amount);
             const owned = Math.floor(resourceOwned(resource));
             if (amount < minAmount) { toast(t('resourcemarket.invalidAmount', { amount: minAmount })); return; }
             if (amount > owned) { toast(t('resourcemarket.notEnoughOwned')); return; }
             if (price <= 0) { toast(t('market.invalidPrice')); return; }
-            if (price < minPrice) { toast(t('resourcemarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
+            if (price < minPrice - 1e-9) { toast(t('resourcemarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
             try {
                 const response = await fetch('api/market/resources/list', {
                     method: 'POST', headers: apiHeaders(),
@@ -8471,7 +8497,7 @@
                 cfg.equip_market.min_price_by_grade = DEFAULT_EQUIP_MARKET_MIN_PRICE;
             }
             cfg.resource_market = Object.assign(
-                { commission: 0.10, min_price: { shards: 1, particles: 0.1 }, min_amount: { shards: 1, particles: 1 } },
+                { commission: 0.10, min_price: { shards: 1, particles: 0.1 }, min_price_per_unit: { shards: 3 }, min_amount: { shards: 1, particles: 1 } },
                 cfg.resource_market
             );
             cfg.arena_season = Object.assign({ days: 20, rewards: DEFAULT_ARENA_SEASON_REWARDS }, cfg.arena_season);
