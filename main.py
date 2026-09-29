@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import random
 import re
 import secrets
@@ -3795,25 +3796,34 @@ async def merchant_state():
     return await store.get_merchant_state()
 
 
+def merchant_eagle_buyback() -> dict:
+    """{tier: {"price": GRAM, "limit": штук}} из game_config.json -> merchant.eagle_buyback."""
+    raw = (CONFIG.get("merchant") or {}).get("eagle_buyback") or {}
+    out = {}
+    for tier, offer in raw.items():
+        try:
+            price, limit = float(offer.get("price")), int(offer.get("limit"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if tier in TIER_INDEX and price > 0 and limit > 0:
+            out[tier] = {"price": price, "limit": limit}
+    return out
+
+
 @app.post("/api/merchant/buy_meat")
 async def merchant_buy_meat(request: MerchantBuyMeat, x_telegram_init_data: Optional[str] = Header(None)):
-    """Покупка Meat за золото по фиксированному курсу — лимит общий на всех
-    игроков (а не персональный), поэтому считает и проверяет его сервер."""
+    """Обмен золота на Meat по фиксированному курсу — постоянный, без лимита
+    количества: сколько угодно, пока хватает золота (проверяется и
+    списывается атомарно, см. store.buy_merchant_meat)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     await ensure_user(user_id)
 
-    cfg = CONFIG.get("merchant") or {}
-    limit = float(cfg.get("meat_buy_limit", 1000))
-    max_per_purchase = float(cfg.get("meat_buy_max_per_purchase", 5))
-    rate = float(cfg.get("meat_per_gold", 5)) or 5.0
-
-    requested = float(request.amount)
-    if requested <= 0:
+    rate = float((CONFIG.get("merchant") or {}).get("meat_per_gold", 5)) or 5.0
+    amount = float(request.amount)
+    if not math.isfinite(amount) or amount <= 0:
         raise HTTPException(status_code=400, detail="Укажи количество Meat")
 
-    result = await store.buy_merchant_meat(user_id, requested, limit, max_per_purchase, rate)
-    if result["status"] == "limit_reached":
-        raise HTTPException(status_code=409, detail="Лимит покупки Meat исчерпан")
+    result = await store.buy_merchant_meat(user_id, amount, rate)
     if result["status"] == "insufficient_gold":
         raise HTTPException(status_code=400, detail="Недостаточно золота")
 
@@ -3831,23 +3841,21 @@ async def merchant_buy_meat(request: MerchantBuyMeat, x_telegram_init_data: Opti
 
 @app.post("/api/merchant/sell_eagle")
 async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: Optional[str] = Header(None)):
-    """Продажа обычного (серого) орла за GRAM — лимит общий на всех игроков,
-    поэтому и он, и сама ферма продавца проверяются/меняются на сервере."""
+    """Выкуп полностью откормленного орла купцом — цена и общий на всех
+    игроков лимит зависят от редкости (merchant.eagle_buyback). Лимит и
+    ферма продавца проверяются/меняются только на сервере."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     await ensure_user(user_id)
 
-    cfg = CONFIG.get("merchant") or {}
-    limit = int(cfg.get("eagle_sell_limit", 10))
-    price = float(cfg.get("eagle_gram_price", 0.2))
-    common_ids = {m_id for m_id, tier in MONSTER_TIER.items() if tier == "common"}
-
-    result = await store.sell_merchant_eagle(user_id, request.slot_index, limit, price, common_ids, FEED_LEVELS)
+    result = await store.sell_merchant_eagle(
+        user_id, request.slot_index, merchant_eagle_buyback(), MONSTER_TIER, FEED_LEVELS,
+    )
     if result["status"] == "limit_reached":
-        raise HTTPException(status_code=409, detail="Лимит продажи орлов исчерпан")
+        raise HTTPException(status_code=409, detail="Купец больше не выкупает орлов этой редкости — лимит исчерпан")
     if result["status"] == "not_found":
         raise HTTPException(status_code=400, detail="Орёл не найден")
     if result["status"] == "wrong_tier":
-        raise HTTPException(status_code=400, detail="Купец берёт только обычных орлов")
+        raise HTTPException(status_code=400, detail="Купец не выкупает орлов этой редкости")
     if result["status"] == "not_fed":
         raise HTTPException(status_code=400, detail="Купец берёт только полностью откормленных орлов")
     if result["status"] == "last_eagle":
@@ -3858,6 +3866,7 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
     fresh = await store.get(user_id)
     return {
         "status": "success",
+        "price": result["price"], "tier": result["tier"],
         "coins": float(fresh.get("coins") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
         "monsters": read_farm(fresh["monsters"]),

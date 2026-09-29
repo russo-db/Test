@@ -330,10 +330,14 @@
   },
   "merchant": {
     "meat_per_gold": 5,
-    "meat_buy_limit": 1000,
-    "meat_buy_max_per_purchase": 5,
-    "eagle_gram_price": 0.2,
-    "eagle_sell_limit": 10
+    "eagle_buyback": {
+      "common": { "price": 0.3, "limit": 50 },
+      "uncommon": { "price": 2.5, "limit": 20 },
+      "rare": { "price": 6, "limit": 8 },
+      "epic": { "price": 20, "limit": 3 },
+      "legendary": { "price": 50, "limit": 2 },
+      "mythical": { "price": 150, "limit": 1 }
+    }
   },
   "combat_base_stats": {
     "common": { "hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10 },

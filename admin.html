@@ -567,6 +567,9 @@ async function toggleFeature(key) {
 }
 
 /* ---------- купец ---------- */
+const MERCHANT_TIER_LABELS = {
+    common: 'серые', uncommon: 'зелёные', rare: 'синие', epic: 'фиолетовые', legendary: 'золотые', mythical: 'мифические',
+};
 async function loadMerchant() {
     try {
         const st = await api('/api/merchant/state');
@@ -577,14 +580,19 @@ async function loadMerchant() {
                 <div class="value">${fmtNum(st.meat_bought)}</div>
             </div>
             <div class="stat-card">
-                <div class="label">Орлов продано</div>
-                <div class="value">${fmtNum(st.eagles_sold)}</div>
+                <div class="label">Орлов выкуплено (всего)</div>
+                <div class="value">${fmtNum(st.eagles_sold || 0)}</div>
             </div>
+            ${Object.entries(st.eagles_sold_by_tier || {}).map(([tier, n]) => `
+            <div class="stat-card">
+                <div class="label">Выкуплено: ${MERCHANT_TIER_LABELS[tier] || tier}</div>
+                <div class="value">${fmtNum(n)}</div>
+            </div>`).join('')}
         `;
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
 document.getElementById('resetMerchantBtn').onclick = async () => {
-    if (!confirm('Обнулить лимиты купца (Meat куплено и орлов продано) до нуля?')) return;
+    if (!confirm('Обнулить счётчики купца? Лимиты выкупа орлов по всем редкостям начнутся заново.')) return;
     try {
         await api('/admin/api/merchant/reset', { method: 'POST' });
         toast('Купец обнулён');

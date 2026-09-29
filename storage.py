@@ -27,7 +27,7 @@
 предметами Кузницы по грейдам) и рынка ресурсов (resource_listings —
 P2P-торговля целыми Небесными Осколками и целыми частичками), общий (один
 на всех игроков, не по-пользовательски) счётчик лавки купца —
-merchant_state: {meat_bought, eagles_sold}, точно так же общий
+merchant_state: {meat_bought, eagles_sold_by_tier: {tier: n}}, точно так же общий
 кулдаун/суточный лимит покупки Небесного Осколка —
 nest_state: {cooldown_until, day, bought_today}, и общий номер текущего
 сезона Арены — arena_season: {season} (см. try_advance_arena_season /
@@ -112,7 +112,7 @@ class MongoStore:
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
-            {"_id": "global"}, {"$setOnInsert": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
+            {"_id": "global"}, {"$setOnInsert": {"meat_bought": 0, "eagles_sold_by_tier": {}}}, upsert=True
         )
         # Небесный Осколок — тот же принцип: один общий документ на всех
         # игроков сразу (кулдаун и суточный лимит покупки не персональные).
@@ -224,14 +224,22 @@ class MongoStore:
         return {"status": "ok", "cost": cost, "attempt": attempt}
 
     async def get_merchant_state(self) -> dict:
+        """meat_bought — просто статистика (обмен золота на Meat без лимита);
+        eagles_sold_by_tier — сколько орлов каждой редкости купец уже выкупил
+        (лимиты общие на всех игроков, см. sell_merchant_eagle)."""
         doc = await self.merchant.find_one({"_id": "global"}) or {}
-        return {"meat_bought": float(doc.get("meat_bought") or 0), "eagles_sold": int(doc.get("eagles_sold") or 0)}
+        by_tier = {k: int(v or 0) for k, v in (doc.get("eagles_sold_by_tier") or {}).items()}
+        return {
+            "meat_bought": float(doc.get("meat_bought") or 0),
+            "eagles_sold_by_tier": by_tier, "eagles_sold": sum(by_tier.values()),
+        }
 
     async def reset_merchant_state(self) -> dict:
         await self.merchant.update_one(
-            {"_id": "global"}, {"$set": {"meat_bought": 0, "eagles_sold": 0}}, upsert=True
+            {"_id": "global"}, {"$set": {"meat_bought": 0, "eagles_sold_by_tier": {}}, "$unset": {"eagles_sold": ""}},
+            upsert=True,
         )
-        return {"meat_bought": 0.0, "eagles_sold": 0}
+        return {"meat_bought": 0.0, "eagles_sold_by_tier": {}, "eagles_sold": 0}
 
     async def get_nest_state(self, today: int, daily_limit: int) -> dict:
         doc = await self.nest_global.find_one({"_id": "global"}) or {}
@@ -292,50 +300,30 @@ class MongoStore:
 
         return {"status": "ok", "cooldown_until": new_cooldown, "bought_today": bought_today + 1}
 
-    async def buy_merchant_meat(self, user_id: int, requested: float, limit: float,
-                                 max_per_purchase: float, rate: float) -> dict:
-        """Общий (на всех игроков) лимит Meat: сперва атомарно резервируем место
-        в лимите, затем списываем золото игрока; если золота не хватило —
-        возвращаем резерв обратно (двухфазный подход, раз Mongo здесь без
-        многодокументных транзакций, как и в buy_listing)."""
-        state = await self.merchant.find_one({"_id": "global"}) or {}
-        bought = float(state.get("meat_bought") or 0)
-        remaining = max(0.0, limit - bought)
-        amount = min(max(0.0, requested), remaining, max_per_purchase)
-        if amount <= 0:
-            return {"status": "limit_reached"}
-
-        reserve = await self.merchant.update_one(
-            {"_id": "global", "meat_bought": {"$lte": limit - amount}},
-            {"$inc": {"meat_bought": amount}},
-        )
-        if reserve.modified_count == 0:
-            return {"status": "limit_reached"}
-
+    async def buy_merchant_meat(self, user_id: int, amount: float, rate: float) -> dict:
+        """Обмен золота на Meat по фиксированному курсу — постоянный, без
+        лимита количества: единственное условие — хватает ли золота, и оно
+        проверяется атомарно в том же update, что и списание. meat_bought
+        в общей лавке — только статистика для админки."""
         cost = amount / rate
         charge = await self.users.update_one(
             {"_id": user_id, "gold": {"$gte": cost}},
             {"$inc": {"gold": -cost, "mnstr": amount, "ops": 1}},
         )
         if charge.modified_count == 0:
-            await self.merchant.update_one({"_id": "global"}, {"$inc": {"meat_bought": -amount}})
             return {"status": "insufficient_gold"}
+        await self.merchant.update_one({"_id": "global"}, {"$inc": {"meat_bought": amount}}, upsert=True)
         return {"status": "ok", "amount": amount, "cost": cost}
 
-    async def sell_merchant_eagle(self, user_id: int, slot_index: int, limit: int,
-                                   price: float, common_ids, feed_levels: int) -> dict:
-        """Общий (на всех игроков) лимит проданных орлов — тот же двухфазный
-        подход: резерв лимита, потом ферма продавца по оптимистичной блокировке
-        (полное совпадение monsters И farm_queue), с откатом резерва при
-        конфликте. Купец берёт только полностью откормленных (feed_level >=
-        feed_levels) обычных орлов. Освободившийся слот сразу добирает орла
-        из очереди (farm_queue) — иначе слот пустует, пока клиент не
-        перезагрузит ферму."""
-        state = await self.merchant.find_one({"_id": "global"}) or {}
-        sold = int(state.get("eagles_sold") or 0)
-        if sold >= limit:
-            return {"status": "limit_reached"}
-
+    async def sell_merchant_eagle(self, user_id: int, slot_index: int, buyback: dict,
+                                   monster_tier: dict, feed_levels: int) -> dict:
+        """Выкуп орла купцом: цена и лимит — по редкости (buyback: {tier:
+        {"price", "limit"}}); лимит общий на всех игроков. Тот же двухфазный
+        подход: сначала атомарно резервируем место в лимите редкости, потом
+        меняем ферму продавца по оптимистичной блокировке (полное совпадение
+        monsters И farm_queue) и откатываем резерв при конфликте. Купец берёт
+        только полностью откормленных (feed_level >= feed_levels) орлов.
+        Освободившийся слот сразу добирает орла из очереди (farm_queue)."""
         doc = await self.users.find_one(
             {"_id": user_id}, {"monsters": 1, "active_slot": 1, "farm_queue": 1, "slots": 1}
         )
@@ -345,19 +333,24 @@ class MongoStore:
         slots_count = int((doc or {}).get("slots") or 0)
         if not (0 <= slot_index < len(farm)):
             return {"status": "not_found"}
-        if farm[slot_index].get("id") not in common_ids:
+        tier = monster_tier.get(farm[slot_index].get("id"))
+        offer = buyback.get(tier)
+        if not offer:
             return {"status": "wrong_tier"}
+        price, limit = float(offer["price"]), int(offer["limit"])
         if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
             return {"status": "not_fed"}
         if len(farm) <= 1:
             return {"status": "last_eagle"}
 
+        field = f"eagles_sold_by_tier.{tier}"
+        # $not/$gte, а не $lte: поле редкости может ещё отсутствовать.
         reserve = await self.merchant.update_one(
-            {"_id": "global", "eagles_sold": {"$lte": limit - 1}},
-            {"$inc": {"eagles_sold": 1}},
+            {"_id": "global", field: {"$not": {"$gte": limit}}},
+            {"$inc": {field: 1}},
         )
         if reserve.modified_count == 0:
-            return {"status": "limit_reached"}
+            return {"status": "limit_reached", "tier": tier}
 
         original = farm[:]
         new_farm = farm[:slot_index] + farm[slot_index + 1:]
@@ -375,9 +368,9 @@ class MongoStore:
             },
         )
         if result.modified_count == 0:
-            await self.merchant.update_one({"_id": "global"}, {"$inc": {"eagles_sold": -1}})
+            await self.merchant.update_one({"_id": "global"}, {"$inc": {field: -1}})
             return {"status": "conflict"}
-        return {"status": "ok"}
+        return {"status": "ok", "tier": tier, "price": price}
 
     async def create_listing(self, seller_id: int, seller_name: str, monster_id: str,
                               feed_levels: int, price_gram: float, ts: int) -> Optional[str]:
