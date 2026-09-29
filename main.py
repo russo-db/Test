@@ -942,6 +942,17 @@ async def run_farm_action(user_id: int, compute) -> dict:
     raise HTTPException(status_code=409, detail="Не удалось выполнить — попробуй ещё раз")
 
 
+async def record_economy(**amounts) -> None:
+    """Статистика экономики для админки (вкладка «Экономика»): куда уходит
+    золото (крафт / мясо у купца / кланы / энергия Арены), сколько его добыто
+    в экспедициях и чем оплачивают скрещивание — мясом или GRAM. Сбой записи
+    статистики никогда не ломает само действие игрока."""
+    try:
+        await store.record_economy(amounts, time.strftime("%Y-%m-%d", time.gmtime()))
+    except Exception as e:
+        print(f"[economy] record failed: {type(e).__name__}: {e}")
+
+
 # --- DAILY CHECK-IN (mirrored by the client in index.html) ---
 def day_index(moment: Optional[float] = None) -> int:
     """Порядковый номер суток UTC — по нему считаем серию входов."""
@@ -1815,7 +1826,12 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
         response["farm_queue"] = fields.get("farm_queue", farm_queue)
         return fields, response
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    if request.use_gram:
+        await record_economy(fusion_tries_gram=1, gram_fusion=MERGE_COST_GRAM)
+    else:
+        await record_economy(fusion_tries_meat=1, meat_fusion=MERGE_COST_MEAT)
+    return result
 
 
 @app.post("/api/farm/expedition/start")
@@ -1868,7 +1884,9 @@ async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data:
         fields = {"monsters": farm, "gold": gold}
         return fields, {"slot": slot, "slot_index": i, "gold": gold, "reward": reward}
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    await record_economy(gold_expeditions=result["reward"], expeditions=1)
+    return result
 
 
 @app.post("/api/farm/buy_slot")
@@ -2202,7 +2220,12 @@ async def arena_buy_energy(request: ArenaBuyEnergy, x_telegram_init_data: Option
             extra = {"pvp_energy": energy + 1, "coins": fields["coins"]}
         return fields, extra
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    if request.currency == "gold":
+        await record_economy(gold_arena=ARENA_ENERGY_PRICE_GOLD)
+    else:
+        await record_economy(gram_arena=ARENA_ENERGY_PRICE_GRAM)
+    return result
 
 
 @app.get("/api/arena/leaderboard")
@@ -3016,6 +3039,7 @@ async def clan_create(request: ClanCreateRequest, x_telegram_init_data: Optional
     )
     if status != "ok":
         raise HTTPException(status_code=400, detail="Не хватает ресурсов или вы уже состоите в клане")
+    await record_economy(gold_clans=CLAN_CREATE_COST_GOLD, meat_clans=CLAN_CREATE_COST_MEAT, gram_clans=CLAN_CREATE_COST_GRAM)
 
     clan = await store.get_clan(clan_id)
     return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
@@ -3407,7 +3431,9 @@ async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = 
             "inventory": inventory, "item_type": item_type, "grade": grade,
         }
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    await record_economy(gold_craft=NEST_CRAFT_COST_GOLD, particles_craft=NEST_CRAFT_COST_PARTICLES, crafts=1)
+    return result
 
 
 @app.post("/api/nest/upgrade")
@@ -3865,6 +3891,7 @@ async def merchant_buy_meat(request: MerchantBuyMeat, x_telegram_init_data: Opti
     result = await store.buy_merchant_meat(user_id, amount, rate)
     if result["status"] == "insufficient_gold":
         raise HTTPException(status_code=400, detail="Недостаточно золота")
+    await record_economy(gold_to_meat=result["cost"], meat_from_gold=result["amount"])
 
     fresh = await store.get(user_id)
     return {
@@ -4547,6 +4574,12 @@ async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require
         f.write("\n")
     apply_config(cfg)
     return {"status": "success"}
+
+
+@app.get("/admin/api/economy")
+async def admin_economy(_: None = Depends(require_admin)):
+    """Потоки золота/мяса/GRAM за всё время и по дням (последние 14 суток UTC)."""
+    return await store.get_economy(14)
 
 
 @app.post("/admin/api/merchant/reset")

@@ -101,6 +101,9 @@ class MongoStore:
         self.clans = client[db_name]["clans"]
         self.clan_tournament = client[db_name]["clan_tournament"]
         self.counters = client[db_name]["counters"]
+        # Статистика потоков экономики для админки: _id "total" — за всё
+        # время, "day:YYYY-MM-DD" — за сутки UTC (см. record_economy).
+        self.economy = client[db_name]["economy_stats"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -1175,6 +1178,25 @@ class MongoStore:
 
         await self.users.update_one({"_id": target_id, "clan_id": clan_id}, {"$set": {"clan_id": None}})
         return "ok"
+
+    async def record_economy(self, amounts: dict, day: str) -> None:
+        """Прибавляет amounts ({счётчик: число}) к общим и суточным счётчикам."""
+        inc = {k: float(v) for k, v in amounts.items() if v}
+        if not inc:
+            return
+        await self.economy.update_one({"_id": "total"}, {"$inc": inc}, upsert=True)
+        await self.economy.update_one(
+            {"_id": f"day:{day}"}, {"$inc": inc, "$setOnInsert": {"day": day}}, upsert=True,
+        )
+
+    async def get_economy(self, days: int = 14) -> dict:
+        total = await self.economy.find_one({"_id": "total"}) or {}
+        total.pop("_id", None)
+        daily = []
+        async for doc in self.economy.find({"_id": {"$regex": "^day:"}}).sort("day", -1).limit(days):
+            doc.pop("_id", None)
+            daily.append(doc)
+        return {"total": total, "daily": daily}
 
     async def raise_clan_open_slots(self, minimum: int) -> int:
         """Поднимает число открытых мест до minimum у всех кланов, где их

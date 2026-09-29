@@ -213,6 +213,7 @@
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
+            <button class="nav-btn" data-page="economy">📈 Экономика</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -334,6 +335,29 @@
                     <button id="botClanEquipBtn" title="Для ботов, созданных до появления снаряжения (то же делается само при перезапуске сервера)">🦅 Одеть старых ботов</button>
                     <button class="danger" id="botClanClearBtn">🗑 Удалить всех ботов</button>
                 </div>
+            </div>
+        </div>
+
+        <div class="page" id="page-economy">
+            <h2>Экономика: куда уходит золото</h2>
+            <p class="muted">
+                Золото приходит только из экспедиций, а уходит в крафт снаряжения (300 за предмет), обмен на мясо у купца,
+                создание кланов и энергию Арены. Скрещивание можно оплатить мясом или GRAM — чем больше доля мяса,
+                тем сильнее «бесплатное» мясо заменяет доход в GRAM. Счётчики ведутся с момента этого обновления, сутки — по UTC.
+            </p>
+            <button id="economyRefreshBtn">Обновить</button>
+            <h3 style="margin:20px 0 10px;">За всё время</h3>
+            <div class="card-grid" id="economyTotals"></div>
+            <div id="economySplit" style="margin:14px 0 4px;"></div>
+            <h3 style="margin:24px 0 10px;">По дням (последние 14)</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>День (UTC)</th><th>Золото добыто</th><th>→ крафт</th><th>→ мясо</th><th>Мяса получено</th>
+                        <th>→ кланы</th><th>→ Арена</th><th>Скрещ. за мясо</th><th>Скрещ. за GRAM</th>
+                    </tr></thead>
+                    <tbody id="economyDaily"></tbody>
+                </table>
             </div>
         </div>
 
@@ -466,6 +490,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'config') loadConfig();
         if (btn.dataset.page === 'clans') loadClans();
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
+        if (btn.dataset.page === 'economy') loadEconomy();
         else tournamentStopCountdowns();
     };
 });
@@ -565,6 +590,62 @@ async function toggleFeature(key) {
         toast('Сохранено');
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
+
+/* ---------- экономика ---------- */
+async function loadEconomy() {
+    let data;
+    try { data = await api('/admin/api/economy'); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    const t = data.total || {};
+    const n = k => Number(t[k]) || 0;
+    const goldSpent = n('gold_craft') + n('gold_to_meat') + n('gold_clans') + n('gold_arena');
+    const pct = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '—';
+    const card = (label, value, sub) => `
+        <div class="stat-card">
+            <div class="label">${label}</div>
+            <div class="value">${value}</div>
+            ${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}
+        </div>`;
+    const tries = n('fusion_tries_meat') + n('fusion_tries_gram');
+    document.getElementById('economyTotals').innerHTML = [
+        card('Золото добыто (экспедиции)', fmtNum(n('gold_expeditions')), `${fmtNum(n('expeditions'))} походов`),
+        card('Золото → крафт снаряжения', fmtNum(n('gold_craft')), `${fmtNum(n('crafts'))} предметов · ${fmtNum(n('particles_craft'))} частичек · ${pct(n('gold_craft'), goldSpent)} трат`),
+        card('Золото → мясо у купца', fmtNum(n('gold_to_meat')), `получено ${fmtNum(n('meat_from_gold'))} мяса · ${pct(n('gold_to_meat'), goldSpent)} трат`),
+        card('Золото → кланы', fmtNum(n('gold_clans')), `+ ${fmtNum(n('meat_clans'))} мяса и ${fmtNum(n('gram_clans'))} GRAM`),
+        card('Золото → энергия Арены', fmtNum(n('gold_arena')), `за GRAM: ${fmtNum(n('gram_arena'))}`),
+        card('Баланс потока золота (добыто − потрачено)', fmtNum(n('gold_expeditions') - goldSpent),
+             n('gold_expeditions') - goldSpent >= 0 ? 'плюс — золото копится у игроков' : 'минус — тратят золото, накопленное раньше'),
+        card('Скрещивания за мясо', fmtNum(n('fusion_tries_meat')), `${fmtNum(n('meat_fusion'))} мяса · ${pct(n('fusion_tries_meat'), tries)} попыток`),
+        card('Скрещивания за GRAM', fmtNum(n('fusion_tries_gram')), `${fmtNum(n('gram_fusion'))} GRAM · ${pct(n('fusion_tries_gram'), tries)} попыток`),
+    ].join('');
+
+    const bar = (parts) => {
+        const total = parts.reduce((a, p) => a + p.v, 0);
+        if (!total) return '<p class="muted">Пока нет трат золота.</p>';
+        return `<div style="display:flex;height:22px;border-radius:8px;overflow:hidden;border:1px solid #2a3350;">
+            ${parts.filter(p => p.v > 0).map(p => `<div title="${p.label}: ${fmtNum(p.v)}" style="width:${p.v / total * 100}%;background:${p.color};"></div>`).join('')}
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:6px;">
+            ${parts.map(p => `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${p.color};margin-right:4px;"></span>${p.label} ${pct(p.v, total)}</span>`).join('')}
+        </div>`;
+    };
+    document.getElementById('economySplit').innerHTML = bar([
+        { label: 'Крафт', v: n('gold_craft'), color: '#4ade80' },
+        { label: 'Мясо у купца', v: n('gold_to_meat'), color: '#f0b429' },
+        { label: 'Кланы', v: n('gold_clans'), color: '#7cc4ff' },
+        { label: 'Энергия Арены', v: n('gold_arena'), color: '#c084fc' },
+    ]);
+
+    const rows = data.daily || [];
+    const d = (r, k) => fmtNum(Number(r[k]) || 0);
+    document.getElementById('economyDaily').innerHTML = rows.length ? rows.map(r => `
+        <tr>
+            <td>${r.day}</td><td>${d(r, 'gold_expeditions')}</td><td>${d(r, 'gold_craft')}</td><td>${d(r, 'gold_to_meat')}</td>
+            <td>${d(r, 'meat_from_gold')}</td><td>${d(r, 'gold_clans')}</td><td>${d(r, 'gold_arena')}</td>
+            <td>${d(r, 'fusion_tries_meat')}</td><td>${d(r, 'fusion_tries_gram')}</td>
+        </tr>`).join('') : '<tr><td colspan="9" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
+}
+document.getElementById('economyRefreshBtn').onclick = loadEconomy;
 
 /* ---------- купец ---------- */
 const MERCHANT_TIER_LABELS = {
