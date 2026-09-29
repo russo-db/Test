@@ -219,8 +219,19 @@ apply_config(load_config())
 TON_WALLET = os.getenv("TON_WALLET", "").strip()
 # TON API для чтения NFT на кошельке игрока (tonapi.io v2). Ключ не обязателен —
 # без него работает публичный лимит запросов; с ключом (TONAPI_KEY) лимиты выше.
-TONAPI_URL = os.getenv("TONAPI_URL", "https://tonapi.io").rstrip("/")
+# Только MAINNET: коллекция «Небесный орел» существует в основной сети TON,
+# в тестнете её нет. Адрес из переменной окружения, указывающий на testnet,
+# игнорируется (см. _mainnet_url).
+TONAPI_MAINNET = "https://tonapi.io"
+TONCENTER_MAINNET = "https://toncenter.com"
+TONAPI_URL = os.getenv("TONAPI_URL", TONAPI_MAINNET).rstrip("/")
+TONCENTER_URL = os.getenv("TONCENTER_URL", TONCENTER_MAINNET).rstrip("/")
+# Ключи API (необязательны). Без них работают публичные лимиты; при ошибках
+# 429/401 вставьте бесплатный ключ в переменные окружения хостинга:
+#   TONAPI_KEY        — ключ tonapi.io (tonconsole.com), уходит как "Authorization: Bearer <ключ>"
+#   TONCENTER_API_KEY — ключ toncenter.com (Telegram-бот @tonapibot), уходит как "X-API-Key: <ключ>"
 TONAPI_KEY = os.getenv("TONAPI_KEY", "").strip()
+TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 NFT_CLAIM_INTERVAL_DEFAULT = 7 * 24 * 3600   # боевой режим: раз в 7 дней
 NFT_CLAIM_INTERVAL_MIN = 60                   # для тестов можно поставить хоть 1 минуту
 NFT_CLAIM_INTERVAL_MAX = 365 * 24 * 3600
@@ -4978,57 +4989,165 @@ class NftApiError(Exception):
 _NFT_CHECK_CACHE: dict = {}   # wallet -> (checked_at, [nft raw addresses])
 
 
+def _crc16_xmodem(data: bytes) -> int:
+    crc = 0
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
 def ton_address_to_raw(address: str) -> str:
-    """Любой вид адреса TON (EQ…/UQ… base64url или 0:hex) -> сырой "wc:hex"
-    в нижнем регистре — для надёжного сравнения адресов коллекции."""
-    import base64
+    """Нормализация адреса TON (аналог Address.parse(addr) из @ton/core):
+    принимает дружественный вид в любом варианте — bounceable EQ…,
+    non-bounceable UQ…, тестнет-флаг (kQ…/0Q…), base64url или обычный
+    base64 — и сырой "wc:hex" в любом регистре. Возвращает единый вид
+    "wc:hex" (hex в нижнем регистре), по которому адреса можно честно
+    сравнивать. Контрольная сумма CRC16 проверяется: опечатка -> ValueError."""
     address = (address or "").strip()
-    if ":" in address:
-        wc, _, h = address.partition(":")
-        return f"{int(wc)}:{h.lower()}"
-    padded = address.replace("-", "+").replace("_", "/")
-    raw = base64.b64decode(padded + "=" * (-len(padded) % 4))
-    if len(raw) != 36:
-        raise ValueError("bad TON address")
-    wc = raw[1] if raw[1] < 128 else raw[1] - 256
-    return f"{wc}:{raw[2:34].hex()}"
+    m = re.fullmatch(r"(-?\d+):([0-9a-fA-F]{64})", address)
+    if m:
+        return f"{int(m.group(1))}:{m.group(2).lower()}"
+    import base64
+    if len(address) != 48:
+        raise ValueError(f"bad TON address length: {address!r}")
+    std = address.replace("-", "+").replace("_", "/")
+    try:
+        data = base64.b64decode(std, validate=True)
+    except Exception:
+        raise ValueError(f"bad TON address encoding: {address!r}")
+    if len(data) != 36:
+        raise ValueError(f"bad TON address size: {address!r}")
+    if _crc16_xmodem(data[:34]) != int.from_bytes(data[34:36], "big"):
+        raise ValueError(f"bad TON address checksum: {address!r}")
+    if (data[0] & 0x3F) not in (0x11, 0x51):   # 0x11 bounceable, 0x51 non-bounceable, +0x80 testnet
+        raise ValueError(f"bad TON address flags: {address!r}")
+    wc = data[1] if data[1] < 128 else data[1] - 256
+    return f"{wc}:{data[2:34].hex()}"
+
+
+def ton_address_to_friendly(raw: str, bounceable: bool = True) -> str:
+    """Сырой адрес -> дружественный mainnet (EQ… или UQ…) — для логов и диагностики."""
+    import base64
+    wc, h = ton_address_to_raw(raw).split(":")
+    body = bytes([0x11 if bounceable else 0x51, int(wc) & 0xFF]) + bytes.fromhex(h)
+    return base64.urlsafe_b64encode(body + _crc16_xmodem(body).to_bytes(2, "big")).decode()
 
 
 OFFICIAL_COLLECTION_RAW = ton_address_to_raw(MY_OFFICIAL_NFT_COLLECTION)
 
 
+def _mainnet_url(url: str, default: str) -> str:
+    if "testnet" in (url or "").lower():
+        print(f"[nft] {url} — это TESTNET, коллекция существует только в mainnet; используем {default}")
+        return default
+    return url or default
+
+
+def _nft_matches(nft_raw: str, collection_raw: str) -> bool:
+    """NFT относится к «Небесному орлу»: её коллекция — официальная (обычный
+    случай) или адрес в константе оказался адресом самой NFT-карточки."""
+    return OFFICIAL_COLLECTION_RAW in (collection_raw, nft_raw)
+
+
+def _safe_raw(address) -> str:
+    try:
+        return ton_address_to_raw(address) if address else ""
+    except ValueError:
+        return ""
+
+
+async def _nfts_from_tonapi(client, wallet_raw: str) -> dict:
+    """Все NFT кошелька через tonapi.io (mainnet), включая выставленные на
+    продажу (indirect_ownership) — без серверного фильтра по коллекции, чтобы
+    сверять адрес коллекции самим, после нормализации."""
+    url = f"{_mainnet_url(TONAPI_URL, TONAPI_MAINNET)}/v2/accounts/{wallet_raw}/nfts"
+    headers = {"Accept": "application/json"}
+    if TONAPI_KEY:
+        headers["Authorization"] = f"Bearer {TONAPI_KEY}"
+    resp = await client.get(url, params={"limit": 1000, "offset": 0, "indirect_ownership": "true"}, headers=headers)
+    result = {"provider": "tonapi", "status": resp.status_code, "items": [], "body": resp.text[:2000]}
+    if resp.status_code == 200:
+        for item in (resp.json() or {}).get("nft_items") or []:
+            result["items"].append({
+                "address": _safe_raw(item.get("address")),
+                "collection": _safe_raw((item.get("collection") or {}).get("address")),
+                "collection_name": (item.get("collection") or {}).get("name") or "",
+            })
+    return result
+
+
+async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
+    """Второй независимый провайдер — toncenter.com API v3 (mainnet)."""
+    url = f"{_mainnet_url(TONCENTER_URL, TONCENTER_MAINNET)}/api/v3/nft/items"
+    headers = {"Accept": "application/json"}
+    if TONCENTER_API_KEY:
+        headers["X-API-Key"] = TONCENTER_API_KEY
+    resp = await client.get(url, params={"owner_address": wallet_raw, "limit": 1000, "offset": 0}, headers=headers)
+    result = {"provider": "toncenter", "status": resp.status_code, "items": [], "body": resp.text[:2000]}
+    if resp.status_code == 200:
+        for item in (resp.json() or {}).get("nft_items") or []:
+            result["items"].append({
+                "address": _safe_raw(item.get("address")),
+                "collection": _safe_raw(item.get("collection_address")),
+                "collection_name": "",
+            })
+    return result
+
+
+async def check_wallet_nfts(wallet: str) -> dict:
+    """Полная проверка кошелька (для /api/nft/* и админской диагностики):
+    {"wallet_raw", "found": [адреса NFT коллекции], "providers": [...], "ok": хоть
+    один провайдер ответил}. Сначала tonapi.io; если он ошибся или не нашёл
+    нашу NFT — перепроверяем через toncenter.com."""
+    try:
+        wallet_raw = ton_address_to_raw(wallet)
+    except ValueError as e:
+        print(f"[nft] invalid wallet address saved for player: {e}")
+        return {"wallet_raw": "", "found": [], "providers": [], "ok": True, "invalid_wallet": True}
+
+    report = {"wallet_raw": wallet_raw, "found": [], "providers": [], "ok": False}
+    async with httpx.AsyncClient(timeout=12) as client:
+        for fetch in (_nfts_from_tonapi, _nfts_from_toncenter):
+            try:
+                res = await fetch(client, wallet_raw)
+            except httpx.HTTPError as e:
+                res = {"provider": fetch.__name__.replace("_nfts_from_", ""), "status": 0,
+                       "items": [], "body": f"{type(e).__name__}: {e}"}
+            report["providers"].append(res)
+            if res["status"] == 200:
+                report["ok"] = True
+                matched = [it["address"] for it in res["items"] if _nft_matches(it["address"], it["collection"])]
+                for nft in matched:
+                    if nft not in report["found"]:
+                        report["found"].append(nft)
+            if res["status"] != 200 or not report["found"]:
+                # Подробный лог (аналог console.error): что именно ответил провайдер.
+                seen = sorted({f"{it['collection']} {it['collection_name']}".strip() for it in res["items"]})[:20]
+                print(f"[nft] {res['provider']} status={res['status']} wallet={wallet_raw} "
+                      f"items={len(res['items'])} matched=0 official={OFFICIAL_COLLECTION_RAW} "
+                      f"collections_seen={seen} body={res['body'][:1500]!r}")
+            if report["found"]:
+                break
+    return report
+
+
 async def fetch_collection_nfts(wallet: str) -> List[str]:
-    """Адреса NFT из официальной коллекции на кошельке wallet (любой номер
-    токена, #1…#20). Кеш NFT_CHECK_CACHE_SECONDS на кошелёк."""
+    """Адреса NFT «Небесного орла» на кошельке wallet. Кеш
+    NFT_CHECK_CACHE_SECONDS на кошелёк (только удачные ответы). Если ни один
+    провайдер не ответил — NftApiError (это «не удалось проверить», а не
+    «NFT нет»)."""
     now = time.time()
     cached = _NFT_CHECK_CACHE.get(wallet)
     if cached and now - cached[0] < NFT_CHECK_CACHE_SECONDS:
         return cached[1]
-    headers = {"Accept": "application/json"}
-    if TONAPI_KEY:
-        headers["Authorization"] = f"Bearer {TONAPI_KEY}"
-    params = {"collection": MY_OFFICIAL_NFT_COLLECTION, "limit": 100, "offset": 0, "indirect_ownership": "false"}
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{TONAPI_URL}/v2/accounts/{wallet}/nfts", params=params, headers=headers)
-    except httpx.HTTPError as e:
-        raise NftApiError(f"{type(e).__name__}: {e}")
-    if resp.status_code == 404:          # у кошелька ещё нет ни одной транзакции
-        items = []
-    elif resp.status_code != 200:
-        raise NftApiError(f"TON API {resp.status_code}: {resp.text[:200]}")
-    else:
-        items = (resp.json() or {}).get("nft_items") or []
-    found = []
-    for item in items:
-        collection = (item.get("collection") or {}).get("address") or ""
-        try:
-            if collection and ton_address_to_raw(collection) == OFFICIAL_COLLECTION_RAW and item.get("address"):
-                found.append(ton_address_to_raw(item["address"]))
-        except ValueError:
-            continue
-    _NFT_CHECK_CACHE[wallet] = (now, found)
-    return found
+    report = await check_wallet_nfts(wallet)
+    if not report["ok"]:
+        codes = ", ".join(f"{p['provider']}={p['status']}" for p in report["providers"])
+        raise NftApiError(f"all TON providers failed ({codes})")
+    _NFT_CHECK_CACHE[wallet] = (now, report["found"])
+    return report["found"]
 
 
 async def nft_claim_interval() -> int:
@@ -5167,6 +5286,30 @@ async def admin_nft_settings(_: None = Depends(require_admin)):
         "default_seconds": NFT_CLAIM_INTERVAL_DEFAULT,
         "min_seconds": NFT_CLAIM_INTERVAL_MIN,
         "collection": MY_OFFICIAL_NFT_COLLECTION,
+    }
+
+
+@app.get("/admin/api/nft/check")
+async def admin_nft_check(wallet: str, _: None = Depends(require_admin)):
+    """Диагностика: что видят tonapi.io и toncenter.com на кошельке wallet
+    (mainnet) — статус ответа, сколько NFT, какие коллекции, найдена ли наша."""
+    report = await check_wallet_nfts(wallet)
+    providers = []
+    for p in report["providers"]:
+        collections = {}
+        for it in p["items"]:
+            key = it["collection"] or "(без коллекции)"
+            collections.setdefault(key, {"name": it["collection_name"], "count": 0})["count"] += 1
+        providers.append({
+            "provider": p["provider"], "status": p["status"], "items": len(p["items"]),
+            "collections": collections, "error": p["body"][:500] if p["status"] != 200 else "",
+        })
+    return {
+        "wallet_input": wallet, "wallet_raw": report["wallet_raw"],
+        "wallet_friendly": ton_address_to_friendly(report["wallet_raw"], bounceable=False) if report["wallet_raw"] else "",
+        "invalid_wallet": bool(report.get("invalid_wallet")),
+        "official_collection": MY_OFFICIAL_NFT_COLLECTION, "official_collection_raw": OFFICIAL_COLLECTION_RAW,
+        "found": report["found"], "providers": providers, "ok": report["ok"],
     }
 
 

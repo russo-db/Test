@@ -246,6 +246,11 @@
                     <button data-nft-preset="604800">7 дней (боевой)</button>
                 </div>
                 <div class="muted" id="nftIntervalHint" style="font-size:12px;"></div>
+                <div class="nft-interval-row">
+                    <input id="nftCheckWallet" placeholder="Адрес кошелька тестера (EQ… / UQ… / 0:…)" style="flex:1; min-width:220px;">
+                    <button id="nftCheckBtn">🔍 Проверить кошелёк</button>
+                </div>
+                <div id="nftCheckResult" style="font-size:12.5px;"></div>
             </div>
 
             <h2>Обзор</h2>
@@ -659,6 +664,29 @@ document.getElementById('nftIntervalSave').onclick = () => {
     const unit = Number(document.getElementById('nftIntervalUnit').value);
     if (value < 1) { toast('Укажите число больше нуля', true); return; }
     saveNftInterval(value * unit);
+};
+document.getElementById('nftCheckBtn').onclick = async () => {
+    const wallet = document.getElementById('nftCheckWallet').value.trim();
+    const box = document.getElementById('nftCheckResult');
+    if (!wallet) { toast('Вставьте адрес кошелька', true); return; }
+    box.innerHTML = '<span class="muted">Спрашиваем tonapi.io и toncenter.com (mainnet)…</span>';
+    try {
+        const r = await api('/admin/api/nft/check?wallet=' + encodeURIComponent(wallet));
+        if (r.invalid_wallet) { box.innerHTML = '<b style="color:#ff6b6b">Адрес кошелька некорректен (ошибка формата или контрольной суммы).</b>'; return; }
+        const verdict = r.found.length
+            ? `<b style="color:#4ade80">✅ NFT «Небесный орел» найдена: ${r.found.length} шт.</b>`
+            : (r.ok ? `<b style="color:#ff6b6b">❌ NFT коллекции не найдена</b>`
+                    : `<b style="color:#f0b429">⚠️ Не удалось проверить: ни tonapi.io, ни toncenter.com не ответили (лимит запросов? нужен ключ API)</b>`);
+        const prov = r.providers.map(p => {
+            const cols = Object.entries(p.collections).map(([addr, c]) =>
+                `<div style="margin-left:14px;${addr === r.official_collection_raw ? 'color:#4ade80;font-weight:700;' : ''}">${c.name ? c.name + ' — ' : ''}<code>${addr}</code> × ${c.count}</div>`).join('');
+            return `<div style="margin-top:6px;"><b>${p.provider}</b>: HTTP ${p.status || 'нет ответа'}, NFT на кошельке: ${p.items}
+                ${p.error ? `<div class="muted" style="margin-left:14px;">${p.error.replace(/</g, '&lt;')}</div>` : ''}${cols}</div>`;
+        }).join('');
+        box.innerHTML = `${verdict}
+            <div class="muted" style="margin-top:4px;">Кошелёк: <code>${r.wallet_raw}</code> (${r.wallet_friendly})<br>
+            Наша коллекция: <code>${r.official_collection_raw}</code></div>${prov}`;
+    } catch (e) { if (e.message !== 'unauthorized') { box.textContent = ''; toast(e.message, true); } }
 };
 document.querySelectorAll('[data-nft-preset]').forEach(btn => {
     btn.onclick = () => saveNftInterval(Number(btn.dataset.nftPreset));
