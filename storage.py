@@ -104,6 +104,12 @@ class MongoStore:
         # Статистика потоков экономики для админки: _id "total" — за всё
         # время, "day:YYYY-MM-DD" — за сутки UTC (см. record_economy).
         self.economy = client[db_name]["economy_stats"]
+        # Настройки сервера, которые админ меняет на лету и которые должны
+        # пережить перезапуск/деплой (в отличие от game_config.json): {_id: ключ, value}.
+        self.settings = client[db_name]["settings"]
+        # NFT «Небесный орел»: {_id: сырой адрес NFT, last_claim, user_id} —
+        # таймер самой NFT (см. /api/nft/claim-shard в main.py).
+        self.nft_claims = client[db_name]["nft_claims"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -1178,6 +1184,46 @@ class MongoStore:
 
         await self.users.update_one({"_id": target_id, "clan_id": clan_id}, {"$set": {"clan_id": None}})
         return "ok"
+
+    async def get_setting(self, key: str, default=None):
+        doc = await self.settings.find_one({"_id": key})
+        return doc.get("value", default) if doc else default
+
+    async def set_setting(self, key: str, value) -> None:
+        await self.settings.update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
+
+    async def reserve_nft_claim(self, nft: str, user_id: int, now: float, interval: float):
+        """Атомарно занимает NFT для сбора: удаётся, только если с прошлого
+        сбора по ЭТОЙ NFT прошло не меньше interval. Возвращает прежнее
+        last_claim (0 — NFT ещё ни разу не собирали) для отката через
+        release_nft_claim, либо False — NFT ещё на таймере."""
+        from pymongo import ReturnDocument
+        from pymongo.errors import DuplicateKeyError
+        try:
+            before = await self.nft_claims.find_one_and_update(
+                {"_id": nft, "last_claim": {"$lte": now - interval}},
+                {"$set": {"last_claim": now, "user_id": user_id}},
+                return_document=ReturnDocument.BEFORE,
+            )
+            if before:
+                return float(before.get("last_claim") or 0)
+            await self.nft_claims.insert_one({"_id": nft, "last_claim": now, "user_id": user_id})
+            return 0.0
+        except DuplicateKeyError:
+            return False   # запись есть, и таймер NFT ещё не прошёл
+
+    async def release_nft_claim(self, nft: str, previous: float) -> None:
+        if previous:
+            await self.nft_claims.update_one({"_id": nft}, {"$set": {"last_claim": previous}})
+        else:
+            await self.nft_claims.delete_one({"_id": nft})
+
+    async def nft_claim_wait(self, nfts: list, now: float, interval: float) -> float:
+        """Сколько ждать до освобождения ближайшей из NFT."""
+        waits = []
+        async for doc in self.nft_claims.find({"_id": {"$in": list(nfts)}}):
+            waits.append(float(doc.get("last_claim") or 0) + interval - now)
+        return max(0.0, min(waits)) if waits else 0.0
 
     async def record_economy(self, amounts: dict, day: str) -> None:
         """Прибавляет amounts ({счётчик: число}) к общим и суточным счётчикам."""

@@ -67,6 +67,13 @@
     .page h2 { margin: 0 0 16px; font-size: 20px; }
     .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .nft-interval-panel { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 12px 14px; margin-bottom: 20px;
+        display: flex; flex-direction: column; gap: 8px; }
+    .nft-interval-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .nft-interval-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .nft-mode { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+    .nft-mode.prod { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+    .nft-mode.test { background: rgba(240, 180, 41, 0.18); color: #f0b429; }
     .stat-card { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 14px 16px; }
     .stat-card .label { color: #8b96b3; font-size: 12px; margin-bottom: 6px; }
     .stat-card .value { font-size: 20px; font-weight: 700; }
@@ -220,6 +227,27 @@
     </div>
     <div id="main">
         <div class="page active" id="page-overview">
+            <div class="nft-interval-panel" id="nftIntervalPanel">
+                <div class="nft-interval-head">
+                    <b>🦅 NFT «Небесный орел»: интервал сбора осколка</b>
+                    <span class="nft-mode" id="nftModeBadge">…</span>
+                </div>
+                <div class="nft-interval-row">
+                    <input type="number" id="nftIntervalValue" min="1" step="1" value="7" style="width:90px;">
+                    <select id="nftIntervalUnit">
+                        <option value="60">минут</option>
+                        <option value="3600">часов</option>
+                        <option value="86400" selected>дней</option>
+                    </select>
+                    <button class="primary" id="nftIntervalSave">Сохранить</button>
+                    <span class="muted">Быстро:</span>
+                    <button data-nft-preset="60">1 мин</button>
+                    <button data-nft-preset="300">5 мин</button>
+                    <button data-nft-preset="604800">7 дней (боевой)</button>
+                </div>
+                <div class="muted" id="nftIntervalHint" style="font-size:12px;"></div>
+            </div>
+
             <h2>Обзор</h2>
             <div class="card-grid" id="statsGrid"></div>
             <button id="refreshStats">Обновить</button>
@@ -519,6 +547,7 @@ function fmtNum(n) {
 }
 
 async function loadOverview() {
+    loadNftInterval();
     try {
         const stats = await api('/admin/api/stats');
         const grid = document.getElementById('statsGrid');
@@ -590,6 +619,50 @@ async function toggleFeature(key) {
         toast('Сохранено');
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
+
+/* ---------- NFT «Небесный орел»: интервал сбора ---------- */
+function fmtInterval(sec) {
+    if (sec % 86400 === 0) return `${sec / 86400} дн.`;
+    if (sec % 3600 === 0) return `${sec / 3600} ч`;
+    if (sec % 60 === 0) return `${sec / 60} мин`;
+    return `${sec} с`;
+}
+function renderNftInterval(data) {
+    const sec = data.interval_seconds;
+    const prod = sec === data.default_seconds;
+    const badge = document.getElementById('nftModeBadge');
+    badge.className = 'nft-mode ' + (prod ? 'prod' : 'test');
+    badge.textContent = prod ? 'Боевой режим — раз в 7 дней' : `ТЕСТОВЫЙ режим — раз в ${fmtInterval(sec)}`;
+    const unit = sec % 86400 === 0 ? 86400 : (sec % 3600 === 0 ? 3600 : 60);
+    document.getElementById('nftIntervalUnit').value = String(unit);
+    document.getElementById('nftIntervalValue').value = Math.max(1, Math.round(sec / unit));
+    document.getElementById('nftIntervalHint').textContent =
+        `Сейчас игрок с NFT может забирать 1 Небесный Осколок раз в ${fmtInterval(sec)}. Коллекция: ${data.collection}. ` +
+        'Не забудьте вернуть боевой режим (7 дней) после тестов.';
+}
+async function loadNftInterval() {
+    try { renderNftInterval(await api('/admin/api/nft/settings')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+async function saveNftInterval(seconds) {
+    try {
+        const data = await api('/admin/api/nft/settings', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interval_seconds: seconds }),
+        });
+        renderNftInterval(data);
+        toast(`Интервал сбора: ${fmtInterval(data.interval_seconds)}`);
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('nftIntervalSave').onclick = () => {
+    const value = Math.floor(Number(document.getElementById('nftIntervalValue').value) || 0);
+    const unit = Number(document.getElementById('nftIntervalUnit').value);
+    if (value < 1) { toast('Укажите число больше нуля', true); return; }
+    saveNftInterval(value * unit);
+};
+document.querySelectorAll('[data-nft-preset]').forEach(btn => {
+    btn.onclick = () => saveNftInterval(Number(btn.dataset.nftPreset));
+});
 
 /* ---------- экономика ---------- */
 async function loadEconomy() {

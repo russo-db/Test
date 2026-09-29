@@ -25,6 +25,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+# --- NFT «Небесный орел» (Getgems). Официальная коллекция — единственная,
+# чьи NFT дают право на еженедельный сбор Небесного Осколка (см.
+# /api/nft/claim-shard). Адрес неизменен; игра NFT не минтит и не выводит,
+# только читает кошелёк игрока через TON API. ---
+MY_OFFICIAL_NFT_COLLECTION = "EQDIYRbCP3qgzxPhBI06k6Uyp1OOloCtM44o_uJTM-uqjqe1"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
 EGG_BOARD_SIZE = 16  # 4×4
@@ -211,6 +217,14 @@ apply_config(load_config())
 
 # Кошелёк проекта — получатель пополнений. Без него раздел кошелька выключен.
 TON_WALLET = os.getenv("TON_WALLET", "").strip()
+# TON API для чтения NFT на кошельке игрока (tonapi.io v2). Ключ не обязателен —
+# без него работает публичный лимит запросов; с ключом (TONAPI_KEY) лимиты выше.
+TONAPI_URL = os.getenv("TONAPI_URL", "https://tonapi.io").rstrip("/")
+TONAPI_KEY = os.getenv("TONAPI_KEY", "").strip()
+NFT_CLAIM_INTERVAL_DEFAULT = 7 * 24 * 3600   # боевой режим: раз в 7 дней
+NFT_CLAIM_INTERVAL_MIN = 60                   # для тестов можно поставить хоть 1 минуту
+NFT_CLAIM_INTERVAL_MAX = 365 * 24 * 3600
+NFT_CHECK_CACHE_SECONDS = 60                  # результат проверки кошелька кешируется, чтобы не долбить TON API
 TON_API = os.getenv("TON_API_URL", "https://toncenter.com/api/v3").rstrip("/")
 TON_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 TON_POLL_SECONDS = int(os.getenv("TON_POLL_SECONDS", "30"))
@@ -1423,6 +1437,14 @@ class DepositCheck(BaseModel):
 class WalletSave(BaseModel):
     user_id: int
     address: str = ""
+
+
+class NftClaimRequest(BaseModel):
+    user_id: int
+
+
+class AdminNftSettings(BaseModel):
+    interval_seconds: int
 
 
 class WithdrawRequest(BaseModel):
@@ -4936,6 +4958,227 @@ async def admin_cancel_clan_tournament(_: None = Depends(require_admin)):
     не дожидаясь финала. Кланы и игроки не затрагиваются."""
     await store.cancel_clan_tournament()
     return {"status": "success"}
+
+
+# --- NFT «НЕБЕСНЫЙ ОРЕЛ»: еженедельный сбор Небесного Осколка ---
+# Изолированный модуль: только чтение кошелька через TON API, без минтинга и
+# вывода NFT. Порядок проверок в /api/nft/claim-shard: кошелёк привязан ->
+# на нём есть NFT из MY_OFFICIAL_NFT_COLLECTION -> прошёл интервал (задаётся
+# в админке, по умолчанию 7 дней) -> начисление. Два таймера:
+#   * игрока (last_shard_claim) — не чаще раза за интервал на аккаунт;
+#   * самой NFT (коллекция nft_claims) — одна NFT даёт не больше одного
+#     осколка за интервал, даже если её адрес привязали несколько аккаунтов
+#     (адрес кошелька в игре сохраняется без доказательства владения) или
+#     NFT передали другу после сбора.
+
+class NftApiError(Exception):
+    """TON API недоступен или ответил ошибкой — это не «NFT нет»."""
+
+
+_NFT_CHECK_CACHE: dict = {}   # wallet -> (checked_at, [nft raw addresses])
+
+
+def ton_address_to_raw(address: str) -> str:
+    """Любой вид адреса TON (EQ…/UQ… base64url или 0:hex) -> сырой "wc:hex"
+    в нижнем регистре — для надёжного сравнения адресов коллекции."""
+    import base64
+    address = (address or "").strip()
+    if ":" in address:
+        wc, _, h = address.partition(":")
+        return f"{int(wc)}:{h.lower()}"
+    padded = address.replace("-", "+").replace("_", "/")
+    raw = base64.b64decode(padded + "=" * (-len(padded) % 4))
+    if len(raw) != 36:
+        raise ValueError("bad TON address")
+    wc = raw[1] if raw[1] < 128 else raw[1] - 256
+    return f"{wc}:{raw[2:34].hex()}"
+
+
+OFFICIAL_COLLECTION_RAW = ton_address_to_raw(MY_OFFICIAL_NFT_COLLECTION)
+
+
+async def fetch_collection_nfts(wallet: str) -> List[str]:
+    """Адреса NFT из официальной коллекции на кошельке wallet (любой номер
+    токена, #1…#20). Кеш NFT_CHECK_CACHE_SECONDS на кошелёк."""
+    now = time.time()
+    cached = _NFT_CHECK_CACHE.get(wallet)
+    if cached and now - cached[0] < NFT_CHECK_CACHE_SECONDS:
+        return cached[1]
+    headers = {"Accept": "application/json"}
+    if TONAPI_KEY:
+        headers["Authorization"] = f"Bearer {TONAPI_KEY}"
+    params = {"collection": MY_OFFICIAL_NFT_COLLECTION, "limit": 100, "offset": 0, "indirect_ownership": "false"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{TONAPI_URL}/v2/accounts/{wallet}/nfts", params=params, headers=headers)
+    except httpx.HTTPError as e:
+        raise NftApiError(f"{type(e).__name__}: {e}")
+    if resp.status_code == 404:          # у кошелька ещё нет ни одной транзакции
+        items = []
+    elif resp.status_code != 200:
+        raise NftApiError(f"TON API {resp.status_code}: {resp.text[:200]}")
+    else:
+        items = (resp.json() or {}).get("nft_items") or []
+    found = []
+    for item in items:
+        collection = (item.get("collection") or {}).get("address") or ""
+        try:
+            if collection and ton_address_to_raw(collection) == OFFICIAL_COLLECTION_RAW and item.get("address"):
+                found.append(ton_address_to_raw(item["address"]))
+        except ValueError:
+            continue
+    _NFT_CHECK_CACHE[wallet] = (now, found)
+    return found
+
+
+async def nft_claim_interval() -> int:
+    value = await store.get_setting("nft_claim_interval_seconds", NFT_CLAIM_INTERVAL_DEFAULT)
+    try:
+        return max(NFT_CLAIM_INTERVAL_MIN, min(NFT_CLAIM_INTERVAL_MAX, int(value)))
+    except (TypeError, ValueError):
+        return NFT_CLAIM_INTERVAL_DEFAULT
+
+
+def fmt_wait(seconds: float) -> str:
+    """Оставшееся время по-русски: «2 д 5 ч 13 мин» / «4 мин 10 с»."""
+    seconds = max(0, int(seconds))
+    d, rem = divmod(seconds, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    parts = []
+    if d: parts.append(f"{d} д")
+    if h: parts.append(f"{h} ч")
+    if m: parts.append(f"{m} мин")
+    if not d and not h: parts.append(f"{s} с")
+    return " ".join(parts)
+
+
+def nft_player_view(row: dict, interval: int, now: float) -> dict:
+    last = float(row.get("last_shard_claim") or 0)
+    next_at = last + interval if last else 0.0
+    return {
+        "sky_shards": int(row.get("sky_shards") or 0),
+        "last_shard_claim": last,
+        "interval_seconds": interval,
+        "next_claim_at": next_at,
+        "can_claim": now >= next_at,
+        "server_time": now,
+    }
+
+
+@app.get("/api/nft/status")
+async def nft_status(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Состояние блока «Моя NFT коллекция» в профиле: привязан ли кошелёк,
+    есть ли на нём NFT «Небесный орел», счётчик собранных осколков и время
+    следующего сбора."""
+    try:
+        user_id = authenticate(x_telegram_init_data, user_id)
+        row = await fetch_user(user_id)
+        now = time.time()
+        view = nft_player_view(row, await nft_claim_interval(), now)
+        wallet = (row.get("wallet") or "").strip()
+        view.update({"wallet_connected": bool(wallet), "has_nft": False, "nft_count": 0, "check_failed": False})
+        if wallet:
+            try:
+                nfts = await fetch_collection_nfts(wallet)
+                view.update({"has_nft": bool(nfts), "nft_count": len(nfts)})
+            except NftApiError as e:
+                print(f"[nft] status check failed for {user_id}: {e}")
+                view["check_failed"] = True
+        return view
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось получить статус NFT")
+
+
+@app.post("/api/nft/claim-shard")
+async def nft_claim_shard(request: NftClaimRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """Еженедельный сбор: +1 Небесный Осколок (в Кузницу — он сразу начинает
+    давать частички) и +1 к счётчику sky_shards. Все проверки на сервере."""
+    try:
+        user_id = authenticate(x_telegram_init_data, request.user_id)
+        row = await fetch_user(user_id)
+        wallet = (row.get("wallet") or "").strip()
+        if not wallet:
+            raise HTTPException(status_code=400, detail="Кошелек не подключен")
+
+        try:
+            nfts = await fetch_collection_nfts(wallet)
+        except NftApiError as e:
+            print(f"[nft] claim check failed for {user_id}: {e}")
+            raise HTTPException(status_code=503, detail="Не удалось проверить NFT в блокчейне — попробуйте через минуту")
+        if not nfts:
+            raise HTTPException(status_code=404, detail="NFT 'Небесный орел' не найдена")
+
+        interval = await nft_claim_interval()
+        now = time.time()
+        last = float(row.get("last_shard_claim") or 0)
+        if last and now - last < interval:
+            raise HTTPException(status_code=429, detail=f"Следующий сбор через {fmt_wait(last + interval - now)}")
+
+        # Одна NFT — не больше одного осколка за интервал на все аккаунты.
+        reserved = None
+        for nft in nfts:
+            prev = await store.reserve_nft_claim(nft, user_id, now, interval)
+            if prev is not False:
+                reserved = (nft, prev)
+                break
+        if reserved is None:
+            wait = await store.nft_claim_wait(nfts, now, interval)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Эта NFT уже принесла осколок за текущий период — следующий через {fmt_wait(wait)}",
+            )
+
+        def compute(fresh):
+            last_claim = float(fresh.get("last_shard_claim") or 0)
+            if last_claim and now - last_claim < interval:
+                raise HTTPException(status_code=429, detail=f"Следующий сбор через {fmt_wait(last_claim + interval - now)}")
+            miners = normalize_nest_miners(fresh.get("nest_miners"))
+            new_last_claim = nest_settle_particles(fresh, now, len(miners) + 1)
+            miners.append({"id": f"nft-{user_id}-{int(now * 1000)}"})
+            sky = int(fresh.get("sky_shards") or 0) + 1
+            fields = {"sky_shards": sky, "last_shard_claim": now,
+                      "nest_miners": miners, "nest_last_claim": new_last_claim}
+            return fields, {"sky_shards": sky, "shard_count": len(miners), "last_claim": new_last_claim}
+
+        try:
+            extra = await run_farm_action(user_id, compute)
+        except Exception:
+            await store.release_nft_claim(reserved[0], reserved[1])   # игроку не начислили — NFT свободна
+            raise
+        view = nft_player_view({"sky_shards": extra["sky_shards"], "last_shard_claim": now}, interval, now)
+        view.update({"success": True, "shard_count": extra["shard_count"], "nest_last_claim": extra["last_claim"], "ops": extra["ops"],
+                     "wallet_connected": True, "has_nft": True, "nft_count": len(nfts)})
+        return view
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось забрать осколок — попробуйте ещё раз")
+
+
+@app.get("/admin/api/nft/settings")
+async def admin_nft_settings(_: None = Depends(require_admin)):
+    return {
+        "interval_seconds": await nft_claim_interval(),
+        "default_seconds": NFT_CLAIM_INTERVAL_DEFAULT,
+        "min_seconds": NFT_CLAIM_INTERVAL_MIN,
+        "collection": MY_OFFICIAL_NFT_COLLECTION,
+    }
+
+
+@app.post("/admin/api/nft/settings")
+async def admin_set_nft_settings(body: AdminNftSettings, _: None = Depends(require_admin)):
+    """Интервал сбора осколка по NFT (сек). Хранится в БД (settings), поэтому
+    переживает перезапуск и деплой. 604800 = 7 дней — боевой режим."""
+    value = int(body.interval_seconds)
+    if not NFT_CLAIM_INTERVAL_MIN <= value <= NFT_CLAIM_INTERVAL_MAX:
+        raise HTTPException(status_code=400, detail="Интервал должен быть от 1 минуты до 365 дней")
+    await store.set_setting("nft_claim_interval_seconds", value)
+    return await admin_nft_settings(None)
 
 
 # --- TELEGRAM BOT LOGIC ---
