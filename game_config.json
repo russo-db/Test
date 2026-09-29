@@ -314,12 +314,12 @@
   "equip_market": {
     "commission": 0.10,
     "min_price_by_grade": {
-      "grey": 1,
-      "green": 2,
-      "blue": 4,
-      "purple": 8,
-      "gold": 16,
-      "mythic": 32
+      "grey": 3,
+      "green": 6,
+      "blue": 12,
+      "purple": 24,
+      "gold": 48,
+      "mythic": 96
     }
   },
   "resource_market": {
