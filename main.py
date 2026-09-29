@@ -379,14 +379,41 @@ def read_farm(raw) -> List[dict]:
             expedition_until = int(entry["expedition_until"])
         except (KeyError, TypeError, ValueError):
             expedition_until = 0
-        farm.append({
+        slot = {
             "id": monster_id,
             "next_egg_at": next_egg_at,
             "feed_level": feed_level,
             "feed_taps": feed_taps,
             "expedition_until": max(0, expedition_until),
-        })
+        }
+        # Замок рынка: орёл выставлен на продажу и стоит в своей ячейке до
+        # покупки или снятия лота (см. store.create_listing). Отметку нужно
+        # сохранять при любой перезаписи фермы.
+        listing_id = entry.get("listing_id")
+        if isinstance(listing_id, str) and listing_id:
+            slot["listing_id"] = listing_id
+        farm.append(slot)
     return farm
+
+
+def slot_listed(slot: dict) -> bool:
+    return bool(slot.get("listing_id"))
+
+
+def slot_on_expedition(slot: dict) -> bool:
+    """В экспедиции — с момента отправки и до сбора награды."""
+    return int(slot.get("expedition_until") or 0) > 0
+
+
+def ensure_slot_not_listed(slot: dict) -> None:
+    if slot_listed(slot):
+        raise HTTPException(status_code=400, detail="Орёл выставлен на рынок — сначала сними лот")
+
+
+def usable_eagle_ids(farm: List[dict]) -> set:
+    """Виды орлов, которыми игрок может пользоваться (Арена, клан): орёл,
+    выставленный на рынок, ничего не делает."""
+    return {m["id"] for m in farm if not slot_listed(m)}
 
 
 def normalize_eggs_board(raw) -> List[int]:
@@ -1331,6 +1358,7 @@ class MarketListRequest(BaseModel):
     user_id: int
     monster_id: str
     price_gram: float
+    slot_index: Optional[int] = None  # конкретная ячейка фермы; None — первая подходящая
 
 
 class MarketBuyRequest(BaseModel):
@@ -1649,6 +1677,7 @@ async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str]
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_slot_not_listed(slot)
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл в экспедиции")
         if slot["feed_level"] >= FEED_LEVELS:
@@ -1686,6 +1715,7 @@ async def farm_collect_egg(request: FarmSlotAction, x_telegram_init_data: Option
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_slot_not_listed(slot)
         if slot["feed_level"] >= FEED_LEVELS or slot["next_egg_at"] <= 0 or time.time() < slot["next_egg_at"]:
             raise HTTPException(status_code=400, detail="Яйцо ещё не готово")
 
@@ -1718,6 +1748,10 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
         if a_i == b_i or not (0 <= a_i < len(farm)) or not (0 <= b_i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         a, b = farm[a_i], farm[b_i]
+        ensure_slot_not_listed(a)
+        ensure_slot_not_listed(b)
+        if slot_on_expedition(a) or slot_on_expedition(b):
+            raise HTTPException(status_code=400, detail="Орёл в экспедиции")
         if a["id"] != b["id"]:
             raise HTTPException(status_code=400, detail="Разные виды орлов")
         if a["feed_level"] < FEED_LEVELS or b["feed_level"] < FEED_LEVELS:
@@ -1795,6 +1829,7 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_slot_not_listed(slot)
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
         if slot["feed_level"] < FEED_LEVELS:
@@ -1823,6 +1858,7 @@ async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data:
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_slot_not_listed(slot)
         if slot["expedition_until"] <= 0 or time.time() < slot["expedition_until"]:
             raise HTTPException(status_code=400, detail="Экспедиция ещё не вернулась")
 
@@ -1875,6 +1911,9 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
         i = request.slot_index
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
+        ensure_slot_not_listed(farm[i])
+        if slot_on_expedition(farm[i]):
+            raise HTTPException(status_code=400, detail="Орёл в экспедиции — его нельзя удалить")
         if len(farm) <= 1:
             raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
 
@@ -2091,7 +2130,7 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         raise HTTPException(status_code=400, detail="Неизвестная редкость")
 
     row = await fetch_user(user_id)
-    if not any(m.get("id") == request.tier_id for m in read_farm(row.get("monsters"))):
+    if request.tier_id not in usable_eagle_ids(read_farm(row.get("monsters"))):
         raise HTTPException(status_code=400, detail="Нет орла этой редкости")
 
     match = ARENA_PENDING_MATCHES.pop(request.match_token, None)
@@ -2764,7 +2803,7 @@ async def _clan_roster_fighters(clan: Optional[dict]) -> list:
         row = await store.get(user_id)
         if not row:
             continue
-        if not any(m.get("id") == tier_id for m in read_farm(row.get("monsters"))):
+        if tier_id not in usable_eagle_ids(read_farm(row.get("monsters"))):
             continue
         equipped = normalize_nest_equipped(row.get("nest_equipped"))
         fighters.append({
@@ -3203,7 +3242,7 @@ async def clan_lineup_submit(request: ClanLineupSubmitRequest, x_telegram_init_d
         raise HTTPException(status_code=400, detail="Вы не состоите в клане")
     if request.tier_id not in TIER_INDEX:
         raise HTTPException(status_code=400, detail="Неизвестная редкость")
-    if not any(m.get("id") == request.tier_id for m in read_farm(row.get("monsters"))):
+    if request.tier_id not in usable_eagle_ids(read_farm(row.get("monsters"))):
         raise HTTPException(status_code=400, detail="У вас нет орла этой редкости")
 
     ok = await store.submit_clan_lineup(clan_id, user_id, request.tier_id)
@@ -3856,6 +3895,10 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
         raise HTTPException(status_code=400, detail="Орёл не найден")
     if result["status"] == "wrong_tier":
         raise HTTPException(status_code=400, detail="Купец не выкупает орлов этой редкости")
+    if result["status"] == "listed":
+        raise HTTPException(status_code=400, detail="Орёл выставлен на рынок — сначала сними лот")
+    if result["status"] == "on_expedition":
+        raise HTTPException(status_code=400, detail="Орёл в экспедиции — купцу его не продать")
     if result["status"] == "not_fed":
         raise HTTPException(status_code=400, detail="Купец берёт только полностью откормленных орлов")
     if result["status"] == "last_eagle":
@@ -3913,12 +3956,17 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
         )
 
     row = await fetch_user(user_id)
-    listing_id = await store.create_listing(
+    listing_id, reason = await store.create_listing(
         user_id, row.get("name") or "", request.monster_id,
-        FEED_LEVELS, request.price_gram, int(time.time()),
+        FEED_LEVELS, request.price_gram, int(time.time()), request.slot_index,
     )
     if listing_id is None:
-        raise HTTPException(status_code=400, detail="Нет такого прокачанного орла на ферме")
+        messages = {
+            "listed": "Этот орёл уже выставлен на рынок",
+            "on_expedition": "Орёл в экспедиции — его нельзя выставить на рынок",
+            "conflict": "Ферма изменилась — попробуй ещё раз",
+        }
+        raise HTTPException(status_code=400, detail=messages.get(reason, "Нет такого прокачанного орла на ферме"))
 
     fresh = await store.get(user_id)
     return {"status": "success", "listing_id": listing_id, "monsters": read_farm(fresh["monsters"])}
@@ -3930,14 +3978,15 @@ async def market_buy(request: MarketBuyRequest, x_telegram_init_data: Optional[s
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
     result = await store.buy_listing(
-        user_id, request.listing_id, FEED_LEVELS, MAX_SLOTS, MARKET_COMMISSION,
+        user_id, request.listing_id, FEED_LEVELS, MARKET_COMMISSION, FARM_QUEUE_MAX,
     )
     if result != "ok":
         messages = {
             "not_found": "Лот уже продан или снят с продажи",
             "own_listing": "Нельзя купить свой же лот",
             "insufficient_funds": "Не хватает GRAM",
-            "no_room": "На ферме нет места — освободи слот",
+            "no_room": "Нет места ни в ячейках, ни в неактивных — освободи место",
+            "conflict": "Ферма изменилась — попробуй ещё раз",
         }
         raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось купить"))
 
@@ -3946,7 +3995,9 @@ async def market_buy(request: MarketBuyRequest, x_telegram_init_data: Optional[s
         "status": "success",
         "coins": float(fresh.get("coins") or 0.0),
         "monsters": read_farm(fresh["monsters"]),
+        "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "slots": int(fresh.get("slots") or START_SLOTS),
+        "ops": int(fresh.get("ops") or 0),
     }
 
 
@@ -3955,12 +4006,12 @@ async def market_cancel(request: MarketCancelRequest, x_telegram_init_data: Opti
     """Снимает свой лот с продажи — орёл возвращается на ферму."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
-    result = await store.cancel_listing(user_id, request.listing_id, FEED_LEVELS, MAX_SLOTS)
+    result = await store.cancel_listing(user_id, request.listing_id, FEED_LEVELS, FARM_QUEUE_MAX)
     if result != "ok":
         messages = {
             "not_found": "Лот уже продан или снят с продажи",
             "not_owner": "Это не твой лот",
-            "no_room": "На ферме нет места — освободи слот",
+            "no_room": "Нет места ни в ячейках, ни в неактивных — освободи место",
         }
         raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось снять лот"))
 
@@ -3968,7 +4019,9 @@ async def market_cancel(request: MarketCancelRequest, x_telegram_init_data: Opti
     return {
         "status": "success",
         "monsters": read_farm(fresh["monsters"]),
+        "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "slots": int(fresh.get("slots") or START_SLOTS),
+        "ops": int(fresh.get("ops") or 0),
     }
 
 

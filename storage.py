@@ -338,6 +338,10 @@ class MongoStore:
         if not offer:
             return {"status": "wrong_tier"}
         price, limit = float(offer["price"]), int(offer["limit"])
+        if farm[slot_index].get("listing_id"):
+            return {"status": "listed"}
+        if int(farm[slot_index].get("expedition_until") or 0) > 0:
+            return {"status": "on_expedition"}
         if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
             return {"status": "not_fed"}
         if len(farm) <= 1:
@@ -372,30 +376,59 @@ class MongoStore:
             return {"status": "conflict"}
         return {"status": "ok", "tier": tier, "price": price}
 
+    # --- РЫНОК ОРЛОВ. Выставленный орёл НЕ снимается с фермы: он остаётся в
+    # своей ячейке с отметкой listing_id (замок) и не может ничего делать,
+    # пока лот не куплен (тогда ячейка уходит из фермы продавца) или не снят
+    # (отметка просто убирается). Каждая правка monsters/farm_queue здесь
+    # увеличивает ops — иначе параллельное действие фермы (run_farm_action,
+    # CAS по ops) могло бы записать поверх устаревший массив и «воскресить»
+    # проданного орла. Лоты, созданные до этой схемы (орёл тогда снимался
+    # с фермы), не имеют in_place и обрабатываются по-старому. ---
+
     async def create_listing(self, seller_id: int, seller_name: str, monster_id: str,
-                              feed_levels: int, price_gram: float, ts: int) -> Optional[str]:
-        """Снимает с фермы первого попавшегося прокачанного (feed_levels) орла
-        нужного вида и выставляет его на продажу. None — если такого орла нет
-        (или ферму поменяли параллельно — оптимистичная блокировка по monsters)."""
-        doc = await self.users.find_one({"_id": seller_id}, {"monsters": 1})
-        farm = list((doc or {}).get("monsters") or [])
-        idx = next((i for i, m in enumerate(farm)
-                    if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels), None)
-        if idx is None:
-            return None
-        original = farm[:]
-        farm.pop(idx)
-        result = await self.users.update_one(
-            {"_id": seller_id, "monsters": original}, {"$set": {"monsters": farm}}
-        )
-        if result.modified_count == 0:
-            return None
-        listing = {
-            "seller_id": seller_id, "seller_name": seller_name,
-            "monster_id": monster_id, "price_gram": price_gram, "created_at": ts,
-        }
-        result = await self.market.insert_one(listing)
-        return str(result.inserted_id)
+                              feed_levels: int, price_gram: float, ts: int,
+                              slot_index: Optional[int] = None) -> tuple:
+        """Запирает на ферме продавца полностью прокачанного орла нужного вида
+        (конкретную ячейку slot_index или первую подходящую) и создаёт лот.
+        Возвращает (listing_id, None) или (None, причина): "not_found",
+        "listed" (уже выставлен), "on_expedition", "conflict"."""
+        from bson import ObjectId
+
+        for _ in range(5):
+            doc = await self.users.find_one({"_id": seller_id}, {"monsters": 1, "ops": 1})
+            farm = list((doc or {}).get("monsters") or [])
+            ops = int((doc or {}).get("ops") or 0)
+
+            def fits(m):
+                return m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels
+
+            if slot_index is not None:
+                if not (0 <= slot_index < len(farm)) or not fits(farm[slot_index]):
+                    return None, "not_found"
+                idx = slot_index
+            else:
+                idx = next((i for i, m in enumerate(farm)
+                            if fits(m) and not m.get("listing_id") and not int(m.get("expedition_until") or 0)), None)
+                if idx is None:
+                    return None, "not_found"
+            if farm[idx].get("listing_id"):
+                return None, "listed"
+            if int(farm[idx].get("expedition_until") or 0) > 0:
+                return None, "on_expedition"
+
+            oid = ObjectId()
+            farm[idx] = dict(farm[idx], listing_id=str(oid))
+            locked = await self.users.update_one(
+                {"_id": seller_id, "ops": ops}, {"$set": {"monsters": farm, "ops": ops + 1}},
+            )
+            if locked.modified_count == 0:
+                continue  # ферма поменялась параллельно — перечитываем
+            await self.market.insert_one({
+                "_id": oid, "seller_id": seller_id, "seller_name": seller_name,
+                "monster_id": monster_id, "price_gram": price_gram, "created_at": ts, "in_place": True,
+            })
+            return str(oid), None
+        return None, "conflict"
 
     async def list_listings(self, limit: int = 200) -> list:
         cursor = self.market.find().sort("created_at", -1).limit(limit)
@@ -405,11 +438,73 @@ class MongoStore:
             items.append(doc)
         return items
 
+    async def _place_eagle(self, user_id: int, slot: dict, queue_max: int,
+                           charge: float = 0.0) -> str:
+        """Кладёт орла в свободную ОТКРЫТУЮ ячейку фермы (monsters короче
+        slots), а если все открытые заняты — в неактивные ячейки (farm_queue).
+        Новые ячейки при этом не открываются. charge > 0 — заодно атомарно
+        списывает GRAM (покупка). "ok" / "insufficient_funds" / "no_room" /
+        "conflict"."""
+        for _ in range(5):
+            doc = await self.users.find_one(
+                {"_id": user_id}, {"coins": 1, "slots": 1, "monsters": 1, "farm_queue": 1, "ops": 1},
+            )
+            if not doc:
+                return "not_found"
+            if charge and float(doc.get("coins") or 0) < charge:
+                return "insufficient_funds"
+            farm = list(doc.get("monsters") or [])
+            queue = list(doc.get("farm_queue") or [])
+            ops = int(doc.get("ops") or 0)
+            if len(farm) < int(doc.get("slots") or 0):
+                farm.append(slot)
+            elif len(queue) < queue_max:
+                queue.append(slot)
+            else:
+                return "no_room"
+            flt = {"_id": user_id, "ops": ops}
+            update = {"$set": {"monsters": farm, "farm_queue": queue, "ops": ops + 1}}
+            if charge:
+                flt["coins"] = {"$gte": charge}
+                update["$inc"] = {"coins": -charge}
+            result = await self.users.update_one(flt, update)
+            if result.modified_count:
+                return "ok"
+        return "conflict"
+
+    async def _refill_from_queue(self, user_id: int) -> None:
+        """После ухода орла из фермы освободившуюся открытую ячейку занимает
+        первый орёл из неактивных (как при удалении/продаже купцу). Best
+        effort: при гонке просто сделает это следующее действие."""
+        for _ in range(3):
+            doc = await self.users.find_one(
+                {"_id": user_id}, {"slots": 1, "monsters": 1, "farm_queue": 1, "active_slot": 1, "ops": 1},
+            )
+            if not doc:
+                return
+            farm = list(doc.get("monsters") or [])
+            queue = list(doc.get("farm_queue") or [])
+            slots = int(doc.get("slots") or 0)
+            ops = int(doc.get("ops") or 0)
+            active = min(int(doc.get("active_slot") or 0), max(0, len(farm) - 1))
+            if not (len(farm) < slots and queue) and active == int(doc.get("active_slot") or 0):
+                return
+            while len(farm) < slots and queue:
+                farm.append(queue.pop(0))
+            result = await self.users.update_one(
+                {"_id": user_id, "ops": ops},
+                {"$set": {"monsters": farm, "farm_queue": queue, "active_slot": active, "ops": ops + 1}},
+            )
+            if result.modified_count:
+                return
+
     async def buy_listing(self, buyer_id: int, listing_id: str, feed_levels: int,
-                           max_slots: int, commission: float) -> str:
-        """Атомарно покупает лот: списывает GRAM с покупателя, зачисляет продавцу
-        цену за вычетом комиссии рынка, добавляет орла на ферму покупателя.
-        Возвращает "ok" либо код причины отказа."""
+                           commission: float, queue_max: int) -> str:
+        """Покупка лота: лот атомарно забирается (find_one_and_delete — второй
+        покупатель его уже не найдёт), с покупателя списываются GRAM и орёл
+        кладётся в его свободную открытую ячейку либо в неактивные; продавцу
+        зачисляется цена за вычетом комиссии, а запертая ячейка с этим лотом
+        уходит из его фермы. При любом отказе лот возвращается на место."""
         from bson import ObjectId
         from bson.errors import InvalidId
 
@@ -422,46 +517,34 @@ class MongoStore:
         if not listing:
             return "not_found"
         if int(listing["seller_id"]) == int(buyer_id):
-            # Отменять покупку не нужно — лот просто возвращаем на место.
             await self.market.insert_one(listing)
             return "own_listing"
 
         price = float(listing["price_gram"])
-        buyer = await self.users.find_one({"_id": buyer_id}, {"coins": 1, "slots": 1, "monsters": 1})
-        if not buyer or float(buyer.get("coins") or 0) < price:
+        slot = {"id": listing["monster_id"], "next_egg_at": 0, "feed_level": feed_levels,
+                "feed_taps": 0, "expedition_until": 0}
+        placed = await self._place_eagle(buyer_id, slot, queue_max, charge=price)
+        if placed != "ok":
             await self.market.insert_one(listing)
-            return "insufficient_funds"
+            return placed
 
-        farm = list(buyer.get("monsters") or [])
-        slots = int(buyer.get("slots") or 0)
-        used = len(farm)
-        if used >= slots:
-            if slots >= max_slots:
-                await self.market.insert_one(listing)
-                return "no_room"
-            slots = min(max_slots, slots + 1)
-        farm.append({"id": listing["monster_id"], "next_egg_at": 0,
-                     "feed_level": feed_levels, "feed_taps": 0})
-
-        result = await self.users.update_one(
-            {"_id": buyer_id, "coins": {"$gte": price}},
-            {"$set": {"monsters": farm, "slots": slots}, "$inc": {"coins": -price, "ops": 1}},
-        )
-        if result.modified_count == 0:
-            # Баланс утёк параллельным запросом — откатываем лот обратно.
-            await self.market.insert_one(listing)
-            return "insufficient_funds"
-
+        seller_id = listing["seller_id"]
         seller_credit = price * (1 - commission)
         await self.users.update_one(
-            {"_id": listing["seller_id"]},
-            {"$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1}},
+            {"_id": seller_id},
+            {
+                "$pull": {"monsters": {"listing_id": str(oid)}},
+                "$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1},
+            },
         )
+        await self._refill_from_queue(seller_id)
         return "ok"
 
     async def cancel_listing(self, seller_id: int, listing_id: str,
-                              feed_levels: int, max_slots: int) -> str:
-        """Снимает лот с продажи и возвращает орла на ферму продавца."""
+                              feed_levels: int, queue_max: int) -> str:
+        """Снимает лот: у нового лота с ячейки орла просто убирается замок;
+        у старого (созданного, когда орёл снимался с фермы) орёл
+        возвращается в свободную открытую ячейку или в неактивные."""
         from bson import ObjectId
         from bson.errors import InvalidId
 
@@ -480,18 +563,19 @@ class MongoStore:
         if not deleted:
             return "not_found"
 
-        row = await self.users.find_one({"_id": seller_id}, {"slots": 1, "monsters": 1})
-        farm = list((row or {}).get("monsters") or [])
-        slots = int((row or {}).get("slots") or 0)
-        used = len(farm)
-        if used >= slots:
-            if slots >= max_slots:
-                await self.market.insert_one(deleted)
-                return "no_room"
-            slots = min(max_slots, slots + 1)
-        farm.append({"id": deleted["monster_id"], "next_egg_at": 0,
-                     "feed_level": feed_levels, "feed_taps": 0})
-        await self.users.update_one({"_id": seller_id}, {"$set": {"monsters": farm, "slots": slots}})
+        if deleted.get("in_place"):
+            unlocked = await self.users.update_one(
+                {"_id": seller_id, "monsters.listing_id": str(oid)},
+                {"$unset": {"monsters.$.listing_id": ""}, "$inc": {"ops": 1}},
+            )
+            if unlocked.modified_count:
+                return "ok"
+        slot = {"id": deleted["monster_id"], "next_egg_at": 0, "feed_level": feed_levels,
+                "feed_taps": 0, "expedition_until": 0}
+        placed = await self._place_eagle(seller_id, slot, queue_max)
+        if placed != "ok":
+            await self.market.insert_one(deleted)
+            return placed
         return "ok"
 
     # --- РЫНОК СНАРЯЖЕНИЯ: P2P-торговля предметами Кузницы по грейдам.
@@ -1135,15 +1219,17 @@ class MongoStore:
         если такого орла нет."""
         doc = await self.users.find_one({"_id": user_id}, {"monsters": 1})
         farm = list((doc or {}).get("monsters") or [])
+        # Орёл на рынке (замок) или в экспедиции не сжигается.
         idx = next((i for i, m in enumerate(farm)
-                    if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels), None)
+                    if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels
+                    and not m.get("listing_id") and not int(m.get("expedition_until") or 0)), None)
         if idx is None:
             return None
         original = farm[:]
         farm.pop(idx)
         result = await self.users.update_one(
             {"_id": user_id, "monsters": original},
-            {"$set": {"monsters": farm}, "$inc": {"burned_power": power}},
+            {"$set": {"monsters": farm}, "$inc": {"burned_power": power, "ops": 1}},
         )
         if result.modified_count == 0:
             return None

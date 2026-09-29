@@ -351,6 +351,14 @@
         .slot-cell.empty { background: rgba(255, 255, 255, 0.02); border-style: dashed; border-color: rgba(165, 160, 207, 0.3); box-shadow: none; }
         .slot-plus { font-size: 24px; font-weight: 700; color: rgba(165, 160, 207, 0.5); }
         .slot-cell.locked { background: rgba(5, 3, 16, 0.4); border-color: rgba(165, 160, 207, 0.16); box-shadow: none; }
+        /* Орёл выставлен на рынок: закрытый замок поверх, ячейка приглушена */
+        .slot-cell.listed img { filter: grayscale(0.6) brightness(0.7); }
+        .slot-cell.listed { border-color: rgba(247, 181, 0, 0.55); }
+        .slot-listed-lock { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px;
+            display: flex; align-items: center; justify-content: center; border-radius: 50%;
+            background: rgba(10, 6, 24, 0.82); border: 1.5px solid rgba(247, 181, 0, 0.8); color: #f7b500;
+            box-shadow: 0 0 10px rgba(247, 181, 0, 0.45); pointer-events: none; z-index: 2; }
+        .slot-listed-lock svg { width: 16px; height: 16px; }
         .slot-lock { width: 40%; height: 40%; color: rgba(165, 160, 207, 0.4); }
         .lock-hero { width: 62px; height: 62px; color: var(--accent-amber); display: block; margin: 0 auto 12px auto; filter: drop-shadow(0 0 10px rgba(255, 204, 77, 0.5)); }
         .slot-progress { position: absolute; left: 7px; right: 7px; bottom: 5px; height: 5px; border-radius: 4px; background: rgba(5, 3, 16, 0.6); border: 1px solid var(--glass-border); overflow: hidden; }
@@ -2017,6 +2025,12 @@
                 'merchant.eagleSold': 'Орёл продан: +{amount} GRAM',
                 'merchant.sellConfirmBody': 'Ты продашь этого орла купцу за {price} GRAM. Это действие нельзя отменить.',
                 'merchant.sellConfirmBtn': 'Продать',
+                'farm.listedLock': 'Выставлен на рынок',
+                'farm.listedToast': '🔒 Орёл выставлен на рынок — сними лот, чтобы им пользоваться',
+                'slot.listedNote': 'Выставлен на рынок. Орёл стоит в своей ячейке и ничего не делает, пока его не купят или ты не снимешь лот.',
+                'slot.unlistBtn': 'Снять с продажи',
+                'slot.deleteOnExpedition': 'Нельзя удалить во время экспедиции',
+                'market.boughtToQueue': 'Орёл куплен! Свободных ячеек нет — он ждёт в неактивных',
                 'merchant.meatUnlimited': 'Без ограничений — сколько угодно, пока хватает золота',
                 'merchant.meatAllGoldBtn': 'На всё золото ({amount})',
                 'merchant.meatCostLine': 'Стоимость: {amount} золота · у тебя {gold}',
@@ -2321,6 +2335,12 @@
                 'merchant.eagleSold': 'Eagle sold: +{amount} GRAM',
                 'merchant.sellConfirmBody': 'You will sell this eagle to the merchant for {price} GRAM. This cannot be undone.',
                 'merchant.sellConfirmBtn': 'Sell',
+                'farm.listedLock': 'Listed on the market',
+                'farm.listedToast': '🔒 This eagle is listed on the market — cancel the listing to use it',
+                'slot.listedNote': 'Listed on the market. The eagle stays in its slot and does nothing until it is bought or you cancel the listing.',
+                'slot.unlistBtn': 'Cancel listing',
+                'slot.deleteOnExpedition': 'Can\'t delete during an expedition',
+                'market.boughtToQueue': 'Eagle bought! No free slots — it is waiting in the inactive cells',
                 'merchant.meatUnlimited': 'No limits — buy as much as your gold allows',
                 'merchant.meatAllGoldBtn': 'All gold ({amount})',
                 'merchant.meatCostLine': 'Cost: {amount} gold · you have {gold}',
@@ -2759,6 +2779,10 @@
             return (slot.expeditionUntil || 0) > 0;
         }
 
+        function isListed(slot) {
+            return !!(slot && slot.listingId);
+        }
+
         function expeditionReady(slot) {
             return isOnExpedition(slot) && nowSeconds() >= slot.expeditionUntil;
         }
@@ -2967,7 +2991,7 @@
         function renderSlotGrid() {
             renderFarmQueueTray();
             const grid = document.getElementById('slotGrid');
-            const signature = [state.slots, state.activeSlot, state.farm.map(s => s.id).join(',')].join('|');
+            const signature = [state.slots, state.activeSlot, state.farm.map(s => s.id + (s.listingId ? '#L' : '')).join(',')].join('|');
             if (signature === slotGridSignature) {
                 updateSlotProgress();
                 return;
@@ -2992,11 +3016,13 @@
                         + (eggReady(slot) ? ' egg-ready' : '')
                         + (fed ? ' fed' : '')
                         + (i === fusionSelected ? ' fusion-selected' : '')
-                        + (expeditionReady(slot) ? ' expedition-ready' : '');
+                        + (expeditionReady(slot) ? ' expedition-ready' : '')
+                        + (isListed(slot) ? ' listed' : '');
                     cell.style.setProperty('--slot-tint', monster.color);
                     cell.innerHTML = `<span class="slot-index">${i + 1}</span>
                                       <span class="slot-fed-badge">${slotBadge(slot)}</span>
                                       <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                                      ${isListed(slot) ? `<span class="slot-listed-lock" title="${t('farm.listedLock')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>` : ''}
                                       <span class="slot-info-btn">ⓘ</span>
                                       <span class="slot-progress"><i style="width:${progress}%; background:${monster.color}"></i></span>`;
                     cell.onclick = (ev) => { selectSlot(i); onFarmSlotTap(i, ev); };
@@ -3889,6 +3915,12 @@
         function onFarmSlotTap(i, event) {
             const slot = state.farm[i];
             if (!slot) return;
+            if (isListed(slot)) {
+                if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
+                toast(t('farm.listedToast'));
+                haptic.notify('warning');
+                return;
+            }
             triggerSpring(document.getElementById('monsterStage'));
             if (isOnExpedition(slot)) {
                 if (expeditionReady(slot)) collectExpedition(i);
@@ -3912,6 +3944,7 @@
         async function sendExpedition(i) {
             const slot = state.farm[i];
             if (!slot || isOnExpedition(slot)) return;
+            if (isListed(slot)) { toast(t('farm.listedToast')); return; }
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'expedition-start:' + i;
@@ -4145,7 +4178,7 @@
                 .filter(({ slot }) => {
                     const monster = MONSTERS[slot.id];
                     const offer = monster && merchantBuybackOffer(monster.tier);
-                    return offer && offer.left > 0 && isFullyFed(slot);
+                    return offer && offer.left > 0 && isFullyFed(slot) && !isListed(slot) && !isOnExpedition(slot);
                 });
         }
 
@@ -4861,7 +4894,8 @@
         function eligibleMarketEagles() {
             return state.farm.filter(slot => {
                 const monster = MONSTERS[slot.id];
-                return monster && tierIndexOf(monster) >= 1 && (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels;
+                return monster && tierIndexOf(monster) >= 1 && (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels
+                    && !isListed(slot) && !isOnExpedition(slot);
             });
         }
 
@@ -5045,12 +5079,15 @@
                 });
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadMarketListings(); return; }
+                const queueBefore = (state.farmQueue || []).length;
                 state.coins = data.coins;
                 state.farm = readFarm(data.monsters);
+                if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
                 state.slots = data.slots;
+                if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 spawnBurst(12);
-                toast(t('market.bought'));
+                toast((state.farmQueue || []).length > queueBefore ? t('market.boughtToQueue') : t('market.bought'));
                 renderAll();
                 loadMarketListings();
             } catch (e) {
@@ -5067,7 +5104,9 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadMarketListings(); return; }
                 state.farm = readFarm(data.monsters);
+                if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
                 state.slots = data.slots;
+                if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 toast(t('market.cancelled'));
                 renderAll();
@@ -5699,6 +5738,11 @@
         }
 
         function askDeleteEagle() {
+            const slot = state.farm[modalSlot];
+            if (slot && (isListed(slot) || isOnExpedition(slot))) {
+                toast(isListed(slot) ? t('farm.listedToast') : t('slot.deleteOnExpedition'));
+                return;
+            }
             slotDeleteConfirm = true;
             haptic.notify('warning');
             renderSlotModal();
@@ -5770,7 +5814,7 @@
 
         function slotModalSignature(slot) {
             return [
-                modalSlot, slot.id, slotDeleteConfirm,
+                modalSlot, slot.id, slotDeleteConfirm, slot.listingId || '',
                 isOnExpedition(slot), expeditionReady(slot), eggReady(slot),
                 isFullyFed(slot), isFarmingEgg(slot), slot.feedLevel, slot.feedTaps,
             ].join('|');
@@ -5812,6 +5856,17 @@
             }
 
             const tier = tierById(monster.tier);
+            if (isListed(slot)) {
+                document.getElementById('slotModalBody').innerHTML = `
+                    <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}" style="filter:grayscale(0.5)">
+                    <h2 style="color:${monster.color}">${monster.name}</h2>
+                    <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
+                    <p class="slot-modal-sub slot-listed-note">🔒 ${t('slot.listedNote')}</p>
+                    <button class="btn-action" style="margin-top:10px; width:100%" onclick="cancelMarketListing('${slot.listingId}'); closeSlotModal();">${t('slot.unlistBtn')}</button>
+                    <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
+                `;
+                return;
+            }
             const onExpedition = isOnExpedition(slot);
             const expReady = expeditionReady(slot);
             const ready = eggReady(slot);
@@ -5868,7 +5923,9 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
-                <button class="btn-action btn-danger" style="margin-top:8px; width:100%" onclick="askDeleteEagle()">🗑 ${t('slot.deleteBtn')}</button>
+                ${onExpedition
+                    ? `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" disabled>🗑 ${t('slot.deleteOnExpedition')}</button>`
+                    : `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" onclick="askDeleteEagle()">🗑 ${t('slot.deleteBtn')}</button>`}
                 <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
             `;
         }
@@ -6633,6 +6690,7 @@
         function ownedArenaTiers() {
             const seen = new Set();
             state.farm.forEach(slot => {
+                if (isListed(slot)) return;  // выставленный на рынок орёл ничего не делает
                 const monster = MONSTERS[slot.id];
                 if (monster) seen.add(monster.tier);
             });
@@ -8262,7 +8320,11 @@
                 if (feedLevel >= feedLevels) nextEggAt = 0;
                 const rawExpedition = Number(slot.expedition_until !== undefined ? slot.expedition_until : slot.expeditionUntil);
                 const expeditionUntil = Number.isFinite(rawExpedition) ? Math.max(0, rawExpedition) : 0;
-                farm.push({ id: slot.id, nextEggAt, feedLevel, feedTaps, expeditionUntil });
+                // listing_id — орёл выставлен на рынок: стоит в своей ячейке под
+                // замком и ничего не делает, пока лот не куплен или не снят.
+                const listingId = typeof slot.listing_id === 'string' && slot.listing_id ? slot.listing_id
+                    : (typeof slot.listingId === 'string' && slot.listingId ? slot.listingId : null);
+                farm.push({ id: slot.id, nextEggAt, feedLevel, feedTaps, expeditionUntil, listingId });
                 return farm;
             }, []);
         }
@@ -8646,7 +8708,7 @@
         // Орлы 7 уровня — те же, что уже нельзя дальше кормить (см. FEED_LEVELS);
         // в отличие от eligibleMarketEagles, обычная (common) редкость тоже подходит.
         function eligibleClanBurnEagles() {
-            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels);
+            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot));
         }
 
         async function openClanScreen() {
