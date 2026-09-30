@@ -984,7 +984,7 @@ function renderLedger() {
         `<button data-ledger-cur="${k}" class="${st.currency === k ? 'active' : ''}">${label}</button>`).join('');
     const rows = st.entries.length ? st.entries.map(e => `<tr>
         <td class="muted" style="white-space:nowrap;">${new Date(e.ts * 1000).toLocaleString('ru-RU')}</td>
-        <td>${escHtml(e.label)}</td>
+        <td>${escHtml(e.label)}${e.count > 1 ? ` <span class="muted" style="font-size:11px;">× ${e.count} операций</span>` : ''}</td>
         ${LEDGER_CUR.map(([k]) => `<td>${ledgerAmount(e.delta[k])}${e.balance[k] !== undefined ? `<div class="muted" style="font-size:11px;">= ${fmtNum(e.balance[k])}</div>` : ''}</td>`).join('')}
         </tr>`).join('')
         : '<tr><td colspan="5" class="muted">Нет записей</td></tr>';

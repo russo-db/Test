@@ -91,7 +91,12 @@ FIELDS = (
 # (ledger_source("ton:deposit") и т.п.).
 LEDGER_FIELDS = ("coins", "mnstr", "gold")
 LEDGER_SOURCE = contextvars.ContextVar("ledger_source", default="system")
-LEDGER_TTL_SECONDS = 180 * 24 * 3600   # записи старше полугода удаляются базой сами
+LEDGER_RETENTION_SECONDS = 90 * 24 * 3600   # записи старше 90 дней удаляются (prune_ledger)
+# Операции одного игрока из одного источника за LEDGER_BUCKET_SECONDS
+# складываются в ОДНУ запись (сумма изменений + счётчик операций): 100 тапов
+# кормления подряд — одна строка журнала, а не сто. Ключ записи — её _id,
+# поэтому запись не требует никаких дополнительных индексов в базе.
+LEDGER_BUCKET_SECONDS = 600
 
 
 class ledger_source:
@@ -169,11 +174,17 @@ class LedgerUsers:
     async def _record(self, user_id, delta: dict, balance: dict, source: Optional[str] = None) -> None:
         """Сбой записи журнала никогда не ломает само действие игрока."""
         try:
-            from datetime import datetime, timezone
-            await self._ledger.insert_one({
-                "user_id": user_id, "ts": time.time(), "at": datetime.now(timezone.utc),
-                "source": source or LEDGER_SOURCE.get(), "delta": delta, "balance": balance,
-            })
+            now = time.time()
+            source = source or LEDGER_SOURCE.get()
+            bucket = int(now // LEDGER_BUCKET_SECONDS)
+            update = {
+                "$inc": {"count": 1, **{f"delta.{f}": v for f, v in delta.items()}},
+                "$max": {"ts": now},
+                "$setOnInsert": {"user_id": user_id, "source": source, "first_ts": now},
+            }
+            if balance:
+                update["$set"] = {f"balance.{f}": v for f, v in balance.items()}
+            await self._ledger.update_one({"_id": f"{user_id}:{bucket}:{source}"}, update, upsert=True)
         except Exception as e:
             print(f"[ledger] write failed for {user_id}: {type(e).__name__}: {e}")
 
@@ -217,14 +228,22 @@ class MongoStore:
         self.auctions = client[db_name]["auctions"]
 
     async def init(self):
-        await self.users.create_index("referred_by")
-        await self.balance_ledger.create_index([("user_id", 1), ("ts", -1)])
-        await self.balance_ledger.create_index("at", expireAfterSeconds=LEDGER_TTL_SECONDS)
-        await self.deposits.create_index("user_id")
-        await self.withdrawals.create_index("user_id")
-        await self.market.create_index("seller_id")
-        await self.equip_market.create_index("seller_id")
-        await self.resource_market.create_index("seller_id")
+        # Индексы — ускорение, а не условие работы. Построить новый индекс
+        # MongoDB соглашается только при >= 500 МБ свободного диска
+        # (indexBuildMinAvailableDiskSpaceMB); на маленьком томе это
+        # OutOfDiskSpace. Такая ошибка не должна останавливать запуск игры.
+        for collection, keys, kwargs in (
+            (self.users, "referred_by", {}),
+            (self.deposits, "user_id", {}),
+            (self.withdrawals, "user_id", {}),
+            (self.market, "seller_id", {}),
+            (self.equip_market, "seller_id", {}),
+            (self.resource_market, "seller_id", {}),
+        ):
+            try:
+                await collection.create_index(keys, **kwargs)
+            except Exception as e:
+                print(f"[storage] index {collection.name}.{keys} not created: {type(e).__name__}: {e}")
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
@@ -1576,16 +1595,24 @@ class MongoStore:
             query["ts"] = {"$lt": float(before_ts)}
         out = []
         async for doc in self.balance_ledger.find(query).sort("ts", -1).limit(limit):
-            out.append({"ts": doc["ts"], "source": doc.get("source") or "",
-                        "delta": doc.get("delta") or {}, "balance": doc.get("balance") or {}})
+            out.append({"ts": doc["ts"], "first_ts": doc.get("first_ts") or doc["ts"],
+                        "source": doc.get("source") or "", "count": int(doc.get("count") or 1),
+                        "delta": {k: v for k, v in (doc.get("delta") or {}).items() if abs(v) > 1e-9},
+                        "balance": doc.get("balance") or {}})
         return out
+
+    async def prune_ledger(self, now: Optional[float] = None) -> int:
+        """Удаляет записи журнала старше LEDGER_RETENTION_SECONDS."""
+        cutoff = (time.time() if now is None else now) - LEDGER_RETENTION_SECONDS
+        result = await self.balance_ledger.delete_many({"ts": {"$lt": cutoff}})
+        return result.deleted_count
 
     async def ledger_summary(self, user_id: int) -> dict:
         """Итоги по источникам: {source: {coins: +/-, mnstr, gold, count}} и
         время первой записи (с какого момента ведётся журнал игрока)."""
         pipeline = [
             {"$match": {"user_id": user_id}},
-            {"$group": {"_id": "$source", "count": {"$sum": 1}, "first": {"$min": "$ts"},
+            {"$group": {"_id": "$source", "count": {"$sum": "$count"}, "first": {"$min": "$first_ts"},
                         **{f: {"$sum": f"$delta.{f}"} for f in LEDGER_FIELDS}}},
         ]
         by_source, first = {}, None

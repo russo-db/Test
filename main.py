@@ -5590,6 +5590,18 @@ async def auction_tick(now: Optional[float] = None) -> None:
             traceback.print_exception(type(e), e, e.__traceback__)
 
 
+async def ledger_maintenance():
+    """Раз в 6 часов чистит журнал балансов от записей старше 90 дней."""
+    while True:
+        try:
+            removed = await store.prune_ledger()
+            if removed:
+                print(f"[ledger] удалено старых записей: {removed}")
+        except Exception as e:
+            print(f"[ledger] prune failed: {type(e).__name__}: {e}")
+        await asyncio.sleep(6 * 3600)
+
+
 async def auction_worker():
     while True:
         try:
@@ -5916,6 +5928,7 @@ async def startup_event():
     except Exception as e:  # тестовые данные не должны мешать запуску игры
         print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
     asyncio.create_task(auction_worker())
+    asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
     else:
