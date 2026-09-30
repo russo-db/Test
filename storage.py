@@ -65,6 +65,7 @@ start_time_override?}...]} (см. try_launch_clan_tournament
 и не перезапускается сам).
 """
 
+import contextvars
 import os
 import random
 import re
@@ -80,6 +81,102 @@ FIELDS = (
     "pvp_energy", "pvp_energy_day", "clan_id", "burned_power",
 )
 
+# --- ЖУРНАЛ БАЛАНСОВ ---
+# Каждое изменение GRAM (coins), Meat (mnstr) и золота (gold) игрока пишется в
+# balance_ledger: {user_id, ts, source, delta: {поле: изменение}, balance: {поле:
+# баланс после}}. Все записи балансов идут через users.update_one, поэтому
+# журнал ведётся в одном месте — LedgerUsers ниже, — и новое действие в игре
+# попадает в журнал само, без правок в его коде. Источник — адрес запроса
+# (ставится middleware в main.py) либо явная метка фонового начисления
+# (ledger_source("ton:deposit") и т.п.).
+LEDGER_FIELDS = ("coins", "mnstr", "gold")
+LEDGER_SOURCE = contextvars.ContextVar("ledger_source", default="system")
+LEDGER_TTL_SECONDS = 180 * 24 * 3600   # записи старше полугода удаляются базой сами
+
+
+class ledger_source:
+    """with ledger_source("ton:deposit"): ... — метка источника для журнала."""
+
+    def __init__(self, source: str):
+        self.source = source
+
+    def __enter__(self):
+        self._token = LEDGER_SOURCE.set(self.source)
+        return self
+
+    def __exit__(self, *exc):
+        LEDGER_SOURCE.reset(self._token)
+        return False
+
+
+class _LedgerUpdateResult:
+    """Совместим с pymongo UpdateResult в той части, что использует код."""
+
+    def __init__(self, matched: int):
+        self.acknowledged = True
+        self.matched_count = matched
+        self.modified_count = matched
+        self.upserted_id = None
+        self.raw_result = {"n": matched}
+
+
+class LedgerUsers:
+    """Коллекция игроков, которая журналирует изменения балансов. update_one,
+    задевающий coins/mnstr/gold, выполняется как find_one_and_update с
+    возвратом документа ДО изменения — одна атомарная операция, поэтому
+    разница «было → стало» точная даже при параллельных запросах. Остальные
+    методы — без изменений (проксируются в настоящую коллекцию)."""
+
+    def __init__(self, collection, ledger):
+        self._collection = collection
+        self._ledger = ledger
+
+    def __getattr__(self, name):
+        return getattr(self._collection, name)
+
+    async def update_one(self, filter, update, upsert=False, **kwargs):
+        if not isinstance(update, dict):   # update-pipeline — балансы так не пишем
+            return await self._collection.update_one(filter, update, upsert=upsert, **kwargs)
+        inc = update.get("$inc") or {}
+        set_ = update.get("$set") or {}
+        touched = [f for f in LEDGER_FIELDS if f in inc or f in set_]
+        if upsert or not touched:
+            result = await self._collection.update_one(filter, update, upsert=upsert, **kwargs)
+            if upsert and result.upserted_id is not None:
+                start = {f: float(v) for f, v in ((update.get("$setOnInsert") or {}).items())
+                         if f in LEDGER_FIELDS and v}
+                if start:
+                    await self._record(result.upserted_id, start, start, source="start")
+            return result
+        from pymongo import ReturnDocument
+        before = await self._collection.find_one_and_update(
+            filter, update, projection={f: 1 for f in LEDGER_FIELDS},
+            return_document=ReturnDocument.BEFORE, **kwargs,
+        )
+        if before is None:
+            return _LedgerUpdateResult(0)
+        delta, balance = {}, {}
+        for f in touched:
+            old = float(before.get(f) or 0)
+            new = old + float(inc[f] or 0) if f in inc else float(set_[f] or 0)
+            if abs(new - old) > 1e-9:
+                delta[f] = round(new - old, 9)
+                balance[f] = round(new, 9)
+        if delta:
+            await self._record(before["_id"], delta, balance)
+        return _LedgerUpdateResult(1)
+
+    async def _record(self, user_id, delta: dict, balance: dict, source: Optional[str] = None) -> None:
+        """Сбой записи журнала никогда не ломает само действие игрока."""
+        try:
+            from datetime import datetime, timezone
+            await self._ledger.insert_one({
+                "user_id": user_id, "ts": time.time(), "at": datetime.now(timezone.utc),
+                "source": source or LEDGER_SOURCE.get(), "delta": delta, "balance": balance,
+            })
+        except Exception as e:
+            print(f"[ledger] write failed for {user_id}: {type(e).__name__}: {e}")
+
 
 class MongoStore:
     """MongoDB через motor. Документ хранит списки как есть, без JSON-строк."""
@@ -89,7 +186,9 @@ class MongoStore:
             from motor.motor_asyncio import AsyncIOMotorClient
 
             client = AsyncIOMotorClient(uri)
-        self.users = client[db_name]["users"]
+        # Журнал балансов (см. LedgerUsers) — пишется при каждом изменении coins/mnstr/gold.
+        self.balance_ledger = client[db_name]["balance_ledger"]
+        self.users = LedgerUsers(client[db_name]["users"], self.balance_ledger)
         self.deposits = client[db_name]["deposits"]
         self.withdrawals = client[db_name]["withdrawals"]
         self.market = client[db_name]["market_listings"]
@@ -119,6 +218,8 @@ class MongoStore:
 
     async def init(self):
         await self.users.create_index("referred_by")
+        await self.balance_ledger.create_index([("user_id", 1), ("ts", -1)])
+        await self.balance_ledger.create_index("at", expireAfterSeconds=LEDGER_TTL_SECONDS)
         await self.deposits.create_index("user_id")
         await self.withdrawals.create_index("user_id")
         await self.market.create_index("seller_id")
@@ -1301,10 +1402,11 @@ class MongoStore:
 
     async def _refund_hold(self, user_id: int, key: str, amount: float) -> bool:
         """Возврат заморозки ровно один раз: только пока она ещё == amount."""
-        res = await self.users.update_one(
-            {"_id": user_id, f"auction_holds.{key}": amount},
-            {"$unset": {f"auction_holds.{key}": ""}, "$inc": {"coins": amount, "ops": 1}},
-        )
+        with ledger_source("auction:refund"):
+            res = await self.users.update_one(
+                {"_id": user_id, f"auction_holds.{key}": amount},
+                {"$unset": {f"auction_holds.{key}": ""}, "$inc": {"coins": amount, "ops": 1}},
+            )
         return res.modified_count > 0
 
     async def process_auction_refunds(self, auction_id) -> int:
@@ -1464,6 +1566,33 @@ class MongoStore:
             {"$set": {"auction_wins.$.status": "delivered" if delivered else "pending_delivery"}},
         )
         return True
+
+    async def list_ledger(self, user_id: int, currency: str = "", limit: int = 100,
+                          before_ts: Optional[float] = None) -> list:
+        query = {"user_id": user_id}
+        if currency in LEDGER_FIELDS:
+            query[f"delta.{currency}"] = {"$exists": True}
+        if before_ts:
+            query["ts"] = {"$lt": float(before_ts)}
+        out = []
+        async for doc in self.balance_ledger.find(query).sort("ts", -1).limit(limit):
+            out.append({"ts": doc["ts"], "source": doc.get("source") or "",
+                        "delta": doc.get("delta") or {}, "balance": doc.get("balance") or {}})
+        return out
+
+    async def ledger_summary(self, user_id: int) -> dict:
+        """Итоги по источникам: {source: {coins: +/-, mnstr, gold, count}} и
+        время первой записи (с какого момента ведётся журнал игрока)."""
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {"_id": "$source", "count": {"$sum": 1}, "first": {"$min": "$ts"},
+                        **{f: {"$sum": f"$delta.{f}"} for f in LEDGER_FIELDS}}},
+        ]
+        by_source, first = {}, None
+        async for row in self.balance_ledger.aggregate(pipeline):
+            by_source[row["_id"] or ""] = {f: float(row.get(f) or 0) for f in LEDGER_FIELDS} | {"count": int(row["count"])}
+            first = row["first"] if first is None else min(first, row["first"])
+        return {"by_source": by_source, "first_ts": first}
 
     async def record_economy(self, amounts: dict, day: str) -> None:
         """Прибавляет amounts ({счётчик: число}) к общим и суточным счётчикам."""

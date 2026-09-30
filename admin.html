@@ -114,6 +114,15 @@
     .online-dot.is-online { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.8); }
     .add-eagle-row { display: flex; gap: 8px; margin-top: 6px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+    .ledger-backdrop { z-index: 1100; }
+    .ledger-modal { max-width: 860px !important; max-height: 90vh; overflow-y: auto; }
+    .ledger-balances { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .ledger-balances .stat-card { flex: 1; min-width: 140px; padding: 10px 12px; }
+    .ledger-filter { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
+    .ledger-filter button.active { background: #f0b429; color: #1a1408; font-weight: 700; }
+    .ledger-plus { color: #4ade80; font-weight: 700; white-space: nowrap; }
+    .ledger-minus { color: #ff6b6b; font-weight: 700; white-space: nowrap; }
+    .ledger-table td, .ledger-table th { padding: 6px 8px; }
     #configArea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 
     /* --- турнир кланов --- */
@@ -913,6 +922,92 @@ document.querySelectorAll('[data-shorten-timers]').forEach(btn => {
     });
 });
 
+/* ---------- журнал балансов игрока ---------- */
+const LEDGER_CUR = [['gold', 'Золото'], ['mnstr', 'Meat'], ['coins', 'GRAM']];
+let ledgerState = null;
+function ledgerAmount(v) {
+    if (!v) return '<span class="muted">—</span>';
+    const cls = v > 0 ? 'ledger-plus' : 'ledger-minus';
+    return `<span class="${cls}">${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}</span>`;
+}
+function closeLedgerModal() {
+    const el = document.getElementById('ledgerBackdrop');
+    if (el) el.remove();
+    ledgerState = null;
+}
+async function openLedgerModal(userId) {
+    closeLedgerModal();
+    ledgerState = { userId, currency: '', entries: [], hasMore: false, data: null };
+    const root = document.createElement('div');
+    root.className = 'modal-backdrop ledger-backdrop';
+    root.id = 'ledgerBackdrop';
+    root.innerHTML = `<div class="modal ledger-modal">
+        <button class="close-x" id="ledgerClose">✕</button>
+        <h3>История балансов · игрок ${userId}</h3>
+        <div id="ledgerBody" class="muted">Загрузка…</div>
+    </div>`;
+    document.body.appendChild(root);
+    document.getElementById('ledgerClose').onclick = closeLedgerModal;
+    root.addEventListener('click', e => { if (e.target.id === 'ledgerBackdrop') closeLedgerModal(); });
+    await loadLedger(false);
+}
+async function loadLedger(more) {
+    const st = ledgerState;
+    if (!st) return;
+    const params = new URLSearchParams({ limit: '100' });
+    if (st.currency) params.set('currency', st.currency);
+    if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
+    let data;
+    try { data = await api(`/admin/api/players/${st.userId}/ledger?${params}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    if (ledgerState !== st) return;
+    st.data = data;
+    st.entries = more ? st.entries.concat(data.entries) : data.entries;
+    st.hasMore = data.has_more;
+    renderLedger();
+}
+function renderLedger() {
+    const st = ledgerState;
+    const d = st.data;
+    const body = document.getElementById('ledgerBody');
+    if (!body) return;
+    const since = d.first_ts
+        ? `Журнал ведётся с ${new Date(d.first_ts * 1000).toLocaleString('ru-RU')}. Более ранние начисления в нём не видны.`
+        : 'Записей пока нет: журнал появился с этим обновлением и заполняется с новыми действиями игрока.';
+    const balances = LEDGER_CUR.map(([k, label]) =>
+        `<div class="stat-card"><div class="label">${label} сейчас</div><div class="value">${fmtNum(d.balance[k])}</div></div>`).join('');
+    const summaryRows = d.by_source.length ? d.by_source.map(r => `<tr>
+        <td>${escHtml(r.label)}${r.label !== r.source ? ` <span class="muted" style="font-size:11px;">${escHtml(r.source)}</span>` : ''}</td>
+        <td>${ledgerAmount(r.gold)}</td><td>${ledgerAmount(r.mnstr)}</td><td>${ledgerAmount(r.coins)}</td><td class="muted">${r.count}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Пусто</td></tr>';
+    const filter = [['', 'Все'], ...LEDGER_CUR].map(([k, label]) =>
+        `<button data-ledger-cur="${k}" class="${st.currency === k ? 'active' : ''}">${label}</button>`).join('');
+    const rows = st.entries.length ? st.entries.map(e => `<tr>
+        <td class="muted" style="white-space:nowrap;">${new Date(e.ts * 1000).toLocaleString('ru-RU')}</td>
+        <td>${escHtml(e.label)}</td>
+        ${LEDGER_CUR.map(([k]) => `<td>${ledgerAmount(e.delta[k])}${e.balance[k] !== undefined ? `<div class="muted" style="font-size:11px;">= ${fmtNum(e.balance[k])}</div>` : ''}</td>`).join('')}
+        </tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Нет записей</td></tr>';
+    body.className = '';
+    body.innerHTML = `
+        <div class="ledger-balances">${balances}</div>
+        <div class="muted" style="font-size:12px; margin-bottom:10px;">${since}</div>
+        <b>Откуда пришло и куда ушло (за всё время журнала)</b>
+        <div class="table-wrap" style="margin-top:6px;"><table class="ledger-table">
+            <thead><tr><th>Источник</th><th>Золото</th><th>Meat</th><th>GRAM</th><th>Операций</th></tr></thead>
+            <tbody>${summaryRows}</tbody></table></div>
+        <div class="ledger-filter">${filter}</div>
+        <div class="table-wrap"><table class="ledger-table">
+            <thead><tr><th>Когда</th><th>Источник</th><th>Золото</th><th>Meat</th><th>GRAM</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>
+        ${st.hasMore ? '<button id="ledgerMore" style="margin-top:10px;">Показать ещё</button>' : ''}`;
+    body.querySelectorAll('[data-ledger-cur]').forEach(btn => {
+        btn.onclick = () => { st.currency = btn.dataset.ledgerCur; st.entries = []; loadLedger(false); };
+    });
+    const more = document.getElementById('ledgerMore');
+    if (more) more.onclick = () => withBusyButton(more, 'Загрузка…', () => loadLedger(true));
+}
+
 /* ---------- экономика ---------- */
 async function loadEconomy() {
     let data;
@@ -1092,7 +1187,7 @@ async function openPlayerModal(userId) {
         <div class="modal-backdrop" id="playerModalBackdrop">
             <div class="modal">
                 <button class="close-x" id="playerModalClose">✕</button>
-                <h3>Игрок ${doc.user_id}</h3>
+                <h3>Игрок ${doc.user_id} <button id="playerLedgerBtn" style="margin-left:10px; font-size:12px; padding:4px 10px;">📜 История балансов</button></h3>
                 <div class="field-row">
                     <label>Имя <input id="fName" value="${(doc.name || '').replace(/"/g, '&quot;')}"></label>
                     <label>Кошелёк <input id="fWallet" value="${(doc.wallet || '').replace(/"/g, '&quot;')}"></label>
@@ -1183,6 +1278,7 @@ async function openPlayerModal(userId) {
             toast(`Выдано: ${meta.names ? meta.names[grade] : meta.label} × ${count}`);
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     };
+    document.getElementById('playerLedgerBtn').onclick = () => openLedgerModal(userId);
     document.getElementById('playerModalClose').onclick = closePlayerModal;
     document.getElementById('playerModalCancel').onclick = closePlayerModal;
     document.getElementById('playerModalBackdrop').addEventListener('click', e => {

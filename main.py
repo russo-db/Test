@@ -6,13 +6,14 @@ import re
 import secrets
 import time
 import asyncio
+import functools
 import traceback
 from typing import List, Optional
 
 import httpx
 
 from auth import verify_init_data
-from storage import make_store
+from storage import make_store, ledger_source, LEDGER_SOURCE
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -931,6 +932,20 @@ async def nest_state_view(row: dict) -> dict:
     }
 
 
+def ledger_labelled(source: str):
+    """Метка для журнала балансов у начислений, которые идут не от действия
+    игрока, а «попутно» или в фоне (VIP-мясо, пополнения TON, награды сезона
+    Арены) — иначе в журнале был бы адрес запроса, внутри которого это случилось."""
+    def deco(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            with ledger_source(source):
+                return await fn(*args, **kwargs)
+        return wrapper
+    return deco
+
+
+@ledger_labelled("vip:meat")
 async def accrue_vip_meat(user_id: int, row: dict) -> dict:
     """Начисляет накопленный VIP-Meat (раз в сутки, с наверстыванием за
     время офлайн, но не дольше, чем тариф был активен) — раньше это делал
@@ -1255,6 +1270,7 @@ async def credit_deposits(force: bool = False) -> int:
         return await _scan_deposits()
 
 
+@ledger_labelled("ton:deposit")
 async def _scan_deposits() -> int:
     try:
         incoming = await fetch_incoming()
@@ -1606,6 +1622,27 @@ async def unhandled_error(request: Request, exc: Exception):
     else:
         detail = "Внутренняя ошибка сервера"
     return JSONResponse(status_code=500, content={"detail": detail})
+
+
+class LedgerSourceMiddleware:
+    """Источник для журнала балансов = адрес запроса (/api/farm/expedition/collect,
+    /admin/api/players/123 …). Чистый ASGI, без BaseHTTPMiddleware, чтобы
+    contextvar гарантированно был виден внутри обработчика."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        token = LEDGER_SOURCE.set(scope.get("path") or "http")
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            LEDGER_SOURCE.reset(token)
+
+
+app.add_middleware(LedgerSourceMiddleware)
 
 
 @app.middleware("http")
@@ -2369,6 +2406,7 @@ def arena_tournament_reward(rank: int) -> dict:
     return {"gram": 0, "shards": 0, "particles": 0}
 
 
+@ledger_labelled("arena:season_rewards")
 async def distribute_arena_rewards() -> dict:
     """Начисляет призы турнира Арены по текущему Топ-50 (см.
     arena_tournament_reward) каждому награждённому — GRAMM на внутренний
@@ -5402,6 +5440,92 @@ async def admin_set_nft_settings(body: AdminNftSettings, _: None = Depends(requi
         raise HTTPException(status_code=400, detail="Интервал должен быть от 1 минуты до 365 дней")
     await store.set_setting("nft_claim_interval_seconds", value)
     return await admin_nft_settings(None)
+
+
+# --- ЖУРНАЛ БАЛАНСОВ ИГРОКА (админка → Игроки → «История балансов») ---
+# Сами записи делает storage.LedgerUsers; здесь — человекочитаемые подписи
+# источников и выдача журнала админке. Порядок важен: сначала более точные
+# префиксы, потом общие.
+LEDGER_LABELS = [
+    ("start", "Стартовый баланс"),
+    ("vip:meat", "VIP: ежедневное мясо"),
+    ("ton:deposit", "Пополнение TON"),
+    ("arena:season_rewards", "Награда сезона Арены"),
+    ("auction:refund", "Аукцион: возврат ставки"),
+    ("/api/auction/bid", "Аукцион: ставка"),
+    ("/api/save", "Сохранение клиента"),
+    ("/api/farm/feed", "Кормление орла"),
+    ("/api/farm/collect_egg", "Сбор яйца"),
+    ("/api/farm/fusion_attempt", "Скрещивание"),
+    ("/api/farm/expedition/start", "Экспедиция: отправка"),
+    ("/api/farm/expedition/collect", "Экспедиция: награда"),
+    ("/api/farm/buy_slot", "Покупка слота фермы"),
+    ("/api/farm/delete_eagle", "Удаление орла"),
+    ("/api/nest/shard/buy", "Покупка Небесного Осколка"),
+    ("/api/nest/craft", "Крафт снаряжения"),
+    ("/api/nest/upgrade", "Улучшение снаряжения"),
+    ("/api/nest/", "Гнездо Воинов"),
+    ("/api/arena/buy_energy", "Энергия Арены"),
+    ("/api/arena/fight", "Бой на Арене"),
+    ("/admin/api/arena/distribute_rewards", "Награды Арены (вручную)"),
+    ("/api/clan/create", "Создание клана"),
+    ("/api/clan/open_slot", "Место в клане"),
+    ("/api/clan/", "Кланы"),
+    ("/api/eggs/unlock_slot", "Открытие ячейки яиц"),
+    ("/api/eggs/open_all", "Вскрытие всех яиц"),
+    ("/api/eggs/open", "Вскрытие яйца"),
+    ("/api/eggs/merge", "Слияние яиц"),
+    ("/api/vip/buy", "Покупка VIP"),
+    ("/api/mission/claim", "Награда за задание"),
+    ("/api/daily/claim", "Ежедневный бонус"),
+    ("/api/wheel/spin", "Колесо фортуны"),
+    ("/api/merchant/buy_meat", "Купец: мясо за золото"),
+    ("/api/merchant/sell_eagle", "Купец: продажа орла"),
+    ("/api/market/equip/", "Рынок снаряжения"),
+    ("/api/market/resources/", "Рынок ресурсов"),
+    ("/api/market/", "Рынок орлов"),
+    ("/api/ton/withdraw", "Вывод TON"),
+    ("/api/ton/check", "Пополнение TON"),
+    ("/admin/api/withdrawals", "Вывод: решение админа"),
+    ("/admin/api/players", "Правка админом"),
+    ("/api/nft/", "NFT «Небесный орел»"),
+]
+
+
+def ledger_label(source: str) -> str:
+    for prefix, label in LEDGER_LABELS:
+        if source == prefix or source.startswith(prefix):
+            return label
+    return source or "—"
+
+
+@app.get("/admin/api/players/{user_id}/ledger")
+async def admin_player_ledger(user_id: int, currency: str = "", limit: int = 100,
+                              before: Optional[float] = None, _: None = Depends(require_admin)):
+    """История изменений GRAM / Meat / золота игрока: итоги по источникам
+    (за всё время журнала) и последние записи (постранично, before = ts)."""
+    try:
+        limit = max(1, min(500, int(limit)))
+        entries = await store.list_ledger(user_id, currency, limit, before)
+        summary = await store.ledger_summary(user_id)
+        row = await store.get(user_id) or {}
+        by_source = sorted(
+            ({"source": src, "label": ledger_label(src), **vals} for src, vals in summary["by_source"].items()),
+            key=lambda r: -(abs(r["gold"]) + abs(r["mnstr"]) + abs(r["coins"]) * 100),
+        )
+        return {
+            "user_id": user_id,
+            "balance": {f: float(row.get(f) or 0) for f in ("coins", "mnstr", "gold")},
+            "first_ts": summary["first_ts"],
+            "by_source": by_source,
+            "entries": [dict(e, label=ledger_label(e["source"])) for e in entries],
+            "has_more": len(entries) == limit,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить журнал: {type(e).__name__}: {e}")
 
 
 # --- АУКЦИОН «РАЗДАЧА НЕБЕСНЫХ ОРЛОВ» ---
