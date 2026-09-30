@@ -74,6 +74,12 @@
     .nft-mode { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
     .nft-mode.prod { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
     .nft-mode.test { background: rgba(240, 180, 41, 0.18); color: #f0b429; }
+    .auction-lot-admin { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+    .auction-lot-admin img, .auction-preview { width: 110px; height: 110px; object-fit: cover; border-radius: 12px; border: 1px solid #2a3350; background: #0f1422; }
+    .auction-timer-admin { font-size: 20px; font-weight: 800; color: #f0b429; }
+    .test-btn { background: #6b3fa0; color: #fff; font-weight: 700; }
+    .test-btn:hover { background: #8250c4; }
+    .test-btn:disabled { background: #333a50; color: #8b96b3; cursor: not-allowed; }
     .stat-card { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 14px 16px; }
     .stat-card .label { color: #8b96b3; font-size: 12px; margin-bottom: 6px; }
     .stat-card .value { font-size: 20px; font-weight: 700; }
@@ -221,6 +227,7 @@
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
+            <button class="nav-btn" data-page="auction">🏛️ Аукцион</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -246,6 +253,10 @@
                     <button data-nft-preset="604800">7 дней (боевой)</button>
                 </div>
                 <div class="muted" id="nftIntervalHint" style="font-size:12px;"></div>
+                <div class="nft-interval-row">
+                    <button class="test-btn" data-shorten-timers>[Админ-Тест] Сократить все таймеры до 1 минуты</button>
+                    <span class="muted" style="font-size:12px;" data-prod-mode-hint></span>
+                </div>
                 <div class="nft-interval-row">
                     <input id="nftCheckWallet" placeholder="Адрес кошелька тестера (EQ… / UQ… / 0:…)" style="flex:1; min-width:220px;">
                     <button id="nftCheckBtn">🔍 Проверить кошелёк</button>
@@ -369,6 +380,57 @@
                     <button class="danger" id="botClanClearBtn">🗑 Удалить всех ботов</button>
                 </div>
             </div>
+        </div>
+
+        <div class="page" id="page-auction">
+            <h2>🏛️ Аукцион «Раздача Небесных орлов»</h2>
+            <div class="nft-interval-panel">
+                <div class="nft-interval-head">
+                    <b>🧪 Тестовый режим</b>
+                    <span class="nft-mode" id="auctionModeBadge">…</span>
+                </div>
+                <div class="nft-interval-row">
+                    <button class="test-btn" data-shorten-timers>[Админ-Тест] Сократить все таймеры до 1 минуты</button>
+                    <span class="muted" style="font-size:12px;" data-prod-mode-hint></span>
+                </div>
+                <div class="muted" style="font-size:12px;">Идущий лот закончится через минуту, интервал сбора осколка по NFT станет 1 минута.
+                    Работает, только пока на сервере IS_PRODUCTION_MODE = false (переменная окружения хостинга).</div>
+            </div>
+
+            <div class="nft-interval-panel" id="auctionActivePanel">
+                <b>Текущий лот</b>
+                <div id="auctionActive" class="muted">Загрузка…</div>
+            </div>
+
+            <div class="nft-interval-panel" id="auctionCreatePanel">
+                <b>Новый лот</b>
+                <div class="nft-interval-row">
+                    <input id="auctionTitle" placeholder="Название лота" value="Раздача Небесных орлов" style="flex:1; min-width:220px;">
+                </div>
+                <div class="nft-interval-row">
+                    <input type="text" id="auctionImage" placeholder="Вставьте URL-ссылку на картинку NFT" style="flex:1; min-width:220px;">
+                    <img class="auction-preview" id="auctionImagePreview" alt="" style="display:none;">
+                </div>
+                <div class="nft-interval-row">
+                    <input id="auctionDesc" placeholder="Описание (необязательно)" style="flex:1; min-width:220px;">
+                </div>
+                <div class="nft-interval-row">
+                    <span class="muted">Длительность:</span>
+                    <input type="number" id="auctionDurValue" min="1" step="1" value="24" style="width:80px;">
+                    <select id="auctionDurUnit">
+                        <option value="60">минут</option>
+                        <option value="3600" selected>часов</option>
+                        <option value="86400">дней</option>
+                    </select>
+                    <span class="muted">Старт (Gram):</span>
+                    <input type="number" id="auctionMinBid" min="10" step="1" value="10" style="width:80px;">
+                    <button class="primary" id="auctionCreateBtn">Создать лот</button>
+                </div>
+                <div class="muted" style="font-size:12px;">Шаг ставки +1 Gram к лидеру. ТОП-5 по окончании таймера выигрывают лот; NFT отправляете вручную и отмечаете ниже «Отправлено».</div>
+            </div>
+
+            <h2 style="margin-top:24px;">История лотов</h2>
+            <div id="auctionHistory"></div>
         </div>
 
         <div class="page" id="page-economy">
@@ -523,6 +585,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'config') loadConfig();
         if (btn.dataset.page === 'clans') loadClans();
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
+        if (btn.dataset.page === 'auction') loadAuctionAdmin(); else auctionAdminStop();
         if (btn.dataset.page === 'economy') loadEconomy();
         else tournamentStopCountdowns();
     };
@@ -646,7 +709,11 @@ function renderNftInterval(data) {
         'Не забудьте вернуть боевой режим (7 дней) после тестов.';
 }
 async function loadNftInterval() {
-    try { renderNftInterval(await api('/admin/api/nft/settings')); }
+    try {
+        const data = await api('/admin/api/nft/settings');
+        renderNftInterval(data);
+        renderProdMode(data.is_production_mode);
+    }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
 async function saveNftInterval(seconds) {
@@ -690,6 +757,159 @@ document.getElementById('nftCheckBtn').onclick = async () => {
 };
 document.querySelectorAll('[data-nft-preset]').forEach(btn => {
     btn.onclick = () => saveNftInterval(Number(btn.dataset.nftPreset));
+});
+
+/* ---------- аукцион ---------- */
+let auctionAdmin = null;
+let auctionAdminTimer = null;
+let auctionAdminPoll = null;
+function escHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function auctionAdminStop() {
+    if (auctionAdminTimer) { clearInterval(auctionAdminTimer); auctionAdminTimer = null; }
+    if (auctionAdminPoll) { clearInterval(auctionAdminPoll); auctionAdminPoll = null; }
+}
+function fmtLeft(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    const p = n => String(n).padStart(2, '0');
+    return (d ? d + ' д ' : '') + `${p(h)}:${p(m)}:${p(s)}`;
+}
+function renderProdMode(isProd) {
+    document.querySelectorAll('[data-shorten-timers]').forEach(b => { b.disabled = !!isProd; });
+    document.querySelectorAll('[data-prod-mode-hint]').forEach(el => {
+        el.textContent = isProd ? 'Недоступно: сервер в боевом режиме (IS_PRODUCTION_MODE = true)' : 'IS_PRODUCTION_MODE = false — тестовая кнопка активна';
+    });
+    const badge = document.getElementById('auctionModeBadge');
+    if (badge) {
+        badge.className = 'nft-mode ' + (isProd ? 'prod' : 'test');
+        badge.textContent = isProd ? 'Боевой режим' : 'Тестовый режим (IS_PRODUCTION_MODE = false)';
+    }
+}
+function renderAuctionAdmin(data) {
+    auctionAdmin = data;
+    auctionAdmin.clockOffset = data.server_time - Date.now() / 1000;
+    renderProdMode(data.is_production_mode);
+    const box = document.getElementById('auctionActive');
+    const a = data.active;
+    if (!a) {
+        box.innerHTML = '<span class="muted">Активного лота нет — создайте новый ниже.</span>';
+    } else {
+        const rows = a.top.length ? a.top.map(r => `<tr><td>${r.place}</td><td>${escHtml(r.name)}</td><td><b>${fmtNum(r.bid)}</b> Gram</td></tr>`).join('')
+            : '<tr><td colspan="3" class="muted">Ставок пока нет</td></tr>';
+        box.innerHTML = `<div class="auction-lot-admin">
+            <img id="auctionActiveImg" alt="">
+            <div style="flex:1; min-width:220px;">
+                <div style="font-weight:800; font-size:16px;">${escHtml(a.title)}</div>
+                <div class="muted" style="font-size:12px;">${escHtml(a.description)}</div>
+                <div style="margin:6px 0;">До конца: <span class="auction-timer-admin" id="auctionAdminLeft">—</span></div>
+                <div class="muted" style="font-size:12px;">Следующая ставка: ${fmtNum(a.next_bid)} Gram · старт ${fmtNum(a.min_bid)} · шаг +${fmtNum(a.step)}</div>
+                <div class="table-wrap" style="margin-top:8px;"><table><thead><tr><th>Место</th><th>Игрок</th><th>Ставка</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <div class="nft-interval-row" style="margin-top:8px;">
+                    <button class="primary" id="auctionFinishBtn">Завершить досрочно (ТОП-5 выигрывают)</button>
+                    <button class="danger" id="auctionCancelBtn">Отменить лот (вернуть все ставки)</button>
+                </div>
+            </div></div>`;
+        const img = document.getElementById('auctionActiveImg');
+        img.src = a.item_image || '/assets/eagles/legendary.png';
+        img.onerror = () => { img.onerror = null; img.src = '/assets/eagles/legendary.png'; };
+        document.getElementById('auctionFinishBtn').onclick = e => auctionAdminAction(e.target, 'finish', a.id,
+            'Завершить лот сейчас? Текущий ТОП-5 выиграет, их ставки спишутся.');
+        document.getElementById('auctionCancelBtn').onclick = e => auctionAdminAction(e.target, 'cancel', a.id,
+            'Отменить лот? Все замороженные ставки вернутся игрокам, победителей не будет.');
+    }
+    const hist = document.getElementById('auctionHistory');
+    const past = (data.history || []).filter(h => h.status !== 'active');
+    if (!past.length) { hist.innerHTML = '<div class="muted">Завершённых лотов пока нет.</div>'; }
+    else {
+        hist.innerHTML = past.map(h => {
+            const status = h.status === 'cancelled' ? 'отменён' : (h.settled ? 'завершён' : 'рассчитывается…');
+            const winners = h.winners.length ? h.winners.map(w => `<tr>
+                <td>${w.place}</td><td>${escHtml(w.name)}</td><td><code>${w.user_id}</code></td><td>${fmtNum(w.bid)} Gram</td>
+                <td>${w.wallet ? `<code style="font-size:11px;">${escHtml(w.wallet)}</code>` : '<span class="muted">не привязан</span>'}</td>
+                <td><button data-deliver="${escHtml(h.id)}" data-user="${w.user_id}" data-state="${w.delivered ? '0' : '1'}" class="${w.delivered ? '' : 'primary'}">
+                    ${w.delivered ? '✅ Отправлено (снять)' : 'Отметить «Отправлено»'}</button></td></tr>`).join('')
+                : '<tr><td colspan="6" class="muted">Победителей нет</td></tr>';
+            return `<div class="nft-interval-panel">
+                <div class="nft-interval-head"><b>${escHtml(h.title)}</b><span class="muted">${status} · ${new Date(h.ends_at * 1000).toLocaleString('ru-RU')}</span></div>
+                <div class="table-wrap"><table><thead><tr><th>Место</th><th>Игрок</th><th>ID</th><th>Ставка</th><th>Кошелёк</th><th>NFT</th></tr></thead>
+                <tbody>${winners}</tbody></table></div></div>`;
+        }).join('');
+        hist.querySelectorAll('[data-deliver]').forEach(btn => {
+            btn.onclick = () => withBusyButton(btn, 'Сохраняю…', async () => {
+                try {
+                    renderAuctionAdmin(await api('/admin/api/auction/delivery', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ auction_id: btn.dataset.deliver, user_id: Number(btn.dataset.user), delivered: btn.dataset.state === '1' }),
+                    }));
+                } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+            });
+        });
+    }
+    auctionAdminTick();
+}
+function auctionAdminTick() {
+    const el = document.getElementById('auctionAdminLeft');
+    if (!el || !auctionAdmin || !auctionAdmin.active) return;
+    const left = auctionAdmin.active.ends_at - (Date.now() / 1000 + auctionAdmin.clockOffset);
+    el.textContent = left > 0 ? fmtLeft(left) : 'завершается…';
+}
+async function loadAuctionAdmin() {
+    try { renderAuctionAdmin(await api('/admin/api/auction')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    auctionAdminStop();
+    auctionAdminTimer = setInterval(auctionAdminTick, 1000);
+    auctionAdminPoll = setInterval(async () => {
+        try { renderAuctionAdmin(await api('/admin/api/auction')); } catch (e) { /* покажем при следующем действии */ }
+    }, 5000);
+}
+async function auctionAdminAction(btn, action, auctionId, question) {
+    if (!confirm(question)) return;
+    await withBusyButton(btn, 'Секунду…', async () => {
+        try {
+            renderAuctionAdmin(await api('/admin/api/auction/' + action, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auction_id: auctionId }),
+            }));
+            toast(action === 'finish' ? 'Лот завершён — через пару секунд победители получат лоты' : 'Лот отменён, ставки возвращаются');
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
+}
+document.getElementById('auctionImage').addEventListener('input', () => {
+    const url = document.getElementById('auctionImage').value.trim();
+    const img = document.getElementById('auctionImagePreview');
+    if (/^https?:\/\//i.test(url)) { img.src = url; img.style.display = ''; } else { img.removeAttribute('src'); img.style.display = 'none'; }
+});
+document.getElementById('auctionCreateBtn').onclick = async () => {
+    const btn = document.getElementById('auctionCreateBtn');
+    const duration = Math.floor(Number(document.getElementById('auctionDurValue').value) || 0) * Number(document.getElementById('auctionDurUnit').value);
+    const body = {
+        title: document.getElementById('auctionTitle').value.trim(),
+        item_image: document.getElementById('auctionImage').value.trim(),
+        description: document.getElementById('auctionDesc').value.trim(),
+        duration_seconds: duration,
+        min_bid: Number(document.getElementById('auctionMinBid').value) || 10,
+    };
+    if (duration < 60) { toast('Длительность — минимум 1 минута', true); return; }
+    await withBusyButton(btn, 'Создаю…', async () => {
+        try {
+            renderAuctionAdmin(await api('/admin/api/auction/create', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            }));
+            toast('Лот создан — игроки уже видят его в 🏛️ Аукционе');
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
+};
+document.querySelectorAll('[data-shorten-timers]').forEach(btn => {
+    btn.onclick = () => withBusyButton(btn, 'Сокращаю…', async () => {
+        try {
+            const data = await api('/admin/api/test/shorten-timers', { method: 'POST' });
+            renderAuctionAdmin(data);
+            loadNftInterval();
+            toast(`Готово: ${data.auction_shortened ? 'лот закончится через 1 минуту, ' : ''}сбор осколка по NFT — раз в 1 минуту`);
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
 });
 
 /* ---------- экономика ---------- */

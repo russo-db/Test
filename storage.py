@@ -110,6 +110,12 @@ class MongoStore:
         # NFT «Небесный орел»: {_id: сырой адрес NFT, last_claim, user_id} —
         # таймер самой NFT (см. /api/nft/claim-shard в main.py).
         self.nft_claims = client[db_name]["nft_claims"]
+        # Аукцион «Раздача Небесных орлов»: {_id, title, item_image, min_bid,
+        # step, ends_at, status active|finished|cancelled, version, top: [{user_id,
+        # name, bid, ts}] (до 5, место 1 — первым), pending_refunds, settled,
+        # winners}. Замороженная ставка игрока лежит в его документе —
+        # auction_holds.<id аукциона> (см. place_auction_bid).
+        self.auctions = client[db_name]["auctions"]
 
     async def init(self):
         await self.users.create_index("referred_by")
@@ -1224,6 +1230,240 @@ class MongoStore:
         async for doc in self.nft_claims.find({"_id": {"$in": list(nfts)}}):
             waits.append(float(doc.get("last_claim") or 0) + interval - now)
         return max(0.0, min(waits)) if waits else 0.0
+
+    # --- АУКЦИОН ---
+    # Деньги и таблица лидеров — разные документы, транзакций нет, поэтому
+    # каждый шаг атомарен сам по себе и безопасно повторяем:
+    #   * заморозка — один update игрока: coins -= разница, auction_holds.<id> =
+    #     новая ставка (условие: денег хватает и прежняя заморозка та, что в ТОП-5);
+    #   * ТОП-5 — CAS по version лота; вместе с ним в pending_refunds пишется
+    #     выбывший 6-й, так что его возврат не теряется даже при падении сервера;
+    #   * возврат — update игрока «только если auction_holds.<id> == сумма»:
+    #     повторный вызов ничего не начислит второй раз.
+
+    @staticmethod
+    def _auction_oid(auction_id):
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        try:
+            return ObjectId(str(auction_id))
+        except (InvalidId, TypeError):
+            return None
+
+    @staticmethod
+    def _auction_doc(doc: Optional[dict]) -> Optional[dict]:
+        if not doc:
+            return None
+        doc = dict(doc)
+        doc["id"] = str(doc.pop("_id"))
+        return doc
+
+    async def create_auction(self, title: str, item_image: str, description: str,
+                             min_bid: float, step: float, now: float, ends_at: float) -> Optional[dict]:
+        """Новый лот. Одновременно активен только один: замок active_auction в
+        settings занимается атомарно (как reserve_nft_claim). None — уже идёт другой."""
+        from bson import ObjectId
+        from pymongo.errors import DuplicateKeyError
+        oid = ObjectId()
+        try:
+            await self.settings.update_one(
+                {"_id": "active_auction", "value": None}, {"$set": {"value": str(oid)}}, upsert=True,
+            )
+        except DuplicateKeyError:
+            return None
+        doc = {
+            "_id": oid, "title": title, "item_image": item_image, "description": description,
+            "min_bid": float(min_bid), "step": float(step), "created_at": now, "ends_at": float(ends_at),
+            "status": "active", "version": 0, "top": [], "pending_refunds": [],
+            "settled": False, "winners": [],
+        }
+        await self.auctions.insert_one(doc)
+        return self._auction_doc(doc)
+
+    async def get_auction(self, auction_id) -> Optional[dict]:
+        oid = self._auction_oid(auction_id)
+        return self._auction_doc(await self.auctions.find_one({"_id": oid})) if oid else None
+
+    async def get_active_auction(self) -> Optional[dict]:
+        return self._auction_doc(await self.auctions.find_one({"status": "active"}, sort=[("created_at", -1)]))
+
+    async def get_latest_auction(self) -> Optional[dict]:
+        return self._auction_doc(await self.auctions.find_one({}, sort=[("created_at", -1)]))
+
+    async def list_auctions(self, limit: int = 10) -> list:
+        return [self._auction_doc(d) async for d in self.auctions.find({}).sort("created_at", -1).limit(limit)]
+
+    async def list_due_auctions(self, now: float) -> list:
+        """Лоты, которым пора закрыться или довести расчёт до конца."""
+        query = {"$or": [{"status": "active", "ends_at": {"$lte": now}},
+                         {"status": {"$in": ["finished", "cancelled"]}, "settled": False}]}
+        return [self._auction_doc(d) async for d in self.auctions.find(query)]
+
+    async def _refund_hold(self, user_id: int, key: str, amount: float) -> bool:
+        """Возврат заморозки ровно один раз: только пока она ещё == amount."""
+        res = await self.users.update_one(
+            {"_id": user_id, f"auction_holds.{key}": amount},
+            {"$unset": {f"auction_holds.{key}": ""}, "$inc": {"coins": amount, "ops": 1}},
+        )
+        return res.modified_count > 0
+
+    async def process_auction_refunds(self, auction_id) -> int:
+        """Мгновенный возврат выбывшим из ТОП-5. Идемпотентно (см. _refund_hold)."""
+        oid = self._auction_oid(auction_id)
+        doc = await self.auctions.find_one({"_id": oid}) if oid else None
+        if not doc:
+            return 0
+        done = 0
+        for r in doc.get("pending_refunds") or []:
+            if await self._refund_hold(int(r["user_id"]), str(oid), float(r["amount"])):
+                done += 1
+            await self.auctions.update_one({"_id": oid}, {"$pull": {"pending_refunds": {
+                "user_id": r["user_id"], "amount": r["amount"]}}})
+        return done
+
+    async def place_auction_bid(self, auction_id, user_id: int, name: str, expected: Optional[float],
+                                now: float, top_size: int) -> dict:
+        """Ставка = лидер + шаг (или минимальная, если ставок нет). Игрок встаёт
+        на 1-е место, остальные сдвигаются вниз, 6-й выбывает с мгновенным
+        возвратом. Если игрок уже в ТОП-5 — замораживается только разница."""
+        oid = self._auction_oid(auction_id)
+        if not oid:
+            return {"status": "not_found"}
+        key = str(oid)
+        hold_path = f"auction_holds.{key}"
+        for _ in range(6):
+            doc = await self.auctions.find_one({"_id": oid})
+            if not doc:
+                return {"status": "not_found"}
+            if doc.get("status") != "active" or float(doc["ends_at"]) <= now:
+                return {"status": "ended"}
+            if doc.get("pending_refunds"):
+                await self.process_auction_refunds(key)
+                doc = await self.auctions.find_one({"_id": oid})
+            top = list(doc.get("top") or [])
+            if top and int(top[0]["user_id"]) == user_id:
+                return {"status": "already_leader"}
+            required = float(top[0]["bid"]) + float(doc["step"]) if top else float(doc["min_bid"])
+            required = max(required, float(doc["min_bid"]))
+            if expected is not None and abs(float(expected) - required) > 1e-6:
+                return {"status": "price_changed", "required": required}
+            own = next((e for e in top if int(e["user_id"]) == user_id), None)
+            old_hold = float(own["bid"]) if own else None
+            delta = required - (old_hold or 0.0)
+
+            user_filter = {"_id": user_id, "coins": {"$gte": delta}}
+            user_filter[hold_path] = old_hold if own else {"$exists": False}
+            charged = await self.users.update_one(
+                user_filter, {"$inc": {"coins": -delta, "ops": 1}, "$set": {hold_path: required}},
+            )
+            if charged.modified_count == 0:
+                user = await self.users.find_one({"_id": user_id}) or {}
+                if float(user.get("coins") or 0) < delta:
+                    return {"status": "insufficient", "required": required, "delta": delta}
+                continue   # заморозка ещё не вернулась/гонка — перечитываем лот
+
+            entry = {"user_id": user_id, "name": name, "bid": required, "ts": now}
+            new_top = [entry] + [e for e in top if int(e["user_id"]) != user_id]
+            evicted = new_top[top_size:]
+            new_top = new_top[:top_size]
+            update = {"$set": {"top": new_top, "version": int(doc.get("version") or 0) + 1}}
+            if evicted:
+                update["$push"] = {"pending_refunds": {"$each": [
+                    {"user_id": int(e["user_id"]), "amount": float(e["bid"])} for e in evicted]}}
+            placed = await self.auctions.update_one(
+                {"_id": oid, "version": int(doc.get("version") or 0), "status": "active", "ends_at": {"$gt": now}},
+                update,
+            )
+            if placed.modified_count == 0:
+                # Лот успел измениться — откатываем заморозку и пробуем заново.
+                rollback = {"$inc": {"coins": delta, "ops": 1}}
+                rollback["$set" if own else "$unset"] = {hold_path: old_hold if own else ""}
+                await self.users.update_one({"_id": user_id, hold_path: required}, rollback)
+                continue
+            if evicted:
+                await self.process_auction_refunds(key)
+            return {"status": "ok", "bid": required, "delta": delta, "evicted": [int(e["user_id"]) for e in evicted]}
+        return {"status": "busy"}
+
+    async def finish_auction(self, auction_id, now: float, force: bool = False) -> bool:
+        """active -> finished (по таймеру или досрочно админом). После этого ни
+        одна ставка уже не пройдёт (CAS ставки требует status active)."""
+        oid = self._auction_oid(auction_id)
+        query = {"_id": oid, "status": "active"}
+        if not force:
+            query["ends_at"] = {"$lte": now}
+        update = {"$set": {"status": "finished", "finished_at": now}}
+        if force:
+            update["$set"]["ends_at"] = now
+        res = await self.auctions.update_one(query, update)
+        return res.modified_count > 0
+
+    async def cancel_auction(self, auction_id, now: float) -> bool:
+        oid = self._auction_oid(auction_id)
+        res = await self.auctions.update_one(
+            {"_id": oid, "status": "active"}, {"$set": {"status": "cancelled", "finished_at": now}},
+        )
+        return res.modified_count > 0
+
+    async def shorten_auction(self, auction_id, ends_at: float) -> bool:
+        oid = self._auction_oid(auction_id)
+        res = await self.auctions.update_one(
+            {"_id": oid, "status": "active", "ends_at": {"$gt": ends_at}}, {"$set": {"ends_at": ends_at}},
+        )
+        return res.modified_count > 0
+
+    async def settle_auction(self, auction_id) -> Optional[dict]:
+        """Итог закрытого лота: победителям ТОП-5 заморозка списывается навсегда и
+        в профиль добавляется выигранный предмет (auction_wins); всем остальным
+        (выбывшие, отменённый лот, осиротевшая заморозка от оборванного запроса)
+        — возврат. Каждый шаг идемпотентен; повторный вызов безопасен.
+        Возвращает {"spent": сумма ставок победителей} тому, кто завершил расчёт."""
+        oid = self._auction_oid(auction_id)
+        doc = await self.auctions.find_one({"_id": oid}) if oid else None
+        if not doc or doc.get("status") not in ("finished", "cancelled") or doc.get("settled"):
+            return None
+        key = str(oid)
+        hold_path = f"auction_holds.{key}"
+        await self.process_auction_refunds(key)
+        winners = []
+        if doc["status"] == "finished":
+            for place, e in enumerate(doc.get("top") or [], start=1):
+                uid, bid = int(e["user_id"]), float(e["bid"])
+                win = {"auction_id": key, "title": doc.get("title") or "", "item_image": doc.get("item_image") or "",
+                       "bid": bid, "place": place, "won_at": float(doc.get("finished_at") or doc["ends_at"]),
+                       "status": "pending_delivery"}
+                await self.users.update_one(
+                    {"_id": uid, hold_path: bid, "auction_wins.auction_id": {"$ne": key}},
+                    {"$unset": {hold_path: ""}, "$push": {"auction_wins": win}, "$inc": {"ops": 1}},
+                )
+                winners.append({"place": place, "user_id": uid, "name": e.get("name") or "", "bid": bid, "delivered": False})
+        # Всё, что осталось замороженным под этим лотом, — не выигрыш: вернуть.
+        async for user in self.users.find({hold_path: {"$exists": True}}):
+            amount = float((user.get("auction_holds") or {}).get(key) or 0)
+            await self._refund_hold(user["_id"], key, amount)
+        res = await self.auctions.update_one(
+            {"_id": oid, "settled": False}, {"$set": {"settled": True, "winners": winners}},
+        )
+        await self.settings.update_one({"_id": "active_auction", "value": key}, {"$set": {"value": None}})
+        if res.modified_count == 0:
+            return None
+        return {"spent": sum(w["bid"] for w in winners), "winners": winners}
+
+    async def set_auction_delivery(self, auction_id, user_id: int, delivered: bool) -> bool:
+        """Админ отметил, что NFT победителю отправлена вручную (или снял отметку)."""
+        oid = self._auction_oid(auction_id)
+        if not oid:
+            return False
+        res = await self.auctions.update_one(
+            {"_id": oid, "winners.user_id": user_id}, {"$set": {"winners.$.delivered": bool(delivered)}},
+        )
+        if res.matched_count == 0:
+            return False
+        await self.users.update_one(
+            {"_id": user_id, "auction_wins.auction_id": str(oid)},
+            {"$set": {"auction_wins.$.status": "delivered" if delivered else "pending_delivery"}},
+        )
+        return True
 
     async def record_economy(self, amounts: dict, day: str) -> None:
         """Прибавляет amounts ({счётчик: число}) к общим и суточным счётчикам."""

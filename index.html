@@ -1006,6 +1006,43 @@
         .clan-entry-btn:active { transform: translateX(10px) scale(0.93); }
         .clan-entry-btn .clan-entry-icon { width: 40px; height: auto; object-fit: contain; }
         .clan-entry-btn .clan-entry-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); }
+        /* ---------- Аукцион ---------- */
+        .hero-side-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .auction-entry-btn .auction-entry-icon { font-size: 30px; line-height: 40px; height: 40px; }
+        .auction-entry-btn { border-color: rgba(255, 215, 106, 0.45); box-shadow: 0 0 14px rgba(255, 215, 106, 0.18); }
+        .auction-entry-btn .clan-entry-label { color: #ffd76a; }
+        .auction-lot { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 16px; }
+        .auction-lot-img { width: 150px; height: 150px; object-fit: cover; border-radius: 18px; border: 1px solid rgba(255, 215, 106, 0.4); box-shadow: 0 0 22px rgba(255, 215, 106, 0.25); background: rgba(255, 255, 255, 0.04); }
+        .auction-lot-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 17px; color: #ffd76a; }
+        .auction-lot-desc { font-size: 12.5px; color: var(--text-muted); }
+        .auction-timer { width: 100%; margin-top: 4px; padding: 10px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 12px; color: var(--text-muted); }
+        .auction-timer b { display: block; font-size: 22px; color: #ffd76a; letter-spacing: 0.05em; margin-top: 2px; }
+        .auction-timer.is-ended b { color: #ef6a6a; }
+        .auction-me { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-muted); }
+        .auction-me > div { flex: 1; padding: 8px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); text-align: center; }
+        .auction-me b { display: block; font-size: 15px; color: var(--text-main); margin-top: 2px; }
+        .auction-bid-btn { width: 100%; background: linear-gradient(135deg, #d4a017, #ffd76a) !important; color: #2b1d00 !important; box-shadow: 0 6px 20px rgba(255, 215, 106, 0.35); }
+        .auction-bid-btn:disabled { opacity: 0.55; }
+        .auction-top { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+        .auction-top-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); transition: transform 0.25s ease; }
+        .auction-top-row.is-me { border-color: var(--accent-amber); box-shadow: 0 0 12px rgba(255, 204, 77, 0.25); }
+        .auction-top-row.is-empty { opacity: 0.45; }
+        .auction-top-place { flex: 0 0 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; background: rgba(255, 255, 255, 0.08); }
+        .auction-top-row:nth-child(1) .auction-top-place { background: rgba(255, 215, 0, 0.35); }
+        .auction-top-row:nth-child(2) .auction-top-place { background: rgba(200, 210, 224, 0.3); }
+        .auction-top-row:nth-child(3) .auction-top-place { background: rgba(205, 127, 50, 0.35); }
+        .auction-top-name { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .auction-top-bid { flex: 0 0 auto; font-weight: 800; color: #ffd76a; font-size: 13.5px; }
+        .auction-rules { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; margin-top: 6px; }
+        .auction-empty { text-align: center; color: var(--text-muted); padding: 30px 10px; }
+        .won-lot { display: flex; align-items: center; gap: 12px; }
+        .won-lot img { width: 64px; height: 64px; object-fit: cover; border-radius: 14px; flex: 0 0 auto; border: 1px solid rgba(255, 215, 106, 0.4); }
+        .won-lot-body { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+        .won-lot-title { font-weight: 800; color: #ffd76a; font-size: 14px; }
+        .won-lot-meta { font-size: 11.5px; color: var(--text-muted); }
+        .won-lot-status { font-size: 12px; font-weight: 700; color: var(--accent-amber); }
+        .won-lot-status.is-delivered { color: #4ade80; }
+        #profile .subtab-bar .subtab-item { font-size: 11px; letter-spacing: 0; }
         #clanTabBar .subtab-item { font-size: 9.5px; white-space: normal; line-height: 1.2; padding-left: 1px; padding-right: 1px; }
         .clan-screen-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .clan-back-btn { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); cursor: pointer; }
@@ -1227,9 +1264,15 @@
                         <div class="monster-glow" id="monsterGlow"></div>
                         <img class="monster-sprite" id="monsterSprite" alt="">
                     </div>
-                    <div class="clan-entry-btn" id="clanEntryBtn" onclick="openClanScreen()">
-                        <img class="clan-entry-icon" src="assets/clan-icon.png" alt="">
-                        <span class="clan-entry-label" data-i18n="nav.clans">Кланы</span>
+                    <div class="hero-side-col">
+                        <div class="clan-entry-btn auction-entry-btn" id="auctionEntryBtn" onclick="openAuctionScreen()">
+                            <span class="auction-entry-icon">🏛️</span>
+                            <span class="clan-entry-label" data-i18n="nav.auction">Аукцион</span>
+                        </div>
+                        <div class="clan-entry-btn" id="clanEntryBtn" onclick="openClanScreen()">
+                            <img class="clan-entry-icon" src="assets/clan-icon.png" alt="">
+                            <span class="clan-entry-label" data-i18n="nav.clans">Кланы</span>
+                        </div>
                     </div>
                 </div>
                 <div class="monster-name-tag" id="activeMonsterName">—</div>
@@ -1352,6 +1395,21 @@
         </div>
 
         <!-- ARENA TAB -->
+        <!-- AUCTION SCREEN -->
+        <div id="auction" class="content">
+            <div class="clan-screen-header">
+                <div class="clan-back-btn" onclick="closeAuctionScreen()">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                </div>
+                <div class="clan-header-info">
+                    <div class="clan-header-name" data-i18n="auction.heading">🏛️ Аукцион</div>
+                </div>
+            </div>
+            <div id="auctionBody">
+                <div class="auction-empty" data-i18n="auction.loading">Загружаем аукцион…</div>
+            </div>
+        </div>
+
         <!-- CLANS SCREEN -->
         <div id="clans" class="content">
             <div class="clan-screen-header">
@@ -1545,6 +1603,7 @@
 
             <div class="subtab-bar">
                 <div class="subtab-item active" data-subtab="wallet" onclick="switchProfileSubtab('wallet')" data-i18n="subtab.wallet">Кошелёк</div>
+                <div class="subtab-item" data-subtab="nft" onclick="switchProfileSubtab('nft')" data-i18n="subtab.nft">Мои NFT</div>
                 <div class="subtab-item" data-subtab="friends" onclick="switchProfileSubtab('friends')" data-i18n="subtab.friends">Друзья</div>
                 <div class="subtab-item" data-subtab="language" onclick="switchProfileSubtab('language')" data-i18n="subtab.language">Язык</div>
                 <div class="subtab-item" data-subtab="sound" onclick="switchProfileSubtab('sound')" data-i18n="subtab.sound">Звук</div>
@@ -1567,20 +1626,6 @@
                     <span id="walletBtnText" data-i18n="wallet.connect">Подключить кошелёк</span>
                 </button>
 
-                <!-- Моя NFT коллекция: NFT «Небесный орел» раз в интервал (7 дней) дают Небесный Осколок -->
-                <div class="tier-heading"><span data-i18n="nft.heading">Моя NFT коллекция</span></div>
-                <div class="card glass-panel nft-card" id="nftCard">
-                    <img class="nft-card-art" src="assets/eagles/legendary.png" alt="">
-                    <div class="nft-card-body">
-                        <div class="nft-card-title" data-i18n="nft.collectionName">«Небесный орел»</div>
-                        <div class="nft-card-status" id="nftStatus" data-i18n="nft.loading">Проверяем кошелёк…</div>
-                        <div class="nft-counter" id="nftCounter" style="display:none;">
-                            <span id="nftCounterIcon"></span><b id="nftShardCount">0</b><span data-i18n="nft.collected">осколков собрано</span>
-                        </div>
-                    </div>
-                </div>
-                <button class="btn-primary nft-claim-btn" id="nftClaimBtn" style="display:none;" onclick="claimNftShard()" data-i18n="nft.claimBtn">Забрать Небесный Осколок</button>
-                <div class="nft-timer" id="nftTimer" style="display:none;"></div>
 
                 <div class="wallet-actions">
                     <button class="btn-action" onclick="openDeposit()">
@@ -1595,6 +1640,27 @@
 
                 <div class="tier-heading" id="walletOpsHead" style="display: none;"><span data-i18n="wallet.recentOps">Последние операции</span></div>
                 <div id="walletOps"></div>
+            </div>
+
+            <!-- Подвкладка: Мои NFT — выигранные на аукционе лоты + еженедельный сбор осколка по NFT -->
+            <div class="subtab-panel" id="profileSubNft">
+                <div class="tier-heading"><span data-i18n="auction.wonHeading">Выиграно на аукционе</span></div>
+                <div id="auctionWinsList"><div class="auction-empty" data-i18n="auction.noWins">Пока нет выигранных лотов — загляните в 🏛️ Аукцион</div></div>
+
+                <!-- Моя NFT коллекция: NFT «Небесный орел» раз в интервал (7 дней) дают Небесный Осколок -->
+                <div class="tier-heading"><span data-i18n="nft.heading">Моя NFT коллекция</span></div>
+                <div class="card glass-panel nft-card" id="nftCard">
+                    <img class="nft-card-art" src="assets/eagles/legendary.png" alt="">
+                    <div class="nft-card-body">
+                        <div class="nft-card-title" data-i18n="nft.collectionName">«Небесный орел»</div>
+                        <div class="nft-card-status" id="nftStatus" data-i18n="nft.loading">Проверяем кошелёк…</div>
+                        <div class="nft-counter" id="nftCounter" style="display:none;">
+                            <span id="nftCounterIcon"></span><b id="nftShardCount">0</b><span data-i18n="nft.collected">осколков собрано</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-primary nft-claim-btn" id="nftClaimBtn" style="display:none;" onclick="claimNftShard()" data-i18n="nft.claimBtn">Забрать Небесный Осколок</button>
+                <div class="nft-timer" id="nftTimer" style="display:none;"></div>
             </div>
 
             <!-- Подвкладка: Друзья -->
@@ -2125,6 +2191,18 @@
                 'vip.activated': '{name} активирован!',
                 'vip.dailyMeat': 'VIP принёс +{amount} Meat',
                 'profile.tapWhatIsThis': 'Нажми — что это', 'profile.goldLabel': 'Золото',
+                'subtab.nft': 'Мои NFT', 'nav.auction': 'Аукцион',
+                'auction.heading': '🏛️ Аукцион', 'auction.loading': 'Загружаем аукцион…', 'auction.none': 'Сейчас лотов нет — следите за новостями!',
+                'auction.endsIn': 'До конца аукциона', 'auction.ended': 'Аукцион завершён', 'auction.cancelled': 'Лот отменён',
+                'auction.balance': 'Баланс', 'auction.frozen': 'Заморожено', 'auction.myPlace': 'Моё место',
+                'auction.bidBtn': 'Сделать ставку {amount} Gram', 'auction.leaderBtn': 'Вы лидер — ждём соперников',
+                'auction.endedBtn': 'Приём ставок закрыт', 'auction.top': 'ТОП-{n} — они забирают лоты',
+                'auction.emptyPlace': 'свободно', 'auction.bidOk': 'Ставка {amount} Gram принята — вы на 1-м месте!',
+                'auction.bidFailed': 'Не удалось сделать ставку', 'auction.confirm': 'Поставить {amount} Gram? Будет заморожено {delta} Gram — вернутся автоматически, если вас вытеснят из ТОП-{n}.',
+                'auction.rules': 'Старт — {min} Gram, шаг — +{step} Gram к ставке лидера. Новая ставка ставит вас на 1-е место, остальные сдвигаются вниз. Выбывший с 6-го места мгновенно получает свои Gram назад. По окончании таймера ТОП-{n} выигрывают лот, их ставки списываются.',
+                'auction.wonHeading': 'Выиграно на аукционе', 'auction.noWins': 'Пока нет выигранных лотов — загляните в 🏛️ Аукцион',
+                'auction.pending': 'Выиграно на аукционе. Ожидает ручной отправки', 'auction.delivered': 'Отправлено на ваш кошелёк ✅',
+                'auction.wonMeta': '{place}-е место · ставка {bid} Gram · {date}', 'auction.winnersTitle': 'Победители',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
                 'wallet.connect': 'Подключить кошелёк', 'wallet.disconnect': 'Отключить кошелёк',
@@ -2441,6 +2519,18 @@
                 'vip.activated': '{name} activated!',
                 'vip.dailyMeat': 'VIP brought +{amount} Meat',
                 'profile.tapWhatIsThis': 'Tap — what is this', 'profile.goldLabel': 'Gold',
+                'subtab.nft': 'My NFT', 'nav.auction': 'Auction',
+                'auction.heading': '🏛️ Auction', 'auction.loading': 'Loading the auction…', 'auction.none': 'No lots right now — stay tuned!',
+                'auction.endsIn': 'Auction ends in', 'auction.ended': 'Auction finished', 'auction.cancelled': 'Lot cancelled',
+                'auction.balance': 'Balance', 'auction.frozen': 'Frozen', 'auction.myPlace': 'My place',
+                'auction.bidBtn': 'Bid {amount} Gram', 'auction.leaderBtn': 'You lead — waiting for rivals',
+                'auction.endedBtn': 'Bidding closed', 'auction.top': 'TOP-{n} — they win the lot',
+                'auction.emptyPlace': 'free', 'auction.bidOk': 'Bid {amount} Gram accepted — you are 1st!',
+                'auction.bidFailed': 'Could not place the bid', 'auction.confirm': 'Bid {amount} Gram? {delta} Gram will be frozen and returned automatically if you drop out of the TOP-{n}.',
+                'auction.rules': 'Start — {min} Gram, step — +{step} Gram over the leader. A new bid puts you 1st and shifts others down. Whoever drops to 6th instantly gets their Gram back. When the timer ends the TOP-{n} win the lot and their bids are charged.',
+                'auction.wonHeading': 'Won at auction', 'auction.noWins': 'No lots won yet — visit the 🏛️ Auction',
+                'auction.pending': 'Won at auction. Awaiting manual delivery', 'auction.delivered': 'Sent to your wallet ✅',
+                'auction.wonMeta': 'place {place} · bid {bid} Gram · {date}', 'auction.winnersTitle': 'Winners',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
                 'wallet.connect': 'Connect wallet', 'wallet.disconnect': 'Disconnect wallet',
@@ -6187,6 +6277,7 @@
 
         function switchTab(tabId, element) {
             haptic.select();
+            auctionStop();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item, .brand-title').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
@@ -6199,7 +6290,7 @@
             if (tabId === 'nest') { renderNest(); refreshNestShardState(); }
             if (tabId === 'arena') { renderArena(); arenaStartLoop(); } else { arenaStopLoop(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
-            if (tabId === 'profile') loadNftStatus(); else nftStopTimer();
+            if (tabId === 'profile') { loadNftStatus(); if (activeProfileSubtab === 'nft') loadAuctionWins(); } else nftStopTimer();
         }
 
         // Профиль объединяет кошелёк, друзей и настройки в подвкладки —
@@ -6214,6 +6305,7 @@
             const panelId = 'profileSub' + id.charAt(0).toUpperCase() + id.slice(1);
             document.getElementById(panelId).classList.add('active');
             if (id === 'friends') { renderMissions(); loadReferrals(); }
+            if (id === 'nft') { loadNftStatus(); loadAuctionWins(); }
         }
 
         /* ---------- Гнездо Воинов ---------- */
@@ -7961,6 +8053,233 @@
             return (d ? `${d} ${t('nft.daysShort')} ` : '') + `${p(h)}:${p(m)}:${p(s)}`;
         }
 
+        /* ---------- Аукцион «Раздача Небесных орлов» ----------
+           Вся логика ставок — на сервере (/api/auction*): клиент только
+           показывает лот, таймер и ТОП-5 и опрашивает сервер каждые 2.5 с,
+           пока экран открыт. */
+        const AUCTION_FALLBACK_IMG = 'assets/eagles/legendary.png';
+        let auctionData = null;
+        let auctionClockOffset = 0;
+        let auctionPollHandle = null;
+        let auctionTimerHandle = null;
+        let auctionBidBusy = false;
+
+        function auctionNow() { return Date.now() / 1000 + auctionClockOffset; }
+
+        function auctionImg(url, cls) {
+            // Картинка — по ссылке из админки; ставим через свойство src (не
+            // innerHTML), так ссылка не может внедрить разметку.
+            const img = document.createElement('img');
+            if (cls) img.className = cls;
+            img.alt = '';
+            img.src = url || AUCTION_FALLBACK_IMG;
+            img.onerror = () => { img.onerror = null; img.src = AUCTION_FALLBACK_IMG; };
+            return img;
+        }
+
+        function auctionEl(tag, cls, text) {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text !== undefined) el.textContent = text;
+            return el;
+        }
+
+        function auctionFmt(v) { return (Math.round(v * 100) / 100).toString(); }
+
+        function auctionFmtLeft(left) {
+            left = Math.max(0, Math.floor(left));
+            const d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600), m = Math.floor(left % 3600 / 60), sec = left % 60;
+            const p = n => String(n).padStart(2, '0');
+            return (d ? `${d} ${t('nft.daysShort')} ` : '') + `${p(h)}:${p(m)}:${p(sec)}`;
+        }
+
+        function auctionStop() {
+            if (auctionPollHandle) { clearInterval(auctionPollHandle); auctionPollHandle = null; }
+            if (auctionTimerHandle) { clearInterval(auctionTimerHandle); auctionTimerHandle = null; }
+        }
+
+        async function openAuctionScreen() {
+            haptic.select();
+            arenaStopLoop();
+            nftStopTimer();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('auction').classList.add('active');
+            await loadAuction();
+            auctionStop();
+            auctionPollHandle = setInterval(() => { if (!auctionBidBusy) loadAuction(); }, 2500);
+            auctionTimerHandle = setInterval(auctionTickTimer, 1000);
+        }
+
+        function closeAuctionScreen() {
+            haptic.select();
+            auctionStop();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('farm').classList.add('active');
+        }
+
+        function applyAuctionBalances(data) {
+            if (typeof data.coins === 'number') { state.coins = data.coins; renderHeader(); }
+            if (typeof data.ops === 'number') state.ops = data.ops;
+        }
+
+        async function loadAuction() {
+            if (offlineOnly || !state.userId) { auctionData = { auction: null, offline: true }; renderAuction(); return; }
+            try {
+                const response = await fetch(`api/auction?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'auction');
+                auctionData = data;
+                auctionClockOffset = data.server_time - Date.now() / 1000;
+                applyAuctionBalances(data);
+            } catch (e) {
+                if (!auctionData) auctionData = { auction: null, error: true };
+            }
+            renderAuction();
+        }
+
+        function auctionTickTimer() {
+            const box = document.getElementById('auctionTimer');
+            const a = auctionData && auctionData.auction;
+            if (!box || !a) return;
+            const left = a.ends_at - auctionNow();
+            const running = a.status === 'active' && left > 0;
+            box.classList.toggle('is-ended', !running);
+            box.querySelector('span').textContent = running ? t('auction.endsIn') : (a.status === 'cancelled' ? t('auction.cancelled') : t('auction.ended'));
+            box.querySelector('b').textContent = running ? auctionFmtLeft(left) : '00:00:00';
+            const btn = document.getElementById('auctionBidBtn');
+            if (btn && !running && !btn.disabled) { btn.disabled = true; btn.textContent = t('auction.endedBtn'); }
+        }
+
+        function renderAuction() {
+            const body = document.getElementById('auctionBody');
+            if (!body) return;
+            body.replaceChildren();
+            const data = auctionData || {};
+            const a = data.auction;
+            if (!a) {
+                body.appendChild(auctionEl('div', 'auction-empty', data.error ? t('market.serverError') : t('auction.none')));
+                return;
+            }
+            const running = a.status === 'active' && a.ends_at > auctionNow();
+
+            const lot = auctionEl('div', 'card glass-panel auction-lot');
+            lot.appendChild(auctionImg(a.item_image, 'auction-lot-img'));
+            lot.appendChild(auctionEl('div', 'auction-lot-title', a.title));
+            if (a.description) lot.appendChild(auctionEl('div', 'auction-lot-desc', a.description));
+            const timer = auctionEl('div', 'auction-timer');
+            timer.id = 'auctionTimer';
+            timer.appendChild(auctionEl('span', '', ''));
+            timer.appendChild(auctionEl('b', '', ''));
+            lot.appendChild(timer);
+            body.appendChild(lot);
+
+            const me = auctionEl('div', 'auction-me');
+            const cell = (label, value) => { const d = auctionEl('div', '', label); d.appendChild(auctionEl('b', '', value)); return d; };
+            me.appendChild(cell(t('auction.balance'), auctionFmt(data.coins || 0) + ' Gram'));
+            me.appendChild(cell(t('auction.frozen'), auctionFmt(data.frozen || 0) + ' Gram'));
+            me.appendChild(cell(t('auction.myPlace'), a.my_place ? `#${a.my_place}` : '—'));
+            body.appendChild(me);
+
+            const btn = auctionEl('button', 'btn-primary auction-bid-btn');
+            btn.id = 'auctionBidBtn';
+            if (!running) { btn.disabled = true; btn.textContent = t('auction.endedBtn'); }
+            else if (a.is_leader) { btn.disabled = true; btn.textContent = t('auction.leaderBtn'); }
+            else { btn.textContent = t('auction.bidBtn', { amount: auctionFmt(a.next_bid) }); btn.onclick = placeAuctionBid; }
+            if (auctionBidBusy) btn.disabled = true;
+            body.appendChild(btn);
+
+            body.appendChild(auctionEl('div', 'tier-heading', running ? t('auction.top', { n: a.top_size }) : t('auction.winnersTitle')));
+            const list = auctionEl('div', 'auction-top');
+            list.id = 'auctionTopList';
+            for (let i = 0; i < a.top_size; i++) {
+                const r = a.top[i];
+                const row = auctionEl('div', 'auction-top-row' + (r ? (r.is_me ? ' is-me' : '') : ' is-empty'));
+                row.appendChild(auctionEl('div', 'auction-top-place', String(i + 1)));
+                row.appendChild(auctionEl('div', 'auction-top-name', r ? r.name : t('auction.emptyPlace')));
+                row.appendChild(auctionEl('div', 'auction-top-bid', r ? `${auctionFmt(r.bid)} Gram` : '—'));
+                list.appendChild(row);
+            }
+            body.appendChild(list);
+            body.appendChild(auctionEl('p', 'auction-rules', t('auction.rules', { min: auctionFmt(a.min_bid), step: auctionFmt(a.step), n: a.top_size })));
+            auctionTickTimer();
+        }
+
+        async function placeAuctionBid() {
+            const a = auctionData && auctionData.auction;
+            if (!a || auctionBidBusy || offlineOnly || !state.userId) return;
+            const delta = a.next_bid - (a.my_bid || 0);
+            const ok = await auctionConfirm(t('auction.confirm', { amount: auctionFmt(a.next_bid), delta: auctionFmt(delta), n: a.top_size }));
+            if (!ok) return;
+            auctionBidBusy = true;
+            const btn = document.getElementById('auctionBidBtn');
+            if (btn) btn.disabled = true;
+            haptic.impact('medium');
+            try {
+                const response = await fetch('api/auction/bid', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, auction_id: a.id, amount: a.next_bid }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || t('auction.bidFailed'));
+                    haptic.notify('warning');
+                } else {
+                    auctionData = Object.assign({}, auctionData, { auction: data.auction, coins: data.coins, frozen: data.frozen });
+                    auctionClockOffset = data.server_time - Date.now() / 1000;
+                    applyAuctionBalances(data);
+                    haptic.notify('success');
+                    spawnBurst(10, true);
+                    toast(t('auction.bidOk', { amount: auctionFmt(data.bid) }));
+                }
+            } catch (e) {
+                toast(t('market.serverError'));
+            } finally {
+                auctionBidBusy = false;
+            }
+            await loadAuction();
+        }
+
+        function auctionConfirm(text) {
+            return new Promise(resolve => {
+                if (tg && typeof tg.showConfirm === 'function' && tg.initData) {
+                    try { tg.showConfirm(text, ok => resolve(!!ok)); return; } catch (e) { /* fallback below */ }
+                }
+                resolve(window.confirm(text));
+            });
+        }
+
+        async function loadAuctionWins() {
+            const box = document.getElementById('auctionWinsList');
+            if (!box) return;
+            if (offlineOnly || !state.userId) { renderAuctionWins([]); return; }
+            try {
+                const response = await fetch(`api/auction/wins?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'wins');
+                renderAuctionWins(data.wins || []);
+            } catch (e) {
+                box.replaceChildren(auctionEl('div', 'auction-empty', t('market.serverError')));
+            }
+        }
+
+        function renderAuctionWins(wins) {
+            const box = document.getElementById('auctionWinsList');
+            box.replaceChildren();
+            if (!wins.length) { box.appendChild(auctionEl('div', 'auction-empty', t('auction.noWins'))); return; }
+            for (const w of wins) {
+                const card = auctionEl('div', 'card glass-panel won-lot');
+                card.appendChild(auctionImg(w.item_image));
+                const info = auctionEl('div', 'won-lot-body');
+                info.appendChild(auctionEl('div', 'won-lot-title', w.title));
+                const date = w.won_at ? new Date(w.won_at * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }) : '';
+                info.appendChild(auctionEl('div', 'won-lot-meta', t('auction.wonMeta', { place: w.place, bid: auctionFmt(w.bid), date })));
+                const delivered = w.status === 'delivered';
+                info.appendChild(auctionEl('div', 'won-lot-status' + (delivered ? ' is-delivered' : ''), delivered ? t('auction.delivered') : t('auction.pending')));
+                card.appendChild(info);
+                box.appendChild(card);
+            }
+        }
+
         async function loadNftStatus() {
             if (offlineOnly || !state.userId) { nftState = null; renderNft(); return; }
             try {
@@ -8855,6 +9174,7 @@
 
         async function openClanScreen() {
             haptic.select();
+            auctionStop();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('clans').classList.add('active');
             arenaStopLoop();

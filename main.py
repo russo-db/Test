@@ -30,6 +30,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # /api/nft/claim-shard). Адрес неизменен; игра NFT не минтит и не выводит,
 # только читает кошелёк игрока через TON API. ---
 MY_OFFICIAL_NFT_COLLECTION = "EQDIYRbCP3qgzxPhBI06k6Uyp1OOloCtM44o_uJTM-uqjqe1"
+# Ключ toncenter.com — уходит заголовком "X-API-Key" во ВСЕ запросы сервера к
+# toncenter (проверка NFT, приём пополнений). Переменная окружения
+# TONCENTER_API_KEY, если задана, имеет приоритет (см. ниже, после load_dotenv).
+TONCENTER_API_KEY = "4445c80503c48492cb834ac45fa6238fb2779c511592ce7d192d40e54d0043ad"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "game_config.json")
@@ -231,14 +235,28 @@ TONCENTER_URL = os.getenv("TONCENTER_URL", TONCENTER_MAINNET).rstrip("/")
 #   TONAPI_KEY        — ключ tonapi.io (tonconsole.com), уходит как "Authorization: Bearer <ключ>"
 #   TONCENTER_API_KEY — ключ toncenter.com (Telegram-бот @tonapibot), уходит как "X-API-Key: <ключ>"
 TONAPI_KEY = os.getenv("TONAPI_KEY", "").strip()
-TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
+TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip() or TONCENTER_API_KEY
 NFT_CLAIM_INTERVAL_DEFAULT = 7 * 24 * 3600   # боевой режим: раз в 7 дней
 NFT_CLAIM_INTERVAL_MIN = 60                   # для тестов можно поставить хоть 1 минуту
 NFT_CLAIM_INTERVAL_MAX = 365 * 24 * 3600
 NFT_CHECK_CACHE_SECONDS = 60                  # результат проверки кошелька кешируется, чтобы не долбить TON API
 TON_API = os.getenv("TON_API_URL", "https://toncenter.com/api/v3").rstrip("/")
-TON_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
+TON_API_KEY = TONCENTER_API_KEY   # тот же ключ для приёма пополнений (toncenter v3)
 TON_POLL_SECONDS = int(os.getenv("TON_POLL_SECONDS", "30"))
+# Тестовый режим сервера: пока IS_PRODUCTION_MODE не включён (переменная
+# окружения IS_PRODUCTION_MODE=true), в админке работает кнопка
+# «[Админ-Тест] Сократить все таймеры до 1 минуты». В бою — включить.
+IS_PRODUCTION_MODE = os.getenv("IS_PRODUCTION_MODE", "false").strip().lower() in ("1", "true", "yes", "on")
+# Аукцион «Раздача Небесных орлов»: старт от 10 Gram, шаг +1 Gram к ставке
+# лидера, в таблице — ТОП-5 (они и забирают лоты по окончании таймера).
+AUCTION_MIN_BID = 10.0
+AUCTION_BID_STEP = 1.0
+AUCTION_TOP_SIZE = 5
+AUCTION_DEFAULT_TITLE = "Раздача Небесных орлов"
+AUCTION_DURATION_MIN = 60
+AUCTION_DURATION_MAX = 30 * 24 * 3600
+AUCTION_SETTLE_GRACE = 3   # сек после закрытия: даём долететь ставкам «в последнюю секунду»
+AUCTION_WORKER_SECONDS = 5
 # Куда слать заявки на вывод: свой Telegram-id или id канала.
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 
@@ -1456,6 +1474,30 @@ class NftClaimRequest(BaseModel):
 
 class AdminNftSettings(BaseModel):
     interval_seconds: int
+
+
+class AuctionBidRequest(BaseModel):
+    user_id: int
+    auction_id: str
+    amount: Optional[float] = None   # ставка, которую игрок видел на экране
+
+
+class AdminAuctionCreate(BaseModel):
+    title: str = AUCTION_DEFAULT_TITLE
+    item_image: str = ""
+    description: str = ""
+    duration_seconds: int = 24 * 3600
+    min_bid: float = AUCTION_MIN_BID
+
+
+class AdminAuctionAction(BaseModel):
+    auction_id: str
+
+
+class AdminAuctionDelivery(BaseModel):
+    auction_id: str
+    user_id: int
+    delivered: bool = True
 
 
 class WithdrawRequest(BaseModel):
@@ -5099,8 +5141,8 @@ async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
 async def check_wallet_nfts(wallet: str) -> dict:
     """Полная проверка кошелька (для /api/nft/* и админской диагностики):
     {"wallet_raw", "found": [адреса NFT коллекции], "providers": [...], "ok": хоть
-    один провайдер ответил}. Сначала tonapi.io; если он ошибся или не нашёл
-    нашу NFT — перепроверяем через toncenter.com."""
+    один провайдер ответил}. Сначала toncenter.com (с ключом TONCENTER_API_KEY);
+    если он ошибся или не нашёл нашу NFT — перепроверяем через tonapi.io."""
     try:
         wallet_raw = ton_address_to_raw(wallet)
     except ValueError as e:
@@ -5109,7 +5151,8 @@ async def check_wallet_nfts(wallet: str) -> dict:
 
     report = {"wallet_raw": wallet_raw, "found": [], "providers": [], "ok": False}
     async with httpx.AsyncClient(timeout=12) as client:
-        for fetch in (_nfts_from_tonapi, _nfts_from_toncenter):
+        providers = (_nfts_from_toncenter, _nfts_from_tonapi) if TONCENTER_API_KEY else (_nfts_from_tonapi, _nfts_from_toncenter)
+        for fetch in providers:
             try:
                 res = await fetch(client, wallet_raw)
             except httpx.HTTPError as e:
@@ -5286,6 +5329,7 @@ async def admin_nft_settings(_: None = Depends(require_admin)):
         "default_seconds": NFT_CLAIM_INTERVAL_DEFAULT,
         "min_seconds": NFT_CLAIM_INTERVAL_MIN,
         "collection": MY_OFFICIAL_NFT_COLLECTION,
+        "is_production_mode": IS_PRODUCTION_MODE,
     }
 
 
@@ -5322,6 +5366,282 @@ async def admin_set_nft_settings(body: AdminNftSettings, _: None = Depends(requi
         raise HTTPException(status_code=400, detail="Интервал должен быть от 1 минуты до 365 дней")
     await store.set_setting("nft_claim_interval_seconds", value)
     return await admin_nft_settings(None)
+
+
+# --- АУКЦИОН «РАЗДАЧА НЕБЕСНЫХ ОРЛОВ» ---
+# Один главный лот за раз, ТОП-5 ставок в реальном времени (клиент опрашивает
+# /api/auction каждые пару секунд). Ставка всегда «лидер + 1 Gram» (первая —
+# не меньше 10 Gram): игрок встаёт на 1-е место, остальные сдвигаются, 6-й
+# выбывает и мгновенно получает замороженные Gram назад. По таймеру ТОП-5
+# фиксируется: их ставки списываются навсегда, а в профиль («Мои NFT»)
+# добавляется выигранный лот — «Ожидает ручной отправки» (NFT админ
+# отправляет сам). Вся денежная логика — в storage (place_auction_bid /
+# settle_auction), атомарно и с безопасным повтором.
+
+AUCTION_IMAGE_RE = re.compile(r"https?://[^\s\"'<>]{1,2000}")
+
+
+def auction_player_name(row: dict) -> str:
+    return ((row.get("name") or "").strip() or f"Игрок {row.get('user_id')}")[:32]
+
+
+def auction_frozen(row: dict) -> float:
+    return round(sum(float(v or 0) for v in (row.get("auction_holds") or {}).values()), 6)
+
+
+def auction_view(doc: Optional[dict], user_id: Optional[int], now: float) -> Optional[dict]:
+    if not doc:
+        return None
+    top = doc.get("top") or []
+    leader_bid = float(top[0]["bid"]) if top else 0.0
+    next_bid = max(float(doc["min_bid"]), leader_bid + float(doc["step"])) if top else float(doc["min_bid"])
+    rows = [{"place": i, "name": e.get("name") or "", "bid": float(e["bid"]),
+             "is_me": user_id is not None and int(e["user_id"]) == user_id}
+            for i, e in enumerate(top, start=1)]
+    mine = next((r for r in rows if r["is_me"]), None)
+    return {
+        "id": doc["id"], "title": doc.get("title") or AUCTION_DEFAULT_TITLE,
+        "item_image": doc.get("item_image") or "", "description": doc.get("description") or "",
+        "status": doc["status"], "ends_at": float(doc["ends_at"]), "server_time": now,
+        "min_bid": float(doc["min_bid"]), "step": float(doc["step"]), "top_size": AUCTION_TOP_SIZE,
+        "top": rows, "next_bid": next_bid, "my_place": mine["place"] if mine else 0,
+        "my_bid": mine["bid"] if mine else 0.0, "is_leader": bool(rows and rows[0]["is_me"]),
+    }
+
+
+async def auction_tick(now: Optional[float] = None) -> None:
+    """Закрыть лоты с истёкшим таймером и довести их расчёт до конца.
+    Вызывается фоновым циклом и лениво из /api/auction — повтор безопасен."""
+    now = time.time() if now is None else now
+    for doc in await store.list_due_auctions(now):
+        try:
+            if doc["status"] == "active":
+                if await store.finish_auction(doc["id"], now):
+                    print(f"[auction] {doc['id']} закрыт по таймеру, ТОП-{len(doc.get('top') or [])}")
+                continue   # расчёт — после короткой паузы (AUCTION_SETTLE_GRACE)
+            if now - float(doc.get("finished_at") or doc["ends_at"]) < AUCTION_SETTLE_GRACE:
+                continue
+            result = await store.settle_auction(doc["id"])
+            if result:
+                await record_economy(auction_gram=result["spent"])
+                names = ", ".join(f"{w['place']}. {w['name']} ({w['bid']:g})" for w in result["winners"]) or "ставок не было"
+                print(f"[auction] {doc['id']} рассчитан ({doc['status']}): {names}")
+        except Exception as e:
+            traceback.print_exception(type(e), e, e.__traceback__)
+
+
+async def auction_worker():
+    while True:
+        try:
+            await auction_tick()
+        except Exception as e:
+            print(f"[auction] worker error: {type(e).__name__}: {e}")
+        await asyncio.sleep(AUCTION_WORKER_SECONDS)
+
+
+async def auction_for_player() -> Optional[dict]:
+    """Идущий лот, а если его нет — последний завершённый (чтобы игроки видели
+    итоговый ТОП-5 и победителей)."""
+    return await store.get_active_auction() or await store.get_latest_auction()
+
+
+@app.get("/api/auction")
+async def auction_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    try:
+        user_id = authenticate(x_telegram_init_data, user_id)
+        now = time.time()
+        await auction_tick(now)
+        row = await fetch_user(user_id)
+        return {
+            "auction": auction_view(await auction_for_player(), user_id, now),
+            "server_time": now, "coins": float(row.get("coins") or 0), "frozen": auction_frozen(row),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить аукцион")
+
+
+@app.post("/api/auction/bid")
+async def auction_bid(request: AuctionBidRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    try:
+        user_id = authenticate(x_telegram_init_data, request.user_id)
+        row = await fetch_user(user_id)
+        now = time.time()
+        result = await store.place_auction_bid(
+            request.auction_id, user_id, auction_player_name(row), request.amount, now, AUCTION_TOP_SIZE,
+        )
+        status = result["status"]
+        if status == "not_found":
+            raise HTTPException(status_code=404, detail="Лот не найден")
+        if status == "ended":
+            raise HTTPException(status_code=400, detail="Аукцион уже завершён")
+        if status == "already_leader":
+            raise HTTPException(status_code=409, detail="Вы и так на 1-м месте — ждите, пока вас перебьют")
+        if status == "price_changed":
+            raise HTTPException(status_code=409, detail=f"Ставку перебили — теперь нужно {result['required']:g} Gram")
+        if status == "insufficient":
+            raise HTTPException(status_code=400, detail=f"Недостаточно Gram: для ставки {result['required']:g} нужно {result['delta']:g} свободных Gram")
+        if status != "ok":
+            raise HTTPException(status_code=409, detail="Много ставок одновременно — попробуйте ещё раз")
+        fresh = await fetch_user(user_id)
+        return {
+            "success": True, "bid": result["bid"], "charged": result["delta"],
+            "auction": auction_view(await store.get_auction(request.auction_id), user_id, now),
+            "server_time": now, "coins": float(fresh.get("coins") or 0), "frozen": auction_frozen(fresh),
+            "ops": int(fresh.get("ops") or 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось сделать ставку — попробуйте ещё раз")
+
+
+@app.get("/api/auction/wins")
+async def auction_wins(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Вкладка «Мои NFT»: выигранные на аукционе лоты игрока."""
+    try:
+        user_id = authenticate(x_telegram_init_data, user_id)
+        row = await fetch_user(user_id)
+        wins = sorted(row.get("auction_wins") or [], key=lambda w: -float(w.get("won_at") or 0))
+        return {"wins": [{
+            "auction_id": w.get("auction_id"), "title": w.get("title") or AUCTION_DEFAULT_TITLE,
+            "item_image": w.get("item_image") or "", "bid": float(w.get("bid") or 0),
+            "place": int(w.get("place") or 0), "won_at": float(w.get("won_at") or 0),
+            "status": w.get("status") or "pending_delivery",
+        } for w in wins]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить выигранные лоты")
+
+
+async def admin_auction_payload() -> dict:
+    now = time.time()
+    history = []
+    for doc in await store.list_auctions(10):
+        winners = []
+        for w in doc.get("winners") or []:
+            user = await store.get(int(w["user_id"])) or {}
+            winners.append(dict(w, wallet=user.get("wallet") or ""))
+        history.append({
+            "id": doc["id"], "title": doc.get("title") or "", "item_image": doc.get("item_image") or "",
+            "status": doc["status"], "settled": bool(doc.get("settled")), "created_at": doc.get("created_at"),
+            "ends_at": doc["ends_at"], "min_bid": doc["min_bid"], "top": doc.get("top") or [], "winners": winners,
+        })
+    active = await store.get_active_auction()
+    return {
+        "active": auction_view(active, None, now), "history": history, "server_time": now,
+        "is_production_mode": IS_PRODUCTION_MODE, "default_title": AUCTION_DEFAULT_TITLE,
+        "min_bid": AUCTION_MIN_BID, "step": AUCTION_BID_STEP, "top_size": AUCTION_TOP_SIZE,
+    }
+
+
+@app.get("/admin/api/auction")
+async def admin_auction(_: None = Depends(require_admin)):
+    try:
+        await auction_tick()
+        return await admin_auction_payload()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить аукцион: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/auction/create")
+async def admin_auction_create(body: AdminAuctionCreate, _: None = Depends(require_admin)):
+    try:
+        title = (body.title or "").strip()[:80] or AUCTION_DEFAULT_TITLE
+        image = (body.item_image or "").strip()
+        if image and not AUCTION_IMAGE_RE.fullmatch(image):
+            raise HTTPException(status_code=400, detail="Ссылка на картинку должна начинаться с https:// (без пробелов и кавычек)")
+        duration = int(body.duration_seconds)
+        if not AUCTION_DURATION_MIN <= duration <= AUCTION_DURATION_MAX:
+            raise HTTPException(status_code=400, detail="Длительность — от 1 минуты до 30 дней")
+        min_bid = float(body.min_bid)
+        if not AUCTION_MIN_BID <= min_bid <= 1_000_000:
+            raise HTTPException(status_code=400, detail=f"Стартовая ставка — не меньше {AUCTION_MIN_BID:g} Gram")
+        await auction_tick()
+        now = time.time()
+        doc = await store.create_auction(title, image, (body.description or "").strip()[:300],
+                                         min_bid, AUCTION_BID_STEP, now, now + duration)
+        if not doc:
+            raise HTTPException(status_code=409, detail="Уже идёт другой лот (или предыдущий ещё рассчитывается) — дождитесь конца или отмените его")
+        print(f"[auction] создан лот {doc['id']} «{title}» на {duration} с, старт {min_bid:g} Gram")
+        return await admin_auction_payload()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось создать лот: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/auction/finish")
+async def admin_auction_finish(body: AdminAuctionAction, _: None = Depends(require_admin)):
+    """Досрочно завершить: текущий ТОП-5 становится победителями."""
+    try:
+        if not await store.finish_auction(body.auction_id, time.time(), force=True):
+            raise HTTPException(status_code=409, detail="Лот уже не активен")
+        return await admin_auction_payload()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось завершить лот: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/auction/cancel")
+async def admin_auction_cancel(body: AdminAuctionAction, _: None = Depends(require_admin)):
+    """Отменить лот без победителей: все замороженные ставки возвращаются."""
+    try:
+        if not await store.cancel_auction(body.auction_id, time.time()):
+            raise HTTPException(status_code=409, detail="Лот уже не активен")
+        return await admin_auction_payload()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось отменить лот: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/auction/delivery")
+async def admin_auction_delivery(body: AdminAuctionDelivery, _: None = Depends(require_admin)):
+    try:
+        if not await store.set_auction_delivery(body.auction_id, body.user_id, body.delivered):
+            raise HTTPException(status_code=404, detail="Победитель не найден")
+        return await admin_auction_payload()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить отметку: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/test/shorten-timers")
+async def admin_test_shorten_timers(_: None = Depends(require_admin)):
+    """[Админ-Тест] Все таймеры — до 1 минуты: идущий лот заканчивается через
+    минуту (если ему оставалось больше), интервал сбора осколка по NFT —
+    1 минута. Только пока IS_PRODUCTION_MODE выключен."""
+    try:
+        if IS_PRODUCTION_MODE:
+            raise HTTPException(status_code=403, detail="Недоступно: сервер в боевом режиме (IS_PRODUCTION_MODE)")
+        now = time.time()
+        active = await store.get_active_auction()
+        shortened = bool(active) and await store.shorten_auction(active["id"], now + 60)
+        await store.set_setting("nft_claim_interval_seconds", 60)
+        print(f"[admin-test] таймеры сокращены: аукцион={'да' if shortened else 'нет'}, NFT-интервал=60 с")
+        payload = await admin_auction_payload()
+        payload.update({"auction_shortened": shortened, "nft_interval_seconds": 60})
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сократить таймеры: {type(e).__name__}: {e}")
 
 
 # --- TELEGRAM BOT LOGIC ---
@@ -5435,6 +5755,7 @@ async def startup_event():
             print(f"[bots] одето клан-ботов для боя 10х10: {equipped}")
     except Exception as e:  # тестовые данные не должны мешать запуску игры
         print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
+    asyncio.create_task(auction_worker())
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
     else:
