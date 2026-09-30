@@ -38,7 +38,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # чьи NFT дают право на еженедельный сбор Небесного Осколка (см.
 # /api/nft/claim-shard). Адрес неизменен; игра NFT не минтит и не выводит,
 # только читает кошелёк игрока через TON API. ---
-MY_OFFICIAL_NFT_COLLECTION = "EQDIYRbCP3qgzxPhBI06k6Uyp1OOloCtM44o_uJTM-uqjqe1"
+MY_OFFICIAL_NFT_COLLECTION = "EQCNBhvUKd6Y4Y1cg565S54KqQrBnB9MMfun6QnLIPId3uLe"
 # Ключ toncenter.com — уходит заголовком "X-API-Key" во ВСЕ запросы сервера к
 # toncenter (проверка NFT, приём пополнений). Переменная окружения
 # TONCENTER_API_KEY, если задана, имеет приоритет (см. ниже, после load_dotenv).
