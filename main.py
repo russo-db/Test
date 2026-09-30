@@ -15,6 +15,14 @@ import httpx
 from auth import verify_init_data
 from storage import make_store, ledger_source, LEDGER_SOURCE
 
+# Адреса TON: tonsdk (pip install tonsdk). Если пакета на хостинге нет — та же
+# нормализация встроенной реализацией (ton_address_to_friendly), результат
+# идентичный: base64url, флаг bounceable, CRC16.
+try:
+    from tonsdk.utils import Address as TonAddress
+except Exception:  # пакет не установлен — работаем без него
+    TonAddress = None
+
 from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -5161,7 +5169,24 @@ def ton_address_to_friendly(raw: str, bounceable: bool = True) -> str:
     return base64.urlsafe_b64encode(body + _crc16_xmodem(body).to_bytes(2, "big")).decode()
 
 
+def ton_bounceable(address: str) -> str:
+    """Единый стандарт для запросов к TON Center: Bounceable mainnet (EQ…).
+    Кошелёк из TonConnect приходит как UQ… (non-bounceable), может прийти и
+    сырым 0:… — всё приводится к EQ…, как
+    Address(addr).to_string(is_user_friendly=True, is_url_safe=True, is_bounceable=True)."""
+    address = (address or "").strip()
+    raw = ton_address_to_raw(address)   # проверка формата и CRC16; ValueError при опечатке
+    if TonAddress is not None:
+        try:
+            return TonAddress(raw).to_string(is_user_friendly=True, is_url_safe=True,
+                                             is_bounceable=True, is_test_only=False)
+        except Exception as e:
+            print(f"[nft] tonsdk не разобрал адрес {address!r}: {e} — используем встроенную нормализацию")
+    return ton_address_to_friendly(raw, bounceable=True)
+
+
 OFFICIAL_COLLECTION_RAW = ton_address_to_raw(MY_OFFICIAL_NFT_COLLECTION)
+OFFICIAL_COLLECTION_EQ = ton_bounceable(MY_OFFICIAL_NFT_COLLECTION)
 
 
 def _mainnet_url(url: str, default: str) -> str:
@@ -5207,54 +5232,55 @@ async def _nfts_from_tonapi(client, wallet_raw: str) -> dict:
 
 
 async def _toncenter_nft_query(client, params: dict) -> dict:
-    """Один GET к toncenter.com /api/v3/nft/items. Точный URL (без ключа —
-    ключ уходит только заголовком X-API-Key) печатается в лог, чтобы его
-    можно было вставить в браузер и сверить ответ сети вручную."""
+    """Один GET к toncenter.com /api/v3/nft/items c заголовком X-API-Key.
+    В лог — точный URL (ключ только в заголовке, в URL его нет) и ответ
+    индексера, чтобы при пустом списке было видно, что вернул блокчейн."""
     base = f"{_mainnet_url(TONCENTER_URL, TONCENTER_MAINNET)}/api/v3/nft/items"
     final_url = str(httpx.URL(base, params=params))
-    headers = {"Accept": "application/json"}
-    if TONCENTER_API_KEY:
-        headers["X-API-Key"] = TONCENTER_API_KEY
+    headers = {"Accept": "application/json", "X-API-Key": TONCENTER_API_KEY}
     print(f"Выполняю запрос к TON: {final_url}")
     try:
-        resp = await client.get(final_url, headers=headers)
-    except httpx.HTTPError as e:
-        print(f"[nft] toncenter request failed: {final_url} -> {type(e).__name__}: {e}")
+        response = await client.get(base, params=params, headers=headers)
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text[:2000]}
+        print(f"[TON TEST] Запрос к API: {params}, Ответ сервера: {json.dumps(payload, ensure_ascii=False)[:6000]}")
+    except Exception as e:
+        print(f"[TON TEST] Запрос к API: {params}, Ошибка: {type(e).__name__}: {e}")
         raise
-    result = {"status": resp.status_code, "url": final_url, "items": [], "body": resp.text[:2000]}
-    if resp.status_code == 200:
-        for item in (resp.json() or {}).get("nft_items") or []:
+    result = {"status": response.status_code, "url": final_url, "items": [], "body": response.text[:2000]}
+    if response.status_code == 200 and isinstance(payload, dict):
+        for item in payload.get("nft_items") or []:
             result["items"].append({
                 "address": _safe_raw(item.get("address")),
                 "collection": _safe_raw(item.get("collection_address")),
                 "collection_name": "",
             })
-    print(f"[nft] toncenter ответ: HTTP {resp.status_code}, NFT: {len(result['items'])}")
     return result
 
 
 async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
-    """toncenter.com API v3 (mainnet): NFT владельца из нашей коллекции.
-    GET /api/v3/nft/items?owner_address=<UQ…>&collection_address=<EQ…>,
-    заголовок X-API-Key. Адрес кошелька перед запросом нормализуется, как
-    Address.parse(wallet).toString({testOnly: false, bounceable: false}) в
-    @ton/core: из любого вида (EQ/UQ/сырой 0:…) — в единый UQ… mainnet.
-    include_on_sale — чтобы находилась и NFT, выставленная на продажу
-    (формально она лежит на контракте продажи). Если с фильтром по коллекции
-    пусто — второй запрос без фильтра: так видно, какие NFT вообще есть на
-    кошельке (и находится NFT, если в константе адрес самой карточки)."""
-    owner = ton_address_to_friendly(wallet_raw, bounceable=False)
-    common = {"owner_address": owner, "include_on_sale": "true", "limit": 1000, "offset": 0}
-    filtered = await _toncenter_nft_query(client, dict(common, collection_address=MY_OFFICIAL_NFT_COLLECTION))
-    if filtered["status"] in (400, 422):   # индексер не знает include_on_sale — повтор строго по правилам API
-        common.pop("include_on_sale")
-        filtered = await _toncenter_nft_query(client, dict(common, collection_address=MY_OFFICIAL_NFT_COLLECTION))
-    result = dict(filtered, provider="toncenter")
-    if filtered["status"] == 200 and not filtered["items"]:
-        unfiltered = await _toncenter_nft_query(client, common)
-        if unfiltered["status"] == 200:
-            result.update(items=unfiltered["items"], body=unfiltered["body"],
-                          url=f"{filtered['url']} (пусто) → {unfiltered['url']}")
+    """toncenter.com API v3 (mainnet): NFT коллекции «Небесный орел» у игрока.
+    Кошелёк игрока и адрес коллекции перед запросом приводятся к единому
+    виду Bounceable EQ… (ton_bounceable), запрос —
+    GET /api/v3/nft/items?owner_address=<EQ…>&collection_address=<EQ…>.
+    Если пусто — ещё две попытки: с include_on_sale=true (NFT выставлена на
+    продажу и формально лежит на контракте продажи) и без фильтра по
+    коллекции (видно, какие NFT вообще есть на кошельке; находится и NFT,
+    если в константе оказался адрес самой карточки)."""
+    params = {
+        "owner_address": ton_bounceable(wallet_raw),
+        "collection_address": OFFICIAL_COLLECTION_EQ,
+    }
+    result = dict(await _toncenter_nft_query(client, params), provider="toncenter")
+    if result["status"] != 200 or result["items"]:
+        return result
+    for extra in ({**params, "include_on_sale": "true"},
+                  {"owner_address": params["owner_address"], "include_on_sale": "true", "limit": 1000}):
+        retry = await _toncenter_nft_query(client, extra)
+        if retry["status"] == 200 and retry["items"]:
+            return dict(retry, provider="toncenter", url=f"{result['url']} (пусто) → {retry['url']}")
     return result
 
 
