@@ -1512,6 +1512,10 @@ class AdminNftSettings(BaseModel):
     interval_seconds: int
 
 
+class AdminNftCollection(BaseModel):
+    address: str = ""
+
+
 class AuctionBidRequest(BaseModel):
     user_id: int
     auction_id: str
@@ -5185,8 +5189,46 @@ def ton_bounceable(address: str) -> str:
     return ton_address_to_friendly(raw, bounceable=True)
 
 
+# Действующая коллекция «Небесного орла». По умолчанию — константа выше;
+# админ может сменить её в админке (Обзор → NFT) — адрес хранится в БД
+# (settings: nft_collection) и переживает перезапуск/деплой. Все проверки
+# читают эти три переменные; их обновляет apply_nft_collection.
+OFFICIAL_COLLECTION = MY_OFFICIAL_NFT_COLLECTION
 OFFICIAL_COLLECTION_RAW = ton_address_to_raw(MY_OFFICIAL_NFT_COLLECTION)
 OFFICIAL_COLLECTION_EQ = ton_bounceable(MY_OFFICIAL_NFT_COLLECTION)
+NFT_COLLECTION_SETTING = "nft_collection"
+NFT_COLLECTION_REFRESH_SECONDS = 30   # другие копии сервера подхватят смену за полминуты
+_nft_collection_loaded_at = 0.0
+
+
+def apply_nft_collection(address: str) -> bool:
+    """Делает address действующей коллекцией. True — если она сменилась
+    (тогда кеш проверок кошельков сбрасывается: он считан по старой)."""
+    global OFFICIAL_COLLECTION, OFFICIAL_COLLECTION_RAW, OFFICIAL_COLLECTION_EQ
+    raw = ton_address_to_raw(address)
+    changed = raw != OFFICIAL_COLLECTION_RAW
+    OFFICIAL_COLLECTION_RAW = raw
+    OFFICIAL_COLLECTION_EQ = ton_bounceable(raw)
+    OFFICIAL_COLLECTION = OFFICIAL_COLLECTION_EQ
+    if changed:
+        _NFT_CHECK_CACHE.clear()
+        print(f"[nft] официальная коллекция: {OFFICIAL_COLLECTION_EQ} ({OFFICIAL_COLLECTION_RAW})")
+    return changed
+
+
+async def refresh_nft_collection(force: bool = False) -> None:
+    """Подтягивает адрес коллекции из БД (не чаще раза в 30 с). Сбой базы или
+    битый адрес в ней — остаёмся на текущей коллекции."""
+    global _nft_collection_loaded_at
+    now = time.time()
+    if not force and now - _nft_collection_loaded_at < NFT_COLLECTION_REFRESH_SECONDS:
+        return
+    _nft_collection_loaded_at = now
+    try:
+        saved = await store.get_setting(NFT_COLLECTION_SETTING, "")
+        apply_nft_collection(saved or MY_OFFICIAL_NFT_COLLECTION)
+    except Exception as e:
+        print(f"[nft] не удалось прочитать коллекцию из БД: {type(e).__name__}: {e}")
 
 
 def _mainnet_url(url: str, default: str) -> str:
@@ -5295,6 +5337,7 @@ async def check_wallet_nfts(wallet: str) -> dict:
         print(f"[nft] invalid wallet address saved for player: {e}")
         return {"wallet_raw": "", "found": [], "providers": [], "ok": True, "invalid_wallet": True}
 
+    await refresh_nft_collection()
     report = {"wallet_raw": wallet_raw, "found": [], "providers": [], "ok": False}
     async with httpx.AsyncClient(timeout=12) as client:
         providers = (_nfts_from_toncenter, _nfts_from_tonapi) if TONCENTER_API_KEY else (_nfts_from_tonapi, _nfts_from_toncenter)
@@ -5327,6 +5370,7 @@ async def fetch_collection_nfts(wallet: str) -> List[str]:
     NFT_CHECK_CACHE_SECONDS на кошелёк (только удачные ответы). Если ни один
     провайдер не ответил — NftApiError (это «не удалось проверить», а не
     «NFT нет»)."""
+    await refresh_nft_collection()
     now = time.time()
     cached = _NFT_CHECK_CACHE.get(wallet)
     if cached and now - cached[0] < NFT_CHECK_CACHE_SECONDS:
@@ -5470,11 +5514,14 @@ async def nft_claim_shard(request: NftClaimRequest, x_telegram_init_data: Option
 
 @app.get("/admin/api/nft/settings")
 async def admin_nft_settings(_: None = Depends(require_admin)):
+    await refresh_nft_collection(force=True)
     return {
         "interval_seconds": await nft_claim_interval(),
         "default_seconds": NFT_CLAIM_INTERVAL_DEFAULT,
         "min_seconds": NFT_CLAIM_INTERVAL_MIN,
-        "collection": MY_OFFICIAL_NFT_COLLECTION,
+        "collection": OFFICIAL_COLLECTION,
+        "collection_raw": OFFICIAL_COLLECTION_RAW,
+        "collection_default": MY_OFFICIAL_NFT_COLLECTION,
         "is_production_mode": IS_PRODUCTION_MODE,
     }
 
@@ -5498,9 +5545,30 @@ async def admin_nft_check(wallet: str, _: None = Depends(require_admin)):
         "wallet_input": wallet, "wallet_raw": report["wallet_raw"],
         "wallet_friendly": ton_address_to_friendly(report["wallet_raw"], bounceable=False) if report["wallet_raw"] else "",
         "invalid_wallet": bool(report.get("invalid_wallet")),
-        "official_collection": MY_OFFICIAL_NFT_COLLECTION, "official_collection_raw": OFFICIAL_COLLECTION_RAW,
+        "official_collection": OFFICIAL_COLLECTION, "official_collection_raw": OFFICIAL_COLLECTION_RAW,
         "found": report["found"], "providers": providers, "ok": report["ok"],
     }
+
+
+@app.post("/admin/api/nft/collection")
+async def admin_set_nft_collection(body: AdminNftCollection, _: None = Depends(require_admin)):
+    """Сменить коллекцию «Небесного орла». Адрес — в любом виде (EQ…/UQ…/0:…),
+    сохраняется как EQ…; пустая строка — вернуть коллекцию по умолчанию."""
+    try:
+        address = (body.address or "").strip() or MY_OFFICIAL_NFT_COLLECTION
+        try:
+            eq = ton_bounceable(address)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Некорректный адрес коллекции (проверьте, что скопирован целиком)")
+        await store.set_setting(NFT_COLLECTION_SETTING, eq)
+        apply_nft_collection(eq)
+        print(f"[admin] коллекция NFT изменена на {eq}")
+        return await admin_nft_settings(None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить коллекцию: {type(e).__name__}: {e}")
 
 
 @app.post("/admin/api/nft/settings")
@@ -6020,6 +6088,7 @@ async def startup_event():
             print(f"[bots] одето клан-ботов для боя 10х10: {equipped}")
     except Exception as e:  # тестовые данные не должны мешать запуску игры
         print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
+    await refresh_nft_collection(force=True)
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:

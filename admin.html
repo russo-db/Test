@@ -267,6 +267,13 @@
                     <span class="muted" style="font-size:12px;" data-prod-mode-hint></span>
                 </div>
                 <div class="nft-interval-row">
+                    <span class="muted">Коллекция:</span>
+                    <input id="nftCollectionInput" placeholder="Адрес коллекции с Getgems (EQ…)" style="flex:1; min-width:260px; font-family:ui-monospace,monospace; font-size:12px;">
+                    <button class="primary" id="nftCollectionSave">Сохранить коллекцию</button>
+                    <button id="nftCollectionReset" title="Вернуть адрес из кода">По умолчанию</button>
+                </div>
+                <div class="muted" id="nftCollectionHint" style="font-size:12px;"></div>
+                <div class="nft-interval-row">
                     <input id="nftCheckWallet" placeholder="Адрес кошелька тестера (EQ… / UQ… / 0:…)" style="flex:1; min-width:220px;">
                     <button id="nftCheckBtn">🔍 Проверить кошелёк</button>
                 </div>
@@ -714,9 +721,44 @@ function renderNftInterval(data) {
     document.getElementById('nftIntervalUnit').value = String(unit);
     document.getElementById('nftIntervalValue').value = Math.max(1, Math.round(sec / unit));
     document.getElementById('nftIntervalHint').textContent =
-        `Сейчас игрок с NFT может забирать 1 Небесный Осколок раз в ${fmtInterval(sec)}. Коллекция: ${data.collection}. ` +
+        `Сейчас игрок с NFT может забирать 1 Небесный Осколок раз в ${fmtInterval(sec)}. ` +
         'Не забудьте вернуть боевой режим (7 дней) после тестов.';
+    renderNftCollection(data);
 }
+function renderNftCollection(data) {
+    const input = document.getElementById('nftCollectionInput');
+    if (document.activeElement !== input) input.value = data.collection || '';
+    const isDefault = data.collection === data.collection_default;
+    document.getElementById('nftCollectionHint').innerHTML =
+        `Действующая коллекция: <code>${escHtml(data.collection)}</code> (<code>${escHtml(data.collection_raw || '')}</code>)` +
+        (isDefault ? ' — из кода, по умолчанию.' : ` — задана в админке. По умолчанию: <code>${escHtml(data.collection_default)}</code>.`) +
+        ' Адрес можно скопировать из ссылки на Getgems: getgems.io/collection/<b>EQ…</b>';
+}
+async function saveNftCollection(address, btn) {
+    const run = async () => {
+        try {
+            const data = await api('/admin/api/nft/collection', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address }),
+            });
+            document.getElementById('nftCollectionInput').value = data.collection;
+            renderNftInterval(data);
+            toast(`Коллекция NFT: ${data.collection}`);
+            const wallet = document.getElementById('nftCheckWallet').value.trim();
+            if (wallet) document.getElementById('nftCheckBtn').click();
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    };
+    if (btn) await withBusyButton(btn, 'Сохраняю…', run); else await run();
+}
+document.getElementById('nftCollectionSave').onclick = e => {
+    const address = document.getElementById('nftCollectionInput').value.trim();
+    if (!address) { toast('Вставьте адрес коллекции', true); return; }
+    saveNftCollection(address, e.currentTarget);
+};
+document.getElementById('nftCollectionReset').onclick = e => {
+    if (!confirm('Вернуть коллекцию по умолчанию (адрес из кода)?')) return;
+    saveNftCollection('', e.currentTarget);
+};
 async function loadNftInterval() {
     try {
         const data = await api('/admin/api/nft/settings');
@@ -754,15 +796,26 @@ document.getElementById('nftCheckBtn').onclick = async () => {
             : (r.ok ? `<b style="color:#ff6b6b">❌ NFT коллекции не найдена</b>`
                     : `<b style="color:#f0b429">⚠️ Не удалось проверить: ни tonapi.io, ни toncenter.com не ответили (лимит запросов? нужен ключ API)</b>`);
         const prov = r.providers.map(p => {
-            const cols = Object.entries(p.collections).map(([addr, c]) =>
-                `<div style="margin-left:14px;${addr === r.official_collection_raw ? 'color:#4ade80;font-weight:700;' : ''}">${c.name ? c.name + ' — ' : ''}<code>${addr}</code> × ${c.count}</div>`).join('');
+            const cols = Object.entries(p.collections).map(([addr, c]) => {
+                const official = addr === r.official_collection_raw;
+                const pick = !official && addr.includes(':')
+                    ? ` <button data-make-official="${escHtml(addr)}" style="padding:2px 8px; font-size:11px;">Сделать официальной</button>` : '';
+                return `<div style="margin-left:14px; word-break:break-all;${official ? 'color:#4ade80;font-weight:700;' : ''}">${c.name ? escHtml(c.name) + ' — ' : ''}<code>${escHtml(addr)}</code> × ${c.count}${official ? ' ← официальная' : ''}${pick}</div>`;
+            }).join('');
             return `<div style="margin-top:6px;"><b>${p.provider}</b>: HTTP ${p.status || 'нет ответа'}, NFT на кошельке: ${p.items}
                 ${p.url ? `<div class="muted" style="margin-left:14px;word-break:break-all;">Запрос: <code>${escHtml(p.url)}</code></div>` : ''}
                 ${p.error ? `<div class="muted" style="margin-left:14px;">${p.error.replace(/</g, '&lt;')}</div>` : ''}${cols}</div>`;
         }).join('');
         box.innerHTML = `${verdict}
             <div class="muted" style="margin-top:4px;">Кошелёк: <code>${r.wallet_raw}</code> (${r.wallet_friendly})<br>
-            Наша коллекция: <code>${r.official_collection_raw}</code></div>${prov}`;
+            Наша коллекция: <code>${r.official_collection}</code> (<code>${r.official_collection_raw}</code>)</div>${prov}`;
+        box.querySelectorAll('[data-make-official]').forEach(btn => {
+            btn.onclick = () => {
+                const name = btn.parentElement.textContent.split(' — ')[0];
+                if (!confirm(`Сделать официальной коллекцию ${btn.dataset.makeOfficial}?\nИгроки с NFT из неё смогут собирать Небесный Осколок, из прежней — нет.`)) return;
+                saveNftCollection(btn.dataset.makeOfficial, btn);
+            };
+        });
     } catch (e) { if (e.message !== 'unauthorized') { box.textContent = ''; toast(e.message, true); } }
 };
 document.querySelectorAll('[data-nft-preset]').forEach(btn => {
