@@ -748,6 +748,7 @@ document.getElementById('nftCheckBtn').onclick = async () => {
             const cols = Object.entries(p.collections).map(([addr, c]) =>
                 `<div style="margin-left:14px;${addr === r.official_collection_raw ? 'color:#4ade80;font-weight:700;' : ''}">${c.name ? c.name + ' — ' : ''}<code>${addr}</code> × ${c.count}</div>`).join('');
             return `<div style="margin-top:6px;"><b>${p.provider}</b>: HTTP ${p.status || 'нет ответа'}, NFT на кошельке: ${p.items}
+                ${p.url ? `<div class="muted" style="margin-left:14px;word-break:break-all;">Запрос: <code>${escHtml(p.url)}</code></div>` : ''}
                 ${p.error ? `<div class="muted" style="margin-left:14px;">${p.error.replace(/</g, '&lt;')}</div>` : ''}${cols}</div>`;
         }).join('');
         box.innerHTML = `${verdict}

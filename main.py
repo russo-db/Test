@@ -5108,8 +5108,10 @@ async def _nfts_from_tonapi(client, wallet_raw: str) -> dict:
     headers = {"Accept": "application/json"}
     if TONAPI_KEY:
         headers["Authorization"] = f"Bearer {TONAPI_KEY}"
-    resp = await client.get(url, params={"limit": 1000, "offset": 0, "indirect_ownership": "true"}, headers=headers)
-    result = {"provider": "tonapi", "status": resp.status_code, "items": [], "body": resp.text[:2000]}
+    final_url = str(httpx.URL(url, params={"limit": 1000, "offset": 0, "indirect_ownership": "true"}))
+    print(f"Выполняю запрос к TON: {final_url}")
+    resp = await client.get(final_url, headers=headers)
+    result = {"provider": "tonapi", "status": resp.status_code, "url": final_url, "items": [], "body": resp.text[:2000]}
     if resp.status_code == 200:
         for item in (resp.json() or {}).get("nft_items") or []:
             result["items"].append({
@@ -5120,14 +5122,22 @@ async def _nfts_from_tonapi(client, wallet_raw: str) -> dict:
     return result
 
 
-async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
-    """Второй независимый провайдер — toncenter.com API v3 (mainnet)."""
-    url = f"{_mainnet_url(TONCENTER_URL, TONCENTER_MAINNET)}/api/v3/nft/items"
+async def _toncenter_nft_query(client, params: dict) -> dict:
+    """Один GET к toncenter.com /api/v3/nft/items. Точный URL (без ключа —
+    ключ уходит только заголовком X-API-Key) печатается в лог, чтобы его
+    можно было вставить в браузер и сверить ответ сети вручную."""
+    base = f"{_mainnet_url(TONCENTER_URL, TONCENTER_MAINNET)}/api/v3/nft/items"
+    final_url = str(httpx.URL(base, params=params))
     headers = {"Accept": "application/json"}
     if TONCENTER_API_KEY:
         headers["X-API-Key"] = TONCENTER_API_KEY
-    resp = await client.get(url, params={"owner_address": wallet_raw, "limit": 1000, "offset": 0}, headers=headers)
-    result = {"provider": "toncenter", "status": resp.status_code, "items": [], "body": resp.text[:2000]}
+    print(f"Выполняю запрос к TON: {final_url}")
+    try:
+        resp = await client.get(final_url, headers=headers)
+    except httpx.HTTPError as e:
+        print(f"[nft] toncenter request failed: {final_url} -> {type(e).__name__}: {e}")
+        raise
+    result = {"status": resp.status_code, "url": final_url, "items": [], "body": resp.text[:2000]}
     if resp.status_code == 200:
         for item in (resp.json() or {}).get("nft_items") or []:
             result["items"].append({
@@ -5135,6 +5145,32 @@ async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
                 "collection": _safe_raw(item.get("collection_address")),
                 "collection_name": "",
             })
+    print(f"[nft] toncenter ответ: HTTP {resp.status_code}, NFT: {len(result['items'])}")
+    return result
+
+
+async def _nfts_from_toncenter(client, wallet_raw: str) -> dict:
+    """toncenter.com API v3 (mainnet): NFT владельца из нашей коллекции.
+    GET /api/v3/nft/items?owner_address=<UQ…>&collection_address=<EQ…>,
+    заголовок X-API-Key. Адрес кошелька перед запросом нормализуется, как
+    Address.parse(wallet).toString({testOnly: false, bounceable: false}) в
+    @ton/core: из любого вида (EQ/UQ/сырой 0:…) — в единый UQ… mainnet.
+    include_on_sale — чтобы находилась и NFT, выставленная на продажу
+    (формально она лежит на контракте продажи). Если с фильтром по коллекции
+    пусто — второй запрос без фильтра: так видно, какие NFT вообще есть на
+    кошельке (и находится NFT, если в константе адрес самой карточки)."""
+    owner = ton_address_to_friendly(wallet_raw, bounceable=False)
+    common = {"owner_address": owner, "include_on_sale": "true", "limit": 1000, "offset": 0}
+    filtered = await _toncenter_nft_query(client, dict(common, collection_address=MY_OFFICIAL_NFT_COLLECTION))
+    if filtered["status"] in (400, 422):   # индексер не знает include_on_sale — повтор строго по правилам API
+        common.pop("include_on_sale")
+        filtered = await _toncenter_nft_query(client, dict(common, collection_address=MY_OFFICIAL_NFT_COLLECTION))
+    result = dict(filtered, provider="toncenter")
+    if filtered["status"] == 200 and not filtered["items"]:
+        unfiltered = await _toncenter_nft_query(client, common)
+        if unfiltered["status"] == 200:
+            result.update(items=unfiltered["items"], body=unfiltered["body"],
+                          url=f"{filtered['url']} (пусто) → {unfiltered['url']}")
     return result
 
 
@@ -5345,7 +5381,7 @@ async def admin_nft_check(wallet: str, _: None = Depends(require_admin)):
             key = it["collection"] or "(без коллекции)"
             collections.setdefault(key, {"name": it["collection_name"], "count": 0})["count"] += 1
         providers.append({
-            "provider": p["provider"], "status": p["status"], "items": len(p["items"]),
+            "provider": p["provider"], "status": p["status"], "items": len(p["items"]), "url": p.get("url", ""),
             "collections": collections, "error": p["body"][:500] if p["status"] != 200 else "",
         })
     return {
