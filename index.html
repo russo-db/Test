@@ -8350,7 +8350,6 @@
                 if (typeof data.nest_last_claim === 'number') state.nest.lastClaim = data.nest_last_claim;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
-                spawnBurst(12);
                 toast(t('nft.claimed'));
                 renderNft();
                 saveLocally();
