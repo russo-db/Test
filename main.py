@@ -60,7 +60,19 @@ ARENA_ENERGY_PRICE_GRAM = 0.25  # GRAM за 1 докупленную энерг�
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEB_APP_URL = os.getenv("WEB_APP_URL")
+def normalize_web_app_url(value: Optional[str]) -> str:
+    """Telegram принимает для Mini App только https-ссылку. Если в переменной
+    окружения домен записан без схемы («eaglegame.up.railway.app») или с
+    http://, приводим к «https://домен/» — иначе кнопка открытия игры в боте
+    падает с BadRequest «only https links are allowed»."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"^(?:https?:)?//", "", value, flags=re.I)
+    return "https://" + value.rstrip("/") + "/"
+
+
+WEB_APP_URL = normalize_web_app_url(os.getenv("WEB_APP_URL"))
 # Задавать вручную не обязательно: при старте бота имя берётся через getMe.
 BOT_USERNAME = os.getenv("BOT_USERNAME", "").lstrip("@").strip()
 
