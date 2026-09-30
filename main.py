@@ -1656,6 +1656,40 @@ async def maintenance_gate(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/health")
+async def health():
+    """Диагностика для владельца (открыть в браузере): жив ли сервер,
+    отвечает ли MongoDB, проходит ли запись и сколько места на её диске.
+    Каждая проверка с таймаутом — страница отвечает, даже если база лежит."""
+    report = {"server": "ok", "time": int(time.time())}
+    db = store.settings.database
+
+    async def step(name, coro, timeout=5):
+        started = time.time()
+        try:
+            value = await asyncio.wait_for(coro, timeout)
+            report[name] = {"ok": True, "ms": int((time.time() - started) * 1000)}
+            return value
+        except Exception as e:
+            report[name] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:300]}"}
+            return None
+
+    await step("db_ping", db.command("ping"))
+    await step("db_write", store.settings.update_one({"_id": "health"}, {"$set": {"value": time.time()}}, upsert=True))
+    await step("db_read_player", store.users.find_one({}, projection={"_id": 1}))
+    stats = await step("db_stats", db.command("dbStats"))
+    if stats:
+        mb = lambda v: round(float(v or 0) / 1024 / 1024, 1)
+        report["disk_mb"] = {
+            "data": mb(stats.get("dataSize")), "storage": mb(stats.get("storageSize")),
+            "indexes": mb(stats.get("indexSize")),
+            "fs_used": mb(stats.get("fsUsedSize")), "fs_total": mb(stats.get("fsTotalSize")),
+            "fs_free": mb(float(stats.get("fsTotalSize") or 0) - float(stats.get("fsUsedSize") or 0)),
+        }
+    report["status"] = "ok" if all(report[k]["ok"] for k in ("db_ping", "db_write", "db_read_player")) else "DATABASE PROBLEM"
+    return report
+
+
 @app.get("/api/maintenance")
 async def maintenance_status():
     return {
