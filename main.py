@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, MenuButtonWebApp, BotCommand
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -5932,6 +5932,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+BOT_MENU_BUTTON_TEXT = "🎮 Играть"
+
+
+async def setup_bot_menu(bot) -> None:
+    """Кнопка меню бота (слева от поля ввода) открывает игру сразу, без /start:
+    ставится для всех чатов при каждом запуске, поэтому всегда указывает на
+    актуальный WEB_APP_URL (https). Заодно — подсказка команды /start."""
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text=BOT_MENU_BUTTON_TEXT, web_app=WebAppInfo(url=WEB_APP_URL))
+        )
+        print(f"[bot] кнопка меню «{BOT_MENU_BUTTON_TEXT}» → {WEB_APP_URL}")
+    except Exception as e:
+        print(f"[bot] не удалось поставить кнопку меню: {type(e).__name__}: {e}")
+    try:
+        await bot.set_my_commands([BotCommand("start", "Открыть игру")])
+    except Exception as e:
+        print(f"[bot] не удалось задать команды: {type(e).__name__}: {e}")
+
+
 async def run_bot():
     global BOT_USERNAME
 
@@ -5944,6 +5964,7 @@ async def run_bot():
     if me.username:
         BOT_USERNAME = me.username
         print(f"Bot username: @{BOT_USERNAME}")
+    await setup_bot_menu(application.bot)
     await application.start()
     await application.updater.start_polling()
 
