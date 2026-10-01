@@ -8987,9 +8987,10 @@
 
         async function checkMaintenance() {
             try {
-                const response = await fetch(`api/maintenance?v=${Date.now()}`, { cache: 'no-store' });
+                const response = await fetch(`api/maintenance?v=${Date.now()}`, { cache: 'no-store', headers: apiHeaders() });
                 if (!response.ok) return false;
                 const data = await response.json();
+                if (data.tester) showMaintenanceTesterBadge();
                 if (!data.enabled) return false;
 
                 maintenanceChatUrl = data.chat_url || '';
@@ -9001,6 +9002,19 @@
             } catch (error) {
                 return false; // сервер недоступен по другой причине — не блокируем игру этим экраном
             }
+        }
+
+        // Техработы включены, но этот игрок в списке тестеров (админка) — игра
+        // открыта только ему, плашка напоминает, что остальные сейчас не играют.
+        function showMaintenanceTesterBadge() {
+            if (document.getElementById('maintenanceTesterBadge')) return;
+            const badge = document.createElement('div');
+            badge.id = 'maintenanceTesterBadge';
+            badge.textContent = '🛠 Техработы — режим тестера';
+            badge.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top, 0px) + 4px);left:50%;transform:translateX(-50%);'
+                + 'z-index:100000;padding:3px 10px;border-radius:999px;background:rgba(239,68,68,.92);color:#fff;'
+                + 'font:600 11px/1.4 Poppins,system-ui,sans-serif;pointer-events:none;white-space:nowrap;';
+            document.body.appendChild(badge);
         }
 
         function openMaintenanceChat() {

@@ -9,6 +9,7 @@ import asyncio
 import functools
 import traceback
 from typing import List, Optional
+from urllib.parse import parse_qsl
 
 import httpx
 
@@ -1671,7 +1672,9 @@ app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), na
 # Пока включены техработы, все /api/* эндпоинты (кроме самой проверки статуса)
 # отвечают 503 — админка и статика (страница, конфиг, ассеты) продолжают
 # работать как обычно, чтобы экран техработ на клиенте мог загрузиться.
-MAINTENANCE_ALLOWED_PATHS = {"/api/maintenance"}
+# /api/merchant/state — только чтение; его же показывает админка (блок «Купец»),
+# и во время техработ он не должен падать с 503.
+MAINTENANCE_ALLOWED_PATHS = {"/api/maintenance", "/api/merchant/state"}
 
 
 @app.exception_handler(Exception)
@@ -1719,14 +1722,96 @@ class LedgerSourceMiddleware:
 app.add_middleware(LedgerSourceMiddleware)
 
 
+# Режим техработ и список тестеров живут в БД (settings → maintenance_state),
+# а не в game_config.json: файл конфига Railway восстанавливает из репозитория
+# при каждом деплое, и включённые техработы сами выключались бы ровно в тот
+# момент, когда выкатывается обновление. Пока в БД состояния нет — действует
+# maintenance.enabled из конфига.
+MAINTENANCE_SETTING = "maintenance_state"   # {"enabled": bool, "testers": [Telegram ID, ...]}
+MAINTENANCE_REFRESH_SECONDS = 10            # другие копии сервера подхватят смену за 10 с
+MAINTENANCE_TESTERS_MAX = 50
+_maintenance_db_enabled: Optional[bool] = None
+MAINTENANCE_TESTERS: set = set()
+_maintenance_loaded_at = 0.0
+
+
+def maintenance_on() -> bool:
+    return MAINTENANCE_ENABLED if _maintenance_db_enabled is None else _maintenance_db_enabled
+
+
+def parse_tester_ids(raw) -> list:
+    out = []
+    for x in raw or []:
+        try:
+            uid = int(x)
+        except (TypeError, ValueError):
+            continue
+        if uid > 0 and uid not in out:
+            out.append(uid)
+    return out[:MAINTENANCE_TESTERS_MAX]
+
+
+async def refresh_maintenance(force: bool = False) -> None:
+    """Подтягивает режим техработ и тестеров из БД (не чаще раза в 10 с).
+    Сбой базы — остаёмся на последнем известном состоянии."""
+    global _maintenance_db_enabled, MAINTENANCE_TESTERS, _maintenance_loaded_at
+    now = time.time()
+    if not force and now - _maintenance_loaded_at < MAINTENANCE_REFRESH_SECONDS:
+        return
+    _maintenance_loaded_at = now
+    try:
+        doc = await store.get_setting(MAINTENANCE_SETTING, None)
+        if isinstance(doc, dict):
+            _maintenance_db_enabled = bool(doc["enabled"]) if "enabled" in doc else None
+            MAINTENANCE_TESTERS = set(parse_tester_ids(doc.get("testers")))
+    except Exception as e:
+        print(f"[maintenance] не удалось прочитать состояние из БД: {type(e).__name__}: {e}")
+
+
+async def save_maintenance_state(enabled: Optional[bool] = None, testers: Optional[list] = None) -> dict:
+    doc = await store.get_setting(MAINTENANCE_SETTING, None)
+    doc = dict(doc) if isinstance(doc, dict) else {}
+    if enabled is not None:
+        doc["enabled"] = bool(enabled)
+    if testers is not None:
+        doc["testers"] = parse_tester_ids(testers)
+    await store.set_setting(MAINTENANCE_SETTING, doc)
+    await refresh_maintenance(force=True)
+    return {"maintenance_enabled": maintenance_on(), "testers": sorted(MAINTENANCE_TESTERS)}
+
+
+def request_telegram_id(request: Request) -> Optional[int]:
+    """Telegram ID из заголовка X-Telegram-Init-Data — только по проверенной
+    подписи бота. Без BOT_TOKEN (локальная разработка) подпись не проверить,
+    поэтому ID берётся из initData как есть — как и во всём остальном API."""
+    init_data = request.headers.get("x-telegram-init-data") or ""
+    if not init_data:
+        return None
+    try:
+        if AUTH_REQUIRED:
+            data = verify_init_data(init_data, BOT_TOKEN)
+            return int(data["user"]["id"]) if data else None
+        user = json.loads(dict(parse_qsl(init_data, keep_blank_values=True)).get("user") or "null")
+        return int(user["id"]) if isinstance(user, dict) and user.get("id") else None
+    except Exception:
+        return None
+
+
+def is_maintenance_tester(request: Request) -> bool:
+    if not MAINTENANCE_TESTERS:
+        return False
+    uid = request_telegram_id(request)
+    return uid is not None and uid in MAINTENANCE_TESTERS
+
+
 @app.middleware("http")
 async def maintenance_gate(request: Request, call_next):
-    if (
-        MAINTENANCE_ENABLED
-        and request.url.path.startswith("/api/")
-        and request.url.path not in MAINTENANCE_ALLOWED_PATHS
-    ):
-        return JSONResponse(status_code=503, content={"detail": MAINTENANCE_MESSAGE})
+    """В режиме техработ /api/* отвечает 503 всем, кроме тестеров из списка
+    в админке — они играют как обычно и проверяют обновление."""
+    if request.url.path.startswith("/api/") and request.url.path not in MAINTENANCE_ALLOWED_PATHS:
+        await refresh_maintenance()
+        if maintenance_on() and not is_maintenance_tester(request):
+            return JSONResponse(status_code=503, content={"detail": MAINTENANCE_MESSAGE})
     return await call_next(request)
 
 
@@ -1765,9 +1850,15 @@ async def health():
 
 
 @app.get("/api/maintenance")
-async def maintenance_status():
+async def maintenance_status(request: Request):
+    """enabled=false для тестера — его клиент грузит игру как обычно;
+    tester=true — чтобы показать ему плашку «идут техработы»."""
+    await refresh_maintenance()
+    on = maintenance_on()
+    tester = on and is_maintenance_tester(request)
     return {
-        "enabled": MAINTENANCE_ENABLED,
+        "enabled": on and not tester,
+        "tester": tester,
         "message": MAINTENANCE_MESSAGE,
         "chat_url": MAINTENANCE_CHAT_URL,
     }
@@ -4938,11 +5029,53 @@ async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require
         json.dump(cfg, f, ensure_ascii=False, indent=2)
         f.write("\n")
     apply_config(cfg)
+    try:
+        state = await save_maintenance_state(enabled=body.maintenance_enabled)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить режим техработ: {type(e).__name__}: {e}")
+    print(f"[admin] техработы: {'ВКЛ' if state['maintenance_enabled'] else 'выкл'}, тестеры: {state['testers']}")
     return {
         "wheel_enabled": WHEEL_ENABLED,
         "missions_enabled": MISSIONS_ENABLED,
-        "maintenance_enabled": MAINTENANCE_ENABLED,
+        "maintenance_enabled": state["maintenance_enabled"],
+        "testers": state["testers"],
     }
+
+
+@app.get("/admin/api/features")
+async def admin_get_features(_: None = Depends(require_admin)):
+    try:
+        await refresh_maintenance(force=True)
+        return {
+            "wheel_enabled": WHEEL_ENABLED,
+            "missions_enabled": MISSIONS_ENABLED,
+            "maintenance_enabled": maintenance_on(),
+            "testers": sorted(MAINTENANCE_TESTERS),
+        }
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить настройки: {type(e).__name__}: {e}")
+
+
+class AdminMaintenanceTesters(BaseModel):
+    testers: List[int] = []
+
+
+@app.post("/admin/api/maintenance/testers")
+async def admin_set_maintenance_testers(body: AdminMaintenanceTesters, _: None = Depends(require_admin)):
+    """Telegram ID игроков, которые заходят в игру во время техработ."""
+    try:
+        if len(body.testers) > MAINTENANCE_TESTERS_MAX:
+            raise HTTPException(status_code=400, detail=f"Не больше {MAINTENANCE_TESTERS_MAX} тестеров")
+        state = await save_maintenance_state(testers=body.testers)
+        print(f"[admin] тестеры техработ: {state['testers']}")
+        return state
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить тестеров: {type(e).__name__}: {e}")
 
 
 # --- АДМИН: УПРАВЛЕНИЕ КЛАНАМИ ---
@@ -6389,6 +6522,7 @@ async def startup_event():
     except Exception as e:  # тестовые данные не должны мешать запуску игры
         print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
     await refresh_nft_collection(force=True)
+    await refresh_maintenance(force=True)
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:

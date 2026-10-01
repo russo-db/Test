@@ -287,6 +287,16 @@
 
             <h2 style="margin-top:32px;">Функции</h2>
             <div class="card-grid" id="featuresGrid"></div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <b>🛠 Тестеры во время техработ</b>
+                <div class="muted" style="font-size:12px; margin:4px 0 8px;">Telegram ID через запятую или с новой строки. Пока техработы включены,
+                    эти игроки заходят в игру как обычно, остальные видят экран техработ. ID игрока — в разделе «Игроки».</div>
+                <div class="nft-interval-row">
+                    <textarea id="maintenanceTesters" rows="2" placeholder="например: 788142519, 123456789" style="flex:1; min-width:240px;"></textarea>
+                    <button class="primary" id="maintenanceTestersSave">Сохранить</button>
+                </div>
+                <div class="muted" id="maintenanceTestersHint" style="font-size:12px; margin-top:6px;"></div>
+            </div>
 
             <h2 style="margin-top:32px;">Купец</h2>
             <div class="card-grid" id="merchantGrid"></div>
@@ -702,16 +712,43 @@ document.getElementById('refreshStats').onclick = loadOverview;
 
 /* ---------- функции (вкл/выкл) ---------- */
 let featuresState = { wheel_enabled: true, missions_enabled: true, maintenance_enabled: false };
+let maintenanceTesters = [];
 
 async function loadFeatures() {
     try {
-        const cfg = await api('/admin/api/config');
-        featuresState.wheel_enabled = (cfg.wheel && cfg.wheel.enabled) !== false;
-        featuresState.missions_enabled = cfg.missions_enabled !== false;
-        featuresState.maintenance_enabled = !!(cfg.maintenance && cfg.maintenance.enabled);
+        const f = await api('/admin/api/features');
+        featuresState = { wheel_enabled: f.wheel_enabled, missions_enabled: f.missions_enabled, maintenance_enabled: f.maintenance_enabled };
+        maintenanceTesters = f.testers || [];
+        document.getElementById('maintenanceTesters').value = maintenanceTesters.join(', ');
         renderFeatures();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
+
+function renderTestersHint() {
+    const hint = document.getElementById('maintenanceTestersHint');
+    hint.textContent = maintenanceTesters.length
+        ? `Сейчас в списке: ${maintenanceTesters.length} — ${maintenanceTesters.join(', ')}`
+        : 'Список пуст — при техработах в игру не зайдёт никто.';
+}
+
+document.getElementById('maintenanceTestersSave').onclick = e => {
+    const raw = document.getElementById('maintenanceTesters').value;
+    const parts = raw.split(/[\s,;]+/).filter(Boolean);
+    const bad = parts.filter(x => !/^\d{1,15}$/.test(x));
+    if (bad.length) { toast(`Не похоже на Telegram ID: ${bad.join(', ')}`, true); return; }
+    withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
+        try {
+            const r = await api('/admin/api/maintenance/testers', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ testers: parts.map(Number) }),
+            });
+            maintenanceTesters = r.testers || [];
+            document.getElementById('maintenanceTesters').value = maintenanceTesters.join(', ');
+            renderFeatures();
+            toast(maintenanceTesters.length ? `Тестеров: ${maintenanceTesters.length}` : 'Список тестеров очищен');
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
 
 function renderFeatures() {
     const grid = document.getElementById('featuresGrid');
@@ -741,17 +778,22 @@ function renderFeatures() {
     document.getElementById('wheelFeatureToggle').onclick = () => toggleFeature('wheel_enabled');
     document.getElementById('missionsFeatureToggle').onclick = () => toggleFeature('missions_enabled');
     document.getElementById('maintenanceFeatureToggle').onclick = () => toggleFeature('maintenance_enabled');
+    renderTestersHint();
 }
 
 async function toggleFeature(key) {
     if (key === 'maintenance_enabled' && !featuresState.maintenance_enabled
-        && !confirm('Включить техработы? Игра станет недоступна всем игрокам до выключения.')) return;
+        && !confirm(maintenanceTesters.length
+            ? `Включить техработы? Играть смогут только тестеры (${maintenanceTesters.length}): ${maintenanceTesters.join(', ')}.`
+            : 'Включить техработы? Игра станет недоступна всем игрокам до выключения.')) return;
     const next = Object.assign({}, featuresState, { [key]: !featuresState[key] });
     try {
-        featuresState = await api('/admin/api/features', {
+        const r = await api('/admin/api/features', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(next),
         });
+        featuresState = { wheel_enabled: r.wheel_enabled, missions_enabled: r.missions_enabled, maintenance_enabled: r.maintenance_enabled };
+        if (r.testers) maintenanceTesters = r.testers;
         renderFeatures();
         toast('Сохранено');
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
