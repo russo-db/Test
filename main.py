@@ -1872,7 +1872,17 @@ async def serve_webapp():
 
 @app.get("/game_config.json")
 async def serve_config():
-    return FileResponse(CONFIG_PATH, media_type="application/json")
+    """Конфиг для клиента: файл + задания и их вкл/выкл из БД (админка)."""
+    try:
+        await refresh_missions()
+        cfg = load_config()
+        cfg["missions"] = [{k: m.get(k) for k in ("id", "title", "type", "gram", "mnstr", "url") if k in m}
+                           for m in missions_list()]
+        cfg["missions_enabled"] = missions_on()
+        return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        return FileResponse(CONFIG_PATH, media_type="application/json")
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -4116,6 +4126,117 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
     return await run_farm_action(user_id, compute)
 
 
+# --- ЗАДАНИЯ: список редактируется в админке (вкладка «Задания») и хранится
+# в БД (settings → missions_state), а не в game_config.json — файл конфига
+# Railway восстанавливает из репозитория при каждом деплое, и добавленные
+# в админке задания пропадали бы после любого обновления. Пока в БД списка
+# нет — действуют missions из конфига. Тип channel — подписка на канал/группу,
+# сервер проверяет её через бота (бот должен быть админом канала); link —
+# просто открыть ссылку, награда без проверки (старый тип chat — то же самое).
+MISSIONS_SETTING = "missions_state"   # {"missions": [...], "enabled": bool}
+MISSIONS_REFRESH_SECONDS = 10
+MISSIONS_MAX = 50
+MISSION_GRAM_MAX = 100.0
+MISSION_MEAT_MAX = 100_000.0
+_missions_db: Optional[list] = None
+_missions_db_enabled: Optional[bool] = None
+_missions_loaded_at = 0.0
+
+
+def missions_on() -> bool:
+    return MISSIONS_ENABLED if _missions_db_enabled is None else _missions_db_enabled
+
+
+def missions_list(include_hidden: bool = False) -> list:
+    src = _missions_db if _missions_db is not None else list(CONFIG.get("missions") or [])
+    return [m for m in src if include_hidden or m.get("active", True)]
+
+
+def mission_by_id(mission_id: str) -> Optional[dict]:
+    return next((m for m in missions_list() if m.get("id") == mission_id), None)
+
+
+async def refresh_missions(force: bool = False) -> None:
+    global _missions_db, _missions_db_enabled, _missions_loaded_at
+    now = time.time()
+    if not force and now - _missions_loaded_at < MISSIONS_REFRESH_SECONDS:
+        return
+    _missions_loaded_at = now
+    try:
+        doc = await store.get_setting(MISSIONS_SETTING, None)
+        if isinstance(doc, dict):
+            if isinstance(doc.get("missions"), list):
+                _missions_db = doc["missions"]
+            _missions_db_enabled = bool(doc["enabled"]) if "enabled" in doc else None
+    except Exception as e:
+        print(f"[missions] не удалось прочитать задания из БД: {type(e).__name__}: {e}")
+
+
+async def save_missions_state(missions: Optional[list] = None, enabled: Optional[bool] = None) -> None:
+    doc = await store.get_setting(MISSIONS_SETTING, None)
+    doc = dict(doc) if isinstance(doc, dict) else {}
+    if missions is not None:
+        doc["missions"] = missions
+    if enabled is not None:
+        doc["enabled"] = bool(enabled)
+    await store.set_setting(MISSIONS_SETTING, doc)
+    await refresh_missions(force=True)
+
+
+MISSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+MISSION_CHAT_RE = re.compile(r"^(@[A-Za-z0-9_]{4,32}|-100\d{5,20})$")
+
+
+def normalize_mission(raw: dict, index: int) -> dict:
+    """Проверяет одно задание из админки. ValueError — с понятной причиной."""
+    n = f"Задание №{index + 1}"
+    if not isinstance(raw, dict):
+        raise ValueError(f"{n}: неверный формат")
+    title = str(raw.get("title") or "").strip()
+    if not 1 <= len(title) <= 80:
+        raise ValueError(f"{n}: название — от 1 до 80 символов")
+    kind = str(raw.get("type") or "link")
+    kind = "link" if kind == "chat" else kind
+    if kind not in ("channel", "link"):
+        raise ValueError(f"{n}: неизвестный тип задания")
+    try:
+        gram = float(raw.get("gram") or 0)
+        meat = float(raw.get("mnstr") or 0)
+    except (TypeError, ValueError):
+        raise ValueError(f"{n}: награда должна быть числом")
+    if not (math.isfinite(gram) and 0 <= gram <= MISSION_GRAM_MAX):
+        raise ValueError(f"{n}: GRAM — от 0 до {MISSION_GRAM_MAX:g}")
+    if not (math.isfinite(meat) and 0 <= meat <= MISSION_MEAT_MAX):
+        raise ValueError(f"{n}: Meat — от 0 до {MISSION_MEAT_MAX:,.0f}".replace(",", " "))
+    if gram <= 0 and meat <= 0:
+        raise ValueError(f"{n}: укажите награду (GRAM или Meat)")
+    chat = str(raw.get("chat") or "").strip()
+    url = str(raw.get("url") or "").strip()
+    if kind == "channel":
+        if chat.startswith("https://t.me/") and "+" not in chat:
+            chat = "@" + chat[len("https://t.me/"):].strip("/").split("/")[0]
+        if not MISSION_CHAT_RE.match(chat):
+            raise ValueError(f"{n}: канал для проверки — @username канала или его числовой ID (-100…)")
+        if not url and chat.startswith("@"):
+            url = f"https://t.me/{chat[1:]}"
+        if not url:
+            raise ValueError(f"{n}: у приватного канала укажите ссылку-приглашение")
+    else:
+        chat = ""
+        if not url:
+            raise ValueError(f"{n}: укажите ссылку")
+    if not re.match(r"^https?://\S{3,500}$", url):
+        raise ValueError(f"{n}: ссылка должна начинаться с https://")
+    mid = str(raw.get("id") or "").strip()
+    if not MISSION_ID_RE.match(mid):
+        mid = "m" + secrets.token_hex(4)
+    out = {"id": mid, "title": title, "type": kind, "gram": gram, "mnstr": meat, "url": url,
+           "active": raw.get("active", True) is not False}
+    if chat:
+        out["chat"] = chat
+    return out
+
+
 async def channel_subscribed(user_id: int, chat: str) -> bool:
     """Спрашивает у Telegram, состоит ли игрок в канале."""
     if not BOT_TOKEN:
@@ -4137,11 +4258,12 @@ async def channel_subscribed(user_id: int, chat: str) -> bool:
 @app.post("/api/mission/claim")
 async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[str] = Header(None)):
     """Проверяет условие задания и начисляет награду. Сервер — единственный источник наград."""
-    if not MISSIONS_ENABLED:
+    await refresh_missions()
+    if not missions_on():
         raise HTTPException(status_code=404, detail="Задания временно отключены")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    mission = MISSIONS.get(request.mission_id)
+    mission = mission_by_id(request.mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Задание не найдено")
 
@@ -4149,12 +4271,12 @@ async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[st
     if request.mission_id in (row.get("missions") or []):
         raise HTTPException(status_code=409, detail="Награда уже получена")
 
-    if mission["type"] == "channel":
-        if not await channel_subscribed(user_id, mission["chat"]):
+    if mission.get("type") == "channel":
+        if not await channel_subscribed(user_id, mission.get("chat") or ""):
             raise HTTPException(status_code=400, detail="Подписка на канал не найдена")
 
     granted = await store.claim_mission(
-        user_id, request.mission_id, mission["gram"], mission["mnstr"]
+        user_id, request.mission_id, float(mission.get("gram") or 0), float(mission.get("mnstr") or 0)
     )
     if not granted:
         raise HTTPException(status_code=409, detail="Награда уже получена")
@@ -5031,13 +5153,14 @@ async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require
     apply_config(cfg)
     try:
         state = await save_maintenance_state(enabled=body.maintenance_enabled)
+        await save_missions_state(enabled=body.missions_enabled)
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось сохранить режим техработ: {type(e).__name__}: {e}")
     print(f"[admin] техработы: {'ВКЛ' if state['maintenance_enabled'] else 'выкл'}, тестеры: {state['testers']}")
     return {
         "wheel_enabled": WHEEL_ENABLED,
-        "missions_enabled": MISSIONS_ENABLED,
+        "missions_enabled": missions_on(),
         "maintenance_enabled": state["maintenance_enabled"],
         "testers": state["testers"],
     }
@@ -5047,9 +5170,10 @@ async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require
 async def admin_get_features(_: None = Depends(require_admin)):
     try:
         await refresh_maintenance(force=True)
+        await refresh_missions(force=True)
         return {
             "wheel_enabled": WHEEL_ENABLED,
-            "missions_enabled": MISSIONS_ENABLED,
+            "missions_enabled": missions_on(),
             "maintenance_enabled": maintenance_on(),
             "testers": sorted(MAINTENANCE_TESTERS),
         }
@@ -5076,6 +5200,109 @@ async def admin_set_maintenance_testers(body: AdminMaintenanceTesters, _: None =
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось сохранить тестеров: {type(e).__name__}: {e}")
+
+
+class AdminMissionsSave(BaseModel):
+    missions: List[dict]
+
+
+class AdminMissionsToggle(BaseModel):
+    enabled: bool
+
+
+class AdminMissionChannelCheck(BaseModel):
+    chat: str
+
+
+@app.get("/admin/api/missions")
+async def admin_missions(_: None = Depends(require_admin)):
+    """Админка → Задания: все задания (и скрытые) + сколько игроков выполнило каждое."""
+    try:
+        await refresh_missions(force=True)
+        items = missions_list(include_hidden=True)
+        claims = {}
+        for m in items:
+            claims[m["id"]] = await store.users.count_documents({"missions": m["id"]})
+        return {"enabled": missions_on(), "missions": items, "claims": claims,
+                "from_db": _missions_db is not None, "max": MISSIONS_MAX,
+                "gram_max": MISSION_GRAM_MAX, "meat_max": MISSION_MEAT_MAX, "bot_username": BOT_USERNAME}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить задания: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/missions")
+async def admin_save_missions(body: AdminMissionsSave, _: None = Depends(require_admin)):
+    """Сохраняет весь список заданий (порядок = порядок в игре). id выполненных
+    заданий не меняются, поэтому правка названия/награды не даёт забрать
+    награду второй раз; удалённое задание просто исчезает из игры."""
+    try:
+        if len(body.missions) > MISSIONS_MAX:
+            raise HTTPException(status_code=400, detail=f"Не больше {MISSIONS_MAX} заданий")
+        out, seen = [], set()
+        for i, raw in enumerate(body.missions):
+            try:
+                m = normalize_mission(raw, i)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            if m["id"] in seen:
+                m["id"] = "m" + secrets.token_hex(4)
+            seen.add(m["id"])
+            out.append(m)
+        await save_missions_state(missions=out)
+        print(f"[admin] задания сохранены: {len(out)} шт. ({sum(1 for m in out if m['active'])} активных)")
+        return await admin_missions()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить задания: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/missions/enabled")
+async def admin_toggle_missions(body: AdminMissionsToggle, _: None = Depends(require_admin)):
+    try:
+        await save_missions_state(enabled=body.enabled)
+        return {"enabled": missions_on()}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось переключить задания: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/missions/check_channel")
+async def admin_check_mission_channel(body: AdminMissionChannelCheck, _: None = Depends(require_admin)):
+    """Проверка для задания «подписка»: видит ли бот канал и админ ли он там —
+    без прав админа Telegram не скажет, подписан ли игрок, и задание никому
+    не засчитается."""
+    chat = (body.chat or "").strip()
+    if chat.startswith("https://t.me/") and "+" not in chat:
+        chat = "@" + chat[len("https://t.me/"):].strip("/").split("/")[0]
+    if not MISSION_CHAT_RE.match(chat):
+        raise HTTPException(status_code=400, detail="Укажите @username канала или его числовой ID (-100…)")
+    if not BOT_TOKEN:
+        return {"ok": False, "chat": chat, "detail": "BOT_TOKEN не задан на сервере — проверить подписку нельзя"}
+    try:
+        from telegram import Bot
+        from telegram.error import TelegramError
+        bot = Bot(BOT_TOKEN)
+        try:
+            info = await bot.get_chat(chat)
+        except TelegramError as e:
+            return {"ok": False, "chat": chat, "detail": f"Бот не видит канал {chat}: {e}. Добавьте бота в канал администратором."}
+        me = await bot.get_me()
+        try:
+            member = await bot.get_chat_member(chat, me.id)
+            status = member.status
+        except TelegramError as e:
+            status = f"ошибка: {e}"
+        ok = status in ("administrator", "creator")
+        title = getattr(info, "title", "") or chat
+        return {"ok": ok, "chat": chat, "title": title, "bot_status": status,
+                "detail": f"«{title}»: бот — администратор, подписка проверяется" if ok
+                else f"«{title}»: бот не администратор ({status}). Сделайте @{me.username} админом канала, иначе задание не засчитается."}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось проверить канал: {type(e).__name__}: {e}")
 
 
 # --- АДМИН: УПРАВЛЕНИЕ КЛАНАМИ ---
@@ -6523,6 +6750,7 @@ async def startup_event():
         print(f"[bots] migrate_bot_clan_rosters FAILED: {type(e).__name__}: {e}")
     await refresh_nft_collection(force=True)
     await refresh_maintenance(force=True)
+    await refresh_missions(force=True)
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:

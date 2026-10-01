@@ -78,6 +78,15 @@
     .auction-lot-admin img, .auction-preview { width: 110px; height: 110px; object-fit: cover; border-radius: 12px; border: 1px solid #2a3350; background: #0f1422; }
     .auction-timer-admin { font-size: 20px; font-weight: 800; color: #f0b429; }
     .test-btn { background: #6b3fa0; color: #fff; font-weight: 700; }
+    .mission-edit { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+        display: flex; flex-direction: column; gap: 8px; }
+    .mission-edit.hidden-mission { opacity: 0.6; }
+    .mission-edit .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .mission-edit label { font-size: 12px; color: #8b96b3; display: flex; flex-direction: column; gap: 3px; }
+    .mission-edit .num { font-weight: 800; color: #f0b429; min-width: 26px; }
+    .mission-edit .claims { font-size: 12px; color: #8b96b3; margin-left: auto; }
+    .mission-edit .icon-btn { padding: 4px 10px; font-size: 13px; }
+    .mission-check { font-size: 12px; }
     .test-btn:hover { background: #8250c4; }
     .test-btn:disabled { background: #333a50; color: #8b96b3; cursor: not-allowed; }
     .stat-card { background: #161d2e; border: 1px solid #2a3350; border-radius: 12px; padding: 14px 16px; }
@@ -233,6 +242,7 @@
             <button class="nav-btn" data-page="players">👥 Игроки</button>
             <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
+            <button class="nav-btn" data-page="missions">📋 Задания</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="arena">⚔️ Арена</button>
@@ -477,6 +487,29 @@
             <div id="auctionHistory"></div>
         </div>
 
+        <div class="page" id="page-missions">
+            <h2>📋 Задания</h2>
+            <div class="nft-interval-panel">
+                <div class="nft-interval-head">
+                    <b>Задания в игре:</b> <span id="missionsStateBadge" class="nft-mode"></span>
+                    <button id="missionsToggleBtn">…</button>
+                </div>
+                <div class="muted" style="font-size:12px;">
+                    <b>Подписка на канал</b> — игрок жмёт «Выполнить», сервер через бота проверяет, что он подписан, и только тогда даёт награду.
+                    Бот должен быть <b>администратором</b> канала — проверьте кнопкой «Проверить бота».<br>
+                    <b>Ссылка</b> — открывается ссылка, награда сразу, без проверки (чат по ссылке-приглашению, сайт, пост).<br>
+                    Каждое задание игрок выполняет один раз. Порядок здесь = порядок в игре. Изменения появляются у игроков при следующем входе.
+                </div>
+                <div class="muted" id="missionsSourceHint" style="font-size:12px;"></div>
+            </div>
+            <div id="missionsList"></div>
+            <div class="toolbar">
+                <button id="missionAddBtn">＋ Добавить задание</button>
+                <button class="primary" id="missionsSaveBtn">💾 Сохранить задания</button>
+                <span class="muted" id="missionsDirty" style="font-size:12px;"></span>
+            </div>
+        </div>
+
         <div class="page" id="page-arena">
             <h2>⚔️ Арена</h2>
             <div class="card-grid" id="arenaStats"></div>
@@ -665,6 +698,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
         if (btn.dataset.page === 'auction') loadAuctionAdmin(); else auctionAdminStop();
         if (btn.dataset.page === 'arena') loadArenaAdmin(); else arenaAdminStop();
+        if (btn.dataset.page === 'missions') loadMissionsAdmin();
         if (btn.dataset.page === 'economy') loadEconomy();
         else tournamentStopCountdowns();
     };
@@ -1275,6 +1309,150 @@ document.getElementById('arenaResetBtn').onclick = e => {
         } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
     });
 };
+
+/* ---------- задания ---------- */
+let missionsAdmin = [];
+let missionsMeta = { enabled: true, claims: {}, max: 50, gram_max: 100, meat_max: 100000 };
+let missionsDirty = false;
+
+function setMissionsDirty(v) {
+    missionsDirty = v;
+    document.getElementById('missionsDirty').textContent = v ? 'Есть несохранённые изменения' : '';
+}
+function renderMissionsHead() {
+    const badge = document.getElementById('missionsStateBadge');
+    badge.className = 'nft-mode ' + (missionsMeta.enabled ? 'prod' : 'test');
+    badge.textContent = missionsMeta.enabled ? 'включены' : 'выключены';
+    const btn = document.getElementById('missionsToggleBtn');
+    btn.textContent = missionsMeta.enabled ? 'Выключить' : 'Включить';
+    btn.className = missionsMeta.enabled ? 'danger' : 'primary';
+    document.getElementById('missionsSourceHint').textContent = missionsMeta.from_db
+        ? `Заданий: ${missionsAdmin.length} из ${missionsMeta.max}. Хранятся в базе — деплой их не сбросит.`
+        : `Сейчас показаны задания из game_config.json. После первого «Сохранить» они переедут в базу и перестанут сбрасываться при деплое.`;
+}
+function renderMissionsAdmin() {
+    renderMissionsHead();
+    const box = document.getElementById('missionsList');
+    if (!missionsAdmin.length) { box.innerHTML = '<div class="muted" style="margin-bottom:12px;">Заданий нет — нажмите «Добавить задание».</div>'; return; }
+    box.innerHTML = missionsAdmin.map((m, i) => {
+        const claims = m.id && missionsMeta.claims[m.id] != null ? `выполнили: <b>${fmtNum(missionsMeta.claims[m.id])}</b>` : 'новое';
+        const channel = m.type === 'channel';
+        return `<div class="mission-edit ${m.active === false ? 'hidden-mission' : ''}" data-i="${i}">
+            <div class="row">
+                <span class="num">${i + 1}</span>
+                <input data-f="title" value="${escHtml(m.title || '')}" placeholder="Название, например: Подписаться на канал" maxlength="80" style="flex:1; min-width:220px;">
+                <label style="flex-direction:row; align-items:center; gap:6px;"><input type="checkbox" data-f="active" ${m.active === false ? '' : 'checked'}> показывать в игре</label>
+                <span class="claims">${claims}</span>
+            </div>
+            <div class="row">
+                <label>Тип
+                    <select data-f="type">
+                        <option value="channel" ${channel ? 'selected' : ''}>Подписка на канал (проверка ботом)</option>
+                        <option value="link" ${channel ? '' : 'selected'}>Ссылка (без проверки)</option>
+                    </select></label>
+                ${channel ? `<label>Канал для проверки
+                    <input data-f="chat" value="${escHtml(m.chat || '')}" placeholder="@mychannel или -100…" style="width:190px;"></label>` : ''}
+                <label style="flex:1; min-width:220px;">Ссылка${channel ? ' (пусто — t.me/канал)' : ''}
+                    <input data-f="url" value="${escHtml(m.url || '')}" placeholder="https://t.me/..."></label>
+                <label>GRAM <input data-f="gram" type="number" min="0" max="${missionsMeta.gram_max}" step="0.01" value="${Number(m.gram) || 0}" style="width:90px;"></label>
+                <label>Meat <input data-f="mnstr" type="number" min="0" max="${missionsMeta.meat_max}" step="1" value="${Number(m.mnstr) || 0}" style="width:90px;"></label>
+            </div>
+            <div class="row">
+                ${channel ? `<button class="icon-btn" data-act="check">🤖 Проверить бота</button>` : ''}
+                <span class="mission-check muted" data-check></span>
+                <span style="margin-left:auto; display:flex; gap:6px;">
+                    <button class="icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+                    <button class="icon-btn" data-act="down" ${i === missionsAdmin.length - 1 ? 'disabled' : ''}>↓</button>
+                    <button class="icon-btn danger" data-act="del">🗑 Удалить</button>
+                </span>
+            </div>
+        </div>`;
+    }).join('');
+    box.querySelectorAll('.mission-edit').forEach(card => {
+        const i = Number(card.dataset.i);
+        card.querySelectorAll('[data-f]').forEach(inp => {
+            const f = inp.dataset.f;
+            const handler = () => {
+                const m = missionsAdmin[i];
+                if (f === 'active') m.active = inp.checked;
+                else if (f === 'gram' || f === 'mnstr') m[f] = Number(inp.value) || 0;
+                else m[f] = inp.value;
+                setMissionsDirty(true);
+                if (f === 'type' || f === 'active') renderMissionsAdmin();
+            };
+            inp.addEventListener(inp.tagName === 'SELECT' || inp.type === 'checkbox' ? 'change' : 'input', handler);
+        });
+        card.querySelectorAll('[data-act]').forEach(b => {
+            b.onclick = () => {
+                const act = b.dataset.act;
+                if (act === 'up' && i > 0) { [missionsAdmin[i - 1], missionsAdmin[i]] = [missionsAdmin[i], missionsAdmin[i - 1]]; }
+                else if (act === 'down' && i < missionsAdmin.length - 1) { [missionsAdmin[i + 1], missionsAdmin[i]] = [missionsAdmin[i], missionsAdmin[i + 1]]; }
+                else if (act === 'del') {
+                    const m = missionsAdmin[i];
+                    const done = m.id ? (missionsMeta.claims[m.id] || 0) : 0;
+                    if (!confirm(`Удалить задание «${m.title || 'без названия'}»?${done ? `\nЕго уже выполнили ${done} игроков — награды у них останутся.` : ''}`)) return;
+                    missionsAdmin.splice(i, 1);
+                } else if (act === 'check') { checkMissionChannel(i, card); return; }
+                setMissionsDirty(true);
+                renderMissionsAdmin();
+            };
+        });
+    });
+}
+async function checkMissionChannel(i, card) {
+    const out = card.querySelector('[data-check]');
+    out.textContent = 'Проверяю…'; out.style.color = '';
+    try {
+        const r = await api('/admin/api/missions/check_channel', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat: missionsAdmin[i].chat || '' }),
+        });
+        out.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.detail;
+        out.style.color = r.ok ? '#4ade80' : '#f0b429';
+    } catch (e) { if (e.message !== 'unauthorized') { out.textContent = '❌ ' + e.message; out.style.color = '#f87171'; } }
+}
+function applyMissionsResponse(r) {
+    missionsAdmin = (r.missions || []).map(m => Object.assign({}, m));
+    missionsMeta = { enabled: r.enabled, claims: r.claims || {}, from_db: r.from_db, max: r.max, gram_max: r.gram_max, meat_max: r.meat_max };
+    setMissionsDirty(false);
+    renderMissionsAdmin();
+}
+async function loadMissionsAdmin() {
+    if (missionsDirty && !confirm('Есть несохранённые изменения заданий. Загрузить заново и потерять их?')) return;
+    try { applyMissionsResponse(await api('/admin/api/missions')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('missionAddBtn').onclick = () => {
+    if (missionsAdmin.length >= missionsMeta.max) { toast(`Не больше ${missionsMeta.max} заданий`, true); return; }
+    missionsAdmin.push({ id: '', title: '', type: 'channel', chat: '', url: '', gram: 0, mnstr: 5, active: true });
+    setMissionsDirty(true);
+    renderMissionsAdmin();
+    const inputs = document.querySelectorAll('#missionsList [data-f="title"]');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+};
+document.getElementById('missionsSaveBtn').onclick = e => withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
+    try {
+        const r = await api('/admin/api/missions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ missions: missionsAdmin }),
+        });
+        applyMissionsResponse(r);
+        toast(`Задания сохранены: ${r.missions.length}`);
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+});
+document.getElementById('missionsToggleBtn').onclick = e => withBusyButton(e.currentTarget, '…', async () => {
+    const next = !missionsMeta.enabled;
+    if (!next && !confirm('Выключить задания? Вкладка «Задания» в игре станет пустой (ежедневный бонус останется).')) return;
+    try {
+        const r = await api('/admin/api/missions/enabled', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: next }),
+        });
+        missionsMeta.enabled = r.enabled; featuresState.missions_enabled = r.enabled;
+        renderMissionsHead(); renderFeatures();
+        toast(r.enabled ? 'Задания включены' : 'Задания выключены');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+});
 
 /* ---------- экономика ---------- */
 async function loadEconomy() {

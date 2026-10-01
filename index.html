@@ -5020,6 +5020,11 @@
             }
         }
 
+        // Названия заданий задаются в админке — в разметку вставляем только как текст.
+        function escapeMissionText(v) {
+            return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
         function renderMissionCard(mission, list) {
             const done = state.missions.includes(mission.id);
             const card = document.createElement('div');
@@ -5031,13 +5036,13 @@
 
             card.innerHTML = `
                 <div class="card-info">
-                    <h3>${mission.title}</h3>
+                    <h3>${escapeMissionText(mission.title)}</h3>
                     <div class="mission-reward">
                         ${mission.gram ? `<span class="roll-num"><b>${fmtGram(mission.gram)}</b><img src="assets/coin.png" alt=""></span>` : ''}
                         ${mission.mnstr ? `<span class="roll-num token"><b>${mission.mnstr}</b><img src="assets/mnstr.png" alt=""></span>` : ''}
                     </div>
                 </div>
-                <button class="btn-action ${style}" ${done ? 'disabled' : ''} data-mission="${mission.id}">${label}</button>
+                <button class="btn-action ${style}" ${done ? 'disabled' : ''} data-mission="${escapeMissionText(mission.id)}">${label}</button>
             `;
             list.appendChild(card);
         }
