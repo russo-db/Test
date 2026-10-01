@@ -1042,6 +1042,34 @@ class MongoStore:
             })
         return docs
 
+    async def arena_admin_list(self, search: str = "", limit: int = 100) -> list:
+        """Админка → Арена: игроки по убыванию рейтинга (боты не в счёт),
+        с энергией и временем последнего захода; search — имя или ID."""
+        match = {"is_bot": {"$ne": True}}
+        q = self._search_query(search)
+        if q:
+            match = {"$and": [match, q]}
+        pipeline = [
+            {"$match": match},
+            {"$addFields": {"_rating": {"$ifNull": ["$pvp_rating", 1000]}}},
+            {"$sort": {"_rating": -1, "_id": 1}},
+            {"$limit": int(limit)},
+            {"$project": {"name": 1, "_rating": 1, "pvp_energy": 1, "pvp_energy_day": 1, "last_seen": 1}},
+        ]
+        out = []
+        async for d in self.users.aggregate(pipeline):
+            out.append({"user_id": d["_id"], "name": d.get("name") or "", "pvp_rating": float(d.get("_rating") or 0),
+                        "pvp_energy": d.get("pvp_energy"), "pvp_energy_day": d.get("pvp_energy_day"),
+                        "last_seen": d.get("last_seen")})
+        return out
+
+    async def count_arena_players(self) -> int:
+        return await self.users.count_documents({"is_bot": {"$ne": True}})
+
+    async def admin_set_arena_player(self, user_id: int, fields: dict) -> bool:
+        res = await self.users.update_one({"_id": user_id, "is_bot": {"$ne": True}}, {"$set": fields, "$inc": {"ops": 1}})
+        return res.matched_count > 0
+
     async def count_higher_rating(self, rating: float) -> int:
         """Сколько игроков строго выше данного рейтинга — чтобы посчитать
         место игрока, не попавшего в Топ-100."""

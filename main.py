@@ -2601,7 +2601,93 @@ async def admin_distribute_arena_rewards(_: None = Depends(require_admin)):
     """Ручной запуск начисления призов турнира Арены по текущему Топ-50 —
     жми из админки по факту окончания турнира (см. distribute_arena_rewards).
     Места/рейтинг игроков этим не сбрасываются."""
-    return await distribute_arena_rewards()
+    try:
+        return await distribute_arena_rewards()
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось раздать награды: {type(e).__name__}: {e}")
+
+
+class AdminArenaPlayer(BaseModel):
+    user_id: int
+    pvp_rating: Optional[float] = None
+    pvp_energy: Optional[float] = None
+
+
+@app.get("/admin/api/arena")
+async def admin_arena(search: str = "", limit: int = 100, _: None = Depends(require_admin)):
+    """Админка → Арена: сезон, правила, награды по местам, таблица лидеров
+    (с поиском) с энергией каждого игрока и призом, который он получит."""
+    try:
+        limit = max(1, min(500, int(limit)))
+        rows = await store.arena_admin_list(search, limit)
+        players = []
+        for i, r in enumerate(rows, start=1):
+            place = i if not search.strip() else await store.count_higher_rating(r["pvp_rating"]) + 1
+            energy, _day = pvp_energy_of(r)
+            reward = arena_tournament_reward(place) if place <= 50 else {"gram": 0, "shards": 0, "particles": 0}
+            players.append({
+                "place": place, "user_id": r["user_id"], "name": r["name"], "pvp_rating": r["pvp_rating"],
+                "pvp_energy": energy, "last_seen": r.get("last_seen"), "reward": reward,
+            })
+        season = arena_season_view()
+        eco = (await store.get_economy(days=1)).get("total") or {}
+        return {
+            "season": season["season"], "ends_at": season["ends_at"], "season_days": ARENA_SEASON_DAYS,
+            "server_time": time.time(), "rewards": ARENA_SEASON_REWARDS,
+            "rating": {"start": PVP_RATING_START, "win": PVP_RATING_WIN, "loss": PVP_RATING_LOSS},
+            "energy": {"max": PVP_ENERGY_MAX, "cost": PVP_ENERGY_COST,
+                       "price_gold": ARENA_ENERGY_PRICE_GOLD, "price_gram": ARENA_ENERGY_PRICE_GRAM,
+                       "reset_at": arena_energy_reset_at(day_index())},
+            "economy": {"gold_spent": float(eco.get("gold_arena") or 0), "gram_spent": float(eco.get("gram_arena") or 0)},
+            "total_players": await store.count_arena_players(),
+            "players": players, "search": search,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить Арену: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/arena/player")
+async def admin_arena_player(body: AdminArenaPlayer, _: None = Depends(require_admin)):
+    """Поправить игроку рейтинг Арены и/или энергию (энергия ставится на
+    сегодня — суточное пополнение её не перезапишет до следующих суток)."""
+    try:
+        fields = {}
+        if body.pvp_rating is not None:
+            if not 0 <= float(body.pvp_rating) <= 1_000_000:
+                raise HTTPException(status_code=400, detail="Рейтинг — от 0 до 1 000 000")
+            fields["pvp_rating"] = float(body.pvp_rating)
+        if body.pvp_energy is not None:
+            if not 0 <= float(body.pvp_energy) <= 1000:
+                raise HTTPException(status_code=400, detail="Энергия — от 0 до 1000")
+            fields.update({"pvp_energy": float(body.pvp_energy), "pvp_energy_day": day_index()})
+        if not fields:
+            raise HTTPException(status_code=400, detail="Нечего менять")
+        if not await store.admin_set_arena_player(body.user_id, fields):
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        print(f"[admin] Арена: игроку {body.user_id} установлено {fields}")
+        return {"status": "ok", "user_id": body.user_id, **fields}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/arena/reset_ratings")
+async def admin_arena_reset_ratings(_: None = Depends(require_admin)):
+    """Сбросить рейтинг Арены ВСЕМ игрокам до стартового (как при смене
+    сезона, но без раздачи наград — их раздают отдельной кнопкой)."""
+    try:
+        await store.reset_all_pvp_ratings(PVP_RATING_START)
+        print(f"[admin] Арена: рейтинг всех игроков сброшен до {PVP_RATING_START}")
+        return {"status": "ok", "rating": PVP_RATING_START}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сбросить рейтинг: {type(e).__name__}: {e}")
 
 
 # --- КЛАНЫ: создание/вступление, сжигание прокачанных орлов на силу

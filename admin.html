@@ -235,6 +235,7 @@
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
+            <button class="nav-btn" data-page="arena">⚔️ Арена</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
             <button class="nav-btn" data-page="auction">🏛️ Аукцион</button>
         </div>
@@ -466,6 +467,40 @@
             <div id="auctionHistory"></div>
         </div>
 
+        <div class="page" id="page-arena">
+            <h2>⚔️ Арена</h2>
+            <div class="card-grid" id="arenaStats"></div>
+
+            <div class="nft-interval-panel">
+                <b>Действия</b>
+                <div class="nft-interval-row">
+                    <button class="primary" id="arenaDistributeBtn">🏆 Раздать награды сейчас (по текущему Топ-50)</button>
+                    <button class="danger" id="arenaResetBtn">♻️ Сбросить рейтинг всем</button>
+                </div>
+                <div class="muted" style="font-size:12px;">В конце сезона сервер сам раздаёт награды Топ-50 и сбрасывает рейтинг.
+                    Кнопки — для ручного запуска: награды начисляются при каждом нажатии (не жмите дважды за сезон), сброс рейтинга необратим.</div>
+            </div>
+
+            <div class="nft-interval-panel">
+                <b>Награды сезона по местам</b>
+                <div class="table-wrap"><table><thead><tr><th>Места</th><th>GRAM</th><th>Небесные осколки</th><th>Частицы</th></tr></thead>
+                    <tbody id="arenaRewardsBody"></tbody></table></div>
+                <div class="muted" style="font-size:12px;">Меняются во вкладке «⚙️ Конфиг» → arena_season.rewards.</div>
+            </div>
+
+            <h2 style="margin-top:20px;">Таблица лидеров</h2>
+            <div class="toolbar">
+                <input id="arenaSearch" placeholder="Поиск по имени или ID" style="min-width:240px;">
+                <button id="arenaSearchBtn">Найти</button>
+                <button id="arenaRefreshBtn">Обновить</button>
+                <span class="muted" id="arenaListHint" style="font-size:12px;"></span>
+            </div>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Место</th><th>Игрок</th><th>ID</th><th>Рейтинг</th><th>Энергия</th><th>Приз за место</th><th>Был в игре</th><th></th></tr></thead>
+                <tbody id="arenaPlayersBody"></tbody>
+            </table></div>
+        </div>
+
         <div class="page" id="page-economy">
             <h2>Экономика: куда уходит золото</h2>
             <p class="muted">
@@ -619,6 +654,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'clans') loadClans();
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
         if (btn.dataset.page === 'auction') loadAuctionAdmin(); else auctionAdminStop();
+        if (btn.dataset.page === 'arena') loadArenaAdmin(); else arenaAdminStop();
         if (btn.dataset.page === 'economy') loadEconomy();
         else tournamentStopCountdowns();
     };
@@ -1097,6 +1133,106 @@ function renderLedger() {
     const more = document.getElementById('ledgerMore');
     if (more) more.onclick = () => withBusyButton(more, 'Загрузка…', () => loadLedger(true));
 }
+
+/* ---------- арена ---------- */
+let arenaAdminData = null;
+let arenaAdminTimer = null;
+function arenaAdminStop() { if (arenaAdminTimer) { clearInterval(arenaAdminTimer); arenaAdminTimer = null; } }
+function arenaRewardText(r) {
+    const parts = [];
+    if (r.gram) parts.push(`${fmtNum(r.gram)} GRAM`);
+    if (r.shards) parts.push(`${fmtNum(r.shards)} оск.`);
+    if (r.particles) parts.push(`${fmtNum(r.particles)} част.`);
+    return parts.join(' + ') || '<span class="muted">—</span>';
+}
+function arenaAgo(ts) {
+    if (!ts) return '<span class="muted">—</span>';
+    const sec = Date.now() / 1000 - ts;
+    if (sec < 120) return '<span style="color:#4ade80">в игре</span>';
+    if (sec < 3600) return `${Math.floor(sec / 60)} мин назад`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)} ч назад`;
+    return `${Math.floor(sec / 86400)} дн назад`;
+}
+function arenaTick() {
+    const el = document.getElementById('arenaSeasonLeft');
+    if (!el || !arenaAdminData) return;
+    const left = arenaAdminData.ends_at - (Date.now() / 1000 + arenaAdminData.clockOffset);
+    el.textContent = left > 0 ? fmtLeft(left) : 'смена сезона…';
+}
+function renderArenaAdmin(d) {
+    arenaAdminData = d;
+    d.clockOffset = d.server_time - Date.now() / 1000;
+    const card = (label, value) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    document.getElementById('arenaStats').innerHTML = [
+        card('Сезон', `№ ${d.season}`),
+        card('До конца сезона', '<span id="arenaSeasonLeft">—</span>'),
+        card('Длительность сезона', `${d.season_days} дн.`),
+        card('Игроков', fmtNum(d.total_players)),
+        card('Рейтинг', `старт ${d.rating.start} · +${d.rating.win} / −${d.rating.loss}`),
+        card('Энергия', `${d.energy.max} в сутки · бой −${d.energy.cost}`),
+        card('Докупка энергии', `${fmtNum(d.energy.price_gold)} зол. или ${fmtNum(d.energy.price_gram)} GRAM`),
+        card('Потрачено на энергию', `${fmtNum(d.economy.gold_spent)} зол. · ${fmtNum(d.economy.gram_spent)} GRAM`),
+    ].join('');
+    document.getElementById('arenaRewardsBody').innerHTML = (d.rewards || []).map(r => `<tr>
+        <td>${r.rank ? r.rank : `${r.rank_from}–${r.rank_to}`}</td><td>${fmtNum(r.gram || 0)}</td><td>${fmtNum(r.shards || 0)}</td><td>${fmtNum(r.particles || 0)}</td></tr>`).join('');
+    document.getElementById('arenaListHint').textContent = d.search
+        ? `Найдено: ${d.players.length}` : `Показано ${d.players.length} из ${fmtNum(d.total_players)}`;
+    const body = document.getElementById('arenaPlayersBody');
+    body.innerHTML = d.players.length ? d.players.map(p => `<tr>
+        <td><b>${p.place}</b></td><td>${escHtml(p.name) || '<span class="muted">без имени</span>'}</td><td><code>${p.user_id}</code></td>
+        <td><input type="number" data-arena-rating="${p.user_id}" value="${Math.round(p.pvp_rating)}" style="width:90px;"></td>
+        <td><input type="number" data-arena-energy="${p.user_id}" value="${Number(p.pvp_energy)}" style="width:70px;"></td>
+        <td>${p.place <= 50 ? arenaRewardText(p.reward) : '<span class="muted">вне Топ-50</span>'}</td>
+        <td>${arenaAgo(p.last_seen)}</td>
+        <td><button data-arena-save="${p.user_id}" style="padding:4px 10px; font-size:12px;">Сохранить</button></td></tr>`).join('')
+        : '<tr><td colspan="8" class="muted">Никого не найдено</td></tr>';
+    body.querySelectorAll('[data-arena-save]').forEach(btn => {
+        btn.onclick = () => withBusyButton(btn, '…', async () => {
+            const id = btn.dataset.arenaSave;
+            const rating = Number(body.querySelector(`[data-arena-rating="${id}"]`).value);
+            const energy = Number(body.querySelector(`[data-arena-energy="${id}"]`).value);
+            try {
+                await api('/admin/api/arena/player', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: Number(id), pvp_rating: rating, pvp_energy: energy }),
+                });
+                toast(`Игрок ${id}: рейтинг ${rating}, энергия ${energy}`);
+                await loadArenaAdmin(true);
+            } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+        });
+    });
+    arenaTick();
+}
+async function loadArenaAdmin(keepTimer) {
+    const search = document.getElementById('arenaSearch').value.trim();
+    try { renderArenaAdmin(await api('/admin/api/arena?limit=100&search=' + encodeURIComponent(search))); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    if (!keepTimer) { arenaAdminStop(); arenaAdminTimer = setInterval(arenaTick, 1000); }
+}
+document.getElementById('arenaSearchBtn').onclick = () => loadArenaAdmin(true);
+document.getElementById('arenaRefreshBtn').onclick = () => loadArenaAdmin(true);
+document.getElementById('arenaSearch').addEventListener('keydown', e => { if (e.key === 'Enter') loadArenaAdmin(true); });
+document.getElementById('arenaDistributeBtn').onclick = e => {
+    if (!confirm('Раздать награды Арены по ТЕКУЩЕМУ Топ-50 прямо сейчас?\nНаграды начисляются при каждом нажатии — не нажимайте дважды за сезон.')) return;
+    withBusyButton(e.currentTarget, 'Раздаю…', async () => {
+        try {
+            const r = await api('/admin/api/arena/distribute_rewards', { method: 'POST' });
+            toast(`Награды выданы: ${r.rewarded} игрокам`);
+            await loadArenaAdmin(true);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+document.getElementById('arenaResetBtn').onclick = e => {
+    if (!confirm('Сбросить рейтинг Арены ВСЕМ игрокам до стартового? Это необратимо.')) return;
+    if (prompt('Для подтверждения введите СБРОС') !== 'СБРОС') { toast('Отменено'); return; }
+    withBusyButton(e.currentTarget, 'Сбрасываю…', async () => {
+        try {
+            const r = await api('/admin/api/arena/reset_ratings', { method: 'POST' });
+            toast(`Рейтинг всех игроков сброшен до ${r.rating}`);
+            await loadArenaAdmin(true);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
 
 /* ---------- экономика ---------- */
 async function loadEconomy() {
