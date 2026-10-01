@@ -24,6 +24,7 @@ except Exception:  # пакет не установлен — работаем �
     TonAddress = None
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1685,6 +1686,16 @@ async def unhandled_error(request: Request, exc: Exception):
     else:
         detail = "Внутренняя ошибка сервера"
     return JSONResponse(status_code=500, content={"detail": detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError):
+    """Тело запроса не прошло проверку типов. Стандартный ответ FastAPI
+    возвращает присланные значения обратно, а NaN/Infinity (json.loads их
+    пропускает) в JSON не сериализуются — вместо 422 получался 500. Отдаём
+    только поле и причину, без самих значений."""
+    errors = [{"loc": list(e.get("loc", [])), "msg": str(e.get("msg", ""))} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 class LedgerSourceMiddleware:
@@ -4269,6 +4280,19 @@ def _market_tier_ok(monster_id: str) -> bool:
     return tier is not None and TIER_INDEX.get(tier, -1) >= MARKET_MIN_TIER_INDEX
 
 
+MARKET_MAX_PRICE_GRAM = 1_000_000.0
+
+
+def check_market_price(price: float):
+    """Цена лота: конечное число больше нуля и не выше MARKET_MAX_PRICE_GRAM.
+    Лот с ценой Infinity не сериализуется в JSON — список лотов падал с 500
+    у всех игроков, поэтому NaN/Infinity отсекаем ещё при выставлении."""
+    if not math.isfinite(price) or price <= 0:
+        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    if price > MARKET_MAX_PRICE_GRAM:
+        raise HTTPException(status_code=400, detail=f"Максимальная цена — {MARKET_MAX_PRICE_GRAM:,.0f} GRAM".replace(",", " "))
+
+
 def _market_min_price(monster_id: str) -> float:
     """Минимальная цена лота для редкости орла (0, если для редкости не задана)."""
     tier = MONSTER_TIER.get(monster_id)
@@ -4289,8 +4313,7 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
 
     if request.monster_id not in MONSTERS or not _market_tier_ok(request.monster_id):
         raise HTTPException(status_code=400, detail="Этот орёл не продаётся на рынке")
-    if not (request.price_gram > 0):
-        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    check_market_price(request.price_gram)
     min_price = _market_min_price(request.monster_id)
     if request.price_gram < min_price:
         raise HTTPException(
@@ -4388,8 +4411,7 @@ async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_dat
         raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
     if request.grade not in NEST_GRADES:
         raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
-    if not (request.price_gram > 0):
-        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    check_market_price(request.price_gram)
     min_price = EQUIP_MARKET_MIN_PRICE.get(request.grade, 0.0)
     if request.price_gram < min_price:
         raise HTTPException(status_code=400, detail=f"Минимальная цена для этого грейда — {min_price:g} GRAM")
@@ -4514,8 +4536,7 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
     min_amount = RESOURCE_MARKET_MIN_AMOUNT.get(request.resource, 1)
     if amount < min_amount:
         raise HTTPException(status_code=400, detail=f"Минимум {min_amount} шт.")
-    if not (request.price_gram > 0):
-        raise HTTPException(status_code=400, detail="Цена должна быть больше нуля")
+    check_market_price(request.price_gram)
     min_price = resource_market_min_lot_price(request.resource, amount)
     if request.price_gram < min_price - 1e-9:
         unit = RESOURCE_MARKET_MIN_UNIT_PRICE.get(request.resource, 0.0)
@@ -4645,7 +4666,7 @@ async def withdraw(request: WithdrawRequest, x_telegram_init_data: Optional[str]
         raise HTTPException(status_code=400, detail="Некорректный адрес кошелька")
 
     amount = round(float(request.amount or 0), 9)
-    if amount < MIN_WITHDRAW:
+    if not math.isfinite(amount) or amount < MIN_WITHDRAW:
         raise HTTPException(status_code=400, detail=f"Минимум для вывода — {MIN_WITHDRAW:g} GRAM")
 
     row = await fetch_user(user_id)
