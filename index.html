@@ -3973,7 +3973,7 @@
                     <div class="wheel-hub"></div>
                 </div>
                 <div class="fusion-actions">
-                    <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">${t('fusion.attemptFor')} ${fmtToken(cfg.merge_cost_meat)} Meat</button>
+                    <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">${t('fusion.attemptFor')} ${fmtToken(fusionMeatCost(monster))} Meat</button>
                     <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">${t('fusion.attemptFor')} ${fmtGram(cfg.merge_cost_gram)} GRAM</button>
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">${t('common.close')}</button>
                 </div>
@@ -3993,6 +3993,15 @@
             });
         }
 
+        // Meat за попытку слияния — по редкости ВЫБРАННОЙ пары (та же шкала,
+        // что на сервере: fusion.merge_cost_meat_by_tier).
+        function fusionMeatCost(monster) {
+            const cfg = CONFIG.fusion;
+            const scale = Array.isArray(cfg.merge_cost_meat_by_tier) ? cfg.merge_cost_meat_by_tier : [];
+            const idx = tierIndexOf(monster);
+            return Number(scale[idx] != null ? scale[idx] : (cfg.merge_cost_meat || 75));
+        }
+
         async function attemptFusion(useGram) {
             if (fusionSpinning) return;
             const a = state.farm[fusionModalA];
@@ -4001,12 +4010,12 @@
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const monster = MONSTERS[a.id];
             const cfg = CONFIG.fusion;
-            const cost = useGram ? Number(cfg.merge_cost_gram || 1) : Number(cfg.merge_cost_meat || 75);
+            const cost = useGram ? Number(cfg.merge_cost_gram || 1) : fusionMeatCost(monster);
 
             if (useGram) {
                 if (state.coins < cost) { toast('Не хватает GRAM'); haptic.notify('warning'); return; }
             } else if (state.mnstr < cost) {
-                toast('Не хватает Meat'); haptic.notify('warning'); return;
+                toast(`Не хватает Meat: попытка стоит ${fmtToken(cost)} Meat`); haptic.notify('warning'); return;
             }
 
             fusionSpinning = true;
@@ -9167,7 +9176,7 @@
             cfg.fusion = Object.assign(
                 { feed_base_cost: 1, feed_growth: 2, feed_taps_per_level: 10, feed_levels: 7,
                   roulette_by_tier: DEFAULT_FUSION_ROULETTE,
-                  merge_cost_meat: 75, merge_cost_gram: 1 },
+                  merge_cost_meat: 75, merge_cost_meat_by_tier: [75, 125, 200, 300, 500], merge_cost_gram: 1 },
                 cfg.fusion
             );
             if (!Array.isArray(cfg.fusion.roulette_by_tier) || !cfg.fusion.roulette_by_tier.length) {

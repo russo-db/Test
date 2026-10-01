@@ -109,6 +109,7 @@ def apply_config(cfg: dict):
     global HATCH_COMMON_BY_LEVEL, HATCH_COMMON_DEFAULT, HATCH_MEAT_MIN, HATCH_MEAT_MAX
     global HATCH_JACKPOT_CHANCE, HATCH_JACKPOT_MEAT_BY_LEVEL
     global FEED_BASE_COST, FEED_GROWTH, FEED_TAPS_PER_LEVEL, MERGE_COST_MEAT, MERGE_COST_GRAM, ROULETTE_BY_TIER
+    global MERGE_COST_MEAT_BY_TIER
     global EXPEDITIONS_CFG, EXPEDITION_DURATION_HOURS, EXPEDITION_COST_MEAT, EXPEDITION_GOLD_BY_TIER
     global SLOTS_PRICES, VIP_TIERS
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
@@ -134,6 +135,10 @@ def apply_config(cfg: dict):
     FEED_GROWTH = float(FUSION_CFG.get("feed_growth", 2))
     FEED_TAPS_PER_LEVEL = int(FUSION_CFG.get("feed_taps_per_level", 10))
     MERGE_COST_MEAT = float(FUSION_CFG.get("merge_cost_meat", 75))
+    # Цена попытки слияния в Meat по ТЕКУЩЕЙ редкости пары (индекс = редкость
+    # исходных орлов): Обычный→Необычный 75, →Редкий 125, →Эпический 200,
+    # →Легендарный 300, →Мифический 500. Нет записи — merge_cost_meat.
+    MERGE_COST_MEAT_BY_TIER = [float(v) for v in (FUSION_CFG.get("merge_cost_meat_by_tier") or [])]
     MERGE_COST_GRAM = float(FUSION_CFG.get("merge_cost_gram", 1))
     ROULETTE_BY_TIER = FUSION_CFG.get("roulette_by_tier") or []
     EGGS_CFG = CONFIG.get("eggs") or {}
@@ -556,6 +561,13 @@ def expedition_duration_seconds(row: dict) -> float:
     vip = current_vip_tier(row)
     base = EXPEDITION_DURATION_HOURS * 3600
     return max(0.0, base - (float(vip.get("expedition_reduction_hours") or 0) * 3600 if vip else 0.0))
+
+
+def merge_cost_meat(tier_idx: int) -> float:
+    """Meat за одну попытку слияния пары орлов редкости tier_idx."""
+    if 0 <= tier_idx < len(MERGE_COST_MEAT_BY_TIER):
+        return MERGE_COST_MEAT_BY_TIER[tier_idx]
+    return MERGE_COST_MEAT
 
 
 def expedition_gold_reward(monster_id: str) -> float:
@@ -1994,7 +2006,7 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
             raise HTTPException(status_code=500, detail="Таблица улучшения не настроена")
 
         use_gram = request.use_gram
-        cost = MERGE_COST_GRAM if use_gram else MERGE_COST_MEAT
+        cost = MERGE_COST_GRAM if use_gram else merge_cost_meat(idx)   # редкость берётся из БД, не из запроса
         coins = float(row.get("coins") or 0)
         mnstr = float(row.get("mnstr") or 0)
         if use_gram:
@@ -2003,7 +2015,7 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
             coins -= cost
         else:
             if mnstr < cost:
-                raise HTTPException(status_code=400, detail="Не хватает Meat")
+                raise HTTPException(status_code=400, detail=f"Не хватает Meat: попытка слияния стоит {cost:g} Meat")
             mnstr -= cost
 
         seg_i = pick_weighted_index(segments)
@@ -2014,7 +2026,7 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
         fields = {"coins": coins, "mnstr": mnstr}
         response = {
             "outcome": outcome.get("type"), "segment_index": seg_i,
-            "coins": coins, "mnstr": mnstr,
+            "coins": coins, "mnstr": mnstr, "cost": cost, "currency": "gram" if use_gram else "meat",
         }
 
         if outcome.get("type") == "success":
@@ -2047,7 +2059,7 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
     if request.use_gram:
         await record_economy(fusion_tries_gram=1, gram_fusion=MERGE_COST_GRAM)
     else:
-        await record_economy(fusion_tries_meat=1, meat_fusion=MERGE_COST_MEAT)
+        await record_economy(fusion_tries_meat=1, meat_fusion=float(result.get("cost") or MERGE_COST_MEAT))
     return result
 
 

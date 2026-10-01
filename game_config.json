@@ -234,6 +234,7 @@
     "feed_taps_per_level": 10,
     "feed_levels": 7,
     "merge_cost_meat": 75,
+    "merge_cost_meat_by_tier": [75, 125, 200, 300, 500],
     "merge_cost_gram": 1,
     "roulette_by_tier": [
       [
