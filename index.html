@@ -9029,18 +9029,23 @@
 
         // Резервная таблица рулетки улучшения (на случай, если сервер не прислал
         // свою) — тот же набор призов, что и в game_config.json.
-        function defaultFusionTierSegments(success) {
+        // [успех, 3 Meat, 5 Meat, 10 Meat, 15 Meat] по редкости пары (сумма с
+        // бонус-орлами 0.01 + 0.02 = ровно 100%).
+        function defaultFusionTierSegments([success, m3, m5, m10, m15]) {
             return [
-                { type: 'meat', amount: 1, weight: 100 - 8.03 - success },
+                { type: 'meat', amount: 3, weight: m3 },
                 { type: 'eagle', tier: 'uncommon', weight: 0.02 },
-                { type: 'meat', amount: 5, weight: 5 },
-                { type: 'meat', amount: 10, weight: 2 },
-                { type: 'meat', amount: 15, weight: 1 },
+                { type: 'meat', amount: 5, weight: m5 },
+                { type: 'meat', amount: 10, weight: m10 },
+                { type: 'meat', amount: 15, weight: m15 },
                 { type: 'eagle', tier: 'rare', weight: 0.01 },
                 { type: 'success', weight: success },
             ];
         }
-        const DEFAULT_FUSION_ROULETTE = [9.98, 3.5, 1.5, 0.5, 0.005].map(defaultFusionTierSegments);
+        const DEFAULT_FUSION_ROULETTE = [
+            [10, 56.97, 25, 5, 3], [3.5, 56.97, 26, 9, 4.5], [1.5, 56.97, 27, 10, 4.5],
+            [0.5, 56.97, 27, 10.5, 5], [0.01, 56.97, 27, 10.5, 5.49],
+        ].map(defaultFusionTierSegments);
 
         // Резервная таблица VIP-тарифов (на случай, если сервер не прислал свою).
         const DEFAULT_VIP_TIERS = [
