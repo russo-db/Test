@@ -3791,30 +3791,51 @@
         // считает стоимость, прогресс и таймер сам — клиент только шлёт намерение.
         const farmActionBusy = new Set();
 
+        // Предохранитель кормления: одновременно в полёте не больше одного тапа
+        // (на любого орла). Пока ответ не пришёл, новые тапы не отправляются —
+        // иначе быстрые ответы приходили не по порядку и затирали друг друга.
+        let isFeeding = false;
+
         async function feedTap(i, event) {
             const slot = state.farm[i];
             if (!slot) return;
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
-            const key = 'feed:' + i;
-            if (farmActionBusy.has(key)) return;
-            farmActionBusy.add(key);
+            if (isFeeding) return;
+            isFeeding = true;
 
+            // Снимок орла, которого игрок кормит, — по нему и сервер, и клиент
+            // проверяют, что ответ относится именно к нему.
+            const sent = { id: slot.id, feedLevel: slot.feedLevel || 1, feedTaps: slot.feedTaps || 0 };
             haptic.impact('light');
             spawnFeedFx(event);
 
             try {
                 const response = await fetch('api/farm/feed', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i, monster_id: sent.id,
+                                           feed_level: sent.feedLevel, feed_taps: sent.feedTaps })
                 });
                 const data = await response.json();
+                if (response.status === 409) {
+                    // Данные на экране устарели (другой порядок слотов/другое
+                    // устройство) — тихо перечитываем, выбранного орла не трогаем.
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Не хватает Meat');
                     haptic.notify('warning');
                     return;
                 }
+                // Строгая проверка: ответ относится к тому же орлу, который
+                // сейчас лежит в этом слоте? Иначе это запоздавший ответ — игнор.
+                const current = state.farm[i];
+                const respId = (data.slot && data.slot.id) || data.monster_id;
+                if (!current || current.id !== sent.id || respId !== sent.id) return;
+                if (typeof data.ops === 'number' && data.ops < state.ops) return;   // более старый ответ
                 state.mnstr = data.mnstr;
-                state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
+                state.farm[i] = Object.assign({}, current, readFarm([data.slot])[0]);
                 if (typeof data.ops === 'number') state.ops = data.ops;
 
                 renderHeader();
@@ -3830,7 +3851,7 @@
             } catch (error) {
                 toast('Сервер недоступен');
             } finally {
-                farmActionBusy.delete(key);
+                isFeeding = false;
             }
         }
 
@@ -8591,7 +8612,7 @@
                 }
                 if (data.ops !== state.ops) {
                     const before = state.coins;
-                    await syncFromServer();
+                    await syncFromServer({ keepActiveSlot: true });
                     renderWallet();
                     if (state.coins > before) {
                         toast(`Пополнение зачислено: +${fmtGram(state.coins - before)} GRAM`);
@@ -8690,7 +8711,7 @@
                     return;
                 }
                 state.wallet = address;
-                await syncFromServer();
+                await syncFromServer({ keepActiveSlot: true });
                 renderWallet();
                 closeWithdraw();
                 toast(`Заявка на ${fmtGram(amount)} GRAM принята`);
@@ -8745,17 +8766,24 @@
             })
                 .then(response => response.json())
                 .then(data => {
-                    // Сервер что-то начислил, пока клиент считал сам, — перечитываем.
-                    if (data.status === 'stale') return syncFromServer();
-                    if (typeof data.ops === 'number') state.ops = data.ops;
+                    // Выбор орла сервер сохраняет всегда; ops здесь только
+                    // подтягиваем вперёд — НЕ перечитываем состояние целиком
+                    // (это и переключало экран на старого орла посреди кормления).
+                    if (typeof data.ops === 'number' && data.ops > state.ops && !isFeeding) state.ops = data.ops;
                 })
                 .catch(() => {});
         }
 
-        async function syncFromServer() {
+        // keepActiveSlot: перечитывание посреди игры не меняет выбранного орла
+        // (если он ещё существует). Снимок старее уже показанных данных
+        // (ops меньше текущего) не применяется — он затёр бы свежие мясо/XP.
+        async function syncFromServer(opts = {}) {
+            const keepSlot = opts.keepActiveSlot ? state.activeSlot : null;
+            const keepId = keepSlot !== null && state.farm[keepSlot] ? state.farm[keepSlot].id : null;
             const response = await fetch(`api/load/${state.userId}`, { headers: apiHeaders() });
             if (!response.ok) throw new Error('load failed');
             const data = await response.json();
+            if (opts.keepActiveSlot && typeof data.ops === 'number' && data.ops < state.ops) return;
 
             state.coins = data.coins;
             state.totalEarned = data.total_earned;
@@ -8768,6 +8796,7 @@
             if (!state.farm.length) state.farm = [newSlot(CONFIG.monsters[0].id)];
             state.farmQueue = readFarm(data.farm_queue);
             state.activeSlot = data.active_slot || 0;
+            if (keepId !== null && state.farm[keepSlot] && state.farm[keepSlot].id === keepId) state.activeSlot = keepSlot;
             state.missions = data.missions || [];
             state.slots = data.slots || CONFIG.slots.start;
             normalizeFarmCapacity();

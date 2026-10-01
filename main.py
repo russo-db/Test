@@ -1387,6 +1387,19 @@ class FarmSlotAction(BaseModel):
     slot_index: int
 
 
+class FeedAction(BaseModel):
+    """Тап кормления. Кроме номера слота клиент присылает, КАКОГО орла он
+    видит в этом слоте (вид + уровень + прогресс тапов): если на сервере в
+    слоте уже другой орёл или другой прогресс (список фермы сдвинулся,
+    ответ пришёл не по порядку, кормили с другого устройства) — тап
+    отклоняется 409, а не уходит «не тому» орлу."""
+    user_id: int
+    slot_index: int
+    monster_id: Optional[str] = None
+    feed_level: Optional[int] = None
+    feed_taps: Optional[int] = None
+
+
 class FusionAttempt(BaseModel):
     user_id: int
     slot_a: int
@@ -1848,22 +1861,27 @@ async def save_user_data(state: FarmState, x_telegram_init_data: Optional[str] =
     сохраняет только active_slot — какой орёл показан на сцене."""
     user_id = authenticate(x_telegram_init_data, state.user_id)
     row = await fetch_user(user_id)
-
     server_ops = int(row.get("ops") or 0)
-    if state.ops >= 0 and state.ops != server_ops:
-        return {"status": "stale", "ops": server_ops}
-
-    await store.update(user_id, {"active_slot": max(0, state.active_slot), "last_seen": int(time.time())})
-    return {"status": "success", "ops": server_ops}
+    # Выбор орла на сцене — чисто визуальный и балансов не трогает, поэтому
+    # сохраняется всегда. Раньше при несовпадении ops (а каждый тап кормления
+    # его двигает) сервер отвечал «stale», выбор не сохранялся, клиент
+    # перечитывал состояние и экран «сам» переключался на старого орла.
+    farm_len = len(read_farm(row.get("monsters")))
+    active_slot = max(0, min(int(state.active_slot), max(0, farm_len - 1)))
+    await store.update(user_id, {"active_slot": active_slot, "last_seen": int(time.time())})
+    return {"status": "success", "ops": server_ops, "active_slot": active_slot}
 
 
 # --- FARM/EGGS/VIP ACTIONS: атомарные, сервер сам считает и проверяет всё,
 # клиент только шлёт намерение (какой слот/индекс) и показывает ответ. ---
 
 @app.post("/api/farm/feed")
-async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+async def farm_feed(request: FeedAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Тап кормления: списывает Meat, продвигает прогресс тапов; на
-    feed_taps_per_level тапов запускает таймер яйца."""
+    feed_taps_per_level тапов запускает таймер яйца. Всё — по свежему
+    документу из БД внутри CAS (run_farm_action): баланс мяса и уровень/
+    прогресс орла берутся из базы, а не из запроса; данные из запроса
+    служат только проверкой, что клиент кормит того орла, которого видит."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
     def compute(row):
@@ -1872,6 +1890,12 @@ async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str]
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        if request.monster_id is not None and slot["id"] != request.monster_id:
+            raise HTTPException(status_code=409, detail="stale: в этом слоте уже другой орёл")
+        if request.feed_level is not None and slot["feed_level"] != int(request.feed_level):
+            raise HTTPException(status_code=409, detail="stale: уровень орла изменился")
+        if request.feed_taps is not None and slot["feed_taps"] != int(request.feed_taps):
+            raise HTTPException(status_code=409, detail="stale: прогресс кормления изменился")
         ensure_slot_not_listed(slot)
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл в экспедиции")
@@ -1893,9 +1917,18 @@ async def farm_feed(request: FarmSlotAction, x_telegram_init_data: Optional[str]
 
         mnstr -= cost
         fields = {"mnstr": mnstr, "monsters": farm}
-        return fields, {"mnstr": mnstr, "slot": slot, "slot_index": i, "started_farming": started_farming}
+        return fields, {"mnstr": mnstr, "slot": slot, "slot_index": i, "started_farming": started_farming,
+                        "monster_id": slot["id"]}
 
-    return await run_farm_action(user_id, compute)
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[feed] user={user_id} slot={request.slot_index} monster={request.monster_id} "
+              f"level={request.feed_level} taps={request.feed_taps}: {type(e).__name__}: {e}")
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось покормить орла — попробуйте ещё раз")
 
 
 @app.post("/api/farm/collect_egg")
