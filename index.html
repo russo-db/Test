@@ -1015,6 +1015,11 @@
         .auction-lot-img { width: 150px; height: 150px; object-fit: cover; border-radius: 18px; border: 1px solid rgba(255, 215, 106, 0.4); box-shadow: 0 0 22px rgba(255, 215, 106, 0.25); background: rgba(255, 255, 255, 0.04); }
         .auction-lot-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 17px; color: #ffd76a; }
         .auction-lot-desc { font-size: 12.5px; color: var(--text-muted); }
+        .auction-reward { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px; background: rgba(90, 160, 255, 0.12); border: 1px solid rgba(120, 180, 255, 0.4); font-size: 13px; font-weight: 700; color: #cfe3ff; }
+        .auction-reward img { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; }
+        .auction-timer.is-extended b { animation: auctionExtend 1.2s ease; }
+        @keyframes auctionExtend { 0% { color: #4ade80; transform: scale(1.25); } 100% { color: #ffd76a; transform: scale(1); } }
+        .auction-snipe-hint { margin-top: 6px; font-size: 11.5px; color: #9ec5ff; }
         .auction-timer { width: 100%; margin-top: 4px; padding: 10px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); font-size: 12px; color: var(--text-muted); }
         .auction-timer b { display: block; font-size: 22px; color: #ffd76a; letter-spacing: 0.05em; margin-top: 2px; }
         .auction-timer.is-ended b { color: #ef6a6a; }
@@ -2199,10 +2204,16 @@
                 'auction.endedBtn': 'Приём ставок закрыт', 'auction.top': 'ТОП-{n} — они забирают лоты',
                 'auction.emptyPlace': 'свободно', 'auction.bidOk': 'Ставка {amount} Gram принята — вы на 1-м месте!',
                 'auction.bidFailed': 'Не удалось сделать ставку', 'auction.confirm': 'Поставить {amount} Gram? Будет заморожено {delta} Gram — вернутся автоматически, если вас вытеснят из ТОП-{n}.',
-                'auction.rules': 'Старт — {min} Gram, шаг — +{step} Gram к ставке лидера. Новая ставка ставит вас на 1-е место, остальные сдвигаются вниз. Выбывший с 6-го места мгновенно получает свои Gram назад. По окончании таймера ТОП-{n} выигрывают лот, их ставки списываются.',
+                'auction.rules': 'Старт — {min} Gram, шаг — +{step} Gram к ставке лидера. Новая ставка ставит вас на 1-е место, остальные сдвигаются вниз. Выбывший с 6-го места мгновенно получает свои Gram назад. Ставка, сделанная, когда до конца меньше 5 минут, продлевает аукцион ровно до 05:00. По окончании таймера ТОП-{n} выигрывают лот, их ставки списываются, а награда начисляется автоматически (NFT отправляется вручную).',
                 'auction.wonHeading': 'Выиграно на аукционе', 'auction.noWins': 'Пока нет выигранных лотов — загляните в 🏛️ Аукцион',
                 'auction.pending': 'Выиграно на аукционе. Ожидает ручной отправки', 'auction.delivered': 'Отправлено на ваш кошелёк ✅',
                 'auction.wonMeta': '{place}-е место · ставка {bid} Gram · {date}', 'auction.winnersTitle': 'Победители',
+                'auction.rewardEach': '🎁 Каждому из ТОП-{n}: {amount} × {label}',
+                'auction.snipeHint': '⏱ Ставка в последние 5 минут продлевает аукцион до 05:00',
+                'auction.extended': '⏱ Ставка в последние минуты — таймер продлён до 05:00!',
+                'auction.credited': '✅ Начислено: +{amount} × {label}', 'auction.crediting': 'Начисляется…',
+                'auction.label.nft': 'NFT Карточка', 'auction.label.sky_shards': 'Небесный осколок',
+                'auction.label.gold': 'Золото', 'auction.label.meat': 'Мясо',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
                 'wallet.connect': 'Подключить кошелёк', 'wallet.disconnect': 'Отключить кошелёк',
@@ -2527,10 +2538,16 @@
                 'auction.endedBtn': 'Bidding closed', 'auction.top': 'TOP-{n} — they win the lot',
                 'auction.emptyPlace': 'free', 'auction.bidOk': 'Bid {amount} Gram accepted — you are 1st!',
                 'auction.bidFailed': 'Could not place the bid', 'auction.confirm': 'Bid {amount} Gram? {delta} Gram will be frozen and returned automatically if you drop out of the TOP-{n}.',
-                'auction.rules': 'Start — {min} Gram, step — +{step} Gram over the leader. A new bid puts you 1st and shifts others down. Whoever drops to 6th instantly gets their Gram back. When the timer ends the TOP-{n} win the lot and their bids are charged.',
+                'auction.rules': 'Start — {min} Gram, step — +{step} Gram over the leader. A new bid puts you 1st and shifts others down. Whoever drops to 6th instantly gets their Gram back. A bid placed with less than 5 minutes left extends the auction to exactly 05:00. When the timer ends the TOP-{n} win the lot, their bids are charged and the reward is credited automatically (NFTs are sent manually).',
                 'auction.wonHeading': 'Won at auction', 'auction.noWins': 'No lots won yet — visit the 🏛️ Auction',
                 'auction.pending': 'Won at auction. Awaiting manual delivery', 'auction.delivered': 'Sent to your wallet ✅',
                 'auction.wonMeta': 'place {place} · bid {bid} Gram · {date}', 'auction.winnersTitle': 'Winners',
+                'auction.rewardEach': '🎁 Each of the TOP-{n}: {amount} × {label}',
+                'auction.snipeHint': '⏱ A bid in the last 5 minutes extends the auction to 05:00',
+                'auction.extended': '⏱ Last-minute bid — the timer is extended to 05:00!',
+                'auction.credited': '✅ Credited: +{amount} × {label}', 'auction.crediting': 'Crediting…',
+                'auction.label.nft': 'NFT Card', 'auction.label.sky_shards': 'Sky Shard',
+                'auction.label.gold': 'Gold', 'auction.label.meat': 'Meat',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
                 'wallet.connect': 'Connect wallet', 'wallet.disconnect': 'Disconnect wallet',
@@ -8063,6 +8080,7 @@
         let auctionPollHandle = null;
         let auctionTimerHandle = null;
         let auctionBidBusy = false;
+        let auctionFlashExtended = false;
 
         function auctionNow() { return Date.now() / 1000 + auctionClockOffset; }
 
@@ -8118,8 +8136,22 @@
         }
 
         function applyAuctionBalances(data) {
-            if (typeof data.coins === 'number') { state.coins = data.coins; renderHeader(); }
+            if (typeof data.coins === 'number') state.coins = data.coins;
+            if (typeof data.gold === 'number') state.gold = data.gold;
+            if (typeof data.mnstr === 'number') state.mnstr = data.mnstr;
+            if (typeof data.shard_count === 'number' && state.nest) state.nest.shardCount = data.shard_count;
+            if (typeof data.nest_last_claim === 'number' && data.nest_last_claim && state.nest) state.nest.lastClaim = data.nest_last_claim;
             if (typeof data.ops === 'number') state.ops = data.ops;
+            renderHeader();
+        }
+
+        const AUCTION_GOLD_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#f7b500" stroke="#b07800" stroke-width="2"/><circle cx="12" cy="12" r="7" fill="none" stroke="#b07800" stroke-width="1" opacity=".55"/><ellipse cx="9" cy="8.5" rx="3.2" ry="2" fill="#ffe08a" opacity=".7"/></svg>');
+        const AUCTION_REWARD_ICONS = { sky_shards: 'assets/nest-shard-v2.jpg', gold: AUCTION_GOLD_ICON, meat: 'assets/mnstr.png', nft: 'assets/nft-skylords.jpg' };
+
+        function auctionRewardLabel(type) { return t('auction.label.' + (type || 'nft')); }
+
+        function auctionRewardText(a) {
+            return t('auction.rewardEach', { n: a.top_size || 5, amount: auctionFmt(a.reward_amount || 1), label: auctionRewardLabel(a.reward_type) });
         }
 
         async function loadAuction() {
@@ -8165,12 +8197,17 @@
             const lot = auctionEl('div', 'card glass-panel auction-lot');
             lot.appendChild(auctionImg(a.item_image, 'auction-lot-img'));
             lot.appendChild(auctionEl('div', 'auction-lot-title', a.title));
+            const reward = auctionEl('div', 'auction-reward');
+            reward.appendChild(auctionImg(AUCTION_REWARD_ICONS[a.reward_type] || AUCTION_REWARD_ICONS.nft));
+            reward.appendChild(auctionEl('span', '', auctionRewardText(a)));
+            lot.appendChild(reward);
             if (a.description) lot.appendChild(auctionEl('div', 'auction-lot-desc', a.description));
             const timer = auctionEl('div', 'auction-timer');
             timer.id = 'auctionTimer';
             timer.appendChild(auctionEl('span', '', ''));
             timer.appendChild(auctionEl('b', '', ''));
             lot.appendChild(timer);
+            if (running) lot.appendChild(auctionEl('div', 'auction-snipe-hint', t('auction.snipeHint')));
             body.appendChild(lot);
 
             const me = auctionEl('div', 'auction-me');
@@ -8202,6 +8239,11 @@
             body.appendChild(list);
             body.appendChild(auctionEl('p', 'auction-rules', t('auction.rules', { min: auctionFmt(a.min_bid), step: auctionFmt(a.step), n: a.top_size })));
             auctionTickTimer();
+            if (auctionFlashExtended) {
+                auctionFlashExtended = false;
+                timer.classList.add('is-extended');
+                setTimeout(() => timer.classList.remove('is-extended'), 1300);
+            }
         }
 
         async function placeAuctionBid() {
@@ -8229,7 +8271,8 @@
                     applyAuctionBalances(data);
                     haptic.notify('success');
                     spawnBurst(10, true);
-                    toast(t('auction.bidOk', { amount: auctionFmt(data.bid) }));
+                    toast(data.extended ? t('auction.extended') : t('auction.bidOk', { amount: auctionFmt(data.bid) }));
+                    if (data.extended) auctionFlashExtended = true;
                 }
             } catch (e) {
                 toast(t('market.serverError'));
@@ -8256,6 +8299,7 @@
                 const response = await fetch(`api/auction/wins?user_id=${state.userId}`, { headers: apiHeaders() });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || 'wins');
+                applyAuctionBalances(data);
                 renderAuctionWins(data.wins || []);
             } catch (e) {
                 box.replaceChildren(auctionEl('div', 'auction-empty', t('market.serverError')));
@@ -8268,13 +8312,17 @@
             if (!wins.length) { box.appendChild(auctionEl('div', 'auction-empty', t('auction.noWins'))); return; }
             for (const w of wins) {
                 const card = auctionEl('div', 'card glass-panel won-lot');
-                card.appendChild(auctionImg(w.item_image));
+                card.appendChild(auctionImg(w.item_image || AUCTION_REWARD_ICONS[w.reward_type]));
                 const info = auctionEl('div', 'won-lot-body');
                 info.appendChild(auctionEl('div', 'won-lot-title', w.title));
                 const date = w.won_at ? new Date(w.won_at * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }) : '';
                 info.appendChild(auctionEl('div', 'won-lot-meta', t('auction.wonMeta', { place: w.place, bid: auctionFmt(w.bid), date })));
-                const delivered = w.status === 'delivered';
-                info.appendChild(auctionEl('div', 'won-lot-status' + (delivered ? ' is-delivered' : ''), delivered ? t('auction.delivered') : t('auction.pending')));
+                const isResource = w.reward_type && w.reward_type !== 'nft';
+                const done = w.status === 'delivered' || w.status === 'credited';
+                const statusText = isResource
+                    ? (w.status === 'credited' ? t('auction.credited', { amount: auctionFmt(w.reward_amount || 0), label: auctionRewardLabel(w.reward_type) }) : t('auction.crediting'))
+                    : (w.status === 'delivered' ? t('auction.delivered') : t('auction.pending'));
+                info.appendChild(auctionEl('div', 'won-lot-status' + (done ? ' is-delivered' : ''), statusText));
                 card.appendChild(info);
                 box.appendChild(card);
             }

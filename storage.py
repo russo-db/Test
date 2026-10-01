@@ -1379,7 +1379,8 @@ class MongoStore:
         return doc
 
     async def create_auction(self, title: str, item_image: str, description: str,
-                             min_bid: float, step: float, now: float, ends_at: float) -> Optional[dict]:
+                             min_bid: float, step: float, now: float, ends_at: float,
+                             reward_type: str = "nft", reward_amount: float = 1) -> Optional[dict]:
         """Новый лот. Одновременно активен только один: замок active_auction в
         settings занимается атомарно (как reserve_nft_claim). None — уже идёт другой."""
         from bson import ObjectId
@@ -1396,6 +1397,9 @@ class MongoStore:
             "min_bid": float(min_bid), "step": float(step), "created_at": now, "ends_at": float(ends_at),
             "status": "active", "version": 0, "top": [], "pending_refunds": [],
             "settled": False, "winners": [],
+            # Что получает КАЖДЫЙ из ТОП-5: nft (ручная отправка админом) или
+            # ресурс (sky_shards / gold / meat) в количестве reward_amount.
+            "reward_type": reward_type, "reward_amount": float(reward_amount),
         }
         await self.auctions.insert_one(doc)
         return self._auction_doc(doc)
@@ -1443,10 +1447,13 @@ class MongoStore:
         return done
 
     async def place_auction_bid(self, auction_id, user_id: int, name: str, expected: Optional[float],
-                                now: float, top_size: int) -> dict:
+                                now: float, top_size: int, antisnipe_seconds: float = 0) -> dict:
         """Ставка = лидер + шаг (или минимальная, если ставок нет). Игрок встаёт
         на 1-е место, остальные сдвигаются вниз, 6-й выбывает с мгновенным
-        возвратом. Если игрок уже в ТОП-5 — замораживается только разница."""
+        возвратом. Если игрок уже в ТОП-5 — замораживается только разница.
+        Антиснайпер: если до конца меньше antisnipe_seconds, принятая ставка
+        продлевает лот ровно до now + antisnipe_seconds — в той же атомарной
+        записи, что и сама ставка."""
         oid = self._auction_oid(auction_id)
         if not oid:
             return {"status": "not_found"}
@@ -1488,6 +1495,11 @@ class MongoStore:
             evicted = new_top[top_size:]
             new_top = new_top[:top_size]
             update = {"$set": {"top": new_top, "version": int(doc.get("version") or 0) + 1}}
+            extended_to = None
+            if antisnipe_seconds and float(doc["ends_at"]) - now < antisnipe_seconds:
+                extended_to = now + antisnipe_seconds
+                update["$set"]["ends_at"] = extended_to
+                update["$inc"] = {"extensions": 1}
             if evicted:
                 update["$push"] = {"pending_refunds": {"$each": [
                     {"user_id": int(e["user_id"]), "amount": float(e["bid"])} for e in evicted]}}
@@ -1503,7 +1515,8 @@ class MongoStore:
                 continue
             if evicted:
                 await self.process_auction_refunds(key)
-            return {"status": "ok", "bid": required, "delta": delta, "evicted": [int(e["user_id"]) for e in evicted]}
+            return {"status": "ok", "bid": required, "delta": delta, "evicted": [int(e["user_id"]) for e in evicted],
+                    "extended_to": extended_to}
         return {"status": "busy"}
 
     async def finish_auction(self, auction_id, now: float, force: bool = False) -> bool:
@@ -1525,6 +1538,12 @@ class MongoStore:
             {"_id": oid, "status": "active"}, {"$set": {"status": "cancelled", "finished_at": now}},
         )
         return res.modified_count > 0
+
+    async def set_auction_ends(self, auction_id, ends_at: float) -> bool:
+        """Точно выставить время окончания идущего лота (тестовая кнопка)."""
+        oid = self._auction_oid(auction_id)
+        res = await self.auctions.update_one({"_id": oid, "status": "active"}, {"$set": {"ends_at": float(ends_at)}})
+        return res.matched_count > 0
 
     async def shorten_auction(self, auction_id, ends_at: float) -> bool:
         oid = self._auction_oid(auction_id)
@@ -1550,9 +1569,13 @@ class MongoStore:
         if doc["status"] == "finished":
             for place, e in enumerate(doc.get("top") or [], start=1):
                 uid, bid = int(e["user_id"]), float(e["bid"])
+                reward_type = doc.get("reward_type") or "nft"
                 win = {"auction_id": key, "title": doc.get("title") or "", "item_image": doc.get("item_image") or "",
                        "bid": bid, "place": place, "won_at": float(doc.get("finished_at") or doc["ends_at"]),
-                       "status": "pending_delivery"}
+                       "reward_type": reward_type, "reward_amount": float(doc.get("reward_amount") or 1),
+                       # NFT отправляет админ вручную; ресурс начисляет сервер
+                       # (pending_credit -> credited, см. credit_auction_rewards в main.py).
+                       "status": "pending_delivery" if reward_type == "nft" else "pending_credit"}
                 await self.users.update_one(
                     {"_id": uid, hold_path: bid, "auction_wins.auction_id": {"$ne": key}},
                     {"$unset": {hold_path: ""}, "$push": {"auction_wins": win}, "$inc": {"ops": 1}},
@@ -1570,6 +1593,10 @@ class MongoStore:
             return None
         return {"spent": sum(w["bid"] for w in winners), "winners": winners}
 
+    async def users_with_pending_auction_rewards(self, limit: int = 200) -> list:
+        return [d["_id"] async for d in self.users.find(
+            {"auction_wins.status": "pending_credit"}, projection={"_id": 1}).limit(limit)]
+
     async def set_auction_delivery(self, auction_id, user_id: int, delivered: bool) -> bool:
         """Админ отметил, что NFT победителю отправлена вручную (или снял отметку)."""
         oid = self._auction_oid(auction_id)
@@ -1582,7 +1609,7 @@ class MongoStore:
             return False
         await self.users.update_one(
             {"_id": user_id, "auction_wins.auction_id": str(oid)},
-            {"$set": {"auction_wins.$.status": "delivered" if delivered else "pending_delivery"}},
+            {"$set": {"auction_wins.$.status": "delivered" if delivered else "pending_delivery"}, "$inc": {"ops": 1}},
         )
         return True
 
