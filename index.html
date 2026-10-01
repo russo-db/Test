@@ -1012,7 +1012,7 @@
         .auction-entry-btn { border-color: rgba(255, 215, 106, 0.45); box-shadow: 0 0 14px rgba(255, 215, 106, 0.18); }
         .auction-entry-btn .clan-entry-label { color: #ffd76a; }
         .auction-lot { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 16px; }
-        .auction-lot-img { width: 150px; height: 150px; object-fit: cover; border-radius: 18px; border: 1px solid rgba(255, 215, 106, 0.4); box-shadow: 0 0 22px rgba(255, 215, 106, 0.25); background: rgba(255, 255, 255, 0.04); }
+        .auction-lot-img { width: 150px; height: auto; min-height: 150px; max-height: 200px; object-fit: contain; border-radius: 18px; border: 1px solid rgba(255, 215, 106, 0.4); box-shadow: 0 0 22px rgba(255, 215, 106, 0.25); background: rgba(255, 255, 255, 0.04); }
         .auction-lot-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 17px; color: #ffd76a; }
         .auction-lot-desc { font-size: 12.5px; color: var(--text-muted); }
         .auction-reward { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px; background: rgba(90, 160, 255, 0.12); border: 1px solid rgba(120, 180, 255, 0.4); font-size: 13px; font-weight: 700; color: #cfe3ff; }
@@ -8075,6 +8075,10 @@
            показывает лот, таймер и ТОП-5 и опрашивает сервер каждые 2.5 с,
            пока экран открыт. */
         const AUCTION_FALLBACK_IMG = 'assets/eagles/legendary.png';
+        // Картинка лота по типу награды — если админ не указал ссылку или она
+        // не открывается (например, ссылка на страницу ImgBB, а не на файл).
+        const AUCTION_LOT_IMAGES = { sky_shards: 'assets/auction-sky-shard.jpg' };
+        function auctionLotFallback(type) { return AUCTION_LOT_IMAGES[type] || AUCTION_FALLBACK_IMG; }
         let auctionData = null;
         let auctionClockOffset = 0;
         let auctionPollHandle = null;
@@ -8084,14 +8088,15 @@
 
         function auctionNow() { return Date.now() / 1000 + auctionClockOffset; }
 
-        function auctionImg(url, cls) {
+        function auctionImg(url, cls, fallback) {
             // Картинка — по ссылке из админки; ставим через свойство src (не
             // innerHTML), так ссылка не может внедрить разметку.
             const img = document.createElement('img');
             if (cls) img.className = cls;
             img.alt = '';
-            img.src = url || AUCTION_FALLBACK_IMG;
-            img.onerror = () => { img.onerror = null; img.src = AUCTION_FALLBACK_IMG; };
+            fallback = fallback || AUCTION_FALLBACK_IMG;
+            img.src = url || fallback;
+            img.onerror = () => { img.onerror = null; img.src = fallback; };
             return img;
         }
 
@@ -8195,7 +8200,7 @@
             const running = a.status === 'active' && a.ends_at > auctionNow();
 
             const lot = auctionEl('div', 'card glass-panel auction-lot');
-            lot.appendChild(auctionImg(a.item_image, 'auction-lot-img'));
+            lot.appendChild(auctionImg(a.item_image, 'auction-lot-img', auctionLotFallback(a.reward_type)));
             lot.appendChild(auctionEl('div', 'auction-lot-title', a.title));
             const reward = auctionEl('div', 'auction-reward');
             reward.appendChild(auctionImg(AUCTION_REWARD_ICONS[a.reward_type] || AUCTION_REWARD_ICONS.nft));
@@ -8312,7 +8317,8 @@
             if (!wins.length) { box.appendChild(auctionEl('div', 'auction-empty', t('auction.noWins'))); return; }
             for (const w of wins) {
                 const card = auctionEl('div', 'card glass-panel won-lot');
-                card.appendChild(auctionImg(w.item_image || AUCTION_REWARD_ICONS[w.reward_type]));
+                const winFallback = AUCTION_LOT_IMAGES[w.reward_type] || AUCTION_REWARD_ICONS[w.reward_type];
+                card.appendChild(auctionImg(w.item_image || winFallback, '', winFallback));
                 const info = auctionEl('div', 'won-lot-body');
                 info.appendChild(auctionEl('div', 'won-lot-title', w.title));
                 const date = w.won_at ? new Date(w.won_at * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }) : '';
