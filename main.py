@@ -1356,6 +1356,12 @@ async def fetch_incoming() -> List[dict]:
         message = tx.get("in_msg") or {}
         if not message.get("source"):
             continue                      # внешнее сообщение, а не перевод
+        if message.get("bounced"):
+            continue                      # вернувшийся наш же перевод, а не пополнение
+        description = tx.get("description") or {}
+        compute = description.get("compute_ph") or {}
+        if description.get("aborted") or compute.get("success") is False:
+            continue                      # транзакция не прошла — TON проект не получил
         decoded = (message.get("message_content") or {}).get("decoded") or {}
         user_id = memo_user(decoded.get("comment"))
         if not user_id:
@@ -1399,16 +1405,44 @@ async def credit_deposits(force: bool = False) -> int:
         return await _scan_deposits()
 
 
+# Повторное зачисление отсекается хэшем транзакции в коллекции deposits.
+# Если базу очистили, этот список пропадает, а TON API по-прежнему отдаёт
+# последние 100 переводов на кошелёк — и все старые пополнения зачислились бы
+# второй раз. Поэтому сервер помнит отметку времени (settings →
+# deposits_since): на свежей/очищенной базе (ни одного депозита и нет
+# отметки) она ставится на момент первой проверки, и переводы старше неё не
+# зачисляются. На работающей базе отметка = 0 и ничего не меняется.
+DEPOSITS_SINCE_SETTING = "deposits_since"
+_deposits_since: Optional[float] = None
+
+
+async def deposits_since() -> float:
+    global _deposits_since
+    if _deposits_since is not None:
+        return _deposits_since
+    saved = await store.get_setting(DEPOSITS_SINCE_SETTING, None)
+    if saved is None:
+        saved = 0.0 if await store.count_deposits() else float(int(time.time()))
+        await store.set_setting(DEPOSITS_SINCE_SETTING, saved)
+        if saved:
+            print(f"[ton] новая/очищенная база: пополнения раньше {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(saved))} не зачисляются")
+    _deposits_since = float(saved)
+    return _deposits_since
+
+
 @ledger_labelled("ton:deposit")
 async def _scan_deposits() -> int:
     try:
         incoming = await fetch_incoming()
+        since = await deposits_since()
     except Exception as error:
         print(f"TON: не удалось получить транзакции: {error}")
         return 0
 
     credited = 0
     for item in incoming:
+        if item["ts"] < since:
+            continue                      # перевод старше отметки — из истории до очистки базы
         gram = round(item["ton"] * TON_RATE, 9)
         if gram <= 0:
             continue

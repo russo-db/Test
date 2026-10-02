@@ -917,7 +917,7 @@ class MongoStore:
 
         try:
             await self.deposits.insert_one(
-                {"_id": tx_hash, "user_id": user_id, "amount": gram, "ts": ts}
+                {"_id": tx_hash, "user_id": user_id, "amount": gram, "ts": ts, "credited_at": int(time.time())}
             )
         except DuplicateKeyError:
             return False
@@ -927,6 +927,9 @@ class MongoStore:
                 {"_id": referrer_id}, {"$inc": {"coins": referral_gram, "ops": 1}}
             )
         return True
+
+    async def count_deposits(self) -> int:
+        return await self.deposits.count_documents({})
 
     async def request_withdraw(self, user_id: int, address: str, gram: float,
                                 payout: float, ts: int) -> bool:
@@ -2227,7 +2230,10 @@ class MongoStore:
     async def set_withdrawal_status(self, wd_id: str, status: str, refund: bool = False) -> bool:
         from bson import ObjectId
 
-        oid = ObjectId(wd_id)
+        try:
+            oid = ObjectId(str(wd_id))
+        except Exception:
+            return False
         # Смена статуса и проверка «ещё pending» — одна атомарная операция:
         # раньше find + update шли раздельно, и двойной клик «Отклонить»
         # возвращал GRAM игроку дважды.
