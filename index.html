@@ -3104,6 +3104,26 @@
 
         let slotGridSignature = '';
 
+        // Меняет разметку, только если она реально другая. Пересборка
+        // innerHTML пересоздаёт <img> — браузер заново их декодирует и
+        // картинки мигают, даже когда на экране ничего не поменялось
+        // (вход на вкладку, повторный рендер того же состояния, опрос сервера).
+        // true — разметка была заменена (тогда нужно заново повесить
+        // обработчики, которые вешаются через addEventListener).
+        function setHTMLIfChanged(el, html, opts) {
+            if (!el) return false;
+            // Пропускаем, только если и разметка та же, и с тех пор её никто
+            // другой не трогал (например, кнопку на время запроса не подписали «…»).
+            // allowInnerUpdates — внутри блока свои куски дописывает другой код
+            // (строка стоимости у Купца); тогда сравниваем только разметку.
+            const untouched = (opts && opts.allowInnerUpdates) || el.innerHTML === el.__shownSerialized;
+            if (el.__shownHTML === html && untouched && el.childNodes.length) return false;
+            el.innerHTML = html;
+            el.__shownHTML = html;
+            el.__shownSerialized = el.innerHTML;
+            return true;
+        }
+
         // Only the progress bars move between ticks - rebuilding the whole
         // grid there reloaded every sprite and made the slots flicker.
         function updateSlotProgress() {
@@ -3119,6 +3139,7 @@
                 cell.classList.toggle('fed', isFullyFed(slot));
                 cell.classList.toggle('fusion-selected', i === fusionSelected);
                 cell.classList.toggle('expedition-ready', expeditionReady(slot));
+                cell.classList.toggle('selected', i === state.activeSlot);
             });
         }
 
@@ -3128,18 +3149,21 @@
             if (!wrap || !track) return;
             const queue = state.farmQueue || [];
             wrap.style.display = queue.length ? '' : 'none';
-            if (!queue.length) { track.innerHTML = ''; return; }
-            track.innerHTML = queue.map(slot => {
+            if (!queue.length) { setHTMLIfChanged(track, ''); return; }
+            setHTMLIfChanged(track, queue.map(slot => {
                 const monster = MONSTERS[slot.id];
                 if (!monster) return '';
                 return `<div class="farm-queue-item"><img src="${framePath(monster.sprite, 0)}" alt="${monster.name}"></div>`;
-            }).join('');
+            }).join(''));
         }
 
         function renderSlotGrid() {
             renderFarmQueueTray();
             const grid = document.getElementById('slotGrid');
-            const signature = [state.slots, state.activeSlot, state.farm.map(s => s.id + (s.listingId ? '#L' : '')).join(',')].join('|');
+            // Выбор другого орла сюда не входит: подсветку «selected» двигает
+            // updateSlotProgress, иначе каждое переключение орла пересоздавало
+            // все картинки слотов и они мигали.
+            const signature = [state.slots, state.farm.map(s => s.id + (s.listingId ? '#L' : '')).join(',')].join('|');
             if (signature === slotGridSignature) {
                 updateSlotProgress();
                 return;
@@ -3301,7 +3325,7 @@
             const board = document.getElementById('eggBoard');
             const coin = '<img class="coin-icon" src="assets/coin.png" alt="">';
             const maxLevel = eggMaxLevel();
-            board.innerHTML = state.eggBoard.map((level, i) => {
+            const boardHTML = state.eggBoard.map((level, i) => {
                 if (i >= state.eggBoardUnlocked) {
                     return `<div class="egg-cell locked" data-i="${i}">
                         <svg class="nest-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
@@ -3315,10 +3339,12 @@
                     ${eggMarkup(level)}
                 </div>`;
             }).join('');
-            board.querySelectorAll('.egg-cell').forEach(cell => {
-                cell.onclick = () => onEggCellClick(Number(cell.dataset.i));
-                cell.addEventListener('pointerdown', eggPointerDown);
-            });
+            if (setHTMLIfChanged(board, boardHTML)) {
+                board.querySelectorAll('.egg-cell').forEach(cell => {
+                    cell.onclick = () => onEggCellClick(Number(cell.dataset.i));
+                    cell.addEventListener('pointerdown', eggPointerDown);
+                });
+            }
             renderEggQueueTray();
         }
 
@@ -3328,12 +3354,12 @@
             if (!wrap || !track) return;
             const queue = state.eggQueue || [];
             wrap.style.display = queue.length ? '' : 'none';
-            if (!queue.length) { track.innerHTML = ''; return; }
-            track.innerHTML = queue.map(level => `
+            if (!queue.length) { setHTMLIfChanged(track, ''); return; }
+            setHTMLIfChanged(track, queue.map(level => `
                 <div class="egg-queue-item">
                     ${eggMarkup(level)}
                 </div>
-            `).join('');
+            `).join(''));
         }
 
         // Тап по любому яйцу открывает окно с исходами и кнопкой «Вскрыть» —
@@ -4531,7 +4557,7 @@
             const eligibleEagles = eligibleMerchantEagles();
             const tiers = CONFIG.tiers.filter(tier => merchantBuybackOffer(tier.id));
 
-            body.innerHTML = `
+            setHTMLIfChanged(body, `
                 <div class="exchange-section-title">${t('merchant.meatSectionTitle')}</div>
                 <div class="exchange-rate-line">${t('merchant.meatRateLabel', { rate: Number.isInteger(rate) ? rate : rate.toFixed(2) })}</div>
                 <div class="exchange-rate-line">${t('merchant.meatUnlimited')}</div>
@@ -4574,7 +4600,7 @@
                         </div>
                     `;
                 }).join('') : `<p class="market-section-empty">${t('merchant.noEaglesToSell')}</p>`}
-            `;
+            `, { allowInnerUpdates: true });
             updateMerchantMeatPreview();
         }
 
@@ -6493,24 +6519,24 @@
                 </div>
                 <div class="nest-shard-daily">${t('nest.shardBoughtToday', { count: boughtToday, limit })}</div>`;
             if (limitReached) {
-                el.innerHTML = header + `
-                    <button class="btn-primary" style="margin-top:12px; width:100%" disabled>${t('nest.shardDailyLimitReached')}</button>`;
+                setHTMLIfChanged(el, header + `
+                    <button class="btn-primary" style="margin-top:12px; width:100%" disabled>${t('nest.shardDailyLimitReached')}</button>`);
             } else if (now >= (state.nest.shardCooldownUntil || 0)) {
                 const affordable = state.coins >= price;
-                el.innerHTML = header + `
+                setHTMLIfChanged(el, header + `
                     <button class="btn-primary" style="margin-top:12px; width:100%" ${affordable ? '' : 'disabled'} onclick="nestBuyShard()">
                         ${affordable ? t('nest.shardBuy', { price: fmtGram(price) }) : t('nest.shardNotEnough')}
-                    </button>`;
+                    </button>`);
             } else {
                 const remaining = Math.max(0, state.nest.shardCooldownUntil - now);
                 const total = (CONFIG.nest.shard_cooldown_hours || 6) * 3600;
                 const pct = 100 - Math.min(100, (remaining / total) * 100);
-                el.innerHTML = header + `
+                setHTMLIfChanged(el, header + `
                     <div class="nest-countdown-wrap">
                         <div class="nest-countdown-label">${t('nest.shardCooldownLabel')}</div>
                         <div class="nest-countdown">${formatCountdown(remaining)}</div>
                         <div class="nest-track"><i style="width:${pct}%"></i></div>
-                    </div>`;
+                    </div>`);
             }
         }
 
@@ -6537,7 +6563,15 @@
         // полного рендера (renderNestForge), чтобы не дублировать формулу.
         function renderNestPendingLabel(pending) {
             const pendingEl = document.getElementById('nestPendingParticles');
-            if (pendingEl) pendingEl.innerHTML = pending.toFixed(2) + NEST_PARTICLE_ICON_HTML;
+            if (pendingEl) {
+                // Каждую секунду меняется только число — иконку не пересоздаём.
+                let num = pendingEl.querySelector('.nest-pending-num');
+                if (!num) {
+                    pendingEl.innerHTML = '<span class="nest-pending-num"></span>' + NEST_PARTICLE_ICON_HTML;
+                    num = pendingEl.querySelector('.nest-pending-num');
+                }
+                num.textContent = pending.toFixed(2);
+            }
             const collectBtn = document.getElementById('nestCollectBtn');
             if (collectBtn) collectBtn.disabled = Math.floor(pending) < 1;
         }
@@ -6555,7 +6589,7 @@
             const rows = shardCount
                 ? Array.from({ length: Math.min(shardCount, 60) }, () => `<div class="nest-miner"><span>💎</span></div>`).join('')
                 : `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
-            document.getElementById('nestMinersRow').innerHTML = rows;
+            setHTMLIfChanged(document.getElementById('nestMinersRow'), rows);
             renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
@@ -6563,15 +6597,15 @@
             const have = state.nest.particles;
             const hasParticles = have >= craftCost;
             const hasGold = state.gold >= craftCostGold;
-            document.getElementById('nestCraftParticles').innerHTML = `${fmt(have)} / ${craftCost}${NEST_PARTICLE_ICON_HTML}`;
+            setHTMLIfChanged(document.getElementById('nestCraftParticles'), `${fmt(have)} / ${craftCost}${NEST_PARTICLE_ICON_HTML}`);
             document.getElementById('nestCraftTrack').style.width = Math.min(100, (have / craftCost) * 100) + '%';
             const craftBtn = document.getElementById('nestCraftBtn');
             // Крафт требует ОБА ресурса сразу (частички + Золото) — если
             // частичек хватает, а Золота нет, кнопка отдельно называет
             // именно эту нехватку, а не общую стоимость крафта.
-            craftBtn.innerHTML = (hasParticles && !hasGold)
+            setHTMLIfChanged(craftBtn, (hasParticles && !hasGold)
                 ? t('nest.craftNotEnoughGold', { cost: craftCostGold })
-                : t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML });
+                : t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML }));
             craftBtn.disabled = !(hasParticles && hasGold);
 
             const grades = CONFIG.nest.grades || [];
@@ -6601,7 +6635,7 @@
                 });
                 html += '</div>';
             });
-            document.getElementById('nestUpgradeBlocks').innerHTML = html;
+            setHTMLIfChanged(document.getElementById('nestUpgradeBlocks'), html);
         }
 
         // Суммарный процентный бонус снаряжения, надетого на орла редкости
@@ -7542,10 +7576,14 @@
             const energy = Math.max(0, Math.round(state.pvpEnergy));
             const overflow = energy > PVP_ENERGY_MAX;
             const filled = Math.min(energy, PVP_ENERGY_MAX);
-            dotsWrap.innerHTML = Array.from({ length: PVP_ENERGY_MAX }, (_, i) => {
-                const cls = i < filled ? `filled${overflow ? ' overflow' : ''}` : '';
-                return `<div class="arena-energy-dot ${cls}"></div>`;
-            }).join('');
+            // Точки создаются один раз, дальше каждую секунду меняются только классы.
+            if (dotsWrap.children.length !== PVP_ENERGY_MAX) {
+                dotsWrap.innerHTML = Array.from({ length: PVP_ENERGY_MAX }, () => '<div class="arena-energy-dot"></div>').join('');
+            }
+            Array.from(dotsWrap.children).forEach((dot, i) => {
+                dot.classList.toggle('filled', i < filled);
+                dot.classList.toggle('overflow', i < filled && overflow);
+            });
             valueEl.textContent = `${energy}/${PVP_ENERGY_MAX} ⚡`;
 
             if (timerEl) {
@@ -8224,12 +8262,24 @@
             if (btn && !running && !btn.disabled) { btn.disabled = true; btn.textContent = t('auction.endedBtn'); }
         }
 
+        let auctionRenderSig = '';
+
         function renderAuction() {
             const body = document.getElementById('auctionBody');
             if (!body) return;
-            body.replaceChildren();
             const data = auctionData || {};
             const a = data.auction;
+            // Опрос раз в 2,5 с: если ничего не поменялось, не пересобираем
+            // карточку (с картинкой лота) — только тикаем таймер. Иначе
+            // картинка лота мигала при каждом опросе.
+            const sig = JSON.stringify([LANG, a ? Object.assign({}, a, { server_time: 0 }) : null, data.coins || 0, data.frozen || 0, data.error || null,
+                !!auctionBidBusy, a ? (a.status === 'active' && a.ends_at > auctionNow()) : false]);
+            if (sig === auctionRenderSig && body.childNodes.length && !auctionFlashExtended) {
+                auctionTickTimer();
+                return;
+            }
+            auctionRenderSig = sig;
+            body.replaceChildren();
             if (!a) {
                 body.appendChild(auctionEl('div', 'auction-empty', data.error ? t('market.serverError') : t('auction.none')));
                 return;
