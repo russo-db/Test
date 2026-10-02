@@ -1160,10 +1160,51 @@ def arena_season_ends_at(season: int) -> float:
     return (season + 1) * ARENA_SEASON_DAYS * 86400
 
 
+# Расписание сезона хранится в БД (arena_season: season, started_at, ends_at,
+# days) — его можно менять из админки. Раньше номер сезона считался формулой
+# «время ÷ длительность», и смена длительности перескакивала номер сезона:
+# короче — сезон мгновенно заканчивался с раздачей наград, длиннее — смена
+# не наступала очень долго. Здесь — кэш документа (обновляет
+# load_arena_season, вызывается на каждом /api/load через reconcile).
+ARENA_SEASON_STATE: dict = {}
+ARENA_SEASON_CACHE_SECONDS = 30
+_arena_season_loaded_at = 0.0
+
+
+def legacy_arena_season_doc(now: float) -> dict:
+    """Сезон по старой формуле — для перехода: текущий сезон продолжается
+    с тем же номером и тем же временем окончания, что видели игроки."""
+    season = arena_season_index(now)
+    return {"season": season, "started_at": float(season * ARENA_SEASON_DAYS * 86400),
+            "ends_at": float(arena_season_ends_at(season)), "days": ARENA_SEASON_DAYS}
+
+
+async def load_arena_season(now: Optional[float] = None, force: bool = False) -> dict:
+    global _arena_season_loaded_at
+    now = time.time() if now is None else now
+    if (not force and ARENA_SEASON_STATE and now - _arena_season_loaded_at < ARENA_SEASON_CACHE_SECONDS
+            and now < ARENA_SEASON_STATE["ends_at"]):
+        return ARENA_SEASON_STATE
+    doc = await store.get_arena_season()
+    if not doc or doc.get("ends_at") is None:
+        seed = legacy_arena_season_doc(now)
+        if doc and doc.get("season") is not None:
+            seed["season"] = int(doc["season"])
+        doc = await store.init_arena_season(seed)
+    ARENA_SEASON_STATE.clear()
+    ARENA_SEASON_STATE.update({
+        "season": int(doc["season"]), "started_at": float(doc["started_at"]),
+        "ends_at": float(doc["ends_at"]), "days": int(doc.get("days") or ARENA_SEASON_DAYS),
+    })
+    _arena_season_loaded_at = now
+    return ARENA_SEASON_STATE
+
+
 def arena_season_view() -> dict:
-    """Текущий сезон Арены для клиента — чистая функция от времени, не
-    требует чтения БД (в отличие от reconcile_arena_season, который решает,
-    не пора ли уже провести смену сезона)."""
+    """Текущий сезон Арены для клиента — из кэша расписания (его обновляет
+    reconcile_arena_season); до первой загрузки — по старой формуле."""
+    if ARENA_SEASON_STATE:
+        return {"season": ARENA_SEASON_STATE["season"], "ends_at": ARENA_SEASON_STATE["ends_at"]}
     season = arena_season_index()
     return {"season": season, "ends_at": arena_season_ends_at(season)}
 
@@ -2903,21 +2944,69 @@ async def distribute_arena_rewards() -> dict:
 
 
 async def reconcile_arena_season() -> None:
-    """Проверяет, не наступил ли новый сезон Арены (см. arena_season_index)
-    — если да, ровно ОДИН из множества конкурентных вызовов выигрывает
-    гонку за смену сезона (store.try_advance_arena_season — атомарный
-    conditional update, как и общий кулдаун Небесного Осколка) и только он
-    разносит призы по итоговому Топ-50 УХОДЯЩЕГО сезона (см.
-    distribute_arena_rewards — считает по рейтингу ДО сброса, вызывается
-    раньше reset_all_pvp_ratings строго в этом порядке), затем сбрасывает
-    PvP-рейтинг всем игрокам к PVP_RATING_START для нового сезона. Вызывается
-    на каждом /api/load и при каждом открытии Таблицы лидеров — пока сезон
-    не сменился, это дешёвый no-op (один conditional update, всегда
-    промахивающийся мимо фильтра)."""
-    season = arena_season_index()
-    if await store.try_advance_arena_season(season):
-        await distribute_arena_rewards()
-        await store.reset_all_pvp_ratings(PVP_RATING_START)
+    """Проверяет, не закончился ли текущий сезон Арены (ends_at из БД —
+    длительность меняется в админке). Если закончился, ровно ОДИН из
+    конкурентных вызовов выигрывает store.advance_arena_season (conditional
+    update по season+ends_at) и только он раздаёт призы Топ-50 уходящего
+    сезона (distribute_arena_rewards — строго ДО сброса рейтинга), затем
+    сбрасывает PvP-рейтинг всем к PVP_RATING_START. Пока сезон идёт — no-op
+    по кэшу состояния (ARENA_SEASON_CACHE_SECONDS). Сбой здесь только
+    логируется: смена сезона повторится при следующем вызове, а вход в игру
+    и Таблица лидеров из-за него не ломаются."""
+    try:
+        now = time.time()
+        state = await load_arena_season(now)
+        if now < state["ends_at"]:
+            return
+        days = int(state["days"])
+        # Новый сезон начинается ровно в момент конца старого; если сервер
+        # простоял дольше целого сезона — с текущего момента.
+        new_started = state["ends_at"] if now < state["ends_at"] + days * 86400 else now
+        if await store.advance_arena_season(state["season"], state["ends_at"], new_started,
+                                            new_started + days * 86400, days):
+            print(f"[arena] сезон {state['season']} завершён — раздаём награды Топ-50 и сбрасываем рейтинг")
+            await distribute_arena_rewards()
+            await store.reset_all_pvp_ratings(PVP_RATING_START)
+        await load_arena_season(now, force=True)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+
+
+class AdminArenaSeason(BaseModel):
+    days: int
+    apply_to_current: bool = True
+
+
+@app.post("/admin/api/arena/season")
+async def admin_arena_season(body: AdminArenaSeason, _: None = Depends(require_admin)):
+    """Длительность сезона Арены. apply_to_current — пересчитать конец
+    ТЕКУЩЕГО сезона от его начала (начало + N дней); иначе новая длительность
+    действует со следующего сезона. Если новый конец уже в прошлом, сезон
+    завершается сразу: награды Топ-50 и сброс рейтинга."""
+    try:
+        days = int(body.days)
+        if not 1 <= days <= 365:
+            raise HTTPException(status_code=400, detail="Длительность сезона — от 1 до 365 дней")
+        now = time.time()
+        state = await load_arena_season(now, force=True)
+        new_ends = state["started_at"] + days * 86400 if body.apply_to_current else None
+        if new_ends is not None and new_ends <= now:
+            new_ends = now   # сезон уже «просрочен» — заканчиваем сейчас, следующий стартует с этого момента
+        await store.set_arena_season_schedule(days, new_ends)
+        print(f"[admin] сезон Арены: {days} дн."
+              + (f", конец текущего → {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(new_ends))}" if new_ends else " со следующего сезона"))
+        ended = bool(new_ends is not None and new_ends <= now)
+        await load_arena_season(now, force=True)
+        if ended:
+            await reconcile_arena_season()
+        state = await load_arena_season(force=True)
+        return {"season": state["season"], "started_at": state["started_at"], "ends_at": state["ends_at"],
+                "season_days": state["days"], "ended_now": ended}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось изменить сезон: {type(e).__name__}: {e}")
 
 
 @app.post("/admin/api/arena/distribute_rewards")
@@ -2954,10 +3043,11 @@ async def admin_arena(search: str = "", limit: int = 100, _: None = Depends(requ
                 "place": place, "user_id": r["user_id"], "name": r["name"], "pvp_rating": r["pvp_rating"],
                 "pvp_energy": energy, "last_seen": r.get("last_seen"), "reward": reward,
             })
-        season = arena_season_view()
+        state = await load_arena_season(force=True)
         eco = (await store.get_economy(days=1)).get("total") or {}
         return {
-            "season": season["season"], "ends_at": season["ends_at"], "season_days": ARENA_SEASON_DAYS,
+            "season": state["season"], "ends_at": state["ends_at"], "season_days": state["days"],
+            "started_at": state["started_at"],
             "server_time": time.time(), "rewards": ARENA_SEASON_REWARDS,
             "rating": {"start": PVP_RATING_START, "win": PVP_RATING_WIN, "loss": PVP_RATING_LOSS},
             "energy": {"max": PVP_ENERGY_MAX, "cost": PVP_ENERGY_COST,

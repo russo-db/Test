@@ -559,6 +559,18 @@
             <div class="card-grid" id="arenaStats"></div>
 
             <div class="nft-interval-panel">
+                <b>⏳ Длительность сезона</b>
+                <div class="nft-interval-row">
+                    <label>Дней в сезоне <input type="number" id="arenaSeasonDays" min="1" max="365" step="1" style="width:90px;"></label>
+                    <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="arenaSeasonApplyNow" checked> применить к текущему сезону</label>
+                    <button class="primary" id="arenaSeasonSave">Сохранить</button>
+                </div>
+                <div class="muted" id="arenaSeasonPreview" style="font-size:12px;"></div>
+                <div class="muted" style="font-size:12px;">С галочкой конец текущего сезона пересчитывается от его начала (начало + N дней).
+                    Без галочки текущий сезон идёт как шёл, новая длительность — со следующего. В конце сезона Топ-50 получает награды, рейтинг сбрасывается.</div>
+            </div>
+
+            <div class="nft-interval-panel">
                 <b>Действия</b>
                 <div class="nft-interval-row">
                     <button class="primary" id="arenaDistributeBtn">🏆 Раздать награды сейчас (по текущему Топ-50)</button>
@@ -1298,6 +1310,48 @@ function arenaTick() {
     const left = arenaAdminData.ends_at - (Date.now() / 1000 + arenaAdminData.clockOffset);
     el.textContent = left > 0 ? fmtLeft(left) : 'смена сезона…';
 }
+function arenaSeasonPreviewText() {
+    const d = arenaAdminData; if (!d) return '';
+    const days = Number(document.getElementById('arenaSeasonDays').value) || 0;
+    const applyNow = document.getElementById('arenaSeasonApplyNow').checked;
+    const fmt = ts => new Date(ts * 1000).toLocaleString('ru-RU');
+    let text = `Сезон № ${d.season}: начался ${fmt(d.started_at)}, закончится ${fmt(d.ends_at)} (${d.season_days} дн.).`;
+    if (days >= 1 && days !== d.season_days) {
+        if (applyNow) {
+            const newEnd = d.started_at + days * 86400;
+            const past = newEnd <= Date.now() / 1000 + (d.clockOffset || 0);
+            text += past ? ` → ⚠️ новый конец ${fmt(newEnd)} уже прошёл: сезон закончится СРАЗУ (награды Топ-50, сброс рейтинга).`
+                         : ` → станет ${fmt(newEnd)}.`;
+        } else {
+            text += ` → следующие сезоны будут по ${days} дн.`;
+        }
+    }
+    return text;
+}
+function updateArenaSeasonPreview() { document.getElementById('arenaSeasonPreview').textContent = arenaSeasonPreviewText(); }
+document.getElementById('arenaSeasonDays').addEventListener('input', updateArenaSeasonPreview);
+document.getElementById('arenaSeasonApplyNow').addEventListener('change', updateArenaSeasonPreview);
+document.getElementById('arenaSeasonSave').onclick = e => {
+    const d = arenaAdminData; if (!d) return;
+    const days = Number(document.getElementById('arenaSeasonDays').value);
+    const applyNow = document.getElementById('arenaSeasonApplyNow').checked;
+    if (!Number.isInteger(days) || days < 1 || days > 365) { toast('Длительность — целое число от 1 до 365 дней', true); return; }
+    if (!confirm(`Сделать сезон Арены ${days} дн.?\n${arenaSeasonPreviewText()}`)) return;
+    withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
+        try {
+            const r = await api('/admin/api/arena/season', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ days, apply_to_current: applyNow }),
+            });
+            toast(r.ended_now ? `Сезон завершён, начался сезон № ${r.season}` : `Сезон: ${r.season_days} дн., конец ${new Date(r.ends_at * 1000).toLocaleString('ru-RU')}`);
+            arenaSeasonDaysTouched = false;
+            await loadArenaAdmin(true);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+let arenaSeasonDaysTouched = false;
+document.getElementById('arenaSeasonDays').addEventListener('input', () => { arenaSeasonDaysTouched = true; });
+
 function renderArenaAdmin(d) {
     arenaAdminData = d;
     d.clockOffset = d.server_time - Date.now() / 1000;
@@ -1312,6 +1366,8 @@ function renderArenaAdmin(d) {
         card('Докупка энергии', `${fmtNum(d.energy.price_gold)} зол. или ${fmtNum(d.energy.price_gram)} GRAM`),
         card('Потрачено на энергию', `${fmtNum(d.economy.gold_spent)} зол. · ${fmtNum(d.economy.gram_spent)} GRAM`),
     ].join('');
+    if (!arenaSeasonDaysTouched) document.getElementById('arenaSeasonDays').value = d.season_days;
+    updateArenaSeasonPreview();
     document.getElementById('arenaRewardsBody').innerHTML = (d.rewards || []).map(r => `<tr>
         <td>${r.rank ? r.rank : `${r.rank_from}–${r.rank_to}`}</td><td>${fmtNum(r.gram || 0)}</td><td>${fmtNum(r.shards || 0)}</td><td>${fmtNum(r.particles || 0)}</td></tr>`).join('');
     document.getElementById('arenaListHint').textContent = d.search

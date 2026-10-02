@@ -30,7 +30,7 @@ P2P-торговля целыми Небесными Осколками и це�
 merchant_state: {meat_bought, eagles_sold_by_tier: {tier: n}}, точно так же общий
 кулдаун/суточный лимит покупки Небесного Осколка —
 nest_state: {cooldown_until, day, bought_today}, и общий номер текущего
-сезона Арены — arena_season: {season} (см. try_advance_arena_season /
+сезона Арены — arena_season: {season, started_at, ends_at, days} (см. advance_arena_season /
 reconcile_arena_season в main.py — раз в ARENA_SEASON_DAYS суток Топ-50
 получает призы и PvP-рейтинг сбрасывается всем игрокам).
 
@@ -1178,25 +1178,38 @@ class MongoStore:
             return doc["n"]
         return 0
 
-    async def try_advance_arena_season(self, new_season: int) -> bool:
-        """Атомарно продвигает сохранённый номер сезона Арены — true
-        только у ОДНОГО запроса среди множества конкурентных (гонка сразу
-        у всех, кто открыл приложение после смены сезона), и только этот
-        запрос обязан разнести призы и сбросить рейтинг (см.
-        reconcile_arena_season в main.py). Документ создаётся лениво прямо
-        на ТЕКУЩЕМ сезоне при самом первом обращении (upsert), чтобы не
-        наградить никого за ещё не сыгранный «нулевой» сезон при первом
-        запуске игры."""
-        result = await self.arena_season.update_one(
-            {"_id": "global", "season": {"$lt": new_season}},
-            {"$set": {"season": new_season}},
+    async def get_arena_season(self) -> Optional[dict]:
+        return await self.arena_season.find_one({"_id": "global"})
+
+    async def init_arena_season(self, doc: dict) -> dict:
+        """Расписание сезона Арены: {season, started_at, ends_at, days}.
+        Создаёт документ, если его нет, и дописывает started_at/ends_at/days
+        к старому формату {season} (когда сезон считался формулой от даты)."""
+        await self.arena_season.update_one({"_id": "global"}, {"$setOnInsert": dict(doc)}, upsert=True)
+        cur = await self.arena_season.find_one({"_id": "global"})
+        if cur.get("ends_at") is None:
+            await self.arena_season.update_one(
+                {"_id": "global", "ends_at": {"$exists": False}},
+                {"$set": {k: doc[k] for k in ("started_at", "ends_at", "days")}},
+            )
+            cur = await self.arena_season.find_one({"_id": "global"})
+        return cur
+
+    async def advance_arena_season(self, season: int, ends_at: float, new_started: float,
+                                   new_ends: float, days: int) -> bool:
+        """Смена сезона: true ровно у ОДНОГО из конкурентных вызовов — тот и
+        раздаёт награды и сбрасывает рейтинг (см. reconcile_arena_season)."""
+        res = await self.arena_season.update_one(
+            {"_id": "global", "season": season, "ends_at": ends_at},
+            {"$set": {"season": season + 1, "started_at": new_started, "ends_at": new_ends, "days": days}},
         )
-        if result.modified_count > 0:
-            return True
-        await self.arena_season.update_one(
-            {"_id": "global"}, {"$setOnInsert": {"season": new_season}}, upsert=True,
-        )
-        return False
+        return res.modified_count > 0
+
+    async def set_arena_season_schedule(self, days: int, ends_at: Optional[float] = None) -> None:
+        fields = {"days": int(days)}
+        if ends_at is not None:
+            fields["ends_at"] = float(ends_at)
+        await self.arena_season.update_one({"_id": "global"}, {"$set": fields})
 
     async def reset_all_pvp_ratings(self, start_rating: int) -> None:
         """Сбрасывает PvP-рейтинг ВСЕХ игроков разом — конец сезона Арены
