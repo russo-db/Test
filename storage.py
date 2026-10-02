@@ -917,7 +917,9 @@ class MongoStore:
 
         try:
             await self.deposits.insert_one(
-                {"_id": tx_hash, "user_id": user_id, "amount": gram, "ts": ts, "credited_at": int(time.time())}
+                {"_id": tx_hash, "user_id": user_id, "amount": gram, "ts": ts, "credited_at": int(time.time()),
+                 "referrer_id": referrer_id if referral_gram > 0 else None,
+                 "referral_gram": float(referral_gram) if referrer_id else 0.0}
             )
         except DuplicateKeyError:
             return False
@@ -930,6 +932,70 @@ class MongoStore:
 
     async def count_deposits(self) -> int:
         return await self.deposits.count_documents({})
+
+    async def list_transactions(self, kind: str = "all", user_id: Optional[int] = None,
+                                limit: int = 50, offset: int = 0) -> dict:
+        """Админка → Транзакции: пополнения и выводы одним списком, новые
+        сверху (по дате перевода / заявки). Возвращает и итоги по фильтру."""
+        q = {"user_id": user_id} if user_id is not None else {}
+        take = offset + limit + 1
+        rows = []
+        if kind in ("all", "deposit"):
+            async for d in self.deposits.find(q).sort("ts", -1).limit(take):
+                rows.append({
+                    "kind": "deposit", "id": str(d["_id"]), "user_id": d.get("user_id"),
+                    "amount": float(d.get("amount") or 0), "ts": int(d.get("ts") or 0),
+                    "credited_at": d.get("credited_at"), "reversed": bool(d.get("reversed")),
+                    "reversed_at": d.get("reversed_at"), "referrer_id": d.get("referrer_id"),
+                    "referral_gram": float(d.get("referral_gram") or 0),
+                })
+        if kind in ("all", "withdrawal"):
+            async for w in self.withdrawals.find(q).sort("ts", -1).limit(take):
+                rows.append({
+                    "kind": "withdrawal", "id": str(w["_id"]), "user_id": w.get("user_id"),
+                    "amount": float(w.get("amount") or 0), "payout": float(w.get("payout") or w.get("amount") or 0),
+                    "address": w.get("address") or "", "status": w.get("status") or "", "ts": int(w.get("ts") or 0),
+                })
+        rows.sort(key=lambda r: r["ts"], reverse=True)
+        page = rows[offset:offset + limit]
+
+        totals = {"deposits_count": 0, "deposits_gram": 0.0, "reversed_count": 0, "reversed_gram": 0.0}
+        async for row in self.deposits.aggregate([{"$match": q}, {"$group": {
+                "_id": {"$ifNull": ["$reversed", False]}, "n": {"$sum": 1}, "gram": {"$sum": "$amount"}}}]):
+            if row["_id"]:
+                totals["reversed_count"] += row["n"]; totals["reversed_gram"] += float(row["gram"] or 0)
+            else:
+                totals["deposits_count"] += row["n"]; totals["deposits_gram"] += float(row["gram"] or 0)
+        for st in ("pending", "approved", "rejected"):
+            totals[f"withdrawals_{st}_count"] = 0
+            totals[f"withdrawals_{st}_gram"] = 0.0
+        async for row in self.withdrawals.aggregate([{"$match": q}, {"$group": {
+                "_id": "$status", "n": {"$sum": 1}, "gram": {"$sum": "$amount"}}}]):
+            if row["_id"] in ("pending", "approved", "rejected"):
+                totals[f"withdrawals_{row['_id']}_count"] = row["n"]
+                totals[f"withdrawals_{row['_id']}_gram"] = float(row["gram"] or 0)
+        return {"items": page, "has_more": len(rows) > offset + limit, "totals": totals}
+
+    async def reverse_deposit(self, tx_hash: str, now: float) -> dict:
+        """Отмена ошибочного зачисления (например, повтор старого перевода после
+        очистки базы): пометка reversed ставится атомарно, поэтому повторное
+        нажатие ничего не спишет второй раз. Списываем у игрока сумму
+        депозита и у пригласившего — его реферальный бонус, если он записан
+        в депозите. Баланс может уйти в минус, если GRAM уже потрачены."""
+        doc = await self.deposits.find_one_and_update(
+            {"_id": tx_hash, "reversed": {"$ne": True}},
+            {"$set": {"reversed": True, "reversed_at": int(now)}},
+        )
+        if not doc:
+            exists = await self.deposits.find_one({"_id": tx_hash}, {"_id": 1})
+            return {"status": "already_reversed" if exists else "not_found"}
+        amount = float(doc.get("amount") or 0)
+        await self.users.update_one({"_id": doc["user_id"]}, {"$inc": {"coins": -amount, "ops": 1}})
+        ref_id, ref_gram = doc.get("referrer_id"), float(doc.get("referral_gram") or 0)
+        if ref_id and ref_gram > 0:
+            await self.users.update_one({"_id": ref_id}, {"$inc": {"coins": -ref_gram, "ops": 1}})
+        return {"status": "ok", "user_id": doc["user_id"], "amount": amount,
+                "referrer_id": ref_id if ref_gram > 0 else None, "referral_gram": ref_gram}
 
     async def request_withdraw(self, user_id: int, address: str, gram: float,
                                 payout: float, ts: int) -> bool:

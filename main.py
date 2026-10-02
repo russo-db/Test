@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 import asyncio
+import base64
 import functools
 import traceback
 from typing import List, Optional
@@ -5283,6 +5284,89 @@ async def admin_list_withdrawals(status: str = "", limit: int = 50, offset: int 
     return {"items": items}
 
 
+def ton_tx_url(tx_hash: str) -> str:
+    """Ссылка на транзакцию в tonviewer. toncenter v3 отдаёт хэш в base64 —
+    tonviewer ждёт hex."""
+    h = (tx_hash or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", h):
+        try:
+            raw = base64.b64decode(h.replace("-", "+").replace("_", "/") + "=" * (-len(h) % 4))
+            h = raw.hex() if len(raw) == 32 else ""
+        except Exception:
+            h = ""
+    return f"https://tonviewer.com/transaction/{h.lower()}" if h else ""
+
+
+DEPOSIT_LATE_SECONDS = 3600   # зачислено позже перевода больше чем на час — подозрительно
+
+
+@app.get("/admin/api/transactions")
+async def admin_transactions(kind: str = "all", user_id: str = "", limit: int = 50, offset: int = 0,
+                             _: None = Depends(require_admin)):
+    """Админка → Транзакции: история пополнений и выводов. Для пополнений —
+    дата самого перевода в TON и когда сервер его зачислил; если между ними
+    больше часа, строка помечается (так выглядел повтор старых переводов
+    после очистки базы)."""
+    try:
+        kind = kind if kind in ("all", "deposit", "withdrawal") else "all"
+        uid = None
+        if user_id.strip():
+            if not user_id.strip().lstrip("-").isdigit():
+                raise HTTPException(status_code=400, detail="ID игрока — число")
+            uid = int(user_id.strip())
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
+        data = await store.list_transactions(kind, uid, limit, offset)
+        names = {}
+        for it in data["items"]:
+            for key in ("user_id", "referrer_id"):
+                pid = it.get(key)
+                if pid is not None and pid not in names:
+                    row = await store.get(int(pid))
+                    names[pid] = (row or {}).get("name") or ""
+        for it in data["items"]:
+            it["name"] = names.get(it["user_id"], "")
+            if it["kind"] == "deposit":
+                it["ton"] = round(it["amount"] / TON_RATE, 9) if TON_RATE else it["amount"]
+                it["tx_url"] = ton_tx_url(it["id"])
+                late = (it["credited_at"] - it["ts"]) if it.get("credited_at") else None
+                it["late_seconds"] = late
+                it["suspicious"] = bool(late is not None and late > DEPOSIT_LATE_SECONDS)
+                if it.get("referrer_id") is not None:
+                    it["referrer_name"] = names.get(it["referrer_id"], "")
+        data["deposits_since"] = float(await store.get_setting(DEPOSITS_SINCE_SETTING, 0) or 0)
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить транзакции: {type(e).__name__}: {e}")
+
+
+class AdminDepositReverse(BaseModel):
+    tx_hash: str
+
+
+@app.post("/admin/api/deposits/reverse")
+async def admin_reverse_deposit(body: AdminDepositReverse, _: None = Depends(require_admin)):
+    """Отменить ошибочное зачисление пополнения: списать GRAM у игрока (и
+    реферальный бонус у пригласившего, если он записан). Один раз на депозит."""
+    try:
+        r = await store.reverse_deposit(body.tx_hash.strip(), time.time())
+        if r["status"] == "not_found":
+            raise HTTPException(status_code=404, detail="Пополнение не найдено")
+        if r["status"] == "already_reversed":
+            raise HTTPException(status_code=409, detail="Это пополнение уже отменено")
+        print(f"[admin] отмена пополнения {body.tx_hash}: игрок {r['user_id']} −{r['amount']:g} GRAM"
+              + (f", реферер {r['referrer_id']} −{r['referral_gram']:g}" if r.get("referrer_id") else ""))
+        return r
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось отменить пополнение: {type(e).__name__}: {e}")
+
+
 @app.post("/admin/api/withdrawals/{wd_id}/approve")
 async def admin_approve_withdrawal(wd_id: str, _: None = Depends(require_admin)):
     wd_id = int(wd_id) if wd_id.isdigit() else wd_id
@@ -6381,6 +6465,7 @@ LEDGER_LABELS = [
     ("/api/ton/withdraw", "Вывод TON"),
     ("/api/ton/check", "Пополнение TON"),
     ("/admin/api/withdrawals", "Вывод: решение админа"),
+    ("/admin/api/deposits/reverse", "Отмена пополнения админом"),
     ("/admin/api/players", "Правка админом"),
     ("/api/nft/", "NFT «Небесный орел»"),
 ]

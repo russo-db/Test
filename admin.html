@@ -242,6 +242,7 @@
             <button class="nav-btn active" data-page="overview">📊 Обзор</button>
             <button class="nav-btn" data-page="players">👥 Игроки</button>
             <button class="nav-btn" data-page="withdrawals">💸 Выводы</button>
+            <button class="nav-btn" data-page="transactions">💳 Транзакции</button>
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
             <button class="nav-btn" data-page="missions">📋 Задания</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
@@ -334,6 +335,39 @@
                 <button id="playersPrev">← Назад</button>
                 <span id="playersPageInfo" class="muted"></span>
                 <button id="playersNext">Вперёд →</button>
+            </div>
+        </div>
+
+        <div class="page" id="page-transactions">
+            <h2>💳 История транзакций: пополнения и выводы</h2>
+            <div class="card-grid" id="txTotals"></div>
+            <div class="toolbar">
+                <select id="txKind">
+                    <option value="all">Все</option>
+                    <option value="deposit">⬇️ Пополнения</option>
+                    <option value="withdrawal">⬆️ Выводы</option>
+                </select>
+                <input id="txUser" placeholder="ID игрока (необязательно)" style="width:200px;">
+                <button id="txSearch">Найти</button>
+                <button id="txRefresh">Обновить</button>
+            </div>
+            <div class="muted" style="font-size:12px; margin-bottom:10px;">
+                «Дата перевода» — когда TON пришёл на кошелёк проекта, «Зачислено» — когда сервер начислил GRAM.
+                ⚠️ — зачислено больше чем через час после перевода: так выглядит повтор старого перевода после очистки базы.
+                Такое зачисление можно отменить — GRAM спишутся у игрока (и реферальный бонус у пригласившего).
+            </div>
+            <div class="muted" id="txSinceHint" style="font-size:12px; margin-bottom:10px;"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Тип</th><th>Игрок</th><th>GRAM</th><th>TON</th><th>Дата перевода</th>
+                        <th>Зачислено / статус</th><th>Детали</th><th></th>
+                    </tr></thead>
+                    <tbody id="txBody"></tbody>
+                </table>
+            </div>
+            <div class="toolbar" style="margin-top:10px;">
+                <button id="txMore" style="display:none;">Показать ещё</button>
             </div>
         </div>
 
@@ -721,6 +755,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         document.getElementById('page-' + btn.dataset.page).classList.add('active');
         if (btn.dataset.page === 'players') loadPlayers();
         if (btn.dataset.page === 'withdrawals') loadWithdrawals();
+        if (btn.dataset.page === 'transactions') loadTransactions();
         if (btn.dataset.page === 'config') loadConfig();
         if (btn.dataset.page === 'clans') loadClans();
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
@@ -1481,6 +1516,90 @@ document.getElementById('missionsToggleBtn').onclick = async e => { await withBu
         toast(r.enabled ? 'Задания включены' : 'Задания выключены');
     } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 }); renderMissionsHead(); };
+
+/* ---------- транзакции: пополнения и выводы ---------- */
+const txState = { items: [], offset: 0 };
+const WD_STATUS = { pending: '⏳ ожидает', approved: '✅ выплачен', rejected: '❌ отклонён' };
+function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString('ru-RU') : '—'; }
+function fmtLate(sec) {
+    if (sec == null) return '';
+    if (sec < 3600) return `${Math.max(0, Math.round(sec / 60))} мин`;
+    if (sec < 86400) return `${Math.round(sec / 3600)} ч`;
+    return `${Math.round(sec / 86400)} дн`;
+}
+function renderTxTotals(t) {
+    const card = (label, value) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    document.getElementById('txTotals').innerHTML = [
+        card('Пополнений', `${fmtNum(t.deposits_count)} · ${fmtNum(t.deposits_gram)} GRAM`),
+        card('Отменено пополнений', `${fmtNum(t.reversed_count)} · ${fmtNum(t.reversed_gram)} GRAM`),
+        card('Выводы выплачены', `${fmtNum(t.withdrawals_approved_count)} · ${fmtNum(t.withdrawals_approved_gram)} GRAM`),
+        card('Выводы ждут', `${fmtNum(t.withdrawals_pending_count)} · ${fmtNum(t.withdrawals_pending_gram)} GRAM`),
+        card('Выводы отклонены', `${fmtNum(t.withdrawals_rejected_count)} · ${fmtNum(t.withdrawals_rejected_gram)} GRAM`),
+    ].join('');
+}
+function txRow(it) {
+    const who = `${escHtml(it.name) || '<span class="muted">без имени</span>'}<br><code>${it.user_id}</code>`;
+    if (it.kind === 'deposit') {
+        const credited = it.credited_at ? `${fmtDate(it.credited_at)}${it.suspicious ? `<br><b style="color:#f0b429">⚠️ через ${fmtLate(it.late_seconds)} после перевода</b>` : ''}`
+            : '<span class="muted">не записано (старая версия)</span>';
+        const status = it.reversed ? `<br><b style="color:#f87171">↩️ отменено ${fmtDate(it.reversed_at)}</b>` : '';
+        const ref = it.referrer_id ? `<br><span class="muted">реферер ${escHtml(it.referrer_name || '')} <code>${it.referrer_id}</code>: +${fmtNum(it.referral_gram)} GRAM</span>` : '';
+        const link = it.tx_url ? `<a href="${it.tx_url}" target="_blank" rel="noopener">транзакция ↗</a>` : `<code title="${escHtml(it.id)}">${escHtml(it.id.slice(0, 12))}…</code>`;
+        return `<tr${it.suspicious && !it.reversed ? ' style="background:rgba(240,180,41,0.08)"' : ''}>
+            <td data-label="Тип">⬇️ Пополнение</td><td data-label="Игрок">${who}</td>
+            <td data-label="GRAM"><b>+${fmtNum(it.amount)}</b></td><td data-label="TON">${fmtNum(it.ton)}</td>
+            <td data-label="Дата перевода">${fmtDate(it.ts)}</td><td data-label="Зачислено">${credited}${status}</td>
+            <td data-label="Детали">${link}${ref}</td>
+            <td class="td-action">${it.reversed ? '' : `<button class="danger" data-reverse="${escHtml(it.id)}" style="font-size:12px; padding:4px 10px;">Отменить зачисление</button>`}</td></tr>`;
+    }
+    return `<tr><td data-label="Тип">⬆️ Вывод</td><td data-label="Игрок">${who}</td>
+        <td data-label="GRAM"><b>−${fmtNum(it.amount)}</b></td><td data-label="TON">${fmtNum(it.payout)}</td>
+        <td data-label="Дата заявки">${fmtDate(it.ts)}</td><td data-label="Статус">${WD_STATUS[it.status] || escHtml(it.status)}</td>
+        <td data-label="Адрес"><code title="${escHtml(it.address)}">${escHtml(it.address.slice(0, 14))}…</code></td>
+        <td class="td-action">${it.status === 'pending' ? '<span class="muted" style="font-size:12px;">решение — во вкладке «Выводы»</span>' : ''}</td></tr>`;
+}
+function renderTxRows() {
+    const body = document.getElementById('txBody');
+    body.innerHTML = txState.items.map(txRow).join('') || '<tr><td colspan="8" class="muted">Транзакций нет</td></tr>';
+    body.querySelectorAll('[data-reverse]').forEach(btn => {
+        btn.onclick = () => {
+            const it = txState.items.find(x => x.kind === 'deposit' && x.id === btn.dataset.reverse);
+            if (!it) return;
+            const ref = it.referrer_id ? `\nУ пригласившего (${it.referrer_id}) спишется реферальный бонус ${fmtNum(it.referral_gram)} GRAM.` : '';
+            if (!confirm(`Отменить зачисление ${fmtNum(it.amount)} GRAM игроку ${it.user_id}?\nПеревод от ${fmtDate(it.ts)}.${ref}\nЕсли GRAM уже потрачены, баланс уйдёт в минус.`)) return;
+            withBusyButton(btn, 'Отменяю…', async () => {
+                try {
+                    const r = await api('/admin/api/deposits/reverse', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tx_hash: it.id }),
+                    });
+                    toast(`Отменено: у игрока ${r.user_id} списано ${fmtNum(r.amount)} GRAM` + (r.referrer_id ? `, у реферера ${r.referrer_id} — ${fmtNum(r.referral_gram)}` : ''));
+                    await loadTransactions();
+                } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+            });
+        };
+    });
+}
+async function loadTransactions(more) {
+    const offset = more ? txState.offset : 0;
+    try {
+        const params = new URLSearchParams({ kind: document.getElementById('txKind').value,
+            user_id: document.getElementById('txUser').value.trim(), limit: 100, offset });
+        const d = await api('/admin/api/transactions?' + params);
+        txState.items = more ? txState.items.concat(d.items) : d.items;
+        txState.offset = offset + d.items.length;
+        renderTxTotals(d.totals);
+        renderTxRows();
+        document.getElementById('txMore').style.display = d.has_more ? '' : 'none';
+        document.getElementById('txSinceHint').textContent = d.deposits_since
+            ? `Защита от повторов включена: переводы раньше ${fmtDate(d.deposits_since)} не зачисляются.` : '';
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('txSearch').onclick = () => loadTransactions();
+document.getElementById('txRefresh').onclick = () => loadTransactions();
+document.getElementById('txKind').onchange = () => loadTransactions();
+document.getElementById('txUser').addEventListener('keydown', e => { if (e.key === 'Enter') loadTransactions(); });
+document.getElementById('txMore').onclick = () => loadTransactions(true);
 
 /* ---------- экономика ---------- */
 async function loadEconomy() {
