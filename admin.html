@@ -1980,7 +1980,7 @@ document.getElementById('botClanClearBtn').onclick = async () => {
     if (!confirm('Удалить ВСЕХ тестовых клан-ботов? Реальных игроков это не затронет.')) return;
     try {
         const data = await api('/admin/api/clans/bots/clear', { method: 'POST' });
-        toast(`Удалено ботов: ${data.removed}`);
+        toast(`Удалено кланов-ботов: ${data.removed}, ботов-игроков: ${data.removed_users ?? 0}`);
         loadClans();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 };

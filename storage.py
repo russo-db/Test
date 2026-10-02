@@ -2122,17 +2122,15 @@ class MongoStore:
             out.append(doc)
         return out
 
-    async def clear_bot_clans(self) -> int:
-        """Удаляет ВСЕ тестовые клан-боты и их фейковых пользователей
-        разом — полный откат create_bot_clan, реальных игроков не
-        касается (фильтр всегда is_bot=True)."""
-        bot_clans = await self.clans.find({"is_bot": True}).to_list(None)
-        member_ids = [uid for c in bot_clans for uid in (c.get("members") or [])]
-        if bot_clans:
-            await self.clans.delete_many({"is_bot": True})
-        if member_ids:
-            await self.users.delete_many({"_id": {"$in": member_ids}})
-        return len(bot_clans)
+    async def clear_bot_clans(self) -> dict:
+        """Удаляет ВСЕ тестовые клан-боты и всех фейковых ботов-пользователей
+        разом — полный откат create_bot_clan. Ботов-пользователей удаляем по
+        признаку (is_bot=True и отрицательный _id), а не только по составам
+        кланов: исключённый из клана бот иначе оставался бы в базе навсегда.
+        Реальных игроков не касается — у них _id = Telegram ID > 0 и нет is_bot."""
+        clans = await self.clans.delete_many({"is_bot": True})
+        users = await self.users.delete_many({"is_bot": True, "_id": {"$lt": 0}})
+        return {"clans": clans.deleted_count, "users": users.deleted_count}
 
     async def count_online(self, since_ts: float) -> int:
         return await self.users.count_documents({"last_seen": {"$gte": since_ts}})

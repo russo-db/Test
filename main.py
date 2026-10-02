@@ -5459,8 +5459,13 @@ async def admin_equip_bot_clans(_: None = Depends(require_admin)):
 async def admin_clear_bot_clans(_: None = Depends(require_admin)):
     """Удаляет ВСЕ тестовые клан-боты одним действием — откат после
     тестирования, реальных игроков не касается."""
-    removed = await store.clear_bot_clans()
-    return {"status": "success", "removed": removed}
+    try:
+        removed = await store.clear_bot_clans()
+        print(f"[admin] удалены боты: кланов {removed['clans']}, ботов-игроков {removed['users']}")
+        return {"status": "success", "removed": removed["clans"], "removed_users": removed["users"]}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось удалить ботов: {type(e).__name__}: {e}")
 
 
 @app.get("/admin/api/clans/{clan_id}")
