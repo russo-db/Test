@@ -221,6 +221,7 @@
         .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
     }
 </style>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
@@ -254,6 +255,7 @@
     </div>
     <div id="main">
         <div class="page active" id="page-overview">
+            <div class="nft-interval-panel" id="ownerBanner" style="display:none;"></div>
             <div class="nft-interval-panel" id="nftIntervalPanel">
                 <div class="nft-interval-head">
                     <b>🦅 NFT «Небесный орел»: интервал сбора осколка</b>
@@ -615,8 +617,16 @@ const state = {
     clansOffset: 0, clansLimit: 50, clansTotal: 0, clansSearch: '',
 };
 
+// Открытая через бота (/admin) админка — внутри Telegram: каждый запрос несёт
+// подписанную initData, по ней сервер узнаёт владельца (MAINTENANCE_WHITELIST)
+// и разрешает техработы, тестеров и интервал NFT. В обычном браузере подписи нет.
+const tgAdmin = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) ? window.Telegram.WebApp : null;
+if (tgAdmin) { try { tgAdmin.ready(); tgAdmin.expand(); } catch (e) { /* старый клиент */ } }
+
 async function api(path, opts) {
-    const res = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
+    opts = Object.assign({ credentials: 'same-origin' }, opts);
+    if (tgAdmin) opts.headers = Object.assign({}, opts.headers || {}, { 'X-Telegram-Init-Data': tgAdmin.initData });
+    const res = await fetch(path, opts);
     if (res.status === 401) {
         showLogin();
         throw new Error('unauthorized');
@@ -645,9 +655,20 @@ function showApp() {
     document.getElementById('app').classList.remove('hidden');
 }
 
+function renderOwnerBanner(me) {
+    const el = document.getElementById('ownerBanner');
+    el.style.display = '';
+    if (me && me.owner) {
+        el.innerHTML = `<b>🔐 Владелец подтверждён через Telegram</b><span class="muted" style="font-size:12px;">ID ${me.telegram_id} — доступны техработы, тестеры и интервал NFT.</span>`;
+    } else {
+        el.innerHTML = `<b>⚠️ Админка открыта не через Telegram</b><span class="muted" style="font-size:12px;">Включение техработ, список тестеров и интервал сбора NFT доступны только владельцам:
+            откройте админку через бота командой <b>/admin</b>. Остальное работает как обычно.</span>`;
+    }
+}
+
 async function checkAuth() {
     try {
-        await api('/admin/api/me');
+        renderOwnerBanner(await api('/admin/api/me'));
         showApp();
         loadOverview();
     } catch (e) {
@@ -670,8 +691,7 @@ document.getElementById('loginBtn').onclick = async () => {
             }
         });
         document.getElementById('loginPassword').value = '';
-        showApp();
-        loadOverview();
+        await checkAuth();
     } catch (e) {
         errEl.textContent = e.message;
     }

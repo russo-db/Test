@@ -773,7 +773,9 @@ class MongoStore:
             return "insufficient_funds"
 
         field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
-        await self.users.update_one({"_id": buyer_id}, {"$inc": {field: 1}})
+        # ops: 1 — иначе параллельный крафт/улучшение (CAS по ops с $set всего
+        # инвентаря) затёр бы купленный предмет.
+        await self.users.update_one({"_id": buyer_id}, {"$inc": {field: 1, "ops": 1}})
 
         seller_credit = price * (1 - commission)
         await self.users.update_one(
@@ -798,7 +800,7 @@ class MongoStore:
             return "not_owner" if exists else "not_found"
 
         field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
-        await self.users.update_one({"_id": seller_id}, {"$inc": {field: 1}})
+        await self.users.update_one({"_id": seller_id}, {"$inc": {field: 1, "ops": 1}})
         return "ok"
 
     # --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
@@ -1445,6 +1447,10 @@ class MongoStore:
     async def list_auctions(self, limit: int = 10) -> list:
         return [self._auction_doc(d) async for d in self.auctions.find({}).sort("created_at", -1).limit(limit)]
 
+    async def auctions_with_pending_refunds(self) -> list:
+        return [str(d["_id"]) async for d in self.auctions.find(
+            {"pending_refunds.0": {"$exists": True}}, {"_id": 1})]
+
     async def list_due_auctions(self, now: float) -> list:
         """Лоты, которым пора закрыться или довести расчёт до конца."""
         query = {"$or": [{"status": "active", "ends_at": {"$lte": now}},
@@ -1460,6 +1466,19 @@ class MongoStore:
             )
         return res.modified_count > 0
 
+    async def _refund_if_evicted(self, oid, user_id: int, old_hold: float) -> None:
+        """Пока игрок перебивал сам себя, его могли выбить из ТОП-5. Возврат из
+        pending_refunds тогда не сработал (заморозка в тот момент уже была
+        новой суммой) и запись о нём ушла; после отката у игрока снова
+        old_hold — без места в ТОП-5. Без этого шага GRAM висел бы
+        замороженным до конца лота, а сам игрок не смог бы поставить снова."""
+        doc = await self.auctions.find_one({"_id": oid}, {"top": 1, "pending_refunds": 1}) or {}
+        in_top = any(int(e["user_id"]) == user_id and abs(float(e["bid"]) - old_hold) < 1e-9
+                     for e in doc.get("top") or [])
+        pending = any(int(r["user_id"]) == user_id for r in doc.get("pending_refunds") or [])
+        if not in_top and not pending:
+            await self._refund_hold(user_id, str(oid), old_hold)
+
     async def process_auction_refunds(self, auction_id) -> int:
         """Мгновенный возврат выбывшим из ТОП-5. Идемпотентно (см. _refund_hold)."""
         oid = self._auction_oid(auction_id)
@@ -1467,9 +1486,24 @@ class MongoStore:
         if not doc:
             return 0
         done = 0
+        key = str(oid)
         for r in doc.get("pending_refunds") or []:
-            if await self._refund_hold(int(r["user_id"]), str(oid), float(r["amount"])):
+            uid, amount = int(r["user_id"]), float(r["amount"])
+            if await self._refund_hold(uid, key, amount):
                 done += 1
+            else:
+                # Возврат не прошёл: заморозка сейчас не равна amount. Если она
+                # есть, а игрока нет в ТОП-5 — у него прямо сейчас идёт своя
+                # ставка, которая откатится к amount; запись оставляем, вернём
+                # на следующем проходе. Иначе (заморозки нет — уже вернули;
+                # игрок в ТОП-5 — его заморозка принадлежит живой ставке) запись
+                # устарела и её можно убрать.
+                user = await self.users.find_one({"_id": uid}, {f"auction_holds.{key}": 1}) or {}
+                hold = (user.get("auction_holds") or {}).get(key)
+                fresh = await self.auctions.find_one({"_id": oid}, {"top": 1}) or {}
+                in_top = any(int(e["user_id"]) == uid for e in fresh.get("top") or [])
+                if hold is not None and not in_top:
+                    continue
             await self.auctions.update_one({"_id": oid}, {"$pull": {"pending_refunds": {
                 "user_id": r["user_id"], "amount": r["amount"]}}})
         return done
@@ -1540,6 +1574,8 @@ class MongoStore:
                 rollback = {"$inc": {"coins": delta, "ops": 1}}
                 rollback["$set" if own else "$unset"] = {hold_path: old_hold if own else ""}
                 await self.users.update_one({"_id": user_id, hold_path: required}, rollback)
+                if own:
+                    await self._refund_if_evicted(oid, user_id, old_hold)
                 continue
             if evicted:
                 await self.process_auction_refunds(key)
@@ -2192,12 +2228,16 @@ class MongoStore:
         from bson import ObjectId
 
         oid = ObjectId(wd_id)
-        doc = await self.withdrawals.find_one({"_id": oid, "status": "pending"})
+        # Смена статуса и проверка «ещё pending» — одна атомарная операция:
+        # раньше find + update шли раздельно, и двойной клик «Отклонить»
+        # возвращал GRAM игроку дважды.
+        doc = await self.withdrawals.find_one_and_update(
+            {"_id": oid, "status": "pending"}, {"$set": {"status": status}},
+        )
         if not doc:
             return False
-        await self.withdrawals.update_one({"_id": oid}, {"$set": {"status": status}})
         if refund:
-            await self.users.update_one({"_id": doc["user_id"]}, {"$inc": {"coins": doc["amount"]}})
+            await self.users.update_one({"_id": doc["user_id"]}, {"$inc": {"coins": doc["amount"], "ops": 1}})
         return True
 
 

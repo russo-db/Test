@@ -321,29 +321,112 @@ def require_admin(request: Request):
         raise HTTPException(status_code=401, detail="Не авторизован")
 
 
+# Владельцы проекта: только их Telegram ID, подтверждённый подписью initData
+# (HMAC-SHA256 от токена бота), может включать/выключать техработы, менять
+# список тестеров и интервал сбора осколка по NFT. Пароля админки для этих
+# действий мало — админку нужно открыть через бота командой /admin (тогда
+# Telegram подписывает запросы). Эти же ID всегда пускаются в игру во время
+# техработ.
+MAINTENANCE_WHITELIST = [6233536571, 5637579704, 827725395]
+OWNER_ONLY_DETAIL = ("Только для владельцев проекта: откройте админку через бота командой /admin "
+                     "(действие подтверждается подписью Telegram)")
+
+
+def verified_telegram_id(request: Request) -> Optional[int]:
+    """Telegram ID из X-Telegram-Init-Data — ТОЛЬКО по проверенной подписи,
+    независимо от режима разработки: без BOT_TOKEN владельцем не стать."""
+    try:
+        data = verified_init_data(request.headers.get("x-telegram-init-data"))
+        return int(data["user"]["id"]) if data else None
+    except Exception:
+        return None
+
+
+def require_owner(request: Request):
+    """Пароль админки + подпись Telegram владельца из MAINTENANCE_WHITELIST."""
+    require_admin(request)
+    uid = verified_telegram_id(request)
+    if uid is None or uid not in MAINTENANCE_WHITELIST:
+        print(f"[admin] отказ в действии владельца: telegram_id={uid} path={request.url.path}")
+        raise HTTPException(status_code=403, detail=OWNER_ONLY_DETAIL)
+    return uid
+
+
+# Перебор пароля админки: не больше ADMIN_LOGIN_MAX_FAILS неверных попыток за
+# ADMIN_LOGIN_WINDOW с одного адреса и ADMIN_LOGIN_GLOBAL_MAX со всех вместе
+# (адрес за прокси Railway можно подделать заголовком, общий потолок — нет).
+ADMIN_LOGIN_WINDOW = 15 * 60
+ADMIN_LOGIN_MAX_FAILS = 5
+ADMIN_LOGIN_GLOBAL_MAX = 30
+ADMIN_LOGIN_FAILS: dict = {}   # ключ адреса -> [unix-время неудачных попыток]
+
+
+def admin_client_key(request: Request) -> str:
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return fwd or (request.client.host if request.client else "?")
+
+
+def admin_login_blocked(key: str, now: float) -> bool:
+    for k in list(ADMIN_LOGIN_FAILS):
+        ADMIN_LOGIN_FAILS[k] = [t for t in ADMIN_LOGIN_FAILS[k] if now - t < ADMIN_LOGIN_WINDOW]
+        if not ADMIN_LOGIN_FAILS[k]:
+            ADMIN_LOGIN_FAILS.pop(k)
+    total = sum(len(v) for v in ADMIN_LOGIN_FAILS.values())
+    return len(ADMIN_LOGIN_FAILS.get(key, [])) >= ADMIN_LOGIN_MAX_FAILS or total >= ADMIN_LOGIN_GLOBAL_MAX
+
+
 store = make_store()
 
-# Подпись проверяется, как только известен токен бота. Без него (локальная
-# разработка, статический хостинг) сервер работает в открытом режиме.
-AUTH_REQUIRED = bool(BOT_TOKEN)
+# Каждый игровой запрос обязан нести X-Telegram-Init-Data с подписью
+# Telegram (HMAC-SHA256 от токена бота, см. auth.verify_init_data). Сервер
+# закрыт по умолчанию: если BOT_TOKEN не задан, проверить подпись нечем, и
+# ВСЕ игровые запросы получают 401 — а не открываются кому угодно, как было
+# раньше. Открытый режим без подписи — только для локальной разработки и
+# тестов, явным ALLOW_INSECURE_DEV_AUTH=1 в окружении (на Railway его быть
+# не должно).
+ALLOW_INSECURE_DEV_AUTH = os.getenv("ALLOW_INSECURE_DEV_AUTH", "").strip() == "1"
+AUTH_REQUIRED = bool(BOT_TOKEN) or not ALLOW_INSECURE_DEV_AUTH
+if not BOT_TOKEN:
+    print("[auth] ВНИМАНИЕ: BOT_TOKEN не задан — " + (
+        "ALLOW_INSECURE_DEV_AUTH=1: игровой API работает БЕЗ проверки подписи (только для разработки!)"
+        if not AUTH_REQUIRED else "игровой API отклоняет все запросы (401), пока токен не задан"))
+
+
+def verified_init_data(init_data: Optional[str]) -> Optional[dict]:
+    """Проверенная initData или None — исключения проверки наружу не идут."""
+    try:
+        return verify_init_data(init_data or "", BOT_TOKEN or "")
+    except Exception as e:
+        print(f"[auth] ошибка проверки initData: {type(e).__name__}: {e}")
+        return None
 
 
 def authenticate(init_data: Optional[str], claimed_id: int) -> int:
-    """Возвращает настоящий user_id из подписанных Telegram данных."""
+    """Возвращает настоящий user_id из подписанных Telegram данных.
+
+    telegram_id из тела/пути запроса НЕ доверяется: он лишь должен совпасть
+    с id из проверенной подписи. Нет подписи / подпись не сходится / строка
+    изменена — 401; подпись чужого игрока под чужим user_id — 403."""
     if not AUTH_REQUIRED:
         return claimed_id
 
-    data = verify_init_data(init_data, BOT_TOKEN)
+    data = verified_init_data(init_data)
     if not data:
         raise HTTPException(status_code=401, detail="Некорректная подпись initData")
-    if int(data["user"]["id"]) != int(claimed_id):
+    try:
+        verified_id = int(data["user"]["id"])
+        claimed = int(claimed_id)
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Некорректная подпись initData")
+    if verified_id != claimed:
+        print(f"[auth] подмена telegram_id: подпись {verified_id}, в запросе {claimed!r}")
         raise HTTPException(status_code=403, detail="initData принадлежит другому пользователю")
-    return int(data["user"]["id"])
+    return verified_id
 
 
 def signed_context(init_data: Optional[str]) -> dict:
     """Подписанные поля запуска: имя игрока и реферальная нагрузка."""
-    data = verify_init_data(init_data, BOT_TOKEN) if AUTH_REQUIRED else None
+    data = verified_init_data(init_data) if AUTH_REQUIRED else None
     if not data:
         return {}
     user = data["user"]
@@ -1789,7 +1872,7 @@ def request_telegram_id(request: Request) -> Optional[int]:
         return None
     try:
         if AUTH_REQUIRED:
-            data = verify_init_data(init_data, BOT_TOKEN)
+            data = verified_init_data(init_data)
             return int(data["user"]["id"]) if data else None
         user = json.loads(dict(parse_qsl(init_data, keep_blank_values=True)).get("user") or "null")
         return int(user["id"]) if isinstance(user, dict) and user.get("id") else None
@@ -1798,10 +1881,26 @@ def request_telegram_id(request: Request) -> Optional[int]:
 
 
 def is_maintenance_tester(request: Request) -> bool:
-    if not MAINTENANCE_TESTERS:
-        return False
     uid = request_telegram_id(request)
-    return uid is not None and uid in MAINTENANCE_TESTERS
+    return uid is not None and (uid in MAINTENANCE_TESTERS or uid in MAINTENANCE_WHITELIST)
+
+
+@app.middleware("http")
+async def admin_api_gate(request: Request, call_next):
+    """/admin/api/*: запрос с подписью Telegram (то есть из игры) пропускаем
+    только для владельцев из MAINTENANCE_WHITELIST — обычный игрок получает
+    жёсткий 403, даже не дойдя до проверки пароля. Без подписи — обычная
+    проверка сессии админки (401 без входа)."""
+    try:
+        if request.url.path.startswith("/admin/api/") and request.headers.get("x-telegram-init-data"):
+            uid = verified_telegram_id(request)
+            if uid is None or uid not in MAINTENANCE_WHITELIST:
+                print(f"[admin] 403: telegram_id={uid} пытался вызвать {request.url.path}")
+                return JSONResponse(status_code=403, content={"detail": "Доступ запрещён"})
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        return JSONResponse(status_code=403, content={"detail": "Доступ запрещён"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -2405,6 +2504,11 @@ async def arena_opponent(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "user_id": user_id,
         "opponent_id": opponent["user_id"] if opponent else None,
         "expires_at": time.time() + ARENA_MATCH_TTL_SECONDS,
+        # Случайность боя (и статы дикого орла) — от этого секрета, который
+        # клиенту не отдаётся. Раньше посевом служил сам match_token, его
+        # клиент знает ДО боя — можно было заранее просчитать исход и
+        # драться только в заведомо выигрышных боях.
+        "seed": secrets.token_hex(16),
     }
     return {
         "found": True,
@@ -2501,8 +2605,9 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
 
     opponent_id = match.get("opponent_id")
     is_bot = opponent_id is None
+    seed = match.get("seed") or secrets.token_hex(16)
     if is_bot:
-        enemy_stats = _arena_bot_stats(random.Random(request.match_token), request.tier_id)
+        enemy_stats = _arena_bot_stats(random.Random(seed), request.tier_id)
         enemy_name, enemy_tier_id = None, request.tier_id
     else:
         opponent_row = await store.get(opponent_id)
@@ -2514,7 +2619,7 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
     enemy_fighter = {"stats": enemy_stats}
 
-    result = arena_battle_simulate(request.match_token, player_fighter, enemy_fighter)
+    result = arena_battle_simulate(seed, player_fighter, enemy_fighter)
     player_won = result["winner"] == "player"
 
     def compute(fresh_row):
@@ -4941,10 +5046,16 @@ def player_summary(doc: dict) -> dict:
 
 
 @app.post("/admin/api/login")
-async def admin_login(body: AdminLogin, response: Response):
+async def admin_login(body: AdminLogin, request: Request, response: Response):
     if not ADMIN_PASSWORD:
         raise HTTPException(status_code=500, detail="ADMIN_PASSWORD не задан на сервере")
-    if not secrets.compare_digest(body.password, ADMIN_PASSWORD):
+    now = time.time()
+    key = admin_client_key(request)
+    if admin_login_blocked(key, now):
+        raise HTTPException(status_code=429, detail="Слишком много неверных попыток — подождите 15 минут")
+    if not secrets.compare_digest(body.password.encode(), ADMIN_PASSWORD.encode()):
+        ADMIN_LOGIN_FAILS.setdefault(key, []).append(now)
+        print(f"[admin] неверный пароль с {key} ({len(ADMIN_LOGIN_FAILS[key])} за 15 мин)")
         raise HTTPException(status_code=401, detail="Неверный пароль")
 
     token = secrets.token_urlsafe(32)
@@ -4964,8 +5075,9 @@ async def admin_logout(request: Request, response: Response):
 
 
 @app.get("/admin/api/me")
-async def admin_me(_: None = Depends(require_admin)):
-    return {"status": "success"}
+async def admin_me(request: Request, _: None = Depends(require_admin)):
+    uid = verified_telegram_id(request)
+    return {"status": "success", "telegram_id": uid, "owner": uid in MAINTENANCE_WHITELIST if uid else False}
 
 
 @app.get("/admin/api/stats")
@@ -5118,6 +5230,10 @@ async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require
         assert isinstance(cfg["slots"], dict)
     except (AssertionError, KeyError, TypeError):
         raise HTTPException(status_code=400, detail="В конфиге не хватает обязательных разделов")
+    # Техработы через сырой конфиг не переключить — только владельцам
+    # через /admin/api/features: берём текущее состояние, а не присланное.
+    cfg["maintenance"] = dict(cfg.get("maintenance") or {})
+    cfg["maintenance"]["enabled"] = maintenance_on()
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
@@ -5138,8 +5254,12 @@ async def admin_reset_merchant(_: None = Depends(require_admin)):
 
 
 @app.post("/admin/api/features")
-async def admin_set_features(body: AdminFeatureToggle, _: None = Depends(require_admin)):
-    """Включает/выключает колесо фортуны, задания и режим техработ без правки сырого конфига."""
+async def admin_set_features(body: AdminFeatureToggle, request: Request, _: None = Depends(require_admin)):
+    """Включает/выключает колесо фортуны, задания и режим техработ без правки сырого конфига.
+    Смена режима техработ — только владельцам (require_owner)."""
+    await refresh_maintenance(force=True)
+    if bool(body.maintenance_enabled) != maintenance_on():
+        require_owner(request)
     cfg = dict(CONFIG)
     cfg["wheel"] = dict(cfg.get("wheel") or {})
     cfg["wheel"]["enabled"] = body.wheel_enabled
@@ -5187,7 +5307,7 @@ class AdminMaintenanceTesters(BaseModel):
 
 
 @app.post("/admin/api/maintenance/testers")
-async def admin_set_maintenance_testers(body: AdminMaintenanceTesters, _: None = Depends(require_admin)):
+async def admin_set_maintenance_testers(body: AdminMaintenanceTesters, _: int = Depends(require_owner)):
     """Telegram ID игроков, которые заходят в игру во время техработ."""
     try:
         if len(body.testers) > MAINTENANCE_TESTERS_MAX:
@@ -6103,9 +6223,10 @@ async def admin_set_nft_collection(body: AdminNftCollection, _: None = Depends(r
 
 
 @app.post("/admin/api/nft/settings")
-async def admin_set_nft_settings(body: AdminNftSettings, _: None = Depends(require_admin)):
+async def admin_set_nft_settings(body: AdminNftSettings, _: int = Depends(require_owner)):
     """Интервал сбора осколка по NFT (сек). Хранится в БД (settings), поэтому
-    переживает перезапуск и деплой. 604800 = 7 дней — боевой режим."""
+    переживает перезапуск и деплой. 604800 = 7 дней — боевой режим.
+    Только владельцам (require_owner)."""
     value = int(body.interval_seconds)
     if not NFT_CLAIM_INTERVAL_MIN <= value <= NFT_CLAIM_INTERVAL_MAX:
         raise HTTPException(status_code=400, detail="Интервал должен быть от 1 минуты до 365 дней")
@@ -6326,6 +6447,13 @@ async def auction_tick(now: Optional[float] = None) -> None:
     """Закрыть лоты с истёкшим таймером и довести их расчёт до конца.
     Вызывается фоновым циклом и лениво из /api/auction — повтор безопасен."""
     now = time.time() if now is None else now
+    try:
+        # Отложенные возвраты выбывшим из ТОП-5 (см. process_auction_refunds) —
+        # добиваем и без новых ставок.
+        for auction_id in await store.auctions_with_pending_refunds():
+            await store.process_auction_refunds(auction_id)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
     for doc in await store.list_due_auctions(now):
         try:
             if doc["status"] == "active":
@@ -6400,6 +6528,12 @@ async def auction_state(user_id: int, x_telegram_init_data: Optional[str] = Head
 async def auction_bid(request: AuctionBidRequest, x_telegram_init_data: Optional[str] = Header(None)):
     try:
         user_id = authenticate(x_telegram_init_data, request.user_id)
+        # Цену ставки считает ТОЛЬКО сервер: ставка лидера + AUCTION_BID_STEP
+        # (или минимальная). amount — лишь «какую цену видел игрок» для сверки:
+        # не совпала с серверной — 409 «ставку перебили», а цену из запроса
+        # сервер не использует никогда. Мусор (NaN, ±Infinity, ≤0) — сразу 400.
+        if request.amount is not None and not (math.isfinite(request.amount) and request.amount > 0):
+            raise HTTPException(status_code=400, detail="Некорректная сумма ставки")
         row = await fetch_user(user_id)
         now = time.time()
         result = await store.place_auction_bid(
@@ -6599,7 +6733,7 @@ async def admin_test_auction_timer(_: None = Depends(require_admin)):
 
 
 @app.post("/admin/api/test/shorten-timers")
-async def admin_test_shorten_timers(_: None = Depends(require_admin)):
+async def admin_test_shorten_timers(_: int = Depends(require_owner)):
     """[Админ-Тест] Все таймеры — до 1 минуты: идущий лот заканчивается через
     минуту (если ему оставалось больше), интервал сбора осколка по NFT —
     1 минута. Только пока IS_PRODUCTION_MODE выключен."""
@@ -6691,6 +6825,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/admin — кнопка, открывающая админку внутри Telegram: тогда её запросы
+    подписаны initData, и владельцу доступны техработы и интервал NFT.
+    Остальным команда ничего не отвечает (не светим, что она есть)."""
+    try:
+        user = update.effective_user
+        if not user or user.id not in MAINTENANCE_WHITELIST or not WEB_APP_URL:
+            return
+        url = WEB_APP_URL.rstrip("/") + "/admin"
+        keyboard = [[InlineKeyboardButton("🛠 Открыть админку", web_app=WebAppInfo(url=url))]]
+        await update.message.reply_text(
+            "Админка SkyLords GRAMM. Открытая отсюда, она подтверждает ваш Telegram ID — "
+            "доступны техработы, тестеры и интервал NFT.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    except Exception as e:
+        print(f"[bot] /admin failed: {type(e).__name__}: {e}")
+
+
 BOT_MENU_BUTTON_TEXT = "🎮 Играть"
 
 
@@ -6716,6 +6869,7 @@ async def run_bot():
 
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_command))
 
     await application.initialize()
     # Имя из getMe надёжнее ручной переменной: без опечаток и лишней @.
