@@ -1532,6 +1532,7 @@ function renderTxTotals(t) {
     document.getElementById('txTotals').innerHTML = [
         card('Пополнений', `${fmtNum(t.deposits_count)} · ${fmtNum(t.deposits_gram)} GRAM`),
         card('Отменено пополнений', `${fmtNum(t.reversed_count)} · ${fmtNum(t.reversed_gram)} GRAM`),
+        card('Меньше минимума (не зачислены)', `${fmtNum(t.below_min_count)} · ${fmtNum(t.below_min_ton)} TON`),
         card('Выводы выплачены', `${fmtNum(t.withdrawals_approved_count)} · ${fmtNum(t.withdrawals_approved_gram)} GRAM`),
         card('Выводы ждут', `${fmtNum(t.withdrawals_pending_count)} · ${fmtNum(t.withdrawals_pending_gram)} GRAM`),
         card('Выводы отклонены', `${fmtNum(t.withdrawals_rejected_count)} · ${fmtNum(t.withdrawals_rejected_gram)} GRAM`),
@@ -1539,6 +1540,14 @@ function renderTxTotals(t) {
 }
 function txRow(it) {
     const who = `${escHtml(it.name) || '<span class="muted">без имени</span>'}<br><code>${it.user_id}</code>`;
+    if (it.kind === 'deposit' && it.below_min) {
+        const link = it.tx_url ? `<a href="${it.tx_url}" target="_blank" rel="noopener">транзакция ↗</a>` : `<code title="${escHtml(it.id)}">${escHtml(it.id.slice(0, 12))}…</code>`;
+        return `<tr style="opacity:.75"><td data-label="Тип">⬇️ Пополнение</td><td data-label="Игрок">${who}</td>
+            <td data-label="GRAM">0</td><td data-label="TON">${fmtNum(it.ton)}</td>
+            <td data-label="Дата перевода">${fmtDate(it.ts)}</td>
+            <td data-label="Статус"><b style="color:#f87171">❌ меньше минимума — не зачислено</b><br><span class="muted">игроку отправлено сообщение</span></td>
+            <td data-label="Детали">${link}</td><td></td></tr>`;
+    }
     if (it.kind === 'deposit') {
         const credited = it.credited_at ? `${fmtDate(it.credited_at)}${it.suspicious ? `<br><b style="color:#f0b429">⚠️ через ${fmtLate(it.late_seconds)} после перевода</b>` : ''}`
             : '<span class="muted">не записано (старая версия)</span>';

@@ -930,6 +930,21 @@ class MongoStore:
             )
         return True
 
+    async def record_below_min_deposit(self, tx_hash: str, user_id: int, ton: float, ts: int) -> bool:
+        """Перевод меньше минимального пополнения: GRAM не зачисляем, но
+        запоминаем по хэшу, чтобы не обрабатывать (и не уведомлять игрока)
+        повторно и чтобы админ видел его во вкладке «Транзакции».
+        True — записан впервые."""
+        from pymongo.errors import DuplicateKeyError
+        try:
+            await self.deposits.insert_one({
+                "_id": tx_hash, "user_id": user_id, "amount": 0.0, "ton": float(ton), "ts": ts,
+                "credited_at": int(time.time()), "below_min": True,
+            })
+            return True
+        except DuplicateKeyError:
+            return False
+
     async def count_deposits(self) -> int:
         return await self.deposits.count_documents({})
 
@@ -945,6 +960,7 @@ class MongoStore:
                 rows.append({
                     "kind": "deposit", "id": str(d["_id"]), "user_id": d.get("user_id"),
                     "amount": float(d.get("amount") or 0), "ts": int(d.get("ts") or 0),
+                    "below_min": bool(d.get("below_min")), "ton_sent": d.get("ton"),
                     "credited_at": d.get("credited_at"), "reversed": bool(d.get("reversed")),
                     "reversed_at": d.get("reversed_at"), "referrer_id": d.get("referrer_id"),
                     "referral_gram": float(d.get("referral_gram") or 0),
@@ -959,8 +975,12 @@ class MongoStore:
         rows.sort(key=lambda r: r["ts"], reverse=True)
         page = rows[offset:offset + limit]
 
-        totals = {"deposits_count": 0, "deposits_gram": 0.0, "reversed_count": 0, "reversed_gram": 0.0}
-        async for row in self.deposits.aggregate([{"$match": q}, {"$group": {
+        totals = {"deposits_count": 0, "deposits_gram": 0.0, "reversed_count": 0, "reversed_gram": 0.0,
+                  "below_min_count": 0, "below_min_ton": 0.0}
+        async for row in self.deposits.aggregate([{"$match": {**q, "below_min": True}}, {"$group": {
+                "_id": None, "n": {"$sum": 1}, "ton": {"$sum": "$ton"}}}]):
+            totals["below_min_count"], totals["below_min_ton"] = row["n"], float(row["ton"] or 0)
+        async for row in self.deposits.aggregate([{"$match": {**q, "below_min": {"$ne": True}}}, {"$group": {
                 "_id": {"$ifNull": ["$reversed", False]}, "n": {"$sum": 1}, "gram": {"$sum": "$amount"}}}]):
             if row["_id"]:
                 totals["reversed_count"] += row["n"]; totals["reversed_gram"] += float(row["gram"] or 0)
@@ -982,8 +1002,11 @@ class MongoStore:
         нажатие ничего не спишет второй раз. Списываем у игрока сумму
         депозита и у пригласившего — его реферальный бонус, если он записан
         в депозите. Баланс может уйти в минус, если GRAM уже потрачены."""
+        below = await self.deposits.find_one({"_id": tx_hash, "below_min": True}, {"_id": 1})
+        if below:
+            return {"status": "below_min"}
         doc = await self.deposits.find_one_and_update(
-            {"_id": tx_hash, "reversed": {"$ne": True}},
+            {"_id": tx_hash, "reversed": {"$ne": True}, "below_min": {"$ne": True}},
             {"$set": {"reversed": True, "reversed_at": int(now)}},
         )
         if not doc:
@@ -1017,8 +1040,10 @@ class MongoStore:
         """Последние пополнения и выводы игрока — одним списком."""
         rows = []
         async for doc in self.deposits.find({"user_id": user_id}).sort("ts", -1).limit(limit):
-            rows.append({"kind": "deposit", "amount": doc.get("amount", 0.0),
-                         "ts": doc.get("ts", 0), "status": ""})
+            below = bool(doc.get("below_min"))
+            rows.append({"kind": "deposit", "amount": doc.get("ton", 0.0) if below else doc.get("amount", 0.0),
+                         "ts": doc.get("ts", 0),
+                         "status": "below_min" if below else ("reversed" if doc.get("reversed") else "")})
         async for doc in self.withdrawals.find({"user_id": user_id}).sort("ts", -1).limit(limit):
             rows.append({"kind": "withdraw", "amount": doc.get("amount", 0.0),
                          "ts": doc.get("ts", 0), "status": doc.get("status", "")})

@@ -2227,6 +2227,7 @@
                 'wallet.deposit': 'Пополнить', 'wallet.withdraw': 'Вывести', 'wallet.recentOps': 'Последние операции',
                 'wallet.depositNoun': 'Пополнение', 'wallet.withdrawNoun': 'Вывод',
                 'wallet.credited': 'Зачислено', 'wallet.sent': 'Отправлено', 'wallet.processing': 'В обработке',
+                'wallet.rejected': 'Отклонено, GRAM возвращены', 'wallet.reversed': 'Отменено', 'wallet.belowMin': 'Не зачислено: меньше {min} TON',
                 'friends.inviteTitle': 'Пригласи друга', 'friends.share': 'Поделиться ссылкой', 'friends.copy': 'Скопировать ссылку',
                 'friends.invitedByLabel': 'Тебя пригласил', 'friends.invitedCountLabel': 'Приглашено друзей',
                 'friends.qualifyHint': 'Получай {share}% GRAM с каждого пополнения приглашённого друга',
@@ -2561,6 +2562,7 @@
                 'wallet.deposit': 'Deposit', 'wallet.withdraw': 'Withdraw', 'wallet.recentOps': 'Recent operations',
                 'wallet.depositNoun': 'Deposit', 'wallet.withdrawNoun': 'Withdrawal',
                 'wallet.credited': 'Credited', 'wallet.sent': 'Sent', 'wallet.processing': 'Processing',
+                'wallet.rejected': 'Rejected, GRAM returned', 'wallet.reversed': 'Reversed', 'wallet.belowMin': 'Not credited: below {min} TON',
                 'friends.inviteTitle': 'Invite a friend', 'friends.share': 'Share link', 'friends.copy': 'Copy link',
                 'friends.invitedByLabel': 'You were invited by', 'friends.invitedCountLabel': 'Friends invited',
                 'friends.qualifyHint': 'Earn {share}% GRAM from every deposit your invited friend makes',
@@ -8494,14 +8496,20 @@
             document.getElementById('walletOpsHead').style.display = operations.length ? 'flex' : 'none';
             list.innerHTML = operations.map(op => {
                 const deposit = op.kind === 'deposit';
-                const status = deposit ? t('wallet.credited') : (op.status === 'sent' ? t('wallet.sent') : t('wallet.processing'));
+                // Статусы сервера: пополнение — '' / below_min / reversed; вывод — pending / approved / rejected.
+                const notCredited = deposit && (op.status === 'below_min' || op.status === 'reversed');
+                const status = deposit
+                    ? (op.status === 'below_min' ? t('wallet.belowMin', { min: String(Number(TON_CFG.min_deposit)) })
+                        : op.status === 'reversed' ? t('wallet.reversed') : t('wallet.credited'))
+                    : (op.status === 'approved' || op.status === 'sent' ? t('wallet.sent')
+                        : op.status === 'rejected' ? t('wallet.rejected') : t('wallet.processing'));
                 return `
                     <div class="wallet-op ${deposit ? 'deposit' : 'withdraw'}">
                         <div>
                             <div class="op-kind">${deposit ? t('wallet.depositNoun') : t('wallet.withdrawNoun')} • ${status}</div>
                             <div class="op-date">${opDate(op.ts)}</div>
                         </div>
-                        <div class="op-amount">${deposit ? '+' : '−'}${fmtGram(op.amount)}<img src="assets/coin.png" alt=""></div>
+                        <div class="op-amount"${notCredited ? ' style="opacity:.5;text-decoration:line-through"' : ''}>${deposit ? '+' : '−'}${fmtGram(op.amount)}<img src="assets/coin.png" alt=""></div>
                     </div>`;
             }).join('');
         }

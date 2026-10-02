@@ -1444,6 +1444,18 @@ async def _scan_deposits() -> int:
     for item in incoming:
         if item["ts"] < since:
             continue                      # перевод старше отметки — из истории до очистки базы
+        if item["ton"] + 1e-9 < MIN_DEPOSIT:
+            # Меньше минимального пополнения — не зачисляем. Запоминаем перевод,
+            # чтобы не обрабатывать его снова, и один раз сообщаем игроку.
+            await ensure_user(item["user_id"])
+            if await store.record_below_min_deposit(item["hash"], item["user_id"], item["ton"], item["ts"]):
+                print(f"[ton] перевод {item['ton']:g} TON от {item['user_id']} меньше минимума {MIN_DEPOSIT:g} TON — не зачислен")
+                await tg_send(
+                    item["user_id"],
+                    f"⚠️ Перевод <b>{item['ton']:g} TON</b> меньше минимального пополнения "
+                    f"<b>{MIN_DEPOSIT:g} TON</b> и не зачислен. Напишите в поддержку игры.",
+                )
+            continue
         gram = round(item["ton"] * TON_RATE, 9)
         if gram <= 0:
             continue
@@ -5327,11 +5339,12 @@ async def admin_transactions(kind: str = "all", user_id: str = "", limit: int = 
         for it in data["items"]:
             it["name"] = names.get(it["user_id"], "")
             if it["kind"] == "deposit":
-                it["ton"] = round(it["amount"] / TON_RATE, 9) if TON_RATE else it["amount"]
+                it["ton"] = float(it.get("ton_sent") or 0) if it.get("below_min") else (
+                    round(it["amount"] / TON_RATE, 9) if TON_RATE else it["amount"])
                 it["tx_url"] = ton_tx_url(it["id"])
                 late = (it["credited_at"] - it["ts"]) if it.get("credited_at") else None
                 it["late_seconds"] = late
-                it["suspicious"] = bool(late is not None and late > DEPOSIT_LATE_SECONDS)
+                it["suspicious"] = bool(late is not None and late > DEPOSIT_LATE_SECONDS and not it.get("below_min"))
                 if it.get("referrer_id") is not None:
                     it["referrer_name"] = names.get(it["referrer_id"], "")
         data["deposits_since"] = float(await store.get_setting(DEPOSITS_SINCE_SETTING, 0) or 0)
@@ -5357,6 +5370,8 @@ async def admin_reverse_deposit(body: AdminDepositReverse, _: None = Depends(req
             raise HTTPException(status_code=404, detail="Пополнение не найдено")
         if r["status"] == "already_reversed":
             raise HTTPException(status_code=409, detail="Это пополнение уже отменено")
+        if r["status"] == "below_min":
+            raise HTTPException(status_code=409, detail="Перевод меньше минимума — он и не зачислялся")
         print(f"[admin] отмена пополнения {body.tx_hash}: игрок {r['user_id']} −{r['amount']:g} GRAM"
               + (f", реферер {r['referrer_id']} −{r['referral_gram']:g}" if r.get("referrer_id") else ""))
         return r
