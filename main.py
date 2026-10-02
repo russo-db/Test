@@ -2099,6 +2099,17 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
     await reconcile_arena_season()
     await reconcile_clan_tournament()
     row = await fetch_user(user_id)
+    # Имя пишется при создании аккаунта, но аккаунт мог появиться раньше —
+    # из параллельного запроса при загрузке, зачисления депозита, как
+    # пригласивший по реферальной ссылке — и остаться без имени (в игре и
+    # админке вместо ника был Telegram ID). Обновляем из подписанной initData
+    # при каждом входе: пустое или сменившееся имя/@username.
+    if context.get("name") and (row.get("name") or "") != context["name"]:
+        try:
+            await store.update(user_id, {"name": context["name"]})
+            row["name"] = context["name"]
+        except Exception as e:
+            print(f"[load] не удалось обновить имя {user_id}: {type(e).__name__}: {e}")
     row = await accrue_vip_meat(user_id, row)
     row = await reconcile_queues(user_id, row)
     row = await reconcile_pvp_energy(user_id, row)
