@@ -372,6 +372,14 @@
 
         <div class="page" id="page-clans">
             <h2>Кланы</h2>
+            <div class="nft-interval-panel">
+                <div class="nft-interval-head">
+                    <b>Раздел «Кланы» в игре:</b> <span id="clansStateBadge" class="nft-mode">…</span>
+                    <button id="clansToggleBtn">…</button>
+                </div>
+                <div class="muted" style="font-size:12px;">Выключено — кнопка «Кланы» в игре скрыта, создать клан, вступить, сжечь орла и т. п. нельзя.
+                    Данные кланов и турнир сохраняются. Владельцы и тестеры техработ видят раздел, чтобы проверять.</div>
+            </div>
             <div class="toolbar">
                 <input id="clanSearch" placeholder="Поиск по названию клана">
                 <button id="clanSearchBtn">Найти</button>
@@ -1460,7 +1468,7 @@ document.getElementById('missionsSaveBtn').onclick = e => withBusyButton(e.curre
         toast(`Задания сохранены: ${r.missions.length}`);
     } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 });
-document.getElementById('missionsToggleBtn').onclick = e => withBusyButton(e.currentTarget, '…', async () => {
+document.getElementById('missionsToggleBtn').onclick = async e => { await withBusyButton(e.currentTarget, '…', async () => {
     const next = !missionsMeta.enabled;
     if (!next && !confirm('Выключить задания? Вкладка «Задания» в игре станет пустой (ежедневный бонус останется).')) return;
     try {
@@ -1469,10 +1477,10 @@ document.getElementById('missionsToggleBtn').onclick = e => withBusyButton(e.cur
             body: JSON.stringify({ enabled: next }),
         });
         missionsMeta.enabled = r.enabled; featuresState.missions_enabled = r.enabled;
-        renderMissionsHead(); renderFeatures();
+        renderFeatures();
         toast(r.enabled ? 'Задания включены' : 'Задания выключены');
     } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
-});
+}); renderMissionsHead(); };
 
 /* ---------- экономика ---------- */
 async function loadEconomy() {
@@ -1908,10 +1916,37 @@ document.getElementById('configSave').onclick = async () => {
 };
 
 /* ---------- кланы ---------- */
+let clansEnabledAdmin = true;
+function renderClansToggle(enabled) {
+    clansEnabledAdmin = enabled;
+    const badge = document.getElementById('clansStateBadge');
+    badge.className = 'nft-mode ' + (enabled ? 'prod' : 'test');
+    badge.textContent = enabled ? 'включён' : 'выключен';
+    const btn = document.getElementById('clansToggleBtn');
+    btn.textContent = enabled ? 'Выключить кланы' : 'Включить кланы';
+    btn.className = enabled ? 'danger' : 'primary';
+}
+document.getElementById('clansToggleBtn').onclick = async e => {
+    const next = !clansEnabledAdmin;
+    if (!next && !confirm('Выключить раздел «Кланы» в игре? Кнопка пропадёт у всех игроков, клановые действия станут недоступны.')) return;
+    await withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            const r = await api('/admin/api/clans/enabled', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: next }),
+            });
+            clansEnabledAdmin = r.clans_enabled;
+            toast(r.clans_enabled ? 'Кланы включены' : 'Кланы выключены');
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+    renderClansToggle(clansEnabledAdmin);   // после withBusyButton — он возвращает кнопке прежнюю надпись
+};
+
 async function loadClans() {
     try {
         const params = new URLSearchParams({ search: state.clansSearch, limit: state.clansLimit, offset: state.clansOffset });
         const data = await api('/admin/api/clans?' + params);
+        renderClansToggle(data.clans_enabled !== false);
         state.clansTotal = data.total;
         document.getElementById('clansBody').innerHTML = data.items.map(c => `
             <tr>

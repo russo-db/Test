@@ -8812,6 +8812,8 @@
             state.activeSlot = data.active_slot || 0;
             if (keepId !== null && state.farm[keepSlot] && state.farm[keepSlot].id === keepId) state.activeSlot = keepSlot;
             state.missions = data.missions || [];
+            clansEnabled = data.clans_enabled !== false;
+            updateClanEntry();
             state.slots = data.slots || CONFIG.slots.start;
             normalizeFarmCapacity();
             state.referrals = data.referrals || 0;
@@ -9287,7 +9289,38 @@
             return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot));
         }
 
+        // Раздел «Кланы» можно выключить из админки. Состояние приходит в /api/load
+        // (clans_enabled); если раздел выключили, пока игрок внутри, любой
+        // /api/clan/* вернёт 403 с clans_disabled — тогда закрываем экран.
+        let clansEnabled = true;
+
+        function updateClanEntry() {
+            const btn = document.getElementById('clanEntryBtn');
+            if (btn) btn.style.display = clansEnabled ? '' : 'none';
+            const screen = document.getElementById('clans');
+            if (!clansEnabled && screen && screen.classList.contains('active')) closeClanScreen();
+        }
+
+        function onClansDisabled() {
+            if (!clansEnabled) return;
+            clansEnabled = false;
+            updateClanEntry();
+            toast('Раздел кланов временно отключён');
+        }
+
+        {
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = async (...args) => {
+                const response = await nativeFetch(...args);
+                if (response.status === 403 && String(args[0]).includes('api/clan/')) {
+                    response.clone().json().then(d => { if (d && d.clans_disabled) onClansDisabled(); }).catch(() => {});
+                }
+                return response;
+            };
+        }
+
         async function openClanScreen() {
+            if (!clansEnabled) { toast('Раздел кланов временно отключён'); return; }
             haptic.select();
             auctionStop();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));

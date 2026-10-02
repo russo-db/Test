@@ -1903,6 +1903,54 @@ async def admin_api_gate(request: Request, call_next):
     return await call_next(request)
 
 
+# Раздел «Кланы» можно выключить из админки (вкладка «Кланы»). Флаг в БД
+# (settings → clans_enabled), чтобы деплой его не сбрасывал. Выключено —
+# все /api/clan/* отвечают 403 и кнопка «Кланы» в игре скрыта; владельцы
+# (MAINTENANCE_WHITELIST) и тестеры техработ видят раздел, чтобы проверять.
+# Фоновые процессы (турнир кланов) при этом не останавливаются.
+CLANS_SETTING = "clans_enabled"
+CLANS_REFRESH_SECONDS = 10
+CLANS_DISABLED_DETAIL = "Раздел кланов временно отключён"
+_clans_enabled = True
+_clans_loaded_at = 0.0
+
+
+async def refresh_clans_enabled(force: bool = False) -> None:
+    global _clans_enabled, _clans_loaded_at
+    now = time.time()
+    if not force and now - _clans_loaded_at < CLANS_REFRESH_SECONDS:
+        return
+    _clans_loaded_at = now
+    try:
+        _clans_enabled = bool(await store.get_setting(CLANS_SETTING, True))
+    except Exception as e:
+        print(f"[clans] не удалось прочитать флаг раздела: {type(e).__name__}: {e}")
+
+
+def clans_open_for(request: Request) -> bool:
+    return _clans_enabled or is_maintenance_tester(request)
+
+
+async def clans_enabled_for(request: Request) -> bool:
+    try:
+        await refresh_clans_enabled()
+        return clans_open_for(request)
+    except Exception:
+        return True
+
+
+@app.middleware("http")
+async def clans_gate(request: Request, call_next):
+    try:
+        if request.url.path.startswith("/api/clan/"):
+            await refresh_clans_enabled()
+            if not clans_open_for(request):
+                return JSONResponse(status_code=403, content={"detail": CLANS_DISABLED_DETAIL, "clans_disabled": True})
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def maintenance_gate(request: Request, call_next):
     """В режиме техработ /api/* отвечает 503 всем, кроме тестеров из списка
@@ -1991,7 +2039,7 @@ async def serve_admin():
 
 
 @app.get("/api/load/{user_id}")
-async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+async def load_user_data(user_id: int, request: Request, x_telegram_init_data: Optional[str] = Header(None)):
     """Loads the farm - eagles stay put and just tick towards their next egg."""
     user_id = authenticate(x_telegram_init_data, user_id)
 
@@ -2038,6 +2086,7 @@ async def load_user_data(user_id: int, x_telegram_init_data: Optional[str] = Hea
         "farm_queue": read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX],
         "active_slot": int(row.get("active_slot") or 0),
         "missions": row.get("missions") or [],
+        "clans_enabled": await clans_enabled_for(request),
         "slots": int(row.get("slots") or START_SLOTS),
         "referrals": int(row.get("referrals") or 0),
         "invited_by": await inviter_name(row.get("referred_by")),
@@ -5437,7 +5486,25 @@ async def admin_list_clans(search: str = "", limit: int = 50, offset: int = 0,
         "open_slots": int(c.get("open_slots") or 0), "clan_power": float(c.get("clan_power") or 0),
         "applications_count": len(c.get("applications") or []), "created_at": c.get("created_at"),
     } for c in clans]
-    return {"items": items, "total": total}
+    await refresh_clans_enabled(force=True)
+    return {"items": items, "total": total, "clans_enabled": _clans_enabled}
+
+
+class AdminClansToggle(BaseModel):
+    enabled: bool
+
+
+@app.post("/admin/api/clans/enabled")
+async def admin_toggle_clans(body: AdminClansToggle, _: None = Depends(require_admin)):
+    """Включить/выключить раздел «Кланы» в игре (кнопка во вкладке «Кланы» админки)."""
+    try:
+        await store.set_setting(CLANS_SETTING, bool(body.enabled))
+        await refresh_clans_enabled(force=True)
+        print(f"[admin] раздел кланов: {'ВКЛ' if _clans_enabled else 'выкл'}")
+        return {"clans_enabled": _clans_enabled}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось переключить кланы: {type(e).__name__}: {e}")
 
 
 # --- АДМИН: ТЕСТОВЫЕ КЛАН-БОТЫ ---
@@ -6910,6 +6977,7 @@ async def startup_event():
     await refresh_nft_collection(force=True)
     await refresh_maintenance(force=True)
     await refresh_missions(force=True)
+    await refresh_clans_enabled(force=True)
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:
