@@ -2892,11 +2892,15 @@
             return Math.max(0, base - (vip ? vip.egg_reduction_hours * 3600 : 0));
         }
 
-        // Progress (0-100) towards a slot's next egg.
+        // Progress (0-100) towards a slot's next egg. Total is taken from the
+        // timer's own start (egg_started_at) when the server knows it, so the
+        // bar stays right when VIP is bought or expires mid-timer.
         function eggProgress(slot) {
-            const total = eggIntervalSeconds();
+            const started = slot.eggStartedAt || 0;
+            const total = started > 0 && slot.nextEggAt > started ? slot.nextEggAt - started : eggIntervalSeconds();
+            if (!(total > 0)) return 100;
             const remaining = Math.max(0, slot.nextEggAt - nowSeconds());
-            return Math.min(100, ((total - remaining) / total) * 100);
+            return Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
         }
 
         // Максимальный уровень (feed_levels) — терминальный: орёл больше не ест
@@ -4338,13 +4342,15 @@
                 state.mnstr = data.mnstr;
                 state.vip = { tier: data.vip_tier, expiresAt: data.vip_expires_at, lastMeatAt: data.vip_last_meat_at };
                 if (typeof data.ops === 'number') state.ops = data.ops;
+                // Сервер ускорил уже зреющие яйца — берём новые таймеры.
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
 
                 haptic.notify('success');
                 spawnBurst(14);
                 toast(t('vip.activated', { name: tier.name }));
                 closeVipModal();
-                renderHeader();
-                renderVipRail();
+                if (data.monsters) renderAll(); else { renderHeader(); renderVipRail(); }
                 saveLocally();
             } catch (error) {
                 toast('Сервер недоступен');
@@ -8935,13 +8941,15 @@
                 const rawNextEgg = Number(slot.next_egg_at !== undefined ? slot.next_egg_at : slot.nextEggAt);
                 let nextEggAt = Number.isFinite(rawNextEgg) ? rawNextEgg : 0;
                 if (feedLevel >= feedLevels) nextEggAt = 0;
+                const rawStarted = Number(slot.egg_started_at !== undefined ? slot.egg_started_at : slot.eggStartedAt);
+                const eggStartedAt = nextEggAt > 0 && Number.isFinite(rawStarted) && rawStarted > 0 && rawStarted <= nextEggAt ? rawStarted : 0;
                 const rawExpedition = Number(slot.expedition_until !== undefined ? slot.expedition_until : slot.expeditionUntil);
                 const expeditionUntil = Number.isFinite(rawExpedition) ? Math.max(0, rawExpedition) : 0;
                 // listing_id — орёл выставлен на рынок: стоит в своей ячейке под
                 // замком и ничего не делает, пока лот не куплен или не снят.
                 const listingId = typeof slot.listing_id === 'string' && slot.listing_id ? slot.listing_id
                     : (typeof slot.listingId === 'string' && slot.listingId ? slot.listingId : null);
-                farm.push({ id: slot.id, nextEggAt, feedLevel, feedTaps, expeditionUntil, listingId });
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, listingId });
                 return farm;
             }, []);
         }

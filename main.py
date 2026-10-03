@@ -542,6 +542,15 @@ def read_farm(raw) -> List[dict]:
             next_egg_at = 0
         if feed_level >= FEED_LEVELS:
             next_egg_at = 0
+        # Когда запущен текущий таймер яйца (0 — неизвестно/старый формат):
+        # по нему считается прогресс-бар и ускорение от VIP, купленного уже
+        # после старта таймера (см. vip_speed_up_egg_timers).
+        try:
+            egg_started_at = int(entry.get("egg_started_at") or 0)
+        except (TypeError, ValueError):
+            egg_started_at = 0
+        if next_egg_at <= 0 or not 0 < egg_started_at <= next_egg_at:
+            egg_started_at = 0
         try:
             expedition_until = int(entry["expedition_until"])
         except (KeyError, TypeError, ValueError):
@@ -549,6 +558,7 @@ def read_farm(raw) -> List[dict]:
         slot = {
             "id": monster_id,
             "next_egg_at": next_egg_at,
+            "egg_started_at": egg_started_at,
             "feed_level": feed_level,
             "feed_taps": feed_taps,
             "expedition_until": max(0, expedition_until),
@@ -641,6 +651,26 @@ def egg_interval_seconds(row: dict) -> float:
     vip = current_vip_tier(row)
     base = EGG_INTERVAL_HOURS * 3600
     return max(0.0, base - (float(vip.get("egg_reduction_hours") or 0) * 3600 if vip else 0.0))
+
+
+def vip_speed_up_egg_timers(farm: List[dict], interval_seconds: float, now: float) -> int:
+    """VIP куплен, когда яйца уже зреют: таймер укорачивается так, будто
+    был запущен уже с VIP (старт + новый интервал, но не раньше «сейчас»).
+    Таймер, уже запущенный с ускорением, не меняется — двойного ускорения
+    нет. Для старых слотов без egg_started_at старт считаем по базовому
+    интервалу. Возвращает число ускоренных таймеров."""
+    changed = 0
+    for slot in farm:
+        next_at = int(slot.get("next_egg_at") or 0)
+        if next_at <= now:
+            continue
+        started = int(slot.get("egg_started_at") or 0) or int(next_at - EGG_INTERVAL_HOURS * 3600)
+        target = int(max(now, started + interval_seconds))
+        if target < next_at:
+            slot["next_egg_at"] = target
+            slot["egg_started_at"] = started
+            changed += 1
+    return changed
 
 
 def expedition_duration_seconds(row: dict) -> float:
@@ -2308,7 +2338,8 @@ async def farm_feed(request: FeedAction, x_telegram_init_data: Optional[str] = H
         started_farming = False
         if slot["feed_taps"] >= FEED_TAPS_PER_LEVEL:
             slot["feed_taps"] = 0
-            slot["next_egg_at"] = int(time.time() + egg_interval_seconds(row))
+            slot["egg_started_at"] = int(time.time())
+            slot["next_egg_at"] = int(slot["egg_started_at"] + egg_interval_seconds(row))
             started_farming = True
 
         mnstr -= cost
@@ -2350,6 +2381,7 @@ async def farm_collect_egg(request: FarmSlotAction, x_telegram_init_data: Option
         place_egg_on_board_or_queue(board, queue, unlocked, level)
 
         slot["next_egg_at"] = 0
+        slot["egg_started_at"] = 0
         slot["feed_level"] = min(FEED_LEVELS, slot["feed_level"] + 1)
 
         fields = {"monsters": farm, "eggs_board": board, "eggs_queue": queue}
@@ -4460,11 +4492,20 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
         mnstr = float(row.get("mnstr") or 0) + meat_per_day
         coins -= price
 
+        # Яйца, которые уже зреют, тоже ускоряются — иначе VIP действовал
+        # только на следующие яйца, а текущие досиживали полный срок.
+        farm = read_farm(row.get("monsters"))
+        farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+        interval = max(0.0, EGG_INTERVAL_HOURS * 3600 - float(tier.get("egg_reduction_hours") or 0) * 3600)
+        sped_up = vip_speed_up_egg_timers(farm, interval, now) + vip_speed_up_egg_timers(farm_queue, interval, now)
+
         fields = {
             "coins": coins, "mnstr": mnstr,
             "vip_tier": tier["id"], "vip_expires_at": expires_at, "vip_last_meat_at": now,
         }
-        return fields, dict(fields)
+        if sped_up:
+            fields.update({"monsters": farm, "farm_queue": farm_queue})
+        return fields, dict(fields, eggs_sped_up=sped_up)
 
     return await run_farm_action(user_id, compute)
 
