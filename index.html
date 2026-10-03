@@ -2939,10 +2939,14 @@
             return isOnExpedition(slot) && nowSeconds() >= slot.expeditionUntil;
         }
 
+        // Как и у яиц: длительность берём от реального старта экспедиции
+        // (expedition_started_at), если сервер его знает.
         function expeditionProgress(slot) {
-            const total = expeditionDurationSeconds();
+            const started = slot.expeditionStartedAt || 0;
+            const total = started > 0 && slot.expeditionUntil > started ? slot.expeditionUntil - started : expeditionDurationSeconds();
+            if (!(total > 0)) return 100;
             const remaining = Math.max(0, slot.expeditionUntil - nowSeconds());
-            return Math.min(100, ((total - remaining) / total) * 100);
+            return Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
         }
 
         function expeditionGoldReward(monster) {
@@ -4342,7 +4346,7 @@
                 state.mnstr = data.mnstr;
                 state.vip = { tier: data.vip_tier, expiresAt: data.vip_expires_at, lastMeatAt: data.vip_last_meat_at };
                 if (typeof data.ops === 'number') state.ops = data.ops;
-                // Сервер ускорил уже зреющие яйца — берём новые таймеры.
+                // Сервер ускорил уже зреющие яйца и экспедиции — берём новые таймеры.
                 if (data.monsters) state.farm = readFarm(data.monsters);
                 if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
 
@@ -8945,11 +8949,13 @@
                 const eggStartedAt = nextEggAt > 0 && Number.isFinite(rawStarted) && rawStarted > 0 && rawStarted <= nextEggAt ? rawStarted : 0;
                 const rawExpedition = Number(slot.expedition_until !== undefined ? slot.expedition_until : slot.expeditionUntil);
                 const expeditionUntil = Number.isFinite(rawExpedition) ? Math.max(0, rawExpedition) : 0;
+                const rawExpStarted = Number(slot.expedition_started_at !== undefined ? slot.expedition_started_at : slot.expeditionStartedAt);
+                const expeditionStartedAt = expeditionUntil > 0 && Number.isFinite(rawExpStarted) && rawExpStarted > 0 && rawExpStarted <= expeditionUntil ? rawExpStarted : 0;
                 // listing_id — орёл выставлен на рынок: стоит в своей ячейке под
                 // замком и ничего не делает, пока лот не куплен или не снят.
                 const listingId = typeof slot.listing_id === 'string' && slot.listing_id ? slot.listing_id
                     : (typeof slot.listingId === 'string' && slot.listingId ? slot.listingId : null);
-                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, listingId });
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId });
                 return farm;
             }, []);
         }
