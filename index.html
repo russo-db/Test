@@ -4816,6 +4816,7 @@
                 state.mnstr = data.mnstr;
                 state.totalEarned = data.total_earned;
                 state.farm = readFarm(data.monsters);
+                if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
                 state.slots = data.slots || state.slots;
                 normalizeFarmCapacity();
                 drainFarmQueue();

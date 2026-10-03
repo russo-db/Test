@@ -409,6 +409,14 @@ def authenticate(init_data: Optional[str], claimed_id: int) -> int:
     с id из проверенной подписи. Нет подписи / подпись не сходится / строка
     изменена — 401; подпись чужого игрока под чужим user_id — 403."""
     if not AUTH_REQUIRED:
+        # Без подписи (только разработка) id берётся из запроса как есть —
+        # отсекаем мусор, который MongoDB не сможет записать (> int64).
+        try:
+            claimed_ok = 0 < int(claimed_id) < 2 ** 53
+        except (TypeError, ValueError, OverflowError):
+            claimed_ok = False
+        if not claimed_ok:
+            raise HTTPException(status_code=400, detail="Некорректный user_id")
         return claimed_id
 
     data = verified_init_data(init_data)
@@ -810,65 +818,6 @@ def egg_log_entry(user_id: int, source: str, level: int, outcome: dict,
 def drain_farm_queue(farm: List[dict], farm_queue: List[dict], slots_count: int):
     while len(farm) < slots_count and farm_queue:
         farm.append(farm_queue.pop(0))
-
-
-async def grant_wheel_eggs(user_id: int, level: int, count: int) -> dict:
-    """Кладёт count яиц уровня level на доску (или в очередь, если места нет)
-    — приз колеса фортуны за яйца. Раньше доска яиц была чисто клиентским
-    состоянием и это делал клиент сам, локально; теперь доска — серверное
-    состояние (см. /api/eggs/*), поэтому и этот приз кладёт сервер."""
-    board, queue = [], []
-    for _ in range(3):
-        row = await fetch_user(user_id)
-        ops = int(row.get("ops") or 0)
-        board = normalize_eggs_board(row.get("eggs_board"))
-        queue = normalize_eggs_queue(row.get("eggs_queue"))
-        unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
-        board_count = 0
-        queue_count = 0
-        for _ in range(count):
-            placed = False
-            for i in range(unlocked):
-                if not board[i]:
-                    board[i] = level
-                    placed = True
-                    break
-            if placed:
-                board_count += 1
-            else:
-                queue.append(level)
-                queue_count += 1
-        if await store.cas_update(user_id, {"eggs_board": board, "eggs_queue": queue}, ops):
-            return {"board": board_count, "queue": queue_count, "eggs_board": board, "eggs_queue": queue}
-    return {"board": 0, "queue": 0, "eggs_board": board, "eggs_queue": queue}
-
-
-async def apply_wheel_reward(user_id: int, reward: dict) -> dict:
-    """Начисляет GRAM/Meat приза колеса сразу; орла-приз всегда кладёт в
-    очередь (farm_queue) — не в открытый слот фермы, даже если там есть
-    место. Игрок сам разбирает очередь по ходу игры (покупка слота,
-    удачное слияние и т.д.). Бесплатный слот сверх купленных не выдаётся —
-    раньше при полной ферме на максимуме слотов приз-орёл вообще терялся
-    (запрос отклонялся с 400 уже ПОСЛЕ списания стоимости прокрута)."""
-    for _ in range(5):
-        row = await fetch_user(user_id)
-        ops = int(row.get("ops") or 0)
-        coins = float(row.get("coins") or 0) + reward["gram"]
-        total_earned = float(row.get("total_earned") or 0) + reward["gram"]
-        mnstr = float(row.get("mnstr") or 0) + reward["mnstr"]
-        fields = {"coins": coins, "total_earned": total_earned, "mnstr": mnstr}
-
-        if reward["monster"]:
-            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
-            farm_queue.append(new_slot(reward["monster"]))
-            fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
-
-        if await store.cas_update(user_id, fields, ops):
-            fresh = dict(row)
-            fresh.update(fields)
-            fresh["ops"] = ops + 1
-            return fresh
-    raise HTTPException(status_code=409, detail="Не удалось начислить приз — попробуй ещё раз")
 
 
 async def reconcile_queues(user_id: int, row: dict) -> dict:
@@ -4705,47 +4654,61 @@ async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[st
 async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] = Header(None)):
     """Награда за ежедневный вход. День серии и награду считает сервер."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    row = await fetch_user(user_id)
 
-    today = day_index()
-    if int(row.get("daily_last") or 0) == today:
-        raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
+    # Одной CAS-записью (run_farm_action): проверка «сегодня ещё не брал»,
+    # награда и место для орла считаются по одному и тому же свежему
+    # документу — параллельное действие не даст поселить орла сверх слотов.
+    def compute(row):
+        today = day_index()
+        if int(row.get("daily_last") or 0) == today:
+            raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
+        day = daily_state(row)["day"]
+        first_lap = int(row.get("daily_cycles") or 0) == 0
+        reward = daily_reward(day, first_lap)
+        coins = float(row.get("coins") or 0) + reward["gram"]
+        fields = {
+            "daily_last": today, "daily_day": day,
+            "coins": coins, "total_earned": float(row.get("total_earned") or 0) + reward["gram"],
+            "mnstr": float(row.get("mnstr") or 0) + reward["mnstr"],
+        }
+        if day >= DAILY_DAYS:
+            fields["daily_cycles"] = int(row.get("daily_cycles") or 0) + 1
+        if reward["monster"]:
+            if reward["monster"] not in MONSTERS:
+                raise HTTPException(status_code=500, detail="Орёл награды не найден")
+            farm = read_farm(row.get("monsters"))
+            slots = int(row.get("slots") or START_SLOTS)
+            if len(farm) < slots:
+                farm.append(new_slot(reward["monster"]))
+                fields["monsters"] = farm
+            elif slots < MAX_SLOTS:
+                # Орла некуда селить — открываем под него слот, чтобы награда не пропала.
+                farm.append(new_slot(reward["monster"]))
+                fields.update({"monsters": farm, "slots": slots + 1})
+            else:
+                # Все слоты куплены и заняты — орёл ждёт в очереди, как и
+                # орлы из яиц/колеса; раньше награду дня нельзя было забрать.
+                farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+                farm_queue.append(new_slot(reward["monster"]))
+                fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
+        fresh = dict(row)
+        fresh.update(fields)
+        return fields, {"day": day, "reward": reward, "fresh": fresh}
 
-    day = daily_state(row)["day"]
-    first_lap = int(row.get("daily_cycles") or 0) == 0
-    reward = daily_reward(day, first_lap)
-    cycle_complete = day >= DAILY_DAYS
-
-    # Орла некуда селить — открываем под него слот, чтобы награда не пропала.
-    extra_slot = False
-    if reward["monster"]:
-        if reward["monster"] not in MONSTERS:
-            raise HTTPException(status_code=500, detail="Орёл награды не найден")
-        slots = int(row.get("slots") or START_SLOTS)
-        if len(read_farm(row["monsters"])) >= slots:
-            if slots >= MAX_SLOTS:
-                raise HTTPException(status_code=400, detail="Все слоты заняты — освободи один")
-            extra_slot = True
-
-    granted = await store.claim_daily(
-        user_id, today, day, reward["gram"], reward["mnstr"],
-        reward["monster"], extra_slot, cycle_complete,
-    )
-    if not granted:
-        raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
-
-    fresh = await store.get(user_id)
+    result = await run_farm_action(user_id, compute)
+    fresh = result["fresh"]
     return {
         "status": "success",
-        "day": day,
-        "reward": reward,
+        "day": result["day"],
+        "reward": result["reward"],
         "coins": float(fresh.get("coins") or 0.0),
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
-        "monsters": read_farm(fresh["monsters"]),
+        "monsters": read_farm(fresh.get("monsters")),
+        "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "slots": int(fresh.get("slots") or START_SLOTS),
         "daily": daily_state(fresh),
-        "ops": int(fresh.get("ops") or 0),
+        "ops": result["ops"],
     }
 
 
@@ -4758,31 +4721,63 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         raise HTTPException(status_code=404, detail="Колесо фортуны отключено")
 
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    await fetch_user(user_id)
 
-    spend = await store.spend_wheel_spin(
-        user_id, day_index(), WHEEL_CHEAP_SPINS, WHEEL_CHEAP_COST, WHEEL_EXPENSIVE_COST,
-    )
-    if spend["status"] == "insufficient_gram":
-        raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {spend['cost']}")
-    if spend["status"] != "ok":
-        raise HTTPException(status_code=409, detail="Не удалось списать GRAM за прокрут, попробуй ещё раз")
-
+    # Сектор выбираем один раз, а оплату и ВЕСЬ приз (GRAM, Meat, орёл в
+    # очередь, яйца на доску) пишем ОДНОЙ CAS-записью. Раньше прокрут
+    # списывался отдельно от приза, и при столкновении с параллельными
+    # тапами игрока яйца-приз молча терялись, а GRAM/Meat/орёл — с ошибкой
+    # «попробуй ещё раз», хотя прокрут уже был оплачен.
     reward = wheel_pick()
     if reward["monster"] and reward["monster"] not in MONSTERS:
         raise HTTPException(status_code=500, detail="Орёл приза не найден")
+    egg_level = int(reward["egg_level"] or 0)
+    egg_count = int(reward["egg_count"] or 0) if egg_level else 0
 
-    eggs_result = None
-    if reward["egg_level"] and reward["egg_count"]:
-        eggs_result = await grant_wheel_eggs(user_id, int(reward["egg_level"]), int(reward["egg_count"]))
+    def compute(row):
+        today = day_index()
+        spins_today = int(row.get("wheel_spins_today") or 0) if int(row.get("wheel_day") or 0) == today else 0
+        cost = WHEEL_CHEAP_COST if spins_today < WHEEL_CHEAP_SPINS else WHEEL_EXPENSIVE_COST
+        coins = float(row.get("coins") or 0)
+        if coins < cost:
+            raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {cost}")
 
-    # Приз-орёл: сажаем в свободный открытый слот, а если ферма заполнена —
-    # в очередь (см. apply_wheel_reward) — без бесплатного слота сверх купленных.
-    fresh = await apply_wheel_reward(user_id, reward)
+        fields = {
+            "coins": coins - cost + reward["gram"],
+            "total_earned": float(row.get("total_earned") or 0) + reward["gram"],
+            "mnstr": float(row.get("mnstr") or 0) + reward["mnstr"],
+            "wheel_day": today,
+            "wheel_spins_today": spins_today + 1,
+        }
+        # Приз-орёл — всегда в очередь (не в открытый слот и без бесплатного
+        # слота сверх купленных), игрок разбирает её сам.
+        farm_queue = None
+        if reward["monster"]:
+            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+            farm_queue.append(new_slot(reward["monster"]))
+            fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
+        extra = {"spin_cost": cost}
+        if egg_count:
+            board = normalize_eggs_board(row.get("eggs_board"))
+            queue = normalize_eggs_queue(row.get("eggs_queue"))
+            unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+            free_before = sum(1 for i in range(unlocked) if not board[i])
+            for _ in range(egg_count):
+                place_egg_on_board_or_queue(board, queue, unlocked, egg_level)
+            on_board = min(egg_count, free_before)
+            fields.update({"eggs_board": board, "eggs_queue": queue})
+            extra["eggs_result"] = {"board": on_board, "queue": egg_count - on_board}
+        fresh = dict(row)
+        fresh.update(fields)
+        extra["fresh"] = fresh
+        return fields, extra
+
+    result = await run_farm_action(user_id, compute)
+    fresh = result["fresh"]
+    fresh["ops"] = result["ops"]
     response = {
         "status": "success",
         "segment": reward["index"],
-        "spin_cost": spend["cost"],
+        "spin_cost": result["spin_cost"],
         "reward": {
             "gram": reward["gram"], "mnstr": reward["mnstr"], "monster": reward["monster"],
             "egg_level": reward["egg_level"], "egg_count": reward["egg_count"],
@@ -4790,16 +4785,16 @@ async def spin_wheel(request: WheelSpin, x_telegram_init_data: Optional[str] = H
         "coins": float(fresh.get("coins") or 0.0),
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
-        "monsters": read_farm(fresh["monsters"]),
+        "monsters": read_farm(fresh.get("monsters")),
         "farm_queue": read_farm(fresh.get("farm_queue"))[:FARM_QUEUE_MAX],
         "slots": int(fresh.get("slots") or START_SLOTS),
         "ops": int(fresh.get("ops") or 0),
         "wheel": wheel_state(fresh),
     }
-    if eggs_result:
-        response["reward"]["eggs_result"] = {"board": eggs_result["board"], "queue": eggs_result["queue"]}
-        response["eggs_board"] = eggs_result["eggs_board"]
-        response["eggs_queue"] = eggs_result["eggs_queue"]
+    if "eggs_result" in result:
+        response["reward"]["eggs_result"] = result["eggs_result"]
+        response["eggs_board"] = fresh["eggs_board"]
+        response["eggs_queue"] = fresh["eggs_queue"]
     return response
 
 
@@ -5199,7 +5194,11 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
         raise HTTPException(status_code=400, detail="Не хватает GRAM")
     listing = claim  # GRAM покупателя уже списан на этом этапе
 
-    granted = await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"]))
+    try:
+        granted = await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"]))
+    except Exception as e:   # сбой БД — деньги без товара не оставляем
+        traceback.print_exception(type(e), e, e.__traceback__)
+        granted = False
     if not granted:
         await store.refund_failed_resource_purchase(user_id, listing)
         raise HTTPException(status_code=409, detail="Не удалось завершить покупку — попробуй ещё раз")
@@ -5226,7 +5225,12 @@ async def resource_market_cancel(request: ResourceMarketCancelRequest, x_telegra
     if listing == "not_owner":
         raise HTTPException(status_code=400, detail="Это не твой лот")
 
-    if not await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"])):
+    try:
+        returned = await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"]))
+    except Exception as e:   # сбой БД — лот возвращаем на рынок, штуки не теряются
+        traceback.print_exception(type(e), e, e.__traceback__)
+        returned = False
+    if not returned:
         await store.restore_resource_listing(listing)
         raise HTTPException(status_code=409, detail="Не удалось снять лот — попробуй ещё раз")
 
@@ -5445,7 +5449,9 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
     if "eggs_board_unlocked" in fields:
         fields["eggs_board_unlocked"] = max(2, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
 
-    await store.update(user_id, fields)
+    # Через CAS (ops+1), как и действия игрока: иначе тап игрока, прочитавший
+    # документ до правки админа, записал бы свои старые поля поверх неё.
+    await run_farm_action(user_id, lambda row: (fields, {}))
     fresh = await store.get(user_id)
     fresh["monsters"] = read_farm(fresh.get("monsters"))
     return fresh
@@ -5464,14 +5470,17 @@ async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Dep
         raise HTTPException(status_code=404, detail="Игрок не найден")
 
     count = max(1, min(int(body.count), 100))
-    now = time.time()
-    miners = normalize_nest_miners(doc.get("nest_miners"))
-    new_last_claim = nest_settle_particles(doc, now, len(miners) + count)
-    for i in range(count):
-        miners.append({"id": f"admin-{user_id}-{int(now * 1000)}-{i}"})
 
-    await store.update(user_id, {"nest_miners": miners, "nest_last_claim": new_last_claim})
-    return {"nest_miners": miners, "shard_count": len(miners), "last_claim": new_last_claim}
+    def compute(row):
+        now = time.time()
+        miners = normalize_nest_miners(row.get("nest_miners"))
+        new_last_claim = nest_settle_particles(row, now, len(miners) + count)
+        for i in range(count):
+            miners.append({"id": f"admin-{user_id}-{int(now * 1000)}-{i}"})
+        return ({"nest_miners": miners, "nest_last_claim": new_last_claim},
+                {"nest_miners": miners, "shard_count": len(miners), "last_claim": new_last_claim})
+
+    return await run_farm_action(user_id, compute)
 
 
 @app.post("/admin/api/players/{user_id}/grant_item")
@@ -5488,11 +5497,13 @@ async def admin_grant_item(user_id: int, body: AdminGrantItem, _: None = Depends
         raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
 
     count = max(1, min(int(body.count), 999))
-    inventory = normalize_nest_inventory(doc.get("nest_inventory"))
-    inventory[body.item_type][body.grade] += count
 
-    await store.update(user_id, {"nest_inventory": inventory})
-    return {"nest_inventory": inventory}
+    def compute(row):
+        inventory = normalize_nest_inventory(row.get("nest_inventory"))
+        inventory[body.item_type][body.grade] += count
+        return {"nest_inventory": inventory}, {"nest_inventory": inventory}
+
+    return await run_farm_action(user_id, compute)
 
 
 @app.get("/admin/api/withdrawals")

@@ -312,58 +312,6 @@ class MongoStore:
         return result.modified_count > 0
 
 
-    async def claim_daily(self, user_id: int, today: int, day: int, gram: float,
-                          mnstr: float, monster: Optional[str] = None,
-                          extra_slot: bool = False, cycle_complete: bool = False) -> bool:
-        """Условие daily_last != today делает выдачу однократной: два одновременных
-        запроса не начислят награду дважды."""
-        inc = {"coins": gram, "total_earned": gram, "mnstr": mnstr, "ops": 1}
-        if extra_slot:
-            inc["slots"] = 1
-        if cycle_complete:
-            inc["daily_cycles"] = 1
-        changes = {"$set": {"daily_last": today, "daily_day": day}, "$inc": inc}
-        if monster:
-            changes["$push"] = {"monsters": {"id": monster, "next_egg_at": 0, "feed_level": 1, "feed_taps": 0}}
-
-        result = await self.users.update_one(
-            {"_id": user_id, "daily_last": {"$ne": today}}, changes
-        )
-        return result.modified_count > 0
-
-
-
-    async def spend_wheel_spin(self, user_id: int, today: int, cheap_spins: int,
-                                cheap_cost: float, expensive_cost: float) -> dict:
-        """Списывает стоимость прокрута колеса — двухфазный подход (сперва читаем
-        состояние, потом обновляем с проверкой в фильтре), как и в мерчанте:
-        два одновременных прокрута не смогут списать по заниженной (устаревшей)
-        цене одновременно."""
-        doc = await self.users.find_one({"_id": user_id}, {"coins": 1, "wheel_day": 1, "wheel_spins_today": 1})
-        if not doc:
-            return {"status": "not_found"}
-
-        coins = float(doc.get("coins") or 0)
-        stored_day = int(doc.get("wheel_day") or 0)
-        stored_spins = int(doc.get("wheel_spins_today") or 0)
-        spins_today = stored_spins if stored_day == today else 0
-        attempt = spins_today + 1
-        cost = cheap_cost if attempt <= cheap_spins else expensive_cost
-        if coins < cost:
-            return {"status": "insufficient_gram", "cost": cost}
-
-        if stored_day == today:
-            filt = {"_id": user_id, "coins": {"$gte": cost}, "wheel_day": today, "wheel_spins_today": stored_spins}
-            update = {"$inc": {"coins": -cost, "wheel_spins_today": 1, "ops": 1}}
-        else:
-            filt = {"_id": user_id, "coins": {"$gte": cost}, "wheel_day": {"$ne": today}}
-            update = {"$set": {"wheel_day": today, "wheel_spins_today": 1}, "$inc": {"coins": -cost, "ops": 1}}
-
-        result = await self.users.update_one(filt, update)
-        if result.modified_count == 0:
-            return {"status": "conflict"}
-        return {"status": "ok", "cost": cost, "attempt": attempt}
-
     async def get_merchant_state(self) -> dict:
         """meat_bought — просто статистика (обмен золота на Meat без лимита);
         eagles_sold_by_tier — сколько орлов каждой редкости купец уже выкупил
