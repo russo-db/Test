@@ -1285,6 +1285,92 @@ function renderLedger() {
     if (more) more.onclick = () => withBusyButton(more, 'Загрузка…', () => loadLedger(true));
 }
 
+/* ---------- журнал вскрытия яиц игрока ---------- */
+const EGG_KINDS = [['', 'Все'], ['eagle', '🦅 Орлы'], ['meat', '🥩 Meat'], ['jackpot', '💰 Джекпоты']];
+let eggLogState = null;
+function closeEggLogModal() {
+    const el = document.getElementById('eggLogBackdrop');
+    if (el) el.remove();
+    eggLogState = null;
+}
+async function openEggLogModal(userId) {
+    closeEggLogModal();
+    eggLogState = { userId, kind: '', entries: [], hasMore: false, data: null };
+    const root = document.createElement('div');
+    root.className = 'modal-backdrop ledger-backdrop';
+    root.id = 'eggLogBackdrop';
+    root.innerHTML = `<div class="modal ledger-modal">
+        <button class="close-x" id="eggLogClose">✕</button>
+        <h3>Журнал вскрытия яиц · игрок ${userId}</h3>
+        <div id="eggLogBody" class="muted">Загрузка…</div>
+    </div>`;
+    document.body.appendChild(root);
+    document.getElementById('eggLogClose').onclick = closeEggLogModal;
+    root.addEventListener('click', e => { if (e.target.id === 'eggLogBackdrop') closeEggLogModal(); });
+    await loadEggLog(false);
+}
+async function loadEggLog(more) {
+    const st = eggLogState;
+    if (!st) return;
+    const params = new URLSearchParams({ limit: '100' });
+    if (st.kind) params.set('kind', st.kind);
+    if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
+    let data;
+    try { data = await api(`/admin/api/players/${st.userId}/eggs?${params}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    if (eggLogState !== st) return;
+    st.data = data;
+    st.entries = more ? st.entries.concat(data.entries) : data.entries;
+    st.hasMore = data.has_more;
+    renderEggLog();
+}
+function eggLogResult(e) {
+    if (e.kind === 'eagle') return `<span class="ledger-plus">🦅 ${escHtml(e.monster_name || e.monster || 'орёл')}</span>`;
+    if (e.kind === 'jackpot') return `<span class="ledger-plus">💰 Джекпот +${fmtNum(e.amount)} Meat</span>`;
+    return `🥩 +${fmtNum(e.amount)} Meat`;
+}
+function renderEggLog() {
+    const st = eggLogState;
+    const d = st.data;
+    const body = document.getElementById('eggLogBody');
+    if (!body) return;
+    const s = d.summary;
+    const since = d.first_ts
+        ? `Журнал ведётся с ${new Date(d.first_ts * 1000).toLocaleString('ru-RU')}. Более ранние вскрытия в нём не видны. Записи хранятся 90 дней.`
+        : 'Записей пока нет: журнал появился с этим обновлением и заполняется с новыми вскрытиями.';
+    const card = (label, value) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    const cards = [
+        card('Вскрыто яиц', fmtNum(s.opened)),
+        card('Выпало орлов', fmtNum(s.eagles)),
+        card('Meat', `${fmtNum(s.meat_total)} <span class="muted" style="font-size:12px;">(${fmtNum(s.meat_count)} яиц)</span>`),
+        card('Джекпоты', `${fmtNum(s.jackpots)}${s.jackpots ? ` <span class="muted" style="font-size:12px;">(${fmtNum(s.jackpot_total)} Meat)</span>` : ''}`),
+    ].join('');
+    const filter = EGG_KINDS.map(([k, label]) =>
+        `<button data-egg-kind="${k}" class="${st.kind === k ? 'active' : ''}">${label}</button>`).join('');
+    const rows = st.entries.length ? st.entries.map(e => `<tr>
+        <td class="muted" style="white-space:nowrap;">${new Date(e.ts * 1000).toLocaleString('ru-RU')}</td>
+        <td>ур. ${e.level}</td>
+        <td>${eggLogResult(e)}</td>
+        <td class="muted">${escHtml(e.placed_label || '')}</td>
+        <td class="muted" style="font-size:11px;">${e.source === 'open_all' ? '«Вскрыть все»' : 'по одному'}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Нет записей</td></tr>';
+    body.className = '';
+    body.innerHTML = `
+        <div class="ledger-balances">${cards}</div>
+        <div class="muted" style="font-size:12px; margin-bottom:10px;">${since}</div>
+        <div class="ledger-filter">${filter}</div>
+        <div class="table-wrap"><table class="ledger-table">
+            <thead><tr><th>Когда</th><th>Яйцо</th><th>Выпало</th><th>Куда попал орёл</th><th>Как вскрыто</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>
+        ${st.hasMore ? '<button id="eggLogMore" style="margin-top:10px;">Показать ещё</button>' : ''}`;
+    body.querySelectorAll('[data-egg-kind]').forEach(btn => {
+        btn.onclick = () => { st.kind = btn.dataset.eggKind; st.entries = []; loadEggLog(false); };
+    });
+    const more = document.getElementById('eggLogMore');
+    if (more) more.onclick = () => withBusyButton(more, 'Загрузка…', () => loadEggLog(true));
+}
+
 /* ---------- арена ---------- */
 let arenaAdminData = null;
 let arenaAdminTimer = null;
@@ -1845,7 +1931,8 @@ async function openPlayerModal(userId) {
         <div class="modal-backdrop" id="playerModalBackdrop">
             <div class="modal">
                 <button class="close-x" id="playerModalClose">✕</button>
-                <h3>Игрок ${doc.user_id} <button id="playerLedgerBtn" style="margin-left:10px; font-size:12px; padding:4px 10px;">📜 История балансов</button></h3>
+                <h3>Игрок ${doc.user_id} <button id="playerLedgerBtn" style="margin-left:10px; font-size:12px; padding:4px 10px;">📜 История балансов</button>
+                    <button id="playerEggLogBtn" style="margin-left:6px; font-size:12px; padding:4px 10px;">🥚 Журнал яиц</button></h3>
                 <div class="field-row">
                     <label>Имя <input id="fName" value="${(doc.name || '').replace(/"/g, '&quot;')}"></label>
                     <label>Кошелёк <input id="fWallet" value="${(doc.wallet || '').replace(/"/g, '&quot;')}"></label>
@@ -1937,6 +2024,7 @@ async function openPlayerModal(userId) {
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     };
     document.getElementById('playerLedgerBtn').onclick = () => openLedgerModal(userId);
+    document.getElementById('playerEggLogBtn').onclick = () => openEggLogModal(userId);
     document.getElementById('playerModalClose').onclick = closePlayerModal;
     document.getElementById('playerModalCancel').onclick = closePlayerModal;
     document.getElementById('playerModalBackdrop').addEventListener('click', e => {

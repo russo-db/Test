@@ -97,6 +97,7 @@ LEDGER_RETENTION_SECONDS = 90 * 24 * 3600   # записи старше 90 дн�
 # кормления подряд — одна строка журнала, а не сто. Ключ записи — её _id,
 # поэтому запись не требует никаких дополнительных индексов в базе.
 LEDGER_BUCKET_SECONDS = 600
+EGG_LOG_RETENTION_SECONDS = 90 * 24 * 3600   # журнал вскрытия яиц — тоже 90 дней
 
 
 class ledger_source:
@@ -226,6 +227,10 @@ class MongoStore:
         # winners}. Замороженная ставка игрока лежит в его документе —
         # auction_holds.<id аукциона> (см. place_auction_bid).
         self.auctions = client[db_name]["auctions"]
+        # Журнал вскрытия яиц (для разбора споров в админке): {user_id, ts,
+        # level, kind eagle|meat|jackpot, amount, monster, placed farm|queue,
+        # source open|open_all}. Хранится EGG_LOG_RETENTION_SECONDS.
+        self.egg_log = client[db_name]["egg_log"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -239,6 +244,7 @@ class MongoStore:
             (self.market, "seller_id", {}),
             (self.equip_market, "seller_id", {}),
             (self.resource_market, "seller_id", {}),
+            (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -1803,6 +1809,41 @@ class MongoStore:
         """Удаляет записи журнала старше LEDGER_RETENTION_SECONDS."""
         cutoff = (time.time() if now is None else now) - LEDGER_RETENTION_SECONDS
         result = await self.balance_ledger.delete_many({"ts": {"$lt": cutoff}})
+        return result.deleted_count
+
+    async def add_egg_log(self, entries: list) -> None:
+        if entries:
+            await self.egg_log.insert_many([dict(e) for e in entries])
+
+    async def list_egg_log(self, user_id: int, kind: str = "", limit: int = 100,
+                           before_ts: Optional[float] = None) -> list:
+        query = {"user_id": user_id}
+        if kind in ("eagle", "meat", "jackpot"):
+            query["kind"] = kind
+        if before_ts:
+            query["ts"] = {"$lt": float(before_ts)}
+        out = []
+        async for doc in self.egg_log.find(query).sort("ts", -1).limit(limit):
+            doc.pop("_id", None)
+            out.append(doc)
+        return out
+
+    async def egg_log_summary(self, user_id: int) -> dict:
+        """Итоги вскрытий игрока: {kind: {count, amount}} и время первой записи."""
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {"_id": "$kind", "count": {"$sum": 1}, "amount": {"$sum": "$amount"},
+                        "first": {"$min": "$ts"}}},
+        ]
+        by_kind, first = {}, None
+        async for row in self.egg_log.aggregate(pipeline):
+            by_kind[row["_id"] or ""] = {"count": int(row["count"]), "amount": float(row.get("amount") or 0)}
+            first = row["first"] if first is None else min(first, row["first"])
+        return {"by_kind": by_kind, "first_ts": first}
+
+    async def prune_egg_log(self, now: Optional[float] = None) -> int:
+        cutoff = (time.time() if now is None else now) - EGG_LOG_RETENTION_SECONDS
+        result = await self.egg_log.delete_many({"ts": {"$lt": cutoff}})
         return result.deleted_count
 
     async def ledger_summary(self, user_id: int) -> dict:

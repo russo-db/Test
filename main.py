@@ -732,6 +732,31 @@ def add_farm_slot(farm: List[dict], farm_queue: List[dict], slots_count: int, mo
         farm_queue.append(slot)
 
 
+def monster_label(monster_id: str) -> str:
+    """«Имя (редкость)» орла по каталогу — для журналов в админке."""
+    for tier in CONFIG.get("tiers") or []:
+        for m in tier.get("monsters") or []:
+            if m.get("id") == monster_id:
+                return f"{m.get('name') or monster_id} ({tier.get('name') or tier.get('id')})"
+    return monster_id or "—"
+
+
+async def record_egg_openings(entries: list) -> None:
+    """Журнал вскрытия яиц (админка → игрок → «Журнал яиц»). Пишется после
+    успешного действия; сбой записи журнала не ломает само вскрытие."""
+    try:
+        await store.add_egg_log(entries)
+    except Exception as e:
+        print(f"[eggs] egg log write failed: {type(e).__name__}: {e}")
+
+
+def egg_log_entry(user_id: int, source: str, level: int, outcome: dict,
+                  monster: Optional[str] = None, placed: Optional[str] = None) -> dict:
+    return {"user_id": user_id, "ts": time.time(), "source": source, "level": int(level),
+            "kind": outcome["kind"], "amount": float(outcome.get("amount") or 0),
+            "monster": monster, "placed": placed}
+
+
 def drain_farm_queue(farm: List[dict], farm_queue: List[dict], slots_count: int):
     while len(farm) < slots_count and farm_queue:
         farm.append(farm_queue.pop(0))
@@ -4276,6 +4301,7 @@ async def eggs_unlock_slot(request: UnlockEggSlot, x_telegram_init_data: Optiona
 async def eggs_open(request: EggIndexAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Вскрывает одно яйцо по таблице его уровня: джекпот / обычный орёл / Meat."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    log = []   # запись журнала от ПОСЛЕДНЕГО (записанного) прогона compute
 
     def compute(row):
         unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
@@ -4284,8 +4310,10 @@ async def eggs_open(request: EggIndexAction, x_telegram_init_data: Optional[str]
         if not (0 <= i < unlocked) or not board[i]:
             raise HTTPException(status_code=400, detail="Яйцо не найдено")
 
-        outcome = roll_egg_outcome(board[i])
+        level = board[i]
+        outcome = roll_egg_outcome(level)
         board[i] = 0
+        log.clear()
         queue = normalize_eggs_queue(row.get("eggs_queue"))
         drain_egg_queue(board, queue, unlocked)
 
@@ -4297,26 +4325,33 @@ async def eggs_open(request: EggIndexAction, x_telegram_init_data: Optional[str]
             fields["mnstr"] = mnstr
             response["mnstr"] = mnstr
             response["amount"] = outcome["amount"]
+            log.append(egg_log_entry(user_id, "open", level, outcome))
         else:
             farm = read_farm(row.get("monsters"))
             farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
             slots_count = int(row.get("slots") or START_SLOTS)
             bonus_id = roll_monster("common")
+            placed = "farm" if len(farm) < slots_count else "queue"
             add_farm_slot(farm, farm_queue, slots_count, bonus_id)
             fields.update({"monsters": farm, "farm_queue": farm_queue})
             response.update({"monster": bonus_id, "monsters": farm, "farm_queue": farm_queue})
+            log.append(egg_log_entry(user_id, "open", level, outcome, bonus_id, placed))
 
         return fields, response
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    await record_egg_openings(log)
+    return result
 
 
 @app.post("/api/eggs/open_all")
 async def eggs_open_all(request: OpenAllEggs, x_telegram_init_data: Optional[str] = Header(None)):
     """Вскрывает все яйца на доске одним действием, каждое по своему уровню."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    log = []   # записи журнала от ПОСЛЕДНЕГО (записанного) прогона compute
 
     def compute(row):
+        log.clear()
         unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
         board = normalize_eggs_board(row.get("eggs_board"))
         queue = normalize_eggs_queue(row.get("eggs_queue"))
@@ -4338,12 +4373,16 @@ async def eggs_open_all(request: OpenAllEggs, x_telegram_init_data: Optional[str
             opened += 1
             if outcome["kind"] == "jackpot":
                 jackpot_total += outcome["amount"]
+                log.append(egg_log_entry(user_id, "open_all", level, outcome))
             elif outcome["kind"] == "eagle":
                 bonus_id = roll_monster("common")
                 eagle_ids.append(bonus_id)
+                placed = "farm" if len(farm) < slots_count else "queue"
                 add_farm_slot(farm, farm_queue, slots_count, bonus_id)
+                log.append(egg_log_entry(user_id, "open_all", level, outcome, bonus_id, placed))
             else:
                 meat_total += outcome["amount"]
+                log.append(egg_log_entry(user_id, "open_all", level, outcome))
 
         if not opened:
             raise HTTPException(status_code=400, detail="Нечего вскрывать")
@@ -4362,7 +4401,9 @@ async def eggs_open_all(request: OpenAllEggs, x_telegram_init_data: Optional[str
         }
         return fields, response
 
-    return await run_farm_action(user_id, compute)
+    result = await run_farm_action(user_id, compute)
+    await record_egg_openings(log)
+    return result
 
 
 @app.post("/api/eggs/merge")
@@ -6623,6 +6664,42 @@ async def admin_player_ledger(user_id: int, currency: str = "", limit: int = 100
         raise HTTPException(status_code=500, detail=f"Не удалось загрузить журнал: {type(e).__name__}: {e}")
 
 
+EGG_PLACED_LABELS = {"farm": "на ферму", "queue": "в очередь (слоты заняты)"}
+
+
+@app.get("/admin/api/players/{user_id}/eggs")
+async def admin_player_egg_log(user_id: int, kind: str = "", limit: int = 100,
+                               before: Optional[float] = None, _: None = Depends(require_admin)):
+    """Журнал вскрытия яиц игрока: что выпало из каждого яйца (орёл / Meat /
+    джекпот), когда и куда попал орёл. Итоги — за всё время журнала."""
+    try:
+        limit = max(1, min(500, int(limit)))
+        entries = await store.list_egg_log(user_id, kind, limit, before)
+        summary = await store.egg_log_summary(user_id)
+        by_kind = summary["by_kind"]
+        return {
+            "user_id": user_id,
+            "first_ts": summary["first_ts"],
+            "summary": {
+                "opened": sum(v["count"] for v in by_kind.values()),
+                "eagles": by_kind.get("eagle", {}).get("count", 0),
+                "meat_count": by_kind.get("meat", {}).get("count", 0),
+                "meat_total": by_kind.get("meat", {}).get("amount", 0.0),
+                "jackpots": by_kind.get("jackpot", {}).get("count", 0),
+                "jackpot_total": by_kind.get("jackpot", {}).get("amount", 0.0),
+            },
+            "entries": [dict(e, monster_name=monster_label(e["monster"]) if e.get("monster") else None,
+                             placed_label=EGG_PLACED_LABELS.get(e.get("placed") or "", ""))
+                        for e in entries],
+            "has_more": len(entries) == limit,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить журнал яиц: {type(e).__name__}: {e}")
+
+
 # --- АУКЦИОН «РАЗДАЧА НЕБЕСНЫХ ОРЛОВ» ---
 # Один главный лот за раз, ТОП-5 ставок в реальном времени (клиент опрашивает
 # /api/auction каждые пару секунд). Ставка всегда «лидер + 1 Gram» (первая —
@@ -6779,7 +6856,7 @@ async def auction_tick(now: Optional[float] = None) -> None:
 
 
 async def ledger_maintenance():
-    """Раз в 6 часов чистит журнал балансов от записей старше 90 дней."""
+    """Раз в 6 часов чистит журнал балансов и журнал яиц от записей старше 90 дней."""
     while True:
         try:
             removed = await store.prune_ledger()
@@ -6787,6 +6864,12 @@ async def ledger_maintenance():
                 print(f"[ledger] удалено старых записей: {removed}")
         except Exception as e:
             print(f"[ledger] prune failed: {type(e).__name__}: {e}")
+        try:
+            removed = await store.prune_egg_log()
+            if removed:
+                print(f"[eggs] удалено старых записей журнала яиц: {removed}")
+        except Exception as e:
+            print(f"[eggs] egg log prune failed: {type(e).__name__}: {e}")
         await asyncio.sleep(6 * 3600)
 
 
