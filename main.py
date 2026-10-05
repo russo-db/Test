@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 import asyncio
+import html
 import base64
 import functools
 import traceback
@@ -276,11 +277,14 @@ TON_POLL_SECONDS = int(os.getenv("TON_POLL_SECONDS", "30"))
 # окружения IS_PRODUCTION_MODE=true), в админке работает кнопка
 # «[Админ-Тест] Сократить все таймеры до 1 минуты». В бою — включить.
 IS_PRODUCTION_MODE = os.getenv("IS_PRODUCTION_MODE", "false").strip().lower() in ("1", "true", "yes", "on")
-# Аукцион «Раздача Небесных орлов»: старт от 10 Gram, шаг +1 Gram к ставке
-# лидера, в таблице — ТОП-5 (они и забирают лоты по окончании таймера).
+# Аукцион: минимальную ставку, шаг и число мест (= сколько штук разыгрывается)
+# задаёт админ на каждый лот. Ниже — значения по умолчанию для формы и для
+# старых лотов, созданных до появления этих полей.
 AUCTION_MIN_BID = 10.0
 AUCTION_BID_STEP = 1.0
 AUCTION_TOP_SIZE = 5
+AUCTION_MAX_PLACES_LIMIT = 100        # больше мест в живой очереди не держим
+AUCTION_PRICE_MAX = 1_000_000
 AUCTION_DEFAULT_TITLE = "Раздача Небесных орлов"
 AUCTION_DURATION_MIN = 60
 AUCTION_DURATION_MAX = 30 * 24 * 3600
@@ -290,14 +294,18 @@ AUCTION_WORKER_SECONDS = 5
 # лот ровно до 05:00 — забрать лот «на последней секунде» нельзя.
 AUCTION_ANTISNIPE_SECONDS = 5 * 60
 AUCTION_TEST_TIMER_SECONDS = 5 * 60 + 30   # [Админ-Тест] таймер 05:30
-# Что разыгрывается: каждый из ТОП-5 получает reward_amount единиц награды.
+# Что разыгрывается: каждый из топа (max_places мест) получает reward_amount единиц награды.
 AUCTION_REWARD_TYPES = {
-    "nft": "NFT Карточка",
+    "nft": "Небесный орел",
     "sky_shards": "Небесный осколок",
     "gold": "Золото",
     "meat": "Мясо",
 }
 AUCTION_REWARD_MAX = {"nft": 100, "sky_shards": 1000, "gold": 1_000_000, "meat": 1_000_000}
+# Названия предметов для команды бота /create_auction (без учёта регистра и ё/е).
+AUCTION_ITEM_NAMES = {
+    "небесный орел": "nft", "небесный осколок": "sky_shards", "мясо": "meat", "золото": "gold",
+}
 # Куда слать заявки на вывод: свой Telegram-id или id канала.
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 
@@ -1762,6 +1770,8 @@ class AdminAuctionCreate(BaseModel):
     description: str = ""
     duration_seconds: int = 24 * 3600
     min_bid: float = AUCTION_MIN_BID
+    step: float = AUCTION_BID_STEP
+    max_places: int = AUCTION_TOP_SIZE   # сколько штук = мест в топе
     reward_type: str = "nft"          # nft | sky_shards | gold | meat
     reward_amount: float = 1          # сколько получает КАЖДЫЙ победитель
 
@@ -6778,10 +6788,12 @@ async def admin_player_egg_log(user_id: int, kind: str = "", limit: int = 100,
 
 
 # --- АУКЦИОН «РАЗДАЧА НЕБЕСНЫХ ОРЛОВ» ---
-# Один главный лот за раз, ТОП-5 ставок в реальном времени (клиент опрашивает
-# /api/auction каждые пару секунд). Ставка всегда «лидер + 1 Gram» (первая —
-# не меньше 10 Gram): игрок встаёт на 1-е место, остальные сдвигаются, 6-й
-# выбывает и мгновенно получает замороженные Gram назад. По таймеру ТОП-5
+# Один главный лот за раз, топ ставок в реальном времени (клиент опрашивает
+# /api/auction каждые пару секунд). Мин. ставку, шаг и число мест в топе
+# (= сколько штук разыгрывается, max_places) админ задаёт на каждый лот.
+# Ставка всегда «лидер + шаг» (первая — минимальная): игрок встаёт на 1-е
+# место, остальные сдвигаются, (max_places+1)-й выбывает и мгновенно получает
+# замороженные Gram назад (с уведомлением в боте). По таймеру топ
 # фиксируется: их ставки списываются навсегда, а в профиль («Мои NFT»)
 # добавляется выигранный лот — «Ожидает ручной отправки» (NFT админ
 # отправляет сам). Вся денежная логика — в storage (place_auction_bid /
@@ -6820,12 +6832,13 @@ def auction_view(doc: Optional[dict], user_id: Optional[int], now: float) -> Opt
         "id": doc["id"], "title": doc.get("title") or AUCTION_DEFAULT_TITLE,
         "item_image": doc.get("item_image") or "", "description": doc.get("description") or "",
         "status": doc["status"], "ends_at": float(doc["ends_at"]), "server_time": now,
-        "min_bid": float(doc["min_bid"]), "step": float(doc["step"]), "top_size": AUCTION_TOP_SIZE,
+        "min_bid": float(doc["min_bid"]), "step": float(doc["step"]),
+        "top_size": int(doc.get("max_places") or AUCTION_TOP_SIZE),
         "top": rows, "next_bid": next_bid, "my_place": mine["place"] if mine else 0,
         "my_bid": mine["bid"] if mine else 0.0, "is_leader": bool(rows and rows[0]["is_me"]),
         "reward_type": doc.get("reward_type") or "nft",
         "reward_amount": float(doc.get("reward_amount") or 1),
-        "reward_label": AUCTION_REWARD_TYPES.get(doc.get("reward_type") or "nft", "NFT Карточка"),
+        "reward_label": AUCTION_REWARD_TYPES.get(doc.get("reward_type") or "nft", "Небесный орел"),
         "antisnipe_seconds": AUCTION_ANTISNIPE_SECONDS, "extensions": int(doc.get("extensions") or 0),
     }
 
@@ -6899,12 +6912,36 @@ async def sweep_auction_rewards(now: float) -> None:
             print(f"[auction] reward credit failed for {uid}: {type(e).__name__}: {e}")
 
 
+async def notify_auction_evicted(user_id: int, amount: float, lot: Optional[dict]) -> None:
+    """Игрока вытеснили за границу топа: его Gram уже вернулись на баланс
+    (process_auction_refunds) — сообщаем об этом в бот."""
+    try:
+        places = int((lot or {}).get("max_places") or AUCTION_TOP_SIZE)
+        title = html.escape((lot or {}).get("title") or AUCTION_DEFAULT_TITLE)
+        await tg_send(user_id, f"⚔️ Вашу ставку на аукционе «{title}» перебили — вы выбыли из ТОП-{places}.\n"
+                               f"💰 {amount:g} Gram вернулись на баланс. Можно сделать новую ставку.")
+    except Exception as e:
+        print(f"[auction] evict notify failed for {user_id}: {type(e).__name__}: {e}")
+
+
+async def notify_auction_winners(doc: dict, winners: list) -> None:
+    title = html.escape(doc.get("title") or AUCTION_DEFAULT_TITLE)
+    label = AUCTION_REWARD_TYPES.get(doc.get("reward_type") or "nft", "Небесный орел")
+    amount = float(doc.get("reward_amount") or 1)
+    for w in winners:
+        try:
+            await tg_send(int(w["user_id"]), f"🏆 Аукцион «{title}» завершён — вы на {w['place']}-м месте!\n"
+                                             f"🎁 Выигрыш: {amount:g} × {label}. Он уже в вашем профиле (вкладка «Мои NFT»).")
+        except Exception as e:
+            print(f"[auction] winner notify failed for {w.get('user_id')}: {type(e).__name__}: {e}")
+
+
 async def auction_tick(now: Optional[float] = None) -> None:
     """Закрыть лоты с истёкшим таймером и довести их расчёт до конца.
     Вызывается фоновым циклом и лениво из /api/auction — повтор безопасен."""
     now = time.time() if now is None else now
     try:
-        # Отложенные возвраты выбывшим из ТОП-5 (см. process_auction_refunds) —
+        # Отложенные возвраты выбывшим из топа (см. process_auction_refunds) —
         # добиваем и без новых ставок.
         for auction_id in await store.auctions_with_pending_refunds():
             await store.process_auction_refunds(auction_id)
@@ -6928,6 +6965,8 @@ async def auction_tick(now: Optional[float] = None) -> None:
                         print(f"[auction] reward credit failed for {w['user_id']}: {type(e).__name__}: {e}")
                 names = ", ".join(f"{w['place']}. {w['name']} ({w['bid']:g})" for w in result["winners"]) or "ставок не было"
                 print(f"[auction] {doc['id']} рассчитан ({doc['status']}): {names}")
+                if result["winners"]:
+                    asyncio.create_task(notify_auction_winners(doc, result["winners"]))
         except Exception as e:
             traceback.print_exception(type(e), e, e.__traceback__)
 
@@ -6962,7 +7001,7 @@ async def auction_worker():
 
 async def auction_for_player() -> Optional[dict]:
     """Идущий лот, а если его нет — последний завершённый (чтобы игроки видели
-    итоговый ТОП-5 и победителей)."""
+    итоговый топ и победителей)."""
     return await store.get_active_auction() or await store.get_latest_auction()
 
 
@@ -6990,7 +7029,7 @@ async def auction_state(user_id: int, x_telegram_init_data: Optional[str] = Head
 async def auction_bid(request: AuctionBidRequest, x_telegram_init_data: Optional[str] = Header(None)):
     try:
         user_id = authenticate(x_telegram_init_data, request.user_id)
-        # Цену ставки считает ТОЛЬКО сервер: ставка лидера + AUCTION_BID_STEP
+        # Цену ставки считает ТОЛЬКО сервер: ставка лидера + шаг лота
         # (или минимальная). amount — лишь «какую цену видел игрок» для сверки:
         # не совпала с серверной — 409 «ставку перебили», а цену из запроса
         # сервер не использует никогда. Мусор (NaN, ±Infinity, ≤0) — сразу 400.
@@ -7001,7 +7040,7 @@ async def auction_bid(request: AuctionBidRequest, x_telegram_init_data: Optional
         result = await store.place_auction_bid(
             request.auction_id, user_id, auction_player_name(row), request.amount, now, AUCTION_TOP_SIZE,
             antisnipe_seconds=AUCTION_ANTISNIPE_SECONDS,
-        )
+        )   # граница вылета — max_places самого лота; AUCTION_TOP_SIZE только для старых лотов
         status = result["status"]
         if status == "not_found":
             raise HTTPException(status_code=404, detail="Лот не найден")
@@ -7015,11 +7054,14 @@ async def auction_bid(request: AuctionBidRequest, x_telegram_init_data: Optional
             raise HTTPException(status_code=400, detail=f"Недостаточно Gram: для ставки {result['required']:g} нужно {result['delta']:g} свободных Gram")
         if status != "ok":
             raise HTTPException(status_code=409, detail="Много ставок одновременно — попробуйте ещё раз")
+        lot = await store.get_auction(request.auction_id)
+        for e in result.get("evicted_bids") or []:
+            asyncio.create_task(notify_auction_evicted(e["user_id"], e["bid"], lot))
         fresh = await fetch_user(user_id)
         return {
             "success": True, "bid": result["bid"], "charged": result["delta"],
             "extended": bool(result.get("extended_to")), "extended_to": result.get("extended_to"),
-            "auction": auction_view(await store.get_auction(request.auction_id), user_id, now),
+            "auction": auction_view(lot, user_id, now),
             "server_time": now, "coins": float(fresh.get("coins") or 0), "frozen": auction_frozen(fresh),
             "ops": int(fresh.get("ops") or 0),
         }
@@ -7044,7 +7086,7 @@ async def auction_wins(user_id: int, x_telegram_init_data: Optional[str] = Heade
             "place": int(w.get("place") or 0), "won_at": float(w.get("won_at") or 0),
             "status": w.get("status") or "pending_delivery",
             "reward_type": w.get("reward_type") or "nft", "reward_amount": float(w.get("reward_amount") or 1),
-            "reward_label": AUCTION_REWARD_TYPES.get(w.get("reward_type") or "nft", "NFT Карточка"),
+            "reward_label": AUCTION_REWARD_TYPES.get(w.get("reward_type") or "nft", "Небесный орел"),
         } for w in wins], **auction_balances(row)}
     except HTTPException:
         raise
@@ -7066,13 +7108,14 @@ async def admin_auction_payload() -> dict:
             "status": doc["status"], "settled": bool(doc.get("settled")), "created_at": doc.get("created_at"),
             "ends_at": doc["ends_at"], "min_bid": doc["min_bid"], "top": doc.get("top") or [], "winners": winners,
             "reward_type": doc.get("reward_type") or "nft", "reward_amount": float(doc.get("reward_amount") or 1),
-            "reward_label": AUCTION_REWARD_TYPES.get(doc.get("reward_type") or "nft", "NFT Карточка"),
+            "reward_label": AUCTION_REWARD_TYPES.get(doc.get("reward_type") or "nft", "Небесный орел"),
         })
     active = await store.get_active_auction()
     return {
         "active": auction_view(active, None, now), "history": history, "server_time": now,
         "is_production_mode": IS_PRODUCTION_MODE, "default_title": AUCTION_DEFAULT_TITLE,
         "min_bid": AUCTION_MIN_BID, "step": AUCTION_BID_STEP, "top_size": AUCTION_TOP_SIZE,
+        "max_places_limit": AUCTION_MAX_PLACES_LIMIT,
         "reward_types": AUCTION_REWARD_TYPES, "antisnipe_seconds": AUCTION_ANTISNIPE_SECONDS,
     }
 
@@ -7089,41 +7132,57 @@ async def admin_auction(_: None = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Не удалось загрузить аукцион: {type(e).__name__}: {e}")
 
 
+async def create_auction_lot(title: str, image: str, description: str, duration: int, min_bid: float,
+                             step: float, max_places: int, reward_type: str, reward_amount: float) -> dict:
+    """Проверки и создание лота — общие для админки и команды бота
+    /create_auction. Разыгрывается только один из 4 предметов игры
+    (AUCTION_REWARD_TYPES); новые вещи не создаются. Ошибка ввода — 400."""
+    title = (title or "").strip()[:80] or AUCTION_DEFAULT_TITLE
+    image = (image or "").strip()
+    if image and not AUCTION_IMAGE_RE.fullmatch(image):
+        raise HTTPException(status_code=400, detail="Ссылка на картинку должна начинаться с https:// (без пробелов и кавычек)")
+    try:
+        duration = int(duration)
+        min_bid, step = float(min_bid), float(step)
+        max_places, reward_amount = int(max_places), float(reward_amount)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=400, detail="Ставка, шаг, таймер, количество — числами")
+    if not AUCTION_DURATION_MIN <= duration <= AUCTION_DURATION_MAX:
+        raise HTTPException(status_code=400, detail="Таймер — от 60 секунд до 30 дней")
+    if not (math.isfinite(min_bid) and 0 < min_bid <= AUCTION_PRICE_MAX):
+        raise HTTPException(status_code=400, detail="Минимальная ставка — больше 0 Gram")
+    if not (math.isfinite(step) and 0 < step <= AUCTION_PRICE_MAX):
+        raise HTTPException(status_code=400, detail="Шаг ставки — больше 0 Gram")
+    if not 1 <= max_places <= AUCTION_MAX_PLACES_LIMIT:
+        raise HTTPException(status_code=400, detail=f"Количество штук (мест в топе) — от 1 до {AUCTION_MAX_PLACES_LIMIT}")
+    reward_type = (reward_type or "nft").strip()
+    if reward_type not in AUCTION_REWARD_TYPES:
+        raise HTTPException(status_code=400, detail="Неизвестный предмет: Небесный орел, Небесный осколок, Мясо или Золото")
+    if not math.isfinite(reward_amount):
+        raise HTTPException(status_code=400, detail="Укажите количество награды числом")
+    if reward_type in ("nft", "sky_shards"):
+        if reward_amount != int(reward_amount):
+            raise HTTPException(status_code=400, detail="Количество орлов и осколков — целое число")
+        reward_amount = int(reward_amount)
+    if not 0 < reward_amount <= AUCTION_REWARD_MAX[reward_type]:
+        raise HTTPException(status_code=400, detail=f"Количество — от 1 до {AUCTION_REWARD_MAX[reward_type]:g} на каждого победителя")
+    await auction_tick()
+    now = time.time()
+    doc = await store.create_auction(title, image, (description or "").strip()[:300],
+                                     min_bid, step, now, now + duration,
+                                     reward_type=reward_type, reward_amount=reward_amount, max_places=max_places)
+    if not doc:
+        raise HTTPException(status_code=409, detail="Уже идёт другой лот (или предыдущий ещё рассчитывается) — дождитесь конца или отмените его")
+    print(f"[auction] создан лот {doc['id']} «{title}» на {duration} с, старт {min_bid:g} Gram, шаг {step:g}, "
+          f"мест в топе {max_places}, награда каждому: {reward_amount:g} × {reward_type}")
+    return doc
+
+
 @app.post("/admin/api/auction/create")
 async def admin_auction_create(body: AdminAuctionCreate, _: None = Depends(require_admin)):
     try:
-        title = (body.title or "").strip()[:80] or AUCTION_DEFAULT_TITLE
-        image = (body.item_image or "").strip()
-        if image and not AUCTION_IMAGE_RE.fullmatch(image):
-            raise HTTPException(status_code=400, detail="Ссылка на картинку должна начинаться с https:// (без пробелов и кавычек)")
-        duration = int(body.duration_seconds)
-        if not AUCTION_DURATION_MIN <= duration <= AUCTION_DURATION_MAX:
-            raise HTTPException(status_code=400, detail="Длительность — от 1 минуты до 30 дней")
-        min_bid = float(body.min_bid)
-        if not AUCTION_MIN_BID <= min_bid <= 1_000_000:
-            raise HTTPException(status_code=400, detail=f"Стартовая ставка — не меньше {AUCTION_MIN_BID:g} Gram")
-        reward_type = (body.reward_type or "nft").strip()
-        if reward_type not in AUCTION_REWARD_TYPES:
-            raise HTTPException(status_code=400, detail="Неизвестный тип награды")
-        try:
-            reward_amount = float(body.reward_amount)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="Укажите количество награды числом")
-        if reward_type in ("nft", "sky_shards"):
-            if reward_amount != int(reward_amount):
-                raise HTTPException(status_code=400, detail="Количество NFT и осколков — целое число")
-            reward_amount = int(reward_amount)
-        if not 0 < reward_amount <= AUCTION_REWARD_MAX[reward_type]:
-            raise HTTPException(status_code=400, detail=f"Количество — от 1 до {AUCTION_REWARD_MAX[reward_type]:g} на каждого победителя")
-        await auction_tick()
-        now = time.time()
-        doc = await store.create_auction(title, image, (body.description or "").strip()[:300],
-                                         min_bid, AUCTION_BID_STEP, now, now + duration,
-                                         reward_type=reward_type, reward_amount=reward_amount)
-        if not doc:
-            raise HTTPException(status_code=409, detail="Уже идёт другой лот (или предыдущий ещё рассчитывается) — дождитесь конца или отмените его")
-        print(f"[auction] создан лот {doc['id']} «{title}» на {duration} с, старт {min_bid:g} Gram, "
-              f"награда каждому: {reward_amount:g} × {reward_type}")
+        await create_auction_lot(body.title, body.item_image, body.description, body.duration_seconds,
+                                 body.min_bid, body.step, body.max_places, body.reward_type, body.reward_amount)
         return await admin_auction_payload()
     except HTTPException:
         raise
@@ -7134,7 +7193,7 @@ async def admin_auction_create(body: AdminAuctionCreate, _: None = Depends(requi
 
 @app.post("/admin/api/auction/finish")
 async def admin_auction_finish(body: AdminAuctionAction, _: None = Depends(require_admin)):
-    """Досрочно завершить: текущий ТОП-5 становится победителями."""
+    """Досрочно завершить: текущий топ (max_places мест) становится победителями."""
     try:
         if not await store.finish_auction(body.auction_id, time.time(), force=True):
             raise HTTPException(status_code=409, detail="Лот уже не активен")
@@ -7306,6 +7365,66 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[bot] /admin failed: {type(e).__name__}: {e}")
 
 
+CREATE_AUCTION_USAGE = (
+    "Формат:\n/create_auction Название | Мин_ставка | Шаг | Таймер_в_сек | Количество_штук | Ссылка_на_картинку\n\n"
+    "Название — один из предметов: Небесный орел, Небесный осколок, Мясо, Золото.\n"
+    "Количество штук = мест в топе: при 1 вылетает 2-й (классический аукцион), при 3 — 4-й.\n"
+    "Пример:\n/create_auction Небесный орел | 10 | 1 | 86400 | 3 | https://example.com/eagle.png"
+)
+
+
+def parse_create_auction_args(text: str) -> dict:
+    """Разбор «/create_auction Предмет | Мин | Шаг | Таймер | Штук | Картинка».
+    {"error": текст} при ошибке ввода, иначе параметры лота."""
+    args = text.split(maxsplit=1)[1] if len((text or "").split(maxsplit=1)) > 1 else ""
+    parts = [p.strip() for p in args.split("|")]
+    if len(parts) != 6 or not all(parts[:5]):
+        return {"error": "Нужно 6 параметров через «|».\n\n" + CREATE_AUCTION_USAGE}
+    name, min_bid, step, duration, places, image = parts
+    reward_type = AUCTION_ITEM_NAMES.get(" ".join(name.lower().replace("ё", "е").split()))
+    if not reward_type:
+        return {"error": f"Предмет «{name}» не найден. Можно: Небесный орел, Небесный осколок, Мясо, Золото."}
+    try:
+        return {"reward_type": reward_type, "min_bid": float(min_bid.replace(",", ".")),
+                "step": float(step.replace(",", ".")), "duration": int(duration), "max_places": int(places),
+                "image": image}
+    except ValueError:
+        return {"error": "Мин. ставка и шаг — числа, таймер и количество — целые числа.\n\n" + CREATE_AUCTION_USAGE}
+
+
+async def create_auction_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/create_auction — запуск лота из бота, только владельцам
+    (MAINTENANCE_WHITELIST; id отправителя подтверждает сам Telegram).
+    Остальным команда молчит. Каждый победитель получает 1 шт. предмета."""
+    try:
+        user = update.effective_user
+        if not user or user.id not in MAINTENANCE_WHITELIST or not update.message:
+            return
+        p = parse_create_auction_args(update.message.text or "")
+        if "error" in p:
+            await update.message.reply_text("❌ " + p["error"])
+            return
+        try:
+            doc = await create_auction_lot(AUCTION_REWARD_TYPES[p["reward_type"]], p["image"], "", p["duration"],
+                                           p["min_bid"], p["step"], p["max_places"], p["reward_type"], 1)
+        except HTTPException as e:
+            await update.message.reply_text(f"❌ {e.detail}")
+            return
+        ends = time.strftime("%d.%m %H:%M UTC", time.gmtime(doc["ends_at"]))
+        await update.message.reply_text(
+            f"✅ Аукцион запущен: {AUCTION_REWARD_TYPES[p['reward_type']]}\n"
+            f"Мин. ставка {p['min_bid']:g} Gram · шаг +{p['step']:g} · мест в топе {p['max_places']} "
+            f"(вылетает {p['max_places'] + 1}-й) · каждый победитель получает 1 шт.\n"
+            f"Конец: {ends}")
+        print(f"[bot] /create_auction от {user.id}: лот {doc['id']}")
+    except Exception as e:
+        print(f"[bot] /create_auction failed: {type(e).__name__}: {e}")
+        try:
+            await update.message.reply_text("❌ Не удалось создать аукцион — подробности в логах сервера.")
+        except Exception:
+            pass
+
+
 BOT_MENU_BUTTON_TEXT = "🎮 Играть"
 
 
@@ -7332,6 +7451,7 @@ async def run_bot():
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("create_auction", create_auction_command))
 
     await application.initialize()
     # Имя из getMe надёжнее ручной переменной: без опечаток и лишней @.

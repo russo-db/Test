@@ -2204,7 +2204,7 @@
                 'auction.endedBtn': 'Приём ставок закрыт', 'auction.top': 'ТОП-{n} — они забирают лоты',
                 'auction.emptyPlace': 'свободно', 'auction.bidOk': 'Ставка {amount} Gram принята — вы на 1-м месте!',
                 'auction.bidFailed': 'Не удалось сделать ставку', 'auction.confirm': 'Поставить {amount} Gram? Будет заморожено {delta} Gram — вернутся автоматически, если вас вытеснят из ТОП-{n}.',
-                'auction.rules': 'Старт — {min} Gram, шаг — +{step} Gram к ставке лидера. Новая ставка ставит вас на 1-е место, остальные сдвигаются вниз. Выбывший с 6-го места мгновенно получает свои Gram назад. Ставка, сделанная, когда до конца меньше 5 минут, продлевает аукцион ровно до 05:00. По окончании таймера ТОП-{n} выигрывают лот, их ставки списываются, а награда начисляется автоматически (NFT отправляется вручную).',
+                'auction.rules': 'Старт — {min} Gram, шаг — +{step} Gram к ставке лидера. Новая ставка ставит вас на 1-е место, остальные сдвигаются вниз. Выбывший с {out}-го места мгновенно получает свои Gram назад. Ставка, сделанная, когда до конца меньше 5 минут, продлевает аукцион ровно до 05:00. По окончании таймера ТОП-{n} выигрывают лот, их ставки списываются, а награда начисляется автоматически (NFT отправляется вручную).',
                 'auction.wonHeading': 'Выиграно на аукционе', 'auction.noWins': 'Пока нет выигранных лотов — загляните в 🏛️ Аукцион',
                 'auction.pending': 'Выиграно на аукционе. Ожидает ручной отправки', 'auction.delivered': 'Отправлено на ваш кошелёк ✅',
                 'auction.wonMeta': '{place}-е место · ставка {bid} Gram · {date}', 'auction.winnersTitle': 'Победители',
@@ -2212,7 +2212,7 @@
                 'auction.snipeHint': '⏱ Ставка в последние 5 минут продлевает аукцион до 05:00',
                 'auction.extended': '⏱ Ставка в последние минуты — таймер продлён до 05:00!',
                 'auction.credited': '✅ Начислено: +{amount} × {label}', 'auction.crediting': 'Начисляется…',
-                'auction.label.nft': 'NFT Карточка', 'auction.label.sky_shards': 'Небесный осколок',
+                'auction.label.nft': 'Небесный орел', 'auction.label.sky_shards': 'Небесный осколок',
                 'auction.label.gold': 'Золото', 'auction.label.meat': 'Мясо',
                 'subtab.wallet': 'Кошелёк', 'subtab.friends': 'Друзья', 'subtab.language': 'Язык', 'subtab.sound': 'Звук',
                 'wallet.heading': 'Кошелёк TON', 'wallet.notConnected': 'Кошелёк не подключён',
@@ -2539,7 +2539,7 @@
                 'auction.endedBtn': 'Bidding closed', 'auction.top': 'TOP-{n} — they win the lot',
                 'auction.emptyPlace': 'free', 'auction.bidOk': 'Bid {amount} Gram accepted — you are 1st!',
                 'auction.bidFailed': 'Could not place the bid', 'auction.confirm': 'Bid {amount} Gram? {delta} Gram will be frozen and returned automatically if you drop out of the TOP-{n}.',
-                'auction.rules': 'Start — {min} Gram, step — +{step} Gram over the leader. A new bid puts you 1st and shifts others down. Whoever drops to 6th instantly gets their Gram back. A bid placed with less than 5 minutes left extends the auction to exactly 05:00. When the timer ends the TOP-{n} win the lot, their bids are charged and the reward is credited automatically (NFTs are sent manually).',
+                'auction.rules': 'Start — {min} Gram, step — +{step} Gram over the leader. A new bid puts you 1st and shifts others down. Whoever drops to place {out} instantly gets their Gram back. A bid placed with less than 5 minutes left extends the auction to exactly 05:00. When the timer ends the TOP-{n} win the lot, their bids are charged and the reward is credited automatically (NFTs are sent manually).',
                 'auction.wonHeading': 'Won at auction', 'auction.noWins': 'No lots won yet — visit the 🏛️ Auction',
                 'auction.pending': 'Won at auction. Awaiting manual delivery', 'auction.delivered': 'Sent to your wallet ✅',
                 'auction.wonMeta': 'place {place} · bid {bid} Gram · {date}', 'auction.winnersTitle': 'Winners',
@@ -2547,7 +2547,7 @@
                 'auction.snipeHint': '⏱ A bid in the last 5 minutes extends the auction to 05:00',
                 'auction.extended': '⏱ Last-minute bid — the timer is extended to 05:00!',
                 'auction.credited': '✅ Credited: +{amount} × {label}', 'auction.crediting': 'Crediting…',
-                'auction.label.nft': 'NFT Card', 'auction.label.sky_shards': 'Sky Shard',
+                'auction.label.nft': 'Sky Eagle', 'auction.label.sky_shards': 'Sky Shard',
                 'auction.label.gold': 'Gold', 'auction.label.meat': 'Meat',
                 'subtab.wallet': 'Wallet', 'subtab.friends': 'Friends', 'subtab.language': 'Language', 'subtab.sound': 'Sound',
                 'wallet.heading': 'TON Wallet', 'wallet.notConnected': 'Wallet not connected',
@@ -8158,7 +8158,7 @@
 
         /* ---------- Аукцион «Раздача Небесных орлов» ----------
            Вся логика ставок — на сервере (/api/auction*): клиент только
-           показывает лот, таймер и ТОП-5 и опрашивает сервер каждые 2.5 с,
+           показывает лот, таймер и топ (max_places мест) и опрашивает сервер каждые 2.5 с,
            пока экран открыт. */
         const AUCTION_FALLBACK_IMG = 'assets/eagles/legendary.png';
         // Картинка лота по типу награды — если админ не указал ссылку или она
@@ -8340,7 +8340,7 @@
                 list.appendChild(row);
             }
             body.appendChild(list);
-            body.appendChild(auctionEl('p', 'auction-rules', t('auction.rules', { min: auctionFmt(a.min_bid), step: auctionFmt(a.step), n: a.top_size })));
+            body.appendChild(auctionEl('p', 'auction-rules', t('auction.rules', { min: auctionFmt(a.min_bid), step: auctionFmt(a.step), n: a.top_size, out: (a.top_size || 5) + 1 })));
             auctionTickTimer();
             if (auctionFlashExtended) {
                 auctionFlashExtended = false;

@@ -1471,7 +1471,8 @@ class MongoStore:
 
     async def create_auction(self, title: str, item_image: str, description: str,
                              min_bid: float, step: float, now: float, ends_at: float,
-                             reward_type: str = "nft", reward_amount: float = 1) -> Optional[dict]:
+                             reward_type: str = "nft", reward_amount: float = 1,
+                             max_places: int = 5) -> Optional[dict]:
         """Новый лот. Одновременно активен только один: замок active_auction в
         settings занимается атомарно (как reserve_nft_claim). None — уже идёт другой."""
         from bson import ObjectId
@@ -1488,9 +1489,12 @@ class MongoStore:
             "min_bid": float(min_bid), "step": float(step), "created_at": now, "ends_at": float(ends_at),
             "status": "active", "version": 0, "top": [], "pending_refunds": [],
             "settled": False, "winners": [],
-            # Что получает КАЖДЫЙ из ТОП-5: nft (ручная отправка админом) или
+            # Что получает КАЖДЫЙ из топа: nft (ручная отправка админом) или
             # ресурс (sky_shards / gold / meat) в количестве reward_amount.
             "reward_type": reward_type, "reward_amount": float(reward_amount),
+            # Сколько штук разыгрывается = сколько мест в живой очереди:
+            # (max_places + 1)-й выбывает с возвратом, топ забирает лоты.
+            "max_places": int(max_places),
         }
         await self.auctions.insert_one(doc)
         return self._auction_doc(doc)
@@ -1541,7 +1545,7 @@ class MongoStore:
             await self._refund_hold(user_id, str(oid), old_hold)
 
     async def process_auction_refunds(self, auction_id) -> int:
-        """Мгновенный возврат выбывшим из ТОП-5. Идемпотентно (см. _refund_hold)."""
+        """Мгновенный возврат выбывшим из топа. Идемпотентно (см. _refund_hold)."""
         oid = self._auction_oid(auction_id)
         doc = await self.auctions.find_one({"_id": oid}) if oid else None
         if not doc:
@@ -1572,8 +1576,9 @@ class MongoStore:
     async def place_auction_bid(self, auction_id, user_id: int, name: str, expected: Optional[float],
                                 now: float, top_size: int, antisnipe_seconds: float = 0) -> dict:
         """Ставка = лидер + шаг (или минимальная, если ставок нет). Игрок встаёт
-        на 1-е место, остальные сдвигаются вниз, 6-й выбывает с мгновенным
-        возвратом. Если игрок уже в ТОП-5 — замораживается только разница.
+        на 1-е место, остальные сдвигаются вниз, вышедший за границу топа
+        (max_places лота; у старых лотов — top_size) выбывает с мгновенным
+        возвратом. Если игрок уже в топе — замораживается только разница.
         Антиснайпер: если до конца меньше antisnipe_seconds, принятая ставка
         продлевает лот ровно до now + antisnipe_seconds — в той же атомарной
         записи, что и сама ставка."""
@@ -1591,6 +1596,7 @@ class MongoStore:
             if doc.get("pending_refunds"):
                 await self.process_auction_refunds(key)
                 doc = await self.auctions.find_one({"_id": oid})
+            places = int(doc.get("max_places") or top_size)
             top = list(doc.get("top") or [])
             if top and int(top[0]["user_id"]) == user_id:
                 return {"status": "already_leader"}
@@ -1615,8 +1621,8 @@ class MongoStore:
 
             entry = {"user_id": user_id, "name": name, "bid": required, "ts": now}
             new_top = [entry] + [e for e in top if int(e["user_id"]) != user_id]
-            evicted = new_top[top_size:]
-            new_top = new_top[:top_size]
+            evicted = new_top[places:]
+            new_top = new_top[:places]
             update = {"$set": {"top": new_top, "version": int(doc.get("version") or 0) + 1}}
             extended_to = None
             if antisnipe_seconds and float(doc["ends_at"]) - now < antisnipe_seconds:
@@ -1641,6 +1647,7 @@ class MongoStore:
             if evicted:
                 await self.process_auction_refunds(key)
             return {"status": "ok", "bid": required, "delta": delta, "evicted": [int(e["user_id"]) for e in evicted],
+                    "evicted_bids": [{"user_id": int(e["user_id"]), "bid": float(e["bid"])} for e in evicted],
                     "extended_to": extended_to}
         return {"status": "busy"}
 
@@ -1678,7 +1685,7 @@ class MongoStore:
         return res.modified_count > 0
 
     async def settle_auction(self, auction_id) -> Optional[dict]:
-        """Итог закрытого лота: победителям ТОП-5 заморозка списывается навсегда и
+        """Итог закрытого лота: победителям (топ из max_places мест) заморозка списывается навсегда и
         в профиль добавляется выигранный предмет (auction_wins); всем остальным
         (выбывшие, отменённый лот, осиротевшая заморозка от оборванного запроса)
         — возврат. Каждый шаг идемпотентен; повторный вызов безопасен.
@@ -1692,7 +1699,8 @@ class MongoStore:
         await self.process_auction_refunds(key)
         winners = []
         if doc["status"] == "finished":
-            for place, e in enumerate(doc.get("top") or [], start=1):
+            places = int(doc.get("max_places") or 5)
+            for place, e in enumerate((doc.get("top") or [])[:places], start=1):
                 uid, bid = int(e["user_id"]), float(e["bid"])
                 reward_type = doc.get("reward_type") or "nft"
                 win = {"auction_id": key, "title": doc.get("title") or "", "item_image": doc.get("item_image") or "",

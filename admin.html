@@ -502,7 +502,7 @@
                 <div class="nft-interval-row">
                     <span class="muted">Награда:</span>
                     <select id="auctionRewardType">
-                        <option value="nft">NFT Карточка</option>
+                        <option value="nft">Небесный орел (NFT)</option>
                         <option value="sky_shards">Небесный осколок (sky_shards)</option>
                         <option value="gold">Золото (gold)</option>
                         <option value="meat">Мясо (meat)</option>
@@ -518,11 +518,16 @@
                         <option value="3600" selected>часов</option>
                         <option value="86400">дней</option>
                     </select>
-                    <span class="muted">Старт (Gram):</span>
-                    <input type="number" id="auctionMinBid" min="10" step="1" value="10" style="width:80px;">
+                    <span class="muted">Мин. ставка (Gram):</span>
+                    <input type="number" id="auctionMinBid" min="0.01" step="any" value="10" style="width:80px;">
+                    <span class="muted">Шаг:</span>
+                    <input type="number" id="auctionStep" min="0.01" step="any" value="1" style="width:70px;">
+                    <span class="muted">Штук (мест в топе):</span>
+                    <input type="number" id="auctionPlaces" min="1" max="100" step="1" value="5" style="width:70px;">
                     <button class="primary" id="auctionCreateBtn">Создать лот</button>
                 </div>
-                <div class="muted" style="font-size:12px;">Шаг ставки +1 Gram к лидеру. ТОП-5 по окончании таймера выигрывают лот: ресурсы (осколки, золото, мясо) сервер начисляет каждому сам;
+                <div class="muted" style="font-size:12px;">Ставка = ставка лидера + шаг. Штук = мест в живой очереди: при 1 вылетает 2-й (классический аукцион), при 3 — 4-й; вылетевшему Gram возвращаются сразу с уведомлением в боте.
+                    Весь топ по окончании таймера выигрывает лот: ресурсы (осколки, золото, мясо) сервер начисляет каждому сам;
                     NFT отправляете вручную и отмечаете ниже «Отправлено». Ставка в последние 5 минут продлевает лот до 05:00.
                     Картинка — прямая ссылка на файл (для ImgBB: правый клик по картинке → «Копировать адрес изображения», вида https://i.ibb.co/…/name.png).</div>
             </div>
@@ -1071,11 +1076,11 @@ function renderAuctionAdmin(data) {
                 <div style="font-weight:800; font-size:16px;">${escHtml(a.title)}</div>
                 <div class="muted" style="font-size:12px;">${escHtml(a.description)}</div>
                 <div style="margin:6px 0;">До конца: <span class="auction-timer-admin" id="auctionAdminLeft">—</span></div>
-                <div style="margin:4px 0; font-weight:700; color:#9ec5ff;">🎁 Каждому из ТОП-5: ${fmtNum(a.reward_amount)} × ${escHtml(a.reward_label)}</div>
+                <div style="margin:4px 0; font-weight:700; color:#9ec5ff;">🎁 Каждому из ТОП-${a.top_size}: ${fmtNum(a.reward_amount)} × ${escHtml(a.reward_label)}</div>
                 <div class="muted" style="font-size:12px;">Следующая ставка: ${fmtNum(a.next_bid)} Gram · старт ${fmtNum(a.min_bid)} · шаг +${fmtNum(a.step)}${a.extensions ? ` · продлений антиснайпером: ${a.extensions}` : ''}</div>
                 <div class="table-wrap" style="margin-top:8px;"><table><thead><tr><th>Место</th><th>Игрок</th><th>Ставка</th></tr></thead><tbody>${rows}</tbody></table></div>
                 <div class="nft-interval-row" style="margin-top:8px;">
-                    <button class="primary" id="auctionFinishBtn">Завершить досрочно (ТОП-5 выигрывают)</button>
+                    <button class="primary" id="auctionFinishBtn">Завершить досрочно (ТОП-${a.top_size} выигрывают)</button>
                     <button class="danger" id="auctionCancelBtn">Отменить лот (вернуть все ставки)</button>
                 </div>
             </div></div>`;
@@ -1083,7 +1088,7 @@ function renderAuctionAdmin(data) {
         img.src = a.item_image || '/assets/eagles/legendary.png';
         img.onerror = () => { img.onerror = null; img.src = '/assets/eagles/legendary.png'; };
         document.getElementById('auctionFinishBtn').onclick = e => auctionAdminAction(e.target, 'finish', a.id,
-            'Завершить лот сейчас? Текущий ТОП-5 выиграет, их ставки спишутся.');
+            `Завершить лот сейчас? Текущий ТОП-${a.top_size} выиграет, их ставки спишутся.`);
         document.getElementById('auctionCancelBtn').onclick = e => auctionAdminAction(e.target, 'cancel', a.id,
             'Отменить лот? Все замороженные ставки вернутся игрокам, победителей не будет.');
     }
@@ -1157,11 +1162,15 @@ document.getElementById('auctionCreateBtn').onclick = async () => {
         item_image: document.getElementById('auctionImage').value.trim(),
         description: document.getElementById('auctionDesc').value.trim(),
         duration_seconds: duration,
-        min_bid: Number(document.getElementById('auctionMinBid').value) || 10,
+        min_bid: Number(document.getElementById('auctionMinBid').value),
+        step: Number(document.getElementById('auctionStep').value),
+        max_places: Math.floor(Number(document.getElementById('auctionPlaces').value)),
         reward_type: document.getElementById('auctionRewardType').value,
         reward_amount: Number(document.getElementById('auctionRewardAmount').value),
     };
     if (duration < 60) { toast('Длительность — минимум 1 минута', true); return; }
+    if (!(body.min_bid > 0) || !(body.step > 0)) { toast('Мин. ставка и шаг — больше 0', true); return; }
+    if (!(body.max_places >= 1 && body.max_places <= 100)) { toast('Штук (мест в топе) — от 1 до 100', true); return; }
     await withBusyButton(btn, 'Создаю…', async () => {
         try {
             renderAuctionAdmin(await api('/admin/api/auction/create', {
@@ -1181,12 +1190,14 @@ function updateRewardPreview() {
     const type = document.getElementById('auctionRewardType').value;
     const input = document.getElementById('auctionRewardAmount');
     input.step = (type === 'gold' || type === 'meat') ? 'any' : '1';
-    const labels = { nft: 'NFT Карточка (отправка вручную)', sky_shards: 'Небесный осколок', gold: 'Золото', meat: 'Мясо' };
+    const labels = { nft: 'Небесный орел (NFT, отправка вручную)', sky_shards: 'Небесный осколок', gold: 'Золото', meat: 'Мясо' };
     const n = Number(input.value) || 0;
-    document.getElementById('auctionRewardPreview').textContent = n > 0 ? `= каждому из ТОП-5: ${fmtNum(n)} × ${labels[type]}, всего ${fmtNum(n * 5)}` : '';
+    const places = Math.max(1, Math.floor(Number(document.getElementById('auctionPlaces').value) || 1));
+    document.getElementById('auctionRewardPreview').textContent = n > 0 ? `= каждому из ТОП-${places}: ${fmtNum(n)} × ${labels[type]}, всего ${fmtNum(n * places)}` : '';
 }
 document.getElementById('auctionRewardType').addEventListener('change', updateRewardPreview);
 document.getElementById('auctionRewardAmount').addEventListener('input', updateRewardPreview);
+document.getElementById('auctionPlaces').addEventListener('input', updateRewardPreview);
 updateRewardPreview();
 document.querySelectorAll('[data-shorten-timers]').forEach(btn => {
     btn.onclick = () => withBusyButton(btn, 'Сокращаю…', async () => {
