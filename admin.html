@@ -682,7 +682,22 @@ const state = {
 const tgAdmin = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) ? window.Telegram.WebApp : null;
 if (tgAdmin) { try { tgAdmin.ready(); tgAdmin.expand(); } catch (e) { /* старый клиент */ } }
 
+// Страховка от двойного клика во всей админке: такой же изменяющий запрос
+// (тот же адрес и то же тело), пока первый ещё выполняется, не отправляется
+// второй раз — его промис просто никогда не завершается, так что второй
+// обработчик молча «зависает» без тостов и без действия на сервере.
+const adminInflight = new Set();
 async function api(path, opts) {
+    const method = String((opts && opts.method) || 'GET').toUpperCase();
+    if (method !== 'GET') {
+        const key = method + ' ' + path + ' ' + (typeof (opts && opts.body) === 'string' ? opts.body : '');
+        if (adminInflight.has(key)) return new Promise(() => {});
+        adminInflight.add(key);
+        try { return await apiSend(path, opts); } finally { adminInflight.delete(key); }
+    }
+    return apiSend(path, opts);
+}
+async function apiSend(path, opts) {
     opts = Object.assign({ credentials: 'same-origin' }, opts);
     if (tgAdmin) opts.headers = Object.assign({}, opts.headers || {}, { 'X-Telegram-Init-Data': tgAdmin.initData });
     const res = await fetch(path, opts);
@@ -2007,7 +2022,7 @@ async function openPlayerModal(userId) {
         editingPlayer.monsters.push({ id, next_egg_at: 0, feed_level: level, feed_taps: 0 });
         renderFarmList();
     };
-    document.getElementById('grantShardsBtn').onclick = async () => {
+    document.getElementById('grantShardsBtn').onclick = e => withBusyButton(e.currentTarget, 'Выдаю…', async () => {
         const count = Math.max(1, Math.min(100, Number(document.getElementById('fGrantShards').value) || 1));
         try {
             const result = await api(`/admin/api/players/${userId}/grant_shards`, {
@@ -2018,8 +2033,8 @@ async function openPlayerModal(userId) {
             document.getElementById('fShardCount').value = result.nest_miners.length;
             toast(`Выдано осколков: ${count}`);
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
-    };
-    document.getElementById('grantItemBtn').onclick = async () => {
+    });
+    document.getElementById('grantItemBtn').onclick = e => withBusyButton(e.currentTarget, 'Выдаю…', async () => {
         const item_type = document.getElementById('grantItemType').value;
         const grade = document.getElementById('grantItemGrade').value;
         const count = Math.max(1, Math.min(999, Number(document.getElementById('grantItemCount').value) || 1));
@@ -2033,7 +2048,7 @@ async function openPlayerModal(userId) {
             const meta = nestConfig.item_types[item_type];
             toast(`Выдано: ${meta.names ? meta.names[grade] : meta.label} × ${count}`);
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
-    };
+    });
     document.getElementById('playerLedgerBtn').onclick = () => openLedgerModal(userId);
     document.getElementById('playerEggLogBtn').onclick = () => openEggLogModal(userId);
     document.getElementById('playerModalClose').onclick = closePlayerModal;
@@ -2151,22 +2166,28 @@ async function loadWithdrawals() {
             </tr>
         `).join('') || '<tr><td colspan="8" class="muted">Заявок нет</td></tr>';
         document.querySelectorAll('[data-approve]').forEach(btn => {
-            btn.onclick = () => actWithdrawal(btn.dataset.approve, 'approve');
+            btn.onclick = () => withBusyButton(btn, '…', () => actWithdrawal(btn.dataset.approve, 'approve'));
         });
         document.querySelectorAll('[data-reject]').forEach(btn => {
-            btn.onclick = () => actWithdrawal(btn.dataset.reject, 'reject');
+            btn.onclick = () => withBusyButton(btn, '…', () => actWithdrawal(btn.dataset.reject, 'reject'));
         });
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
 
+// Заявка, по которой уже идёт решение (окно подтверждения открыто или
+// запрос в пути): второй клик не открывает второе подтверждение.
+const withdrawalsInProgress = new Set();
 async function actWithdrawal(id, action) {
-    if (action === 'reject' && !confirm('Отклонить заявку и вернуть GRAM игроку?')) return;
-    if (action === 'approve' && !confirm('Отметить заявку как выплаченную?')) return;
+    if (withdrawalsInProgress.has(id)) return;
+    withdrawalsInProgress.add(id);
     try {
+        if (action === 'reject' && !confirm('Отклонить заявку и вернуть GRAM игроку?')) return;
+        if (action === 'approve' && !confirm('Отметить заявку как выплаченную?')) return;
         await api(`/admin/api/withdrawals/${id}/${action}`, { method: 'POST' });
         toast(action === 'approve' ? 'Отмечено как выплачено' : 'Отклонено, GRAM возвращён');
         loadWithdrawals();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    finally { setTimeout(() => withdrawalsInProgress.delete(id), 300); }
 }
 
 document.getElementById('wdStatus').onchange = loadWithdrawals;
@@ -2663,7 +2684,7 @@ function tournamentTickCountdowns() {
     });
 }
 
-document.getElementById('tournamentStartBtn').onclick = async () => {
+document.getElementById('tournamentStartBtn').onclick = e => withBusyButton(e.currentTarget, 'Запускаю…', async () => {
     const size = tournamentState.selectedSize;
     if (hhmmToMinute(document.getElementById('tournamentStartTime').value) == null) { toast('Укажите время матчей', true); return; }
     if (!confirm(`Запустить турнир на ${size} кланов? Состав заморозится немедленно и больше не изменится.`)) return;
@@ -2676,7 +2697,7 @@ document.getElementById('tournamentStartBtn').onclick = async () => {
         toast('Турнир запущен!');
         loadTournamentStatus();
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
-};
+});
 
 document.getElementById('tournamentRefreshBtn').onclick = loadTournamentStatus;
 document.getElementById('tournamentStartTime').oninput = e => {
