@@ -1341,20 +1341,29 @@ class MongoStore:
         except InvalidId:
             return "not_found"
 
-        clan = await self.clans.find_one({"_id": oid})
-        if not clan or user_id not in (clan.get("members") or []):
-            return "not_member"
+        # Запись — только если состав и лидер те же, что мы прочитали:
+        # иначе при одновременном выходе лидера и его «наследника» (или
+        # исключении наследника) лидером становился уже ушедший игрок и клан
+        # оставался без управления, а при выходе двух последних — висел
+        # пустым. Не совпало — перечитываем и пробуем снова.
+        for _ in range(8):
+            clan = await self.clans.find_one({"_id": oid})
+            if not clan or user_id not in (clan.get("members") or []):
+                return "not_member"
 
-        members = [m for m in clan["members"] if m != user_id]
-        update = {"$pull": {"members": user_id}, "$unset": {f"lineup_submissions.{user_id}": ""}}
-        if not members:
-            await self.clans.delete_one({"_id": oid})
-        else:
-            if clan.get("leader_id") == user_id:
-                update["$set"] = {"leader_id": members[0]}
-            await self.clans.update_one({"_id": oid}, update)
-        await self.users.update_one({"_id": user_id}, {"$set": {"clan_id": None}})
-        return "ok"
+            members = [m for m in clan["members"] if m != user_id]
+            guard = {"_id": oid, "members": clan["members"], "leader_id": clan.get("leader_id")}
+            if not members:
+                done = (await self.clans.delete_one(guard)).deleted_count > 0
+            else:
+                update = {"$set": {"members": members}, "$unset": {f"lineup_submissions.{user_id}": ""}}
+                if clan.get("leader_id") == user_id:
+                    update["$set"]["leader_id"] = members[0]
+                done = (await self.clans.update_one(guard, update)).modified_count > 0
+            if done:
+                await self.users.update_one({"_id": user_id, "clan_id": clan_id}, {"$set": {"clan_id": None}})
+                return "ok"
+        return "busy"
 
     async def disband_clan(self, leader_id: int, clan_id: str) -> str:
         """Лидер распускает клан целиком — клан удаляется, ВСЕ участники

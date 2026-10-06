@@ -9998,6 +9998,22 @@
             }
         }
 
+        // Защита от двойного тапа в кланах (та же, что на рынке, см.
+        // guardMarketAction): двойной тап «Сжечь» сжигал двух одинаковых
+        // орлов, «Открыть место» — открывал два места за двойную цену, а
+        // подтверждения выхода/исключения/роспуска всплывали дважды.
+        confirmCreateClan = guardMarketAction(confirmCreateClan, () => 'clan-create');
+        applyToClan = guardMarketAction(applyToClan, id => 'clan-apply-' + id);
+        kickClanMember = guardMarketAction(kickClanMember, id => 'clan-kick-' + id);
+        disbandClan = guardMarketAction(disbandClan, () => 'clan-disband');
+        leaveClan = guardMarketAction(leaveClan, () => 'clan-leave');
+        confirmClanOpenSlot = guardMarketAction(confirmClanOpenSlot, () => 'clan-open-slot');
+        acceptClanApplication = guardMarketAction(acceptClanApplication, id => 'clan-accept-' + id);
+        rejectClanApplication = guardMarketAction(rejectClanApplication, id => 'clan-reject-' + id);
+        confirmClanBurn = guardMarketAction(confirmClanBurn, () => 'clan-burn');
+        submitClanLineup = guardMarketAction(submitClanLineup, () => 'clan-lineup-submit');
+        approveClanLineup = guardMarketAction(approveClanLineup, () => 'clan-lineup-approve');
+
         // ---------- Вкладка «Битва Кланов» ----------
 
         const CLAN_ROUND_LABELS = {
