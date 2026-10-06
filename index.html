@@ -8375,12 +8375,23 @@
         async function placeAuctionBid() {
             const a = auctionData && auctionData.auction;
             if (!a || auctionBidBusy || offlineOnly || !state.userId) return;
-            const delta = a.next_bid - (a.my_bid || 0);
-            const ok = await auctionConfirm(t('auction.confirm', { amount: auctionFmt(a.next_bid), delta: auctionFmt(delta), n: a.top_size }));
-            if (!ok) return;
+            // Флаг — ДО окна подтверждения: иначе двойной тап открывал два
+            // подтверждения (в Telegram второе падало и всплывало браузерное),
+            // и вторая ставка уходила следом с «Вы и так на 1-м месте».
             auctionBidBusy = true;
             const btn = document.getElementById('auctionBidBtn');
             if (btn) btn.disabled = true;
+            const delta = a.next_bid - (a.my_bid || 0);
+            let ok = false;
+            try {
+                ok = await auctionConfirm(t('auction.confirm', { amount: auctionFmt(a.next_bid), delta: auctionFmt(delta), n: a.top_size }));
+            } catch (e) { ok = false; }
+            if (!ok) {
+                auctionBidBusy = false;
+                auctionRenderSig = null;   // кнопку отключали без перерисовки — перерисовать обязательно
+                renderAuction();
+                return;
+            }
             haptic.impact('medium');
             try {
                 const response = await fetch('api/auction/bid', {
