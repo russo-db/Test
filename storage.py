@@ -341,7 +341,8 @@ class MongoStore:
         }
 
     async def buy_nest_shard(self, user_id: int, now: float, today: int, price_gram: float,
-                              cooldown_seconds: float, daily_limit: int, new_last_claim: float) -> dict:
+                              cooldown_seconds: float, daily_limit: int, new_last_claim: float,
+                              expected_ops: Optional[int] = None) -> dict:
         """Небесный Осколок — общий (не персональный) ресурс: доступен строго
         1 за раз НА ВСЕХ игроков, а суточный лимит покупок тоже один общий
         счётчик (обнуляется по UTC-суткам). Двухфазный подход, как и у
@@ -369,8 +370,14 @@ class MongoStore:
             return {"status": "conflict"}
 
         miner = {"id": f"{user_id}-{int(now * 1000)}"}
+        # new_last_claim посчитан по документу с ops == expected_ops: если игрок
+        # с тех пор что-то сделал (например, собрал частички), запись не
+        # пройдёт — иначе старая точка отсчёта начислила бы частички повторно.
+        charge_filter = {"_id": user_id, "coins": {"$gte": price_gram}}
+        if expected_ops is not None:
+            charge_filter["ops"] = int(expected_ops)
         charge = await self.users.update_one(
-            {"_id": user_id, "coins": {"$gte": price_gram}},
+            charge_filter,
             {
                 "$inc": {"coins": -price_gram, "ops": 1},
                 "$push": {"nest_miners": miner},
@@ -385,7 +392,10 @@ class MongoStore:
                 {"_id": "global"},
                 {"$set": {"cooldown_until": cooldown_until, "day": stored_day, "bought_today": bought_today}},
             )
-            return {"status": "insufficient_gram"}
+            user = await self.users.find_one({"_id": user_id}, {"coins": 1}) or {}
+            if float(user.get("coins") or 0) < price_gram:
+                return {"status": "insufficient_gram"}
+            return {"status": "stale"}   # документ игрока изменился — вызывающий перечитает и повторит
 
         return {"status": "ok", "cooldown_until": new_cooldown, "bought_today": bought_today + 1}
 

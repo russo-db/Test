@@ -2601,18 +2601,25 @@ async def nest_shard_buy(request: NestAction, x_telegram_init_data: Optional[str
     остаётся в его Кузнице, пассивно добывая частички (см.
     nest_pending_particles) — он не расходуется."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
-    row = await fetch_user(user_id)
 
-    now = time.time()
-    # Считаем новый last_claim ДО того, как число осколков реально
-    # изменится — иначе новая (более высокая) ставка задним числом
-    # применилась бы ко всему времени с прошлого сбора (см.
-    # nest_settle_particles).
-    new_last_claim = nest_settle_particles(row, now, nest_owned_shards(row) + 1)
-    result = await store.buy_nest_shard(
-        user_id, now, day_index(now), NEST_SHARD_PRICE_GRAM,
-        NEST_SHARD_COOLDOWN_HOURS * 3600, NEST_SHARD_DAILY_LIMIT, new_last_claim,
-    )
+    result = {"status": "stale"}
+    for _ in range(5):
+        row = await fetch_user(user_id)
+        now = time.time()
+        # Считаем новый last_claim ДО того, как число осколков реально
+        # изменится — иначе новая (более высокая) ставка задним числом
+        # применилась бы ко всему времени с прошлого сбора (см.
+        # nest_settle_particles). Запись пройдёт, только если документ не
+        # менялся с этого чтения (ops): двойной тап «купить + собрать» раньше
+        # возвращал уже собранные частички обратно в накопление.
+        new_last_claim = nest_settle_particles(row, now, nest_owned_shards(row) + 1)
+        result = await store.buy_nest_shard(
+            user_id, now, day_index(now), NEST_SHARD_PRICE_GRAM,
+            NEST_SHARD_COOLDOWN_HOURS * 3600, NEST_SHARD_DAILY_LIMIT, new_last_claim,
+            expected_ops=int(row.get("ops") or 0),
+        )
+        if result["status"] != "stale":
+            break
     if result["status"] == "cooldown":
         raise HTTPException(status_code=400, detail="Осколок ещё не готов")
     if result["status"] == "daily_limit":
