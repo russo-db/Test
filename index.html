@@ -6329,6 +6329,11 @@
             }
         }
 
+        // Двойной тап «Забрать»: ссылка открывалась дважды, а второй запрос
+        // сразу после «Награда получена» показывал «Награда уже получена».
+        claimMission = guardMarketAction(claimMission, id => 'mission-' + id);
+        claimDaily = guardMarketAction(claimDaily, () => 'daily-claim');
+
         function referralHint() {
             if (!state.userId) return 'Открой игру через Telegram — там появится ссылка';
             return 'Ссылка появится, когда запустится бот';
