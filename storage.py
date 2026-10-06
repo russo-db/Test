@@ -65,6 +65,7 @@ start_time_override?}...]} (см. try_launch_clan_tournament
 и не перезапускается сам).
 """
 
+import asyncio
 import contextvars
 import os
 import random
@@ -78,7 +79,7 @@ FIELDS = (
     "daily_day", "daily_last", "daily_cycles", "eggs_board", "eggs_board_unlocked", "eggs_queue", "wallet", "ops",
     "vip_tier", "vip_expires_at", "vip_last_meat_at", "wheel_day", "wheel_spins_today",
     "nest_miners", "nest_particles", "nest_last_claim", "nest_inventory", "nest_equipped", "pvp_rating",
-    "pvp_energy", "pvp_energy_day", "clan_id", "burned_power",
+    "pvp_energy", "pvp_energy_day", "clan_id", "burned_power", "created_at",
 )
 
 # --- ЖУРНАЛ БАЛАНСОВ ---
@@ -231,6 +232,9 @@ class MongoStore:
         # level, kind eagle|meat|jackpot, amount, monster, placed farm|queue,
         # source open|open_all}. Хранится EGG_LOG_RETENTION_SECONDS.
         self.egg_log = client[db_name]["egg_log"]
+        # Посещения по дням для Retention: {_id: "user_id:YYYY-MM-DD", user_id,
+        # date} — одна строка на игрока в сутки (сутки по UTC, как и в игре).
+        self.user_activity = client[db_name]["user_activity"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -245,6 +249,7 @@ class MongoStore:
             (self.equip_market, "seller_id", {}),
             (self.resource_market, "seller_id", {}),
             (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
+            (self.user_activity, "date", {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -1788,6 +1793,57 @@ class MongoStore:
         cutoff = (time.time() if now is None else now) - LEDGER_RETENTION_SECONDS
         result = await self.balance_ledger.delete_many({"ts": {"$lt": cutoff}})
         return result.deleted_count
+
+    # --- RETENTION: посещения по дням ---
+
+    async def record_activity(self, user_id: int, date: str) -> None:
+        """Отмечает, что игрок заходил в игру в сутки date ('YYYY-MM-DD').
+        _id = user_id:date — повторный вход в те же сутки ничего не меняет."""
+        await self.user_activity.update_one(
+            {"_id": f"{user_id}:{date}"}, {"$setOnInsert": {"user_id": int(user_id), "date": date}}, upsert=True,
+        )
+
+    async def backfill_activity_from_ledger(self) -> dict:
+        """Посещения за дни ДО появления журнала посещений — по журналу
+        балансов: день, в который у игрока менялся GRAM/Meat/золото, считается
+        днём захода (нижняя оценка — заход без единого действия не виден).
+        Заодно ставит created_at игрокам без него по записи «start» журнала
+        (её пишет само создание игрока). Идемпотентно."""
+        days = {}
+        created = {}
+        async for e in self.balance_ledger.find({}, {"user_id": 1, "ts": 1, "first_ts": 1, "source": 1}):
+            uid = e.get("user_id")
+            if uid is None:
+                continue
+            for t in (e.get("first_ts"), e.get("ts")):
+                if t:
+                    days.setdefault(uid, set()).add(time.strftime("%Y-%m-%d", time.gmtime(float(t))))
+            if e.get("source") == "start" and (e.get("first_ts") or e.get("ts")):
+                t0 = float(e.get("first_ts") or e.get("ts"))
+                created[uid] = min(created.get(uid, t0), t0)
+        pairs = [(uid, d) for uid, ds in days.items() for d in ds]
+        for i in range(0, len(pairs), 100):
+            await asyncio.gather(*(self.record_activity(uid, d) for uid, d in pairs[i:i + 100]))
+        ops = pairs
+        set_created = 0
+        for uid, t0 in created.items():
+            res = await self.users.update_one({"_id": uid, "created_at": {"$exists": False}}, {"$set": {"created_at": t0}})
+            set_created += res.modified_count
+        return {"activity_rows": len(ops), "created_at_set": set_created}
+
+    async def activity_by_user(self) -> dict:
+        """{user_id: set(дат)} по всем посещениям."""
+        out = {}
+        pipeline = [{"$group": {"_id": "$user_id", "dates": {"$addToSet": "$date"}}}]
+        async for row in self.user_activity.aggregate(pipeline):
+            out[row["_id"]] = set(row.get("dates") or [])
+        return out
+
+    async def created_at_by_user(self) -> dict:
+        out = {}
+        async for row in self.users.find({"is_bot": {"$ne": True}}, {"created_at": 1}):
+            out[row["_id"]] = row.get("created_at")
+        return out
 
     async def add_egg_log(self, entries: list) -> None:
         if entries:

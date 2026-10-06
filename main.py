@@ -1376,6 +1376,7 @@ async def ensure_user(user_id: int, referred_by: Optional[int] = None,
             "pvp_energy_day": day_index(),
             "clan_id": None,
             "burned_power": 0.0,
+            "created_at": time.time(),   # дата регистрации — для Retention
         }
     )
 
@@ -2178,6 +2179,7 @@ async def serve_admin():
 async def load_user_data(user_id: int, request: Request, x_telegram_init_data: Optional[str] = Header(None)):
     """Loads the farm - eagles stay put and just tick towards their next egg."""
     user_id = authenticate(x_telegram_init_data, user_id)
+    await record_daily_activity(user_id)
 
     context = signed_context(x_telegram_init_data)
     if context.get("start_param"):
@@ -7398,6 +7400,134 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[bot] /admin failed: {type(e).__name__}: {e}")
 
 
+# --- RETENTION: удержание игроков по дням ---
+# Посещение = открытие игры (/api/load), одна запись на игрока в сутки
+# (сутки по UTC — как и в игре: награда дня, энергия Арены). Дни до появления
+# журнала посещений восстанавливаются из журнала балансов (см.
+# store.backfill_activity_from_ledger) — это нижняя оценка.
+_ACTIVITY_SEEN: set = set()
+_ACTIVITY_DAY = ""
+RETENTION_BACKFILL_SETTING = "activity_backfill_v1"
+
+
+def utc_date(ts: Optional[float] = None) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() if ts is None else ts))
+
+
+async def record_daily_activity(user_id: int) -> None:
+    """Записывает (user_id, сегодня) в user_activity, если сегодня ещё не
+    записано. Повторные входы за сутки не ходят в базу (кэш в памяти).
+    Сбой записи никогда не мешает загрузке игры."""
+    global _ACTIVITY_DAY
+    try:
+        today = utc_date()
+        if today != _ACTIVITY_DAY:
+            _ACTIVITY_SEEN.clear()
+            _ACTIVITY_DAY = today
+        if user_id in _ACTIVITY_SEEN:
+            return
+        await store.record_activity(user_id, today)
+        _ACTIVITY_SEEN.add(user_id)
+    except Exception as e:
+        print(f"[retention] record failed for {user_id}: {type(e).__name__}: {e}")
+
+
+async def backfill_activity_once() -> None:
+    try:
+        if await store.get_setting(RETENTION_BACKFILL_SETTING, None):
+            return
+        result = await store.backfill_activity_from_ledger()
+        await store.set_setting(RETENTION_BACKFILL_SETTING, {"done_at": time.time(), **result})
+        print(f"[retention] посещения восстановлены из журнала балансов: {result}")
+    except Exception as e:
+        print(f"[retention] backfill failed: {type(e).__name__}: {e}")
+
+
+def _add_days(date: str, n: int) -> str:
+    from datetime import datetime, timedelta
+    return (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=n)).strftime("%Y-%m-%d")
+
+
+async def compute_retention(max_day: int = 3) -> dict:
+    """Удержание ПОДРЯД от дня регистрации: день k — игроки, которые заходили
+    в КАЖДЫЙ из дней 1..k после дня регистрации. Знаменатель дня k — только
+    те, для кого этот день уже наступил (регистрация + k <= сегодня), иначе
+    вчерашние новички занижали бы процент. Сегодняшний день ещё идёт —
+    его цифры растут до конца суток (UTC)."""
+    activity = await store.activity_by_user()
+    created = await store.created_at_by_user()
+    today = utc_date()
+    day0 = 0
+    rows = [{"day": k, "eligible": 0, "retained": 0} for k in range(1, max_day + 1)]
+    for uid, created_at in created.items():
+        dates = activity.get(uid, set())
+        reg = utc_date(float(created_at)) if created_at else (min(dates) if dates else None)
+        if not reg or reg > today:
+            continue
+        day0 += 1
+        streak_alive = True
+        for row in rows:
+            target = _add_days(reg, row["day"])
+            if target > today:
+                break
+            row["eligible"] += 1
+            streak_alive = streak_alive and target in dates
+            if streak_alive:
+                row["retained"] += 1
+    for row in rows:
+        row["pct"] = round(100.0 * row["retained"] / row["eligible"], 1) if row["eligible"] else None
+    return {"today": today, "day0": day0, "days": rows}
+
+
+RETENTION_DAY_LABELS = {1: "Вернулись на следующий день после старта", 2: "Вернулись на 2-й день подряд",
+                        3: "Вернулись на 3-й день подряд"}
+
+
+def format_retention_report(r: dict) -> str:
+    lines = [f"📊 Retention — удержание подряд от дня регистрации (сутки по UTC, сегодня {r['today']})", "",
+             f"• День 0 (День старта): {r['day0']} игроков"]
+    for row in r["days"]:
+        label = RETENTION_DAY_LABELS.get(row["day"], f"Заходили {row['day']} дн. подряд после старта")
+        if not row["eligible"]:
+            lines.append(f"• День {row['day']} ({label}): ещё не наступил ни для кого")
+            continue
+        lines.append(f"• День {row['day']} ({label}): {row['retained']} игроков ({row['pct']:g}%)"
+                     f" — из {row['eligible']}, для кого этот день уже наступил")
+    lines += ["", "Сегодняшние цифры растут до конца суток. Дни до включения журнала посещений "
+                  "восстановлены по действиям с балансом — это нижняя оценка."]
+    return "\n".join(lines)
+
+
+async def admin_retention_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/admin_retention [N] — отчёт Retention владельцам (MAINTENANCE_WHITELIST);
+    N — сколько дней показать (по умолчанию 3, максимум 30). Остальным молчит."""
+    try:
+        user = update.effective_user
+        if not user or user.id not in MAINTENANCE_WHITELIST or not update.message:
+            return
+        parts = (update.message.text or "").split()
+        try:
+            days = max(1, min(30, int(parts[1]))) if len(parts) > 1 else 3
+        except ValueError:
+            days = 3
+        await update.message.reply_text(format_retention_report(await compute_retention(days)))
+    except Exception as e:
+        print(f"[bot] /admin_retention failed: {type(e).__name__}: {e}")
+        try:
+            await update.message.reply_text("❌ Не удалось посчитать Retention — подробности в логах сервера.")
+        except Exception:
+            pass
+
+
+@app.get("/admin/api/retention")
+async def admin_retention(days: int = 3, _: None = Depends(require_admin)):
+    try:
+        return await compute_retention(max(1, min(30, int(days))))
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось посчитать Retention: {type(e).__name__}: {e}")
+
+
 CREATE_AUCTION_USAGE = (
     "Формат:\n/create_auction Название | Мин_ставка | Шаг | Таймер_в_сек | Количество_штук | Ссылка_на_картинку\n\n"
     "Название — один из предметов: Небесный орел, Небесный осколок, Мясо, Золото.\n"
@@ -7485,6 +7615,7 @@ async def run_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("create_auction", create_auction_command))
+    application.add_handler(CommandHandler("admin_retention", admin_retention_command))
 
     await application.initialize()
     # Имя из getMe надёжнее ручной переменной: без опечаток и лишней @.
@@ -7526,6 +7657,7 @@ async def startup_event():
     await refresh_maintenance(force=True)
     await refresh_missions(force=True)
     await refresh_clans_enabled(force=True)
+    asyncio.create_task(backfill_activity_once())
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:
