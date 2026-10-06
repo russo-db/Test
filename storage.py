@@ -415,7 +415,8 @@ class MongoStore:
         return {"status": "ok", "amount": amount, "cost": cost}
 
     async def sell_merchant_eagle(self, user_id: int, slot_index: int, buyback: dict,
-                                   monster_tier: dict, feed_levels: int) -> dict:
+                                   monster_tier: dict, feed_levels: int,
+                                   expected_monster_id: Optional[str] = None) -> dict:
         """Выкуп орла купцом: цена и лимит — по редкости (buyback: {tier:
         {"price", "limit"}}); лимит общий на всех игроков. Тот же двухфазный
         подход: сначала атомарно резервируем место в лимите редкости, потом
@@ -432,6 +433,8 @@ class MongoStore:
         slots_count = int((doc or {}).get("slots") or 0)
         if not (0 <= slot_index < len(farm)):
             return {"status": "not_found"}
+        if expected_monster_id is not None and farm[slot_index].get("id") != expected_monster_id:
+            return {"status": "stale"}   # ферма сдвинулась — в ячейке уже другой орёл
         tier = monster_tier.get(farm[slot_index].get("id"))
         offer = buyback.get(tier)
         if not offer:

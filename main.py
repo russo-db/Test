@@ -607,6 +607,15 @@ def slot_on_expedition(slot: dict) -> bool:
     return int(slot.get("expedition_until") or 0) > 0
 
 
+STALE_SLOT_DETAIL = "stale: в этой ячейке уже другой орёл — ферма обновилась, проверь и повтори"
+
+
+def ensure_expected_monster(slot: dict, expected: Optional[str]) -> None:
+    """Клиент прислал, какого орла он видит в ячейке; не совпало — 409."""
+    if expected is not None and slot.get("id") != expected:
+        raise HTTPException(status_code=409, detail=STALE_SLOT_DETAIL)
+
+
 def ensure_slot_not_listed(slot: dict) -> None:
     if slot_listed(slot):
         raise HTTPException(status_code=400, detail="Орёл выставлен на рынок — сначала сними лот")
@@ -1597,11 +1606,16 @@ class MerchantBuyMeat(BaseModel):
 class MerchantSellEagle(BaseModel):
     user_id: int
     slot_index: int
+    monster_id: Optional[str] = None   # см. FarmSlotAction
 
 
 class FarmSlotAction(BaseModel):
     user_id: int
     slot_index: int
+    # Какого орла игрок видит в этой ячейке. Не совпал с сервером (ферма
+    # сдвинулась, пока было открыто окно) — 409, а не действие «не над тем»
+    # орлом (особенно важно для необратимых удаления и продажи купцу).
+    monster_id: Optional[str] = None
 
 
 class FeedAction(BaseModel):
@@ -2349,6 +2363,7 @@ async def farm_collect_egg(request: FarmSlotAction, x_telegram_init_data: Option
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
         if slot["feed_level"] >= FEED_LEVELS or slot["next_egg_at"] <= 0 or time.time() < slot["next_egg_at"]:
             raise HTTPException(status_code=400, detail="Яйцо ещё не готово")
@@ -2469,6 +2484,7 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
@@ -2499,6 +2515,7 @@ async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data:
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
         slot = farm[i]
+        ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
         if slot["expedition_until"] <= 0 or time.time() < slot["expedition_until"]:
             raise HTTPException(status_code=400, detail="Экспедиция ещё не вернулась")
@@ -2555,6 +2572,7 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
         i = request.slot_index
         if not (0 <= i < len(farm)):
             raise HTTPException(status_code=404, detail="Слот не найден")
+        ensure_expected_monster(farm[i], request.monster_id)
         ensure_slot_not_listed(farm[i])
         if slot_on_expedition(farm[i]):
             raise HTTPException(status_code=400, detail="Орёл в экспедиции — его нельзя удалить")
@@ -4881,7 +4899,10 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
 
     result = await store.sell_merchant_eagle(
         user_id, request.slot_index, merchant_eagle_buyback(), MONSTER_TIER, FEED_LEVELS,
+        expected_monster_id=request.monster_id,
     )
+    if result["status"] == "stale":
+        raise HTTPException(status_code=409, detail=STALE_SLOT_DETAIL)
     if result["status"] == "limit_reached":
         raise HTTPException(status_code=409, detail="Купец больше не выкупает орлов этой редкости — лимит исчерпан")
     if result["status"] == "not_found":

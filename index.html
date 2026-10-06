@@ -2190,7 +2190,7 @@
                 'resourcemarket.minPriceHint': 'Минимальная цена лота — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Минимум {unit} GRAM за штуку — за {amount} шт. от {price} GRAM',
                 'resourcemarket.belowMinPrice': 'Цена ниже минимальной — {price} GRAM',
-                'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
+                'farm.staleSlot': 'Ферма обновилась — в этой ячейке уже другой орёл. Ничего не сделано, проверь и повтори.', 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
                 'vip.timeLeft': 'Осталось: {time}', 'vip.activate': 'Активировать',
@@ -2525,7 +2525,7 @@
                 'resourcemarket.minPriceHint': 'Minimum price for this listing — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Minimum {unit} GRAM per unit — {price} GRAM for {amount}',
                 'resourcemarket.belowMinPrice': 'Price is below the minimum — {price} GRAM',
-                'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
+                'farm.staleSlot': 'Your farm changed — that slot now holds a different eagle. Nothing was done; check and try again.', 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
                 'vip.timeLeft': 'Time left: {time}', 'vip.activate': 'Activate',
@@ -3779,9 +3779,17 @@
             try {
                 const response = await fetch('api/farm/collect_egg', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i, monster_id: slot.id })
                 });
                 const data = await response.json();
+                if (response.status === 409 && String(data.detail || '').startsWith('stale')) {
+                    // Ферма успела сдвинуться — в ячейке уже другой орёл. Ничего
+                    // не сделано; перечитываем ферму, чтобы игрок увидел актуальную.
+                    toast(t('farm.staleSlot'));
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Яйцо ещё не готово');
                     haptic.notify('warning');
@@ -4171,9 +4179,17 @@
             try {
                 const response = await fetch('api/farm/expedition/start', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i, monster_id: slot.id })
                 });
                 const data = await response.json();
+                if (response.status === 409 && String(data.detail || '').startsWith('stale')) {
+                    // Ферма успела сдвинуться — в ячейке уже другой орёл. Ничего
+                    // не сделано; перечитываем ферму, чтобы игрок увидел актуальную.
+                    toast(t('farm.staleSlot'));
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Не хватает Meat');
                     haptic.notify('warning');
@@ -4205,9 +4221,17 @@
             try {
                 const response = await fetch('api/farm/expedition/collect', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: i })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i, monster_id: slot.id })
                 });
                 const data = await response.json();
+                if (response.status === 409 && String(data.detail || '').startsWith('stale')) {
+                    // Ферма успела сдвинуться — в ячейке уже другой орёл. Ничего
+                    // не сделано; перечитываем ферму, чтобы игрок увидел актуальную.
+                    toast(t('farm.staleSlot'));
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Экспедиция ещё не вернулась');
                     return;
@@ -4528,9 +4552,19 @@
                 const response = await fetch('api/merchant/sell_eagle', {
                     method: 'POST',
                     headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: idx })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: idx, monster_id: (state.farm[idx] || {}).id })
                 });
                 const data = await response.json();
+                if (response.status === 409 && String(data.detail || '').startsWith('stale')) {
+                    // Ферма успела сдвинуться — в ячейке уже другой орёл. Ничего
+                    // не сделано; перечитываем ферму, чтобы игрок увидел актуальную.
+                    toast(t('farm.staleSlot'));
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    closeMerchantSellConfirm();
+                    renderAll();
+                    renderMerchantShop();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Не удалось продать');
                     haptic.notify('warning');
@@ -6024,9 +6058,19 @@
             try {
                 const response = await fetch('api/farm/delete_eagle', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, slot_index: modalSlot })
+                    body: JSON.stringify({ user_id: state.userId, slot_index: modalSlot, monster_id: slot.id })
                 });
                 const data = await response.json();
+                if (response.status === 409 && String(data.detail || '').startsWith('stale')) {
+                    // Ферма успела сдвинуться — в ячейке уже другой орёл. Ничего
+                    // не сделано; перечитываем ферму, чтобы игрок увидел актуальную.
+                    toast(t('farm.staleSlot'));
+                    await syncFromServer({ keepActiveSlot: true }).catch(() => {});
+                    slotDeleteConfirm = false;
+                    closeSlotModal();
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) {
                     toast(data.detail || 'Не удалось удалить орла');
                     haptic.notify('warning');
