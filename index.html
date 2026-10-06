@@ -8888,6 +8888,14 @@
             }
         }
 
+        // Двойной тап «Вывести» при балансе на две суммы создавал ДВЕ заявки на
+        // вывод; платное открытие ячейки яиц, проверка пополнения и сохранение
+        // кошелька — тоже только один запрос за раз.
+        submitWithdraw = guardMarketAction(submitWithdraw, () => 'ton-withdraw');
+        requestUnlockEggSlot = guardMarketAction(requestUnlockEggSlot, () => 'egg-unlock');
+        checkDeposit = guardMarketAction(checkDeposit, () => 'ton-check');
+        saveWallet = guardMarketAction(saveWallet, () => 'wallet-save');
+
         /* ---------- persistence ---------- */
 
         let saveTimer = null;
