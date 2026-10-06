@@ -6915,8 +6915,8 @@
         let arenaSelectedTierId = null;
         let arenaPlayerEagle = null;
         let arenaEnemyEagle = null;
-        // Замаскированный подбор до раскрытия: { isBot, matchToken, ratingBracket }
-        // либо { isBot: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaResolveFight.
+        // Замаскированный подбор до раскрытия: { isBot: false, matchToken, ratingBracket }
+        // либо офлайн { isBot: true, offline: true, bot: {...} } — см. arenaFetchOpponentPreview/arenaResolveFight.
         let arenaOpponentPending = null;
         let arenaBattleActive = false;
         let arenaSpeedMultiplier = 1; // 1 или 2 — ×2 ускоряет и анимацию, и паузы между ударами (см. arenaToggleSpeed)
@@ -7001,13 +7001,10 @@
                 if (!response.ok) throw new Error('arena opponent fetch failed');
                 const data = await response.json();
                 if (!data.found) return { isBot: true, offline: true, bot: arenaGenerateBotOpponent(tierId) };
-                // Даже для бота теперь есть matchToken — сервер сам сгенерирует
-                // и посчитает его статы в момент боя (см. arena_fight), плюс
-                // локальная заглушка bot только для превью силуэта до старта.
-                return {
-                    isBot: !!data.is_bot, matchToken: data.match_token,
-                    ratingBracket: data.rating_bracket, bot: data.is_bot ? arenaGenerateBotOpponent(tierId) : null,
-                };
+                // Онлайн соперник ВСЕГДА замаскирован до боя: сервер не сообщает,
+                // бот это или живой игрок (иначе подбор перезапрашивали бы до
+                // бота). Кто это был — видно только из ответа /api/arena/fight.
+                return { isBot: false, matchToken: data.match_token, ratingBracket: data.rating_bracket };
             } catch (error) {
                 return { isBot: true, offline: true, bot: arenaGenerateBotOpponent(tierId) };
             }
@@ -7188,16 +7185,15 @@
 
             arenaOpponentPending = preview;
             if (preview.isBot) {
-                // Боту раскрывать нечего — он не привязан к реальному игроку,
-                // поэтому виден сразу целиком, как и раньше.
+                // Только офлайн (нет сервера): дикий орёл виден сразу целиком.
                 arenaEnemyEagle = new ArenaEagle({
                     label: `${preview.bot.name} · ${preview.bot.monster.name}`, side: 'enemy',
                     img: arenaGetImage(preview.bot.monster.sprite), masked: false,
                     x: w * 0.76, y: groundY, facing: -1, size: 96, stats: preview.bot.stats, idlePhase: 1.7,
                 });
             } else {
-                // Реальный соперник — до раскрытия виден только как силуэт-загадка
-                // с округлённым рейтингом (см. arenaFetchOpponentPreview выше).
+                // Онлайн-соперник (живой игрок или дикий орёл — до боя не
+                // известно) виден только как силуэт-загадка с округлённым рейтингом.
                 arenaEnemyEagle = new ArenaEagle({
                     label: t('arena.unknownWarrior'), side: 'enemy', img: null, masked: true,
                     ratingBracket: preview.ratingBracket,
