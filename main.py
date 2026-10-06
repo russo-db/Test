@@ -7459,12 +7459,16 @@ async def compute_retention(max_day: int = 3) -> dict:
     today = utc_date()
     day0 = 0
     rows = [{"day": k, "eligible": 0, "retained": 0} for k in range(1, max_day + 1)]
+    # Та же статистика по каждому дню регистрации (когорте) — для админки.
+    cohorts: dict = {}
     for uid, created_at in created.items():
         dates = activity.get(uid, set())
         reg = utc_date(float(created_at)) if created_at else (min(dates) if dates else None)
         if not reg or reg > today:
             continue
         day0 += 1
+        cohort = cohorts.setdefault(reg, {"date": reg, "size": 0, "retained": [0] * max_day})
+        cohort["size"] += 1
         streak_alive = True
         for row in rows:
             target = _add_days(reg, row["day"])
@@ -7474,9 +7478,22 @@ async def compute_retention(max_day: int = 3) -> dict:
             streak_alive = streak_alive and target in dates
             if streak_alive:
                 row["retained"] += 1
+                cohort["retained"][row["day"] - 1] += 1
     for row in rows:
         row["pct"] = round(100.0 * row["retained"] / row["eligible"], 1) if row["eligible"] else None
-    return {"today": today, "day0": day0, "days": rows}
+    cohort_rows = []
+    for reg in sorted(cohorts, reverse=True):
+        c = cohorts[reg]
+        cells = []
+        for k in range(1, max_day + 1):
+            if _add_days(reg, k) > today:
+                cells.append(None)   # этот день для когорты ещё не наступил
+            else:
+                n = c["retained"][k - 1]
+                cells.append({"retained": n, "pct": round(100.0 * n / c["size"], 1) if c["size"] else 0.0,
+                              "today": _add_days(reg, k) == today})
+        cohort_rows.append({"date": reg, "size": c["size"], "days": cells})
+    return {"today": today, "day0": day0, "days": rows, "cohorts": cohort_rows}
 
 
 RETENTION_DAY_LABELS = {1: "Вернулись на следующий день после старта", 2: "Вернулись на 2-й день подряд",

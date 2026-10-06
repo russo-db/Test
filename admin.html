@@ -249,6 +249,7 @@
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="arena">⚔️ Арена</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
+            <button class="nav-btn" data-page="retention">🔁 Удержание</button>
             <button class="nav-btn" data-page="auction">🏛️ Аукцион</button>
         </div>
         <div class="spacer"></div>
@@ -628,6 +629,35 @@
             </div>
         </div>
 
+        <div class="page" id="page-retention">
+            <h2>Удержание игроков (Retention)</h2>
+            <p class="muted">
+                Сколько игроков возвращаются в игру <b>каждый день подряд</b> после дня регистрации (День 0).
+                Посещение — открытие игры, сутки — по UTC (как награда дня и энергия Арены). Процент дня N — от тех,
+                для кого этот день уже наступил. Сегодняшние цифры растут до конца суток. Дни до появления журнала
+                посещений восстановлены по действиям с балансом — это нижняя оценка. То же присылает бот по /admin_retention.
+            </p>
+            <div class="nft-interval-row" style="margin-bottom:14px;">
+                <span class="muted">Показать дней:</span>
+                <select id="retentionDays">
+                    <option value="3">3</option>
+                    <option value="7" selected>7</option>
+                    <option value="14">14</option>
+                    <option value="30">30</option>
+                </select>
+                <button id="retentionRefreshBtn">Обновить</button>
+                <span class="muted" id="retentionToday" style="font-size:12px;"></span>
+            </div>
+            <div class="card-grid" id="retentionCards"></div>
+            <h3 style="margin:20px 0 10px;">По дням регистрации</h3>
+            <p class="muted" style="font-size:12px;">Каждая строка — игроки, зарегистрировавшиеся в этот день: сколько из них
+                заходили подряд на 1-й, 2-й, … день. «—» — этот день для них ещё не наступил, «*» — день ещё идёт (сегодня).</p>
+            <div class="table-wrap"><table>
+                <thead id="retentionCohortHead"></thead>
+                <tbody id="retentionCohortBody"></tbody>
+            </table></div>
+        </div>
+
         <div class="page" id="page-tournament">
             <h2>Турнир Кланов</h2>
             <p class="muted">
@@ -795,6 +825,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'arena') loadArenaAdmin(); else arenaAdminStop();
         if (btn.dataset.page === 'missions') loadMissionsAdmin();
         if (btn.dataset.page === 'economy') loadEconomy();
+        if (btn.dataset.page === 'retention') loadRetention();
         else tournamentStopCountdowns();
     };
 });
@@ -1779,6 +1810,38 @@ document.getElementById('txUser').addEventListener('keydown', e => { if (e.key =
 document.getElementById('txMore').onclick = () => loadTransactions(true);
 
 /* ---------- экономика ---------- */
+/* ---------- удержание (Retention) ---------- */
+const RETENTION_DAY_LABELS = { 1: 'Вернулись на следующий день', 2: 'Вернулись на 2-й день подряд', 3: 'Вернулись на 3-й день подряд' };
+async function loadRetention() {
+    const days = Number(document.getElementById('retentionDays').value) || 7;
+    let r;
+    try { r = await api(`/admin/api/retention?days=${days}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    document.getElementById('retentionToday').textContent = `сегодня (UTC): ${r.today}`;
+    const card = (label, value, sub) => `
+        <div class="stat-card">
+            <div class="label">${label}</div>
+            <div class="value">${value}</div>
+            ${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}
+        </div>`;
+    document.getElementById('retentionCards').innerHTML = [
+        card('День 0 — день старта', `${fmtNum(r.day0)} игроков`, 'все зарегистрировавшиеся'),
+        ...r.days.map(d => d.eligible
+            ? card(`День ${d.day} — ${RETENTION_DAY_LABELS[d.day] || `заходили ${d.day} дн. подряд`}`,
+                   `${fmtNum(d.retained)} игроков · ${d.pct}%`, `из ${fmtNum(d.eligible)}, для кого этот день уже наступил`)
+            : card(`День ${d.day}`, '—', 'ещё не наступил ни для кого')),
+    ].join('');
+    document.getElementById('retentionCohortHead').innerHTML =
+        `<tr><th>Регистрация (UTC)</th><th>Новых</th>${r.days.map(d => `<th>День ${d.day}</th>`).join('')}</tr>`;
+    document.getElementById('retentionCohortBody').innerHTML = (r.cohorts || []).length
+        ? r.cohorts.map(c => `<tr><td>${escHtml(c.date)}</td><td><b>${fmtNum(c.size)}</b></td>${c.days.map(cell => cell
+            ? `<td>${fmtNum(cell.retained)} <span class="muted">(${cell.pct}%)</span>${cell.today ? '<span class="muted" title="день ещё идёт">*</span>' : ''}</td>`
+            : '<td class="muted">—</td>').join('')}</tr>`).join('')
+        : `<tr><td colspan="${2 + r.days.length}" class="muted">Пока нет данных о посещениях</td></tr>`;
+}
+document.getElementById('retentionRefreshBtn').onclick = e => withBusyButton(e.currentTarget, 'Считаю…', loadRetention);
+document.getElementById('retentionDays').onchange = loadRetention;
+
 async function loadEconomy() {
     let data;
     try { data = await api('/admin/api/economy'); }
