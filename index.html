@@ -5829,6 +5829,29 @@
             }
         }
 
+        // Защита от двойного тапа на всех трёх рынках: пока запрос идёт,
+        // повторное нажатие той же кнопки игнорируется. Сервер и так не даст
+        // купить/снять лот дважды, но двойной тап «Выставить» при двух
+        // подходящих орлах/предметах выставил бы оба, а повторная покупка
+        // показывала бы «лот уже продан» сразу после успешной.
+        function guardMarketAction(fn, keyOf) {
+            return async function (...args) {
+                const key = keyOf(...args);
+                if (farmActionBusy.has(key)) return;
+                farmActionBusy.add(key);
+                try { return await fn.apply(this, args); } finally { farmActionBusy.delete(key); }
+            };
+        }
+        confirmMarketSell = guardMarketAction(confirmMarketSell, () => 'market-list');
+        buyMarketListing = guardMarketAction(buyMarketListing, id => 'market-buy-' + id);
+        cancelMarketListing = guardMarketAction(cancelMarketListing, id => 'market-cancel-' + id);
+        confirmEquipMarketSell = guardMarketAction(confirmEquipMarketSell, () => 'equip-list');
+        buyEquipMarketListing = guardMarketAction(buyEquipMarketListing, id => 'equip-buy-' + id);
+        cancelEquipMarketListing = guardMarketAction(cancelEquipMarketListing, id => 'equip-cancel-' + id);
+        confirmResourceMarketSell = guardMarketAction(confirmResourceMarketSell, () => 'resource-list');
+        buyResourceMarketListing = guardMarketAction(buyResourceMarketListing, id => 'resource-buy-' + id);
+        cancelResourceMarketListing = guardMarketAction(cancelResourceMarketListing, id => 'resource-cancel-' + id);
+
         function renderAll() {
             renderHeader();
             renderActiveMonster();
