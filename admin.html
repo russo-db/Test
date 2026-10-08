@@ -656,6 +656,30 @@
                 <thead id="retentionCohortHead"></thead>
                 <tbody id="retentionCohortBody"></tbody>
             </table></div>
+
+            <h3 style="margin:28px 0 10px;">Ежедневный вход — награды дня</h3>
+            <p class="muted" style="font-size:12px;">Сколько игроков забрали награду каждого дня серии (хотя бы раз).
+                «По журналу» — точно, с момента включения журнала выдач. «Всего» — журнал плюс оценка по сохранённой серии
+                игрока (дошёл до дня N или прошёл круг) — для выдач до журнала это нижняя оценка: серию, сорванную и начатую
+                заново, не видно. Боты не считаются.</p>
+            <div class="nft-interval-row" style="margin-bottom:14px;">
+                <button id="dailyStatsRefreshBtn">Обновить</button>
+                <span class="muted" id="dailyStatsSince" style="font-size:12px;"></span>
+            </div>
+            <div class="card-grid" id="dailyStatsCards"></div>
+            <div class="table-wrap"><table>
+                <thead><tr><th>День серии</th><th>Награда (1-й круг)</th><th>Всего забрали</th><th>По журналу</th><th>% от игроков</th></tr></thead>
+                <tbody id="dailyStatsBody"></tbody>
+            </table></div>
+            <h3 style="margin:20px 0 10px;">Последние выдачи</h3>
+            <div class="nft-interval-row" style="margin-bottom:10px;">
+                <span class="muted">День:</span>
+                <select id="dailyLogDay"><option value="0">все</option></select>
+            </div>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Время (UTC)</th><th>Игрок</th><th>День</th><th>Круг</th><th>Награда</th></tr></thead>
+                <tbody id="dailyLogBody"></tbody>
+            </table></div>
         </div>
 
         <div class="page" id="page-tournament">
@@ -825,7 +849,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'arena') loadArenaAdmin(); else arenaAdminStop();
         if (btn.dataset.page === 'missions') loadMissionsAdmin();
         if (btn.dataset.page === 'economy') loadEconomy();
-        if (btn.dataset.page === 'retention') loadRetention();
+        if (btn.dataset.page === 'retention') { loadRetention(); loadDailyStats(); }
         else tournamentStopCountdowns();
     };
 });
@@ -1839,6 +1863,59 @@ async function loadRetention() {
             : '<td class="muted">—</td>').join('')}</tr>`).join('')
         : `<tr><td colspan="${2 + r.days.length}" class="muted">Пока нет данных о посещениях</td></tr>`;
 }
+/* ---------- ежедневный вход: журнал наград дня ---------- */
+function fmtUtc(ts) {
+    if (!ts) return '—';
+    return new Date(ts * 1000).toISOString().replace('T', ' ').slice(0, 16);
+}
+async function loadDailyStats() {
+    const sel = document.getElementById('dailyLogDay');
+    let r;
+    try { r = await api(`/admin/api/daily_stats?limit=50&day=${Number(sel.value) || 0}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    if (sel.options.length !== r.days + 1) {
+        const keep = sel.value;
+        sel.innerHTML = '<option value="0">все</option>' + r.rows.map(d => `<option value="${d.day}">${d.day}</option>`).join('');
+        sel.value = keep;
+    }
+    document.getElementById('dailyStatsSince').textContent = r.log_since
+        ? `журнал выдач ведётся с ${fmtUtc(r.log_since)} UTC · записей: ${fmtNum(r.log_total)}`
+        : 'журнал выдач пока пуст — цифры только по оценке';
+    const pct = n => r.players ? `${(100 * n / r.players).toFixed(1)}%` : '—';
+    const card = (label, value, sub) => `
+        <div class="stat-card">
+            <div class="label">${label}</div>
+            <div class="value">${value}</div>
+            ${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}
+        </div>`;
+    const byDay = Object.fromEntries(r.rows.map(d => [d.day, d]));
+    const headline = (r.eagle_days.length ? r.eagle_days : [7]).filter(d => byDay[d]).map(d => {
+        const row = byDay[d];
+        return card(`Забрали награду дня ${d}${row.monster_name ? ` (${escHtml(row.monster_name)})` : ''}`,
+            `${fmtNum(row.total)} игроков`, `${pct(row.total)} от ${fmtNum(r.players)} · по журналу: ${fmtNum(row.logged)}`);
+    });
+    document.getElementById('dailyStatsCards').innerHTML = [
+        ...headline,
+        card('Прошли весь круг', `${fmtNum(byDay[r.days] ? byDay[r.days].total : 0)} игроков`, `забрали день ${r.days}`),
+    ].join('');
+    const rewardText = d => d.monster ? `🦅 ${escHtml(d.monster_name || d.monster)}` : 'Meat';
+    document.getElementById('dailyStatsBody').innerHTML = r.rows.map(d => `<tr${d.monster ? ' style="font-weight:600;"' : ''}>
+        <td>День ${d.day}</td><td>${rewardText(d)}</td><td><b>${fmtNum(d.total)}</b></td>
+        <td>${fmtNum(d.logged)}</td><td>${pct(d.total)}</td></tr>`).join('');
+    const prize = c => {
+        const parts = [];
+        if (c.gram) parts.push(`+${fmtNum(c.gram)} GRAM`);
+        if (c.mnstr) parts.push(`+${fmtNum(c.mnstr)} Meat`);
+        if (c.monster) parts.push(`🦅 ${escHtml(c.monster_name || c.monster)} → ${c.placed === 'queue' ? 'очередь' : 'ферма'}`);
+        return parts.join(', ') || '—';
+    };
+    document.getElementById('dailyLogBody').innerHTML = r.recent.length
+        ? r.recent.map(c => `<tr><td>${fmtUtc(c.ts)}</td><td>${escHtml(c.name)} <span class="muted">${c.user_id}</span></td>
+            <td>${c.day}</td><td>${c.first_lap ? '1-й' : 'повтор'}</td><td>${prize(c)}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Выдач в журнале пока нет</td></tr>';
+}
+document.getElementById('dailyStatsRefreshBtn').onclick = e => withBusyButton(e.currentTarget, 'Считаю…', loadDailyStats);
+document.getElementById('dailyLogDay').onchange = loadDailyStats;
 document.getElementById('retentionRefreshBtn').onclick = e => withBusyButton(e.currentTarget, 'Считаю…', loadRetention);
 document.getElementById('retentionDays').onchange = loadRetention;
 

@@ -4715,6 +4715,7 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
         }
         if day >= DAILY_DAYS:
             fields["daily_cycles"] = int(row.get("daily_cycles") or 0) + 1
+        placed = None
         if reward["monster"]:
             if reward["monster"] not in MONSTERS:
                 raise HTTPException(status_code=500, detail="Орёл награды не найден")
@@ -4723,7 +4724,9 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
             if len(farm) < slots:
                 farm.append(new_slot(reward["monster"]))
                 fields["monsters"] = farm
+                placed = "farm"
             else:
+                placed = "queue"
                 # Свободной ячейки нет — орёл ждёт в очереди, как и орлы из
                 # яиц/колеса/рынка. Бесплатная ячейка сверх купленных больше
                 # не открывается (раньше игроки видели, что ячейка «открылась сама»).
@@ -4732,10 +4735,21 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
                 fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
         fresh = dict(row)
         fresh.update(fields)
-        return fields, {"day": day, "reward": reward, "fresh": fresh}
+        return fields, {"day": day, "reward": reward, "fresh": fresh, "first_lap": first_lap, "placed": placed}
 
     result = await run_farm_action(user_id, compute)
     fresh = result["fresh"]
+    # Журнал выдач для админки. Награда уже записана — сбой журнала её не отменяет.
+    try:
+        now = time.time()
+        await store.add_daily_claim({
+            "user_id": user_id, "ts": now, "date": utc_date(now), "day": int(result["day"]),
+            "first_lap": bool(result["first_lap"]), "gram": float(result["reward"]["gram"] or 0),
+            "mnstr": float(result["reward"]["mnstr"] or 0), "monster": result["reward"]["monster"],
+            "placed": result["placed"],
+        })
+    except Exception as e:
+        print(f"[daily] claim log failed for {user_id}: {type(e).__name__}: {e}")
     return {
         "status": "success",
         "day": result["day"],
@@ -7540,6 +7554,49 @@ async def admin_retention(days: int = 3, _: None = Depends(require_admin)):
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось посчитать Retention: {type(e).__name__}: {e}")
+
+
+async def compute_daily_stats(limit: int = 50, day: int = 0) -> dict:
+    """Сколько игроков забрали награду каждого дня серии ежедневного входа.
+
+    logged — точно, по журналу daily_claims (ведётся с его включения).
+    total — журнал ∪ оценка по сохранённой серии игрока: daily_day >= N или
+    пройденный круг (daily_cycles >= 1) значит, что день N он забирал. Оценка
+    нижняя: у игрока, сорвавшего серию и начавшего заново, daily_day меньше."""
+    by_day = await store.daily_claim_users_by_day()
+    progress = await store.daily_progress_by_user()
+    alive = set(progress)
+    rows = []
+    for d in range(1, DAILY_DAYS + 1):
+        logged = by_day.get(d, set())
+        estimated = {uid for uid, (dd, cycles) in progress.items() if dd >= d or cycles >= 1}
+        reward = daily_reward(d, True)
+        rows.append({
+            "day": d, "total": len(estimated | (logged & alive)), "logged": len(logged & alive),
+            "estimated": len(estimated), "monster": reward["monster"],
+            "monster_name": (MONSTERS.get(reward["monster"]) or {}).get("name") if reward["monster"] else None,
+        })
+    eagle_days = [r["day"] for r in rows if r["monster"]]
+    recent = await store.recent_daily_claims(max(1, min(200, limit)), day or None)
+    names = await store.names_by_ids({c["user_id"] for c in recent})
+    for c in recent:
+        c["name"] = names.get(c["user_id"]) or f"Игрок {c['user_id']}"
+        if c.get("monster"):
+            c["monster_name"] = (MONSTERS.get(c["monster"]) or {}).get("name") or c["monster"]
+    return {
+        "today": utc_date(), "days": DAILY_DAYS, "players": len(alive), "rows": rows,
+        "eagle_days": eagle_days, "log_since": await store.first_daily_claim_ts(),
+        "log_total": await store.daily_claims_count(), "recent": recent,
+    }
+
+
+@app.get("/admin/api/daily_stats")
+async def admin_daily_stats(limit: int = 50, day: int = 0, _: None = Depends(require_admin)):
+    try:
+        return await compute_daily_stats(int(limit), max(0, int(day)))
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось посчитать награды дня: {type(e).__name__}: {e}")
 
 
 CREATE_AUCTION_USAGE = (

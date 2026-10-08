@@ -235,6 +235,9 @@ class MongoStore:
         # Посещения по дням для Retention: {_id: "user_id:YYYY-MM-DD", user_id,
         # date} — одна строка на игрока в сутки (сутки по UTC, как и в игре).
         self.user_activity = client[db_name]["user_activity"]
+        # Журнал наград ежедневного входа: {user_id, ts, date, day, first_lap,
+        # gram, mnstr, monster, placed farm|queue|None} — одна запись на выдачу.
+        self.daily_claims = client[db_name]["daily_claims"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -250,6 +253,8 @@ class MongoStore:
             (self.resource_market, "seller_id", {}),
             (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
             (self.user_activity, "date", {}),
+            (self.daily_claims, [("ts", -1)], {}),
+            (self.daily_claims, "day", {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -1843,6 +1848,52 @@ class MongoStore:
         out = {}
         async for row in self.users.find({"is_bot": {"$ne": True}}, {"created_at": 1}):
             out[row["_id"]] = row.get("created_at")
+        return out
+
+    # --- ЖУРНАЛ НАГРАД ЕЖЕДНЕВНОГО ВХОДА ---
+
+    async def add_daily_claim(self, doc: dict) -> None:
+        await self.daily_claims.insert_one(dict(doc))
+
+    async def daily_claim_users_by_day(self) -> dict:
+        """{день серии: set(user_id)} — кто по журналу забирал награду этого дня."""
+        out = {}
+        pipeline = [{"$group": {"_id": "$day", "users": {"$addToSet": "$user_id"}}}]
+        async for row in self.daily_claims.aggregate(pipeline):
+            out[int(row["_id"] or 0)] = set(row.get("users") or [])
+        return out
+
+    async def daily_claims_count(self) -> int:
+        return await self.daily_claims.count_documents({})
+
+    async def first_daily_claim_ts(self) -> Optional[float]:
+        async for doc in self.daily_claims.find({}, {"ts": 1}).sort("ts", 1).limit(1):
+            return doc.get("ts")
+        return None
+
+    async def recent_daily_claims(self, limit: int = 50, day: Optional[int] = None) -> list:
+        query = {"day": int(day)} if day else {}
+        out = []
+        async for doc in self.daily_claims.find(query).sort("ts", -1).limit(limit):
+            doc.pop("_id", None)
+            out.append(doc)
+        return out
+
+    async def daily_progress_by_user(self) -> dict:
+        """{user_id: (daily_day, daily_cycles)} живых игроков — для оценки
+        выдач до появления журнала."""
+        out = {}
+        async for row in self.users.find({"is_bot": {"$ne": True}}, {"daily_day": 1, "daily_cycles": 1}):
+            out[row["_id"]] = (int(row.get("daily_day") or 0), int(row.get("daily_cycles") or 0))
+        return out
+
+    async def names_by_ids(self, ids) -> dict:
+        ids = list(ids)
+        out = {}
+        if not ids:
+            return out
+        async for row in self.users.find({"_id": {"$in": ids}}, {"name": 1, "username": 1}):
+            out[row["_id"]] = row.get("name") or row.get("username") or ""
         return out
 
     async def add_egg_log(self, entries: list) -> None:
