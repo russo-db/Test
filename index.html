@@ -2190,7 +2190,7 @@
                 'resourcemarket.minPriceHint': 'Минимальная цена лота — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Минимум {unit} GRAM за штуку — за {amount} шт. от {price} GRAM',
                 'resourcemarket.belowMinPrice': 'Цена ниже минимальной — {price} GRAM',
-                'farm.staleSlot': 'Ферма обновилась — в этой ячейке уже другой орёл. Ничего не сделано, проверь и повтори.', 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
+                'daily.giftSlot': 'День {day}: +{reward} и бесплатная ячейка №{n} — свободных не было, поэтому ячейка открыта в подарок!', 'farm.staleSlot': 'Ферма обновилась — в этой ячейке уже другой орёл. Ничего не сделано, проверь и повтори.', 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
                 'vip.timeLeft': 'Осталось: {time}', 'vip.activate': 'Активировать',
@@ -2525,7 +2525,7 @@
                 'resourcemarket.minPriceHint': 'Minimum price for this listing — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Minimum {unit} GRAM per unit — {price} GRAM for {amount}',
                 'resourcemarket.belowMinPrice': 'Price is below the minimum — {price} GRAM',
-                'farm.staleSlot': 'Your farm changed — that slot now holds a different eagle. Nothing was done; check and try again.', 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
+                'daily.giftSlot': 'Day {day}: +{reward} and a free slot #{n} — no slot was free, so this one is a gift!', 'farm.staleSlot': 'Your farm changed — that slot now holds a different eagle. Nothing was done; check and try again.', 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
                 'vip.timeLeft': 'Time left: {time}', 'vip.activate': 'Activate',
@@ -4806,10 +4806,12 @@
             }
         }
 
-        function finishDaily(reward, day) {
+        function finishDaily(reward, day, giftedSlot) {
             haptic.notify('success');
             const suffix = reward.monster ? '' : (reward.gram ? ' GRAM' : ' Meat');
-            toast(`День ${day}: +${dailyLabel(reward)}${suffix}`);
+            toast(giftedSlot
+                ? t('daily.giftSlot', { day, reward: dailyLabel(reward), n: giftedSlot })
+                : `День ${day}: +${dailyLabel(reward)}${suffix}`);
             spawnBurst(12);
             renderAll();
             renderDaily();
@@ -4851,6 +4853,7 @@
                     return;
                 }
 
+                const slotsBefore = state.slots;
                 state.coins = data.coins;
                 state.mnstr = data.mnstr;
                 state.totalEarned = data.total_earned;
@@ -4861,7 +4864,10 @@
                 drainFarmQueue();
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 applyDaily(data.daily);
-                finishDaily(data.reward, data.day);
+                // Орла-награду некуда было посадить — сервер подарил под него
+                // ячейку. Говорим об этом прямо, иначе выглядит так, будто
+                // ячейка «открылась сама».
+                finishDaily(data.reward, data.day, state.slots > slotsBefore ? state.slots : 0);
             } catch (error) {
                 toast('Сервер недоступен');
             }
