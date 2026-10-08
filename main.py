@@ -4723,13 +4723,10 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
             if len(farm) < slots:
                 farm.append(new_slot(reward["monster"]))
                 fields["monsters"] = farm
-            elif slots < MAX_SLOTS:
-                # Орла некуда селить — открываем под него слот, чтобы награда не пропала.
-                farm.append(new_slot(reward["monster"]))
-                fields.update({"monsters": farm, "slots": slots + 1})
             else:
-                # Все слоты куплены и заняты — орёл ждёт в очереди, как и
-                # орлы из яиц/колеса; раньше награду дня нельзя было забрать.
+                # Свободной ячейки нет — орёл ждёт в очереди, как и орлы из
+                # яиц/колеса/рынка. Бесплатная ячейка сверх купленных больше
+                # не открывается (раньше игроки видели, что ячейка «открылась сама»).
                 farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
                 farm_queue.append(new_slot(reward["monster"]))
                 fields["farm_queue"] = farm_queue[:FARM_QUEUE_MAX]
