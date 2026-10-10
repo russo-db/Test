@@ -3310,7 +3310,7 @@
         // максимальном уровне (готов к улучшению), ⏳ пока яйцо ещё не готово, иначе
         // прогресс кормления текущего уровня.
         function slotBadge(slot) {
-            if (isOnHunt(slot)) return nowSeconds() >= slot.huntUntil ? '🏹!' : '🏹';
+            if (isOnHunt(slot)) return huntNow() >= slot.huntUntil ? '🏹!' : '🏹';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
@@ -3322,7 +3322,7 @@
         function slotProgress(slot) {
             if (isOnHunt(slot)) {
                 const span = Math.max(1, slot.huntUntil - (slot.huntStartedAt || slot.huntUntil - 43200));
-                return Math.max(0, Math.min(100, 100 - ((slot.huntUntil - nowSeconds()) / span) * 100));
+                return Math.max(0, Math.min(100, 100 - ((slot.huntUntil - huntNow()) / span) * 100));
             }
             if (isOnExpedition(slot)) return expeditionReady(slot) ? 100 : expeditionProgress(slot);
             if (isFullyFed(slot)) return 100;
@@ -3455,8 +3455,8 @@
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
             let status;
-            if (isOnHunt(slot)) status = nowSeconds() >= slot.huntUntil ? t('hunt.farm.backStatus')
-                : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - nowSeconds()) });
+            if (isOnHunt(slot)) status = huntNow() >= slot.huntUntil ? t('hunt.farm.backStatus')
+                : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - huntNow()) });
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
@@ -4503,8 +4503,8 @@
             triggerSpring(document.getElementById('monsterStage'));
             if (isOnHunt(slot)) {
                 if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
-                if (nowSeconds() >= slot.huntUntil) { huntCollectFromFarm(i); return; }
-                toast(t('hunt.farm.flyingToast', { time: formatCountdown(slot.huntUntil - nowSeconds()) }));
+                if (huntNow() >= slot.huntUntil) { huntCollectFromFarm(i); return; }
+                toast(t('hunt.farm.flyingToast', { time: formatCountdown(slot.huntUntil - huntNow()) }));
                 return;
             }
             if (isOnExpedition(slot)) {
@@ -6527,12 +6527,12 @@
                 return;
             }
             if (isOnHunt(slot)) {
-                const back = nowSeconds() >= slot.huntUntil;
+                const back = huntNow() >= slot.huntUntil;
                 document.getElementById('slotModalBody').innerHTML = `
                     <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <h2 style="color:${monster.color}">${monster.name}</h2>
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
-                    <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? t('hunt.farm.backShort') : formatCountdown(slot.huntUntil - nowSeconds())}</b></div>
+                    <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? t('hunt.farm.backShort') : formatCountdown(slot.huntUntil - huntNow())}</b></div>
                     <p class="slot-modal-sub slot-listed-note">🔒 ${t('hunt.farm.lockNote')}</p>
                     ${back ? `<button class="btn-primary" style="margin-top:10px" onclick="closeSlotModal(); huntCollectFromFarm(modalSlot);">🎒 ${t('hunt.farm.collectLoot')}</button>` : ''}
                     ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 ${t('hunt.farm.openHunt')}</button>` : ''}
@@ -9376,6 +9376,7 @@
             clansEnabled = data.clans_enabled !== false;
             updateClanEntry();
             huntEnabled = data.show_hunt_module === true;
+            if (typeof data.server_time === 'number') huntServerOffset = data.server_time - Date.now() / 1000;
             if (data.hunt_buffs) state.huntBuffs = Object.assign({ rage: false, skin: false, craft_discount: false }, data.hunt_buffs);
             updateHuntEntry();
             state.slots = data.slots || CONFIG.slots.start;
@@ -9937,7 +9938,7 @@
         let huntEnabled = false;
         let huntData = null;            // ответ сервера (hunt_state)
         let huntFetchedAt = 0;          // клиентское время получения huntData (сек)
-        let huntServerOffset = 0;       // server_time - клиентское время
+        var huntServerOffset = 0;       // server_time - клиентское время (из /api/load и /api/hunt/*)
         let huntTab = 'mine';
         let huntTicker = null;
         let huntFlightSig = '';

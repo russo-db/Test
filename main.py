@@ -93,6 +93,19 @@ def load_config() -> dict:
         return json.load(f)
 
 
+def _cfg_num(d: dict, key: str, default: float) -> float:
+    try:
+        return float(d.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _cfg_list(d: dict, key: str) -> list:
+    """Список словарей из конфига; всё, что не словарь, отбрасывается."""
+    value = d.get(key)
+    return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+
 def apply_config(cfg: dict):
     """Пересчитывает все производные от game_config.json глобальные переменные.
     Позволяет админ-панели менять баланс без перезапуска сервера."""
@@ -249,17 +262,20 @@ def apply_config(cfg: dict):
     CLAN_ROSTER_SIZE = int(CLAN_CFG.get("roster_size", 10))
     # ОХОТА: шахта Горного Кристалла, Дальние Экспедиции (свои 3 слота),
     # Алхимия, зелья для Арены и свиток скидки Кузницы (см. /api/hunt/*).
-    HUNT_CFG = CONFIG.get("hunt") or {}
-    HUNT_DURATION_SECONDS = float(HUNT_CFG.get("duration_hours", 12)) * 3600
-    HUNT_ENTRY_MEAT = float(HUNT_CFG.get("entry_cost_meat", 10))
-    HUNT_EAGLE_LEVEL = int(HUNT_CFG.get("eagle_level", 7))
-    HUNT_POTION_PCT = float(HUNT_CFG.get("potion_bonus_pct", 30))
-    HUNT_SCROLL_GOLD = float(HUNT_CFG.get("scroll_craft_gold", 150))
-    HUNT_MINE_LEVELS = sorted(HUNT_CFG.get("mine_levels") or [{"level": 1, "speed_per_day": 1.0}],
-                              key=lambda lv: int(lv.get("level") or 0))
-    HUNT_SLOT_PRICES = list(HUNT_CFG.get("slot_prices") or [])
-    HUNT_ZONES = {z["id"]: z for z in (HUNT_CFG.get("zones") or [])}
-    HUNT_RECIPES = {r["id"]: r for r in (HUNT_CFG.get("recipes") or [])}
+    # Разбор терпит ошибки ручной правки конфига в админке: битые записи
+    # пропускаются, нечисловые значения заменяются значениями по умолчанию.
+    HUNT_CFG = CONFIG.get("hunt") if isinstance(CONFIG.get("hunt"), dict) else {}
+    HUNT_DURATION_SECONDS = _cfg_num(HUNT_CFG, "duration_hours", 12) * 3600
+    HUNT_ENTRY_MEAT = _cfg_num(HUNT_CFG, "entry_cost_meat", 10)
+    HUNT_EAGLE_LEVEL = int(_cfg_num(HUNT_CFG, "eagle_level", 7))
+    HUNT_POTION_PCT = _cfg_num(HUNT_CFG, "potion_bonus_pct", 30)
+    HUNT_SCROLL_GOLD = _cfg_num(HUNT_CFG, "scroll_craft_gold", 150)
+    levels = [lv for lv in _cfg_list(HUNT_CFG, "mine_levels") if _cfg_num(lv, "level", 0) >= 1]
+    HUNT_MINE_LEVELS = sorted(levels, key=lambda lv: _cfg_num(lv, "level", 0)) or [{"level": 1, "speed_per_day": 1.0}]
+    HUNT_SLOT_PRICES = _cfg_list(HUNT_CFG, "slot_prices")
+    HUNT_ZONES = {z["id"]: z for z in _cfg_list(HUNT_CFG, "zones") if isinstance(z.get("id"), str) and z["id"]}
+    HUNT_RECIPES = {r["id"]: r for r in _cfg_list(HUNT_CFG, "recipes")
+                    if isinstance(r.get("id"), str) and isinstance(r.get("cost"), dict)}
 
 
 apply_config(load_config())
@@ -2272,8 +2288,9 @@ async def serve_config():
                            for m in missions_list()]
         cfg["missions_enabled"] = missions_on()
         # Скрытые шансы Охоты (Древний Свиток) клиенту не показываем.
-        for zone in (cfg.get("hunt") or {}).get("zones") or []:
-            zone["rewards"] = [r for r in zone.get("rewards") or [] if not r.get("hidden")]
+        hunt_cfg = cfg.get("hunt") if isinstance(cfg.get("hunt"), dict) else {}
+        for zone in _cfg_list(hunt_cfg, "zones"):
+            zone["rewards"] = [r for r in _cfg_list(zone, "rewards") if not r.get("hidden")]
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
@@ -2348,6 +2365,9 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "missions": row.get("missions") or [],
         "clans_enabled": await clans_enabled_for(request),
         "show_hunt_module": await hunt_enabled_for(request),
+        # Время сервера: по нему клиент считает таймеры Охоты на ферме — часы
+        # телефона могут спешить или отставать на часы.
+        "server_time": time.time(),
         # Баффы Охоты: зелья на следующий бой Арены и скидка свитка в Кузнице.
         "hunt_buffs": {"rage": bool(row.get("buff_rage")), "skin": bool(row.get("buff_skin")),
                        "craft_discount": bool(row.get("buff_craft_discount"))},
@@ -4753,7 +4773,7 @@ def mine_level_of(row: dict) -> int:
 
 def mine_speed(level: int) -> float:
     """Горный Кристалл в сутки на уровне level."""
-    return float(HUNT_MINE_LEVELS[level - 1].get("speed_per_day") or 0)
+    return max(0.0, _cfg_num(HUNT_MINE_LEVELS[level - 1], "speed_per_day", 0))
 
 
 def mine_pending(row: dict, now: float) -> float:
@@ -4804,12 +4824,17 @@ def hunt_pick_eagle(farm: List[dict], zone: dict) -> Optional[int]:
 
 
 def hunt_roll_rewards(zone: dict, rng=random) -> dict:
+    """Добыча зоны. Битая запись награды (после ручной правки конфига)
+    пропускается, а не роняет сбор — иначе орёл остался бы под замком."""
     loot = {}
-    for r in zone.get("rewards") or []:
+    for r in _cfg_list(zone, "rewards"):
         if r.get("item") not in HUNT_ITEMS:
             continue
-        if rng.random() < float(r.get("chance", 1.0)):
-            amount = rng.randint(int(r.get("min", 1)), int(r.get("max", r.get("min", 1))))
+        lo = int(_cfg_num(r, "min", 1))
+        hi = int(_cfg_num(r, "max", lo))
+        lo, hi = min(lo, hi), max(lo, hi)
+        if rng.random() < _cfg_num(r, "chance", 1.0):
+            amount = rng.randint(lo, hi)
             if amount > 0:
                 loot[r["item"]] = loot.get(r["item"], 0) + amount
     return loot
@@ -4833,7 +4858,7 @@ def hunt_state(row: dict, now: Optional[float] = None) -> dict:
                       "started_at": int(slot.get("hunt_started_at") or 0), "until": int(slot["hunt_until"]),
                       "ready": now >= int(slot["hunt_until"])}
         slots.append({"index": k, "open": k < opened, "next_to_open": k == opened,
-                      "price_gold": float(price.get("gold") or 0), "price_gram": float(price.get("gram") or 0),
+                      "price_gold": max(0.0, _cfg_num(price, "gold", 0)), "price_gram": max(0.0, _cfg_num(price, "gram", 0)),
                       "flight": flight})
     return {
         "server_time": now,
@@ -4842,9 +4867,9 @@ def hunt_state(row: dict, now: Optional[float] = None) -> dict:
             "level": level, "max_level": len(HUNT_MINE_LEVELS), "speed_per_day": mine_speed(level),
             "pending": mine_pending(row, now), "running": float(row.get("mine_last") or 0) > 0,
             "next": None if not nxt else {
-                "level": int(nxt.get("level") or level + 1), "speed_per_day": float(nxt.get("speed_per_day") or 0),
-                "cost_gold": float(nxt.get("cost_gold") or 0), "cost_gram": float(nxt.get("cost_gram") or 0),
-                "cost_particles": float(nxt.get("cost_particles") or 0),
+                "level": level + 1, "speed_per_day": max(0.0, _cfg_num(nxt, "speed_per_day", 0)),
+                "cost_gold": max(0.0, _cfg_num(nxt, "cost_gold", 0)), "cost_gram": max(0.0, _cfg_num(nxt, "cost_gram", 0)),
+                "cost_particles": max(0.0, _cfg_num(nxt, "cost_particles", 0)),
             },
         },
         "slots_open": opened, "slots": slots,
@@ -4934,9 +4959,9 @@ async def hunt_mine_upgrade(request: HuntMineUpgrade, x_telegram_init_data: Opti
         if level >= len(HUNT_MINE_LEVELS):
             raise HTTPException(status_code=400, detail="Шахта уже максимального уровня")
         nxt = HUNT_MINE_LEVELS[level]
-        cost_gold = float(nxt.get("cost_gold") or 0)
-        cost_gram = float(nxt.get("cost_gram") or 0)
-        cost_particles = float(nxt.get("cost_particles") or 0)
+        cost_gold = max(0.0, _cfg_num(nxt, "cost_gold", 0))
+        cost_gram = max(0.0, _cfg_num(nxt, "cost_gram", 0))
+        cost_particles = max(0.0, _cfg_num(nxt, "cost_particles", 0))
         gold = float(row.get("gold") or 0)
         coins = float(row.get("coins") or 0)
         particles = float(row.get("nest_particles") or 0)
@@ -4984,7 +5009,7 @@ async def hunt_open_slot(request: HuntOpenSlot, x_telegram_init_data: Optional[s
         if opened >= HUNT_SLOTS:
             raise HTTPException(status_code=400, detail="Все слоты уже открыты")
         price = HUNT_SLOT_PRICES[opened] if opened < len(HUNT_SLOT_PRICES) else {}
-        cost_gold, cost_gram = float(price.get("gold") or 0), float(price.get("gram") or 0)
+        cost_gold, cost_gram = max(0.0, _cfg_num(price, "gold", 0)), max(0.0, _cfg_num(price, "gram", 0))
         gold, coins = float(row.get("gold") or 0), float(row.get("coins") or 0)
         if gold < cost_gold:
             raise HTTPException(status_code=400, detail=f"Не хватает золота: нужно {cost_gold:g} 🪙")
@@ -5090,15 +5115,18 @@ async def hunt_craft(request: HuntCraft, x_telegram_init_data: Optional[str] = H
     recipe = HUNT_RECIPES.get(request.recipe_id)
     if not recipe or recipe["id"] not in HUNT_USABLES:
         raise HTTPException(status_code=404, detail="Рецепт не найден")
+    cost = {k: int(_cfg_num(recipe["cost"], k, -1)) for k in recipe["cost"]}
+    if not cost or any(k not in HUNT_ITEMS or v < 0 for k, v in cost.items()):
+        raise HTTPException(status_code=400, detail="Рецепт настроен с ошибкой — сообщи администратору")
 
     def compute(row):
         now = time.time()
         items = hunt_items_of(row)
-        for key, need in (recipe.get("cost") or {}).items():
-            if items.get(key, 0) < int(need):
-                raise HTTPException(status_code=400, detail=f"Не хватает: {HUNT_ITEM_NAMES.get(key, key)} ({int(need)})")
-        for key, need in (recipe.get("cost") or {}).items():
-            items[key] -= int(need)
+        for key, need in cost.items():
+            if items.get(key, 0) < need:
+                raise HTTPException(status_code=400, detail=f"Не хватает: {HUNT_ITEM_NAMES.get(key, key)} ({need})")
+        for key, need in cost.items():
+            items[key] -= need
         items[recipe["id"]] += 1
         return _hunt_result({"hunt_items": items}, row, now, crafted=recipe["id"])
 
@@ -6380,10 +6408,18 @@ async def admin_update_config(body: AdminConfigUpdate, _: None = Depends(require
     cfg["maintenance"] = dict(cfg.get("maintenance") or {})
     cfg["maintenance"]["enabled"] = maintenance_on()
 
+    # Сначала применяем, и только потом пишем файл: конфиг, на котором
+    # apply_config падает, не должен попасть на диск — иначе с ним не
+    # поднялся бы и следующий запуск сервера.
+    previous = CONFIG
+    try:
+        apply_config(cfg)
+    except Exception as e:
+        apply_config(previous)
+        raise HTTPException(status_code=400, detail=f"Конфиг не применён — ошибка в данных: {type(e).__name__}: {e}")
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    apply_config(cfg)
     return {"status": "success"}
 
 
