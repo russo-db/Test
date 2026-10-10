@@ -1727,6 +1727,10 @@ class EggMergeAction(BaseModel):
 
 class UnlockEggSlot(BaseModel):
     user_id: int
+    # Сколько ячеек было открыто, когда игрок нажал «Открыть» (= номер
+    # открываемой ячейки). Не совпало — это повтор (двойной тап, второе окно):
+    # отклоняем, а не открываем следующую ячейку ещё раз за GRAM.
+    expected_unlocked: Optional[int] = None
 
 
 class OpenAllEggs(BaseModel):
@@ -4490,6 +4494,8 @@ async def eggs_unlock_slot(request: UnlockEggSlot, x_telegram_init_data: Optiona
 
     def compute(row):
         unlocked = max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2)))
+        if request.expected_unlocked is not None and int(request.expected_unlocked) != unlocked:
+            raise HTTPException(status_code=409, detail="Эта ячейка уже открыта")
         if unlocked >= EGG_BOARD_SIZE:
             raise HTTPException(status_code=400, detail="Все ячейки уже открыты")
         cost = board_unlock_cost(unlocked)

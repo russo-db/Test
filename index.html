@@ -133,6 +133,9 @@
         .token-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(251, 113, 133, 0.35); }
         .gold-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(255, 176, 32, 0.35); }
         .gold-coin-icon { flex: 0 0 auto; filter: drop-shadow(0 0 4px rgba(255, 176, 32, 0.6)); }
+        /* Золотая монета в тексте — вместо эмодзи 🪙, которое на Windows/Samsung
+           рисуется серебряным (см. goldify). */
+        .gold-inline { display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.16em; flex: 0 0 auto; }
 
         .coin-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
         .coin-md { width: 30px; height: 30px; }
@@ -3163,7 +3166,11 @@
 
         function toast(message) {
             const el = document.getElementById('toast');
-            el.innerText = message;
+            // Текст (в т.ч. ошибки сервера) экранируем, а 🪙 — золотой SVG-монетой.
+            const safe = String(message == null ? '' : message)
+                .replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+                .replace(/\n/g, '<br>');
+            el.innerHTML = goldify(safe);
             el.classList.add('show');
             clearTimeout(el._timer);
             el._timer = setTimeout(() => el.classList.remove('show'), 2200);
@@ -3491,8 +3498,22 @@
         // (вход на вкладку, повторный рендер того же состояния, опрос сервера).
         // true — разметка была заменена (тогда нужно заново повесить
         // обработчики, которые вешаются через addEventListener).
+        // Эмодзи 🪙 рисует система телефона: на iPhone/Android монета золотая, а
+        // на Windows (Telegram Desktop) и части Samsung — серебряная. Везде, где
+        // текст попадает в разметку, подменяем его той же SVG-монетой, что и в
+        // шапке у баланса золота.
+        const GOLD_ICON_HTML = '<svg class="gold-inline" viewBox="0 0 24 24" aria-hidden="true">'
+            + '<circle cx="12" cy="12" r="10.5" fill="#ffb020" stroke="#b8730a" stroke-width="2"/>'
+            + '<circle cx="12" cy="12" r="7" fill="none" stroke="#b8730a" stroke-width="1" opacity="0.55"/>'
+            + '<ellipse cx="9" cy="8.5" rx="3.2" ry="2" fill="#ffd166" opacity="0.7"/></svg>';
+
+        function goldify(html) {
+            return String(html == null ? '' : html).split('🪙').join(GOLD_ICON_HTML);
+        }
+
         function setHTMLIfChanged(el, html, opts) {
             if (!el) return false;
+            html = goldify(html);
             // Пропускаем, только если и разметка та же, и с тех пор её никто
             // другой не трогал (например, кнопку на время запроса не подписали «…»).
             // allowInnerUpdates — внутри блока свои куски дописывает другой код
@@ -3756,10 +3777,14 @@
             try {
                 const response = await fetch('api/eggs/unlock_slot', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId })
+                    body: JSON.stringify({ user_id: state.userId, expected_unlocked: state.eggBoardUnlocked })
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || 'Не хватает GRAM'); return false; }
+                if (!response.ok) {
+                    toast(data.detail || 'Не хватает GRAM');
+                    if (response.status === 409) syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+                    return false;
+                }
                 state.coins = data.coins;
                 state.eggBoardUnlocked = data.eggs_board_unlocked;
                 state.eggBoard = normalizeEggBoard(data.eggs_board);
@@ -7100,7 +7125,7 @@
                 craftBtn.insertAdjacentElement('afterend', discountNote);
             }
             discountNote.style.display = craftDiscount ? '' : 'none';
-            discountNote.textContent = craftDiscount ? t('hunt.nest.discountNote', { gold: fmt(craftCostGold), full: fmt(CONFIG.nest.craft_cost_gold || 300) }) : '';
+            discountNote.innerHTML = craftDiscount ? goldify(t('hunt.nest.discountNote', { gold: fmt(craftCostGold), full: fmt(CONFIG.nest.craft_cost_gold || 300) })) : '';
 
             const grades = CONFIG.nest.grades || [];
             const types = nestTypeOrder();
@@ -10221,11 +10246,11 @@
                 ? loot.map(([key, n]) => `<div class="stat-row"><span>${HUNT_ITEM_META[key].icon} ${HUNT_ITEM_META[key].name}</span><b style="color:var(--gold-lt)">+${n}</b></div>`).join('')
                 : `<p class="slot-modal-sub">${t('hunt.loot.empty')}</p>`;
             const rare = loot.some(([key]) => key === 'craft_scroll');
-            document.getElementById('huntModalBody').innerHTML = `
+            document.getElementById('huntModalBody').innerHTML = goldify(`
                 <div style="font-size:40px;">${rare ? '📜' : '🎒'}</div>
                 <h2>${rare ? t('hunt.loot.rare') : t('hunt.loot.title')}</h2>
                 ${rows}
-                <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">${t('hunt.loot.take')}</button>`;
+                <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">${t('hunt.loot.take')}</button>`);
             document.getElementById('huntModal').classList.add('open');
         }
 
@@ -10249,14 +10274,14 @@
             const count = huntData.items[key] || 0;
             const active = !!(huntData.buffs || {})[meta.buff];
             const activeText = key === 'craft_scroll' ? t('hunt.item.scrollActive') : t('hunt.item.potionActive');
-            document.getElementById('huntModalBody').innerHTML = `
+            document.getElementById('huntModalBody').innerHTML = goldify(`
                 <div style="font-size:44px;">${meta.icon}</div>
                 <h2>${meta.name}</h2>
                 <p class="slot-modal-sub">${huntItemDesc(key)}</p>
                 <div class="stat-row"><span>${t('hunt.item.inStorage')}</span><b>${count}</b></div>
                 ${active ? `<p class="slot-modal-sub" style="color:#a7f3a0">✅ ${activeText}</p>` : ''}
                 <button class="btn-primary" style="margin-top:12px" ${count < 1 || active ? 'disabled' : ''} onclick="huntUseItem('${key}')">${t('hunt.item.apply')}</button>
-                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.close')}</button>`;
+                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.close')}</button>`);
         }
 
         async function huntUseItem(key) {
@@ -10269,11 +10294,11 @@
 
         function huntConfirm(title, html, okText, onOk) {
             huntModalItem = null;
-            document.getElementById('huntModalBody').innerHTML = `
+            document.getElementById('huntModalBody').innerHTML = goldify(`
                 <h2>${title}</h2>
                 <p class="slot-modal-sub">${html}</p>
                 <button class="btn-primary" style="margin-top:12px" id="huntConfirmOk">${okText}</button>
-                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`;
+                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`);
             let fired = false;
             document.getElementById('huntConfirmOk').onclick = () => { if (fired) return; fired = true; closeHuntModal(); onOk(); };
             document.getElementById('huntModal').classList.add('open');
@@ -10553,9 +10578,9 @@
                 document.getElementById('clanHeaderName').textContent = t('clan.heading');
                 document.getElementById('clanHeaderPower').textContent = '';
                 const cfg = CONFIG.clans;
-                document.getElementById('clanCreateCostHint').textContent = t('clan.createCostHint', {
+                document.getElementById('clanCreateCostHint').innerHTML = goldify(t('clan.createCostHint', {
                     gram: fmtGram(cfg.create_cost_gram), gold: fmt(cfg.create_cost_gold), meat: fmt(cfg.create_cost_meat),
-                });
+                }));
                 renderClanTopList();
             }
         }
@@ -10659,7 +10684,7 @@
             const cfg = CONFIG.clans;
             document.getElementById('clanCreateBody').innerHTML = `
                 <h2>${t('clan.createBtn')}</h2>
-                <p>${t('clan.createCostHint', { gram: fmtGram(cfg.create_cost_gram), gold: fmt(cfg.create_cost_gold), meat: fmt(cfg.create_cost_meat) })}</p>
+                <p>${goldify(t('clan.createCostHint', { gram: fmtGram(cfg.create_cost_gram), gold: fmt(cfg.create_cost_gold), meat: fmt(cfg.create_cost_meat) }))}</p>
                 <input class="pay-input" id="clanCreateNameInput" type="text" maxlength="24" placeholder="${t('clan.namePlaceholder')}" value="${clanCreateNameDraft.replace(/"/g, '&quot;')}">
                 <div class="pay-actions">
                     <button class="btn-primary" onclick="confirmCreateClan()">${t('clan.createBtn')}</button>
