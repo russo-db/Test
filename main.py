@@ -4770,16 +4770,17 @@ def hunt_tier_rank(tier_id: Optional[str]) -> int:
 
 
 def hunt_pick_eagle(farm: List[dict], zone: dict) -> Optional[int]:
-    """Авто-подбор: самый сильный СВОБОДНЫЙ орёл 7 уровня — наивысшей
-    редкости, но не ниже минимальной для зоны. Свободный = не на рынке, не в
-    обычной экспедиции и не в другой Дальней Экспедиции."""
+    """Авто-подбор: самый СЛАБЫЙ подходящий свободный орёл 7 уровня — самой
+    низкой редкости, но не ниже минимальной для зоны, чтобы сильные орлы не
+    улетали в лёгкие зоны. Свободный = не на рынке, не в обычной экспедиции и
+    не в другой Дальней Экспедиции."""
     min_rank = hunt_tier_rank(zone.get("min_tier"))
-    best, best_rank = None, -1
+    best, best_rank = None, None
     for i, slot in enumerate(farm):
         if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot):
             continue
         rank = tier_index(slot["id"])
-        if rank >= min_rank and rank > best_rank:
+        if rank >= min_rank and (best_rank is None or rank < best_rank):
             best, best_rank = i, rank
     return best
 
@@ -4985,7 +4986,7 @@ async def hunt_open_slot(request: HuntAction, x_telegram_init_data: Optional[str
 
 @app.post("/api/hunt/start")
 async def hunt_start(request: HuntStart, x_telegram_init_data: Optional[str] = Header(None)):
-    """Отправляет в зону самого сильного свободного орла 7 уровня (авто-подбор)
+    """Отправляет в зону самого слабого подходящего свободного орла 7 уровня (авто-подбор)
     за HUNT_ENTRY_MEAT Meat. Полёт — ровно HUNT_DURATION_SECONDS, без ускорений."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     zone = HUNT_ZONES.get(request.zone_id)

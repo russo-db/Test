@@ -593,7 +593,7 @@
       {"level": 3, "cost_gold": 200, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 3.5},
       {"level": 4, "cost_gold": 300, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 5.0},
       {"level": 5, "cost_gold": 400, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 7.5},
-      {"level": 6, "cost_gold": 500, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 7.5},
+      {"level": 6, "cost_gold": 500, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 10.0},
       {"level": 7, "cost_gold": 0, "cost_gram": 1, "cost_particles": 10, "speed_per_day": 12.0},
       {"level": 8, "cost_gold": 0, "cost_gram": 2, "cost_particles": 20, "speed_per_day": 18.0},
       {"level": 9, "cost_gold": 0, "cost_gram": 3, "cost_particles": 30, "speed_per_day": 25.0},

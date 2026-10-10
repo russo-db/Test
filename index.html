@@ -9890,17 +9890,17 @@
             if (data) toast(`🔓 Слот ${data.opened_slot + 1} открыт`);
         }
 
-        // Тот же авто-подбор, что и на сервере (hunt_pick_eagle): сильнейший
-        // свободный орёл 7 уровня наивысшей редкости, не ниже минимальной для зоны.
+        // Тот же авто-подбор, что и на сервере (hunt_pick_eagle): самый слабый
+        // подходящий свободный орёл 7 уровня — низшей редкости, не ниже минимальной для зоны.
         function huntPickEagle(zone) {
             const tiers = CONFIG.tiers.map(t => t.id);
             const minRank = Math.max(0, tiers.indexOf(zone.min_tier));
             const level = Number(huntCfg().eagle_level) || CONFIG.fusion.feed_levels;
-            let best = -1, bestRank = -1;
+            let best = -1, bestRank = Infinity;
             state.farm.forEach((slot, i) => {
                 if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot)) return;
                 const rank = tierIndexOf(MONSTERS[slot.id]);
-                if (rank >= minRank && rank > bestRank) { best = i; bestRank = rank; }
+                if (rank >= minRank && rank < bestRank) { best = i; bestRank = rank; }
             });
             return best;
         }
@@ -10125,7 +10125,7 @@
                 const tier = CONFIG.tiers.find(t => t.id === zone.min_tier) || CONFIG.tiers[0];
                 const pick = huntPickEagle(zone);
                 const pickHtml = pick >= 0
-                    ? `<div class="hunt-pick">Полетит: <b style="color:${MONSTERS[state.farm[pick].id].color}">${MONSTERS[state.farm[pick].id].name}</b> (сильнейший свободный 7 ур.)</div>`
+                    ? `<div class="hunt-pick">Полетит: <b style="color:${MONSTERS[state.farm[pick].id].color}">${MONSTERS[state.farm[pick].id].name}</b> (самый слабый подходящий 7 ур.)</div>`
                     : `<div class="hunt-pick none">Нет свободного орла 7 ур. редкости «${tier.name}» или выше</div>`;
                 const canGo = pick >= 0 && freeSlot >= 0 && (state.mnstr || 0) >= meat;
                 const why = freeSlot < 0 ? (huntData.slots_open ? 'Все слоты заняты' : 'Открой слот') : (state.mnstr || 0) < meat ? `Нужно ${meat} 🥩` : '';
