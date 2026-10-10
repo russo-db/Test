@@ -2176,11 +2176,16 @@ _hunt_loaded_at = 0.0
 async def refresh_hunt_enabled(force: bool = False) -> None:
     global _hunt_enabled, _hunt_loaded_at
     now = time.time()
-    if not force and now - _hunt_loaded_at < HUNT_REFRESH_SECONDS:
+    # Пока флаг ни разу не прочитан, каждый запрос ждёт чтения сам: иначе
+    # первые параллельные запросы после перезапуска видели «скрыто»
+    # (значение по умолчанию), пока первый из них читал базу.
+    if not force and _hunt_loaded_at and now - _hunt_loaded_at < HUNT_REFRESH_SECONDS:
         return
-    _hunt_loaded_at = now
+    if _hunt_loaded_at:
+        _hunt_loaded_at = now   # уже прочитан: остальным — кэш, пока этот обновляет
     try:
         _hunt_enabled = bool(await store.get_setting(HUNT_SETTING, False))
+        _hunt_loaded_at = time.time()
     except Exception as e:
         print(f"[hunt] не удалось прочитать флаг раздела: {type(e).__name__}: {e}")
 
@@ -4903,14 +4908,13 @@ async def hunt_get_state(user_id: int, x_telegram_init_data: Optional[str] = Hea
     try:
         row = await fetch_user(user_id)
         if float(row.get("mine_last") or 0) <= 0:
-            def compute(r):
-                now = time.time()
-                if float(r.get("mine_last") or 0) > 0:
-                    return {}, {"hunt": None}
-                return _hunt_result({"mine_last": now, "mine_acc": float(r.get("mine_acc") or 0)}, r, now)
-            result = await run_farm_action(user_id, compute)
-            if result.get("hunt"):
-                return dict(result["hunt"], status="success")
+            # Запуск шахты — одно условное обновление «если ещё не запущена».
+            # Раньше это был CAS-цикл, который при нескольких одновременных
+            # первых открытиях писал пустые изменения и отвечал 409.
+            await store.users.update_one(
+                {"_id": user_id, "$or": [{"mine_last": {"$exists": False}}, {"mine_last": None}, {"mine_last": {"$lte": 0}}]},
+                {"$set": {"mine_last": time.time()}, "$inc": {"ops": 1}},
+            )
             row = await fetch_user(user_id)
         return dict(hunt_state(row), status="success")
     except HTTPException:
@@ -8458,6 +8462,7 @@ async def startup_event():
     await refresh_maintenance(force=True)
     await refresh_missions(force=True)
     await refresh_clans_enabled(force=True)
+    await refresh_hunt_enabled(force=True)
     asyncio.create_task(backfill_activity_once())
     asyncio.create_task(auction_worker())
     asyncio.create_task(ledger_maintenance())
