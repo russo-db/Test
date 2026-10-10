@@ -10161,7 +10161,9 @@
                 const data = await response.json();
                 if (!response.ok) {
                     if (!data.hunt_disabled) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); }
-                    if (response.status === 409) loadHunt();   // уже сделано (повтор) — показать актуальное
+                    // Отказ часто значит, что экран устарел (повтор, другое устройство
+                    // уже отправило/забрало орла, собрало кристаллы) — перечитываем.
+                    if ([400, 404, 409].includes(response.status)) loadHunt();
                     return null;
                 }
                 ok = true;
