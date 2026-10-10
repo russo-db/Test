@@ -1008,7 +1008,11 @@
         .clan-entry-btn {
             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
             width: 62px; height: 62px; border-radius: 18px; transform: translateX(10px);
-            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); cursor: pointer;
+            /* Тёмная подложка у кнопок Аукцион / Кланы / Охота: иначе иконки и
+               подписи сливались с яркой иллюстрацией фона фермы. */
+            background: rgba(8, 5, 18, 0.74);
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+            border: 1px solid var(--glass-border); cursor: pointer;
             font-size: 20px; color: var(--text-main);
         }
         .clan-entry-btn:active { transform: translateX(10px) scale(0.93); }
@@ -1040,12 +1044,7 @@
         #hunt .btn-primary, #hunt .btn-action { text-shadow: none; }
         #hunt .btn-primary:disabled { color: rgba(255, 255, 255, 0.82); }
         .arena-hunt-buffs .hunt-buff { background: rgba(14, 40, 20, 0.85); }
-        .hunt-entry-btn {
-            border-color: rgba(124, 255, 107, 0.45); box-shadow: 0 0 14px rgba(124, 255, 107, 0.16);
-            /* Тёмная подложка: иначе лук и надпись сливались с яркой травой фона фермы. */
-            background: rgba(8, 5, 18, 0.74);
-            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-        }
+        .hunt-entry-btn { border-color: rgba(124, 255, 107, 0.45); box-shadow: 0 0 14px rgba(124, 255, 107, 0.16); }
         .hunt-entry-btn .hunt-entry-icon { font-size: 28px; line-height: 40px; height: 40px; }
         .hunt-entry-btn .clan-entry-label { color: #a7f3a0; }
         .hunt-wallet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; margin-bottom: 12px; }
