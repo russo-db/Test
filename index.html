@@ -3217,8 +3217,22 @@
 
         /* ---------- game math (mirrors main.py) ---------- */
 
+        // Часы телефона могут спешить или отставать на часы, а все таймеры
+        // фермы (яйца, экспедиции, VIP, Охота, Кузница, Арена) — это отметки
+        // времени сервера. Поправку берём из server_time в /api/load (и
+        // ответах Охоты); без связи с сервером она 0 — время телефона.
+        var serverClockOffset = 0;
+
+        function setServerClock(serverTime) {
+            if (typeof serverTime === 'number' && isFinite(serverTime)) serverClockOffset = serverTime - Date.now() / 1000;
+        }
+
+        function serverNow() {
+            return Date.now() / 1000 + serverClockOffset;
+        }
+
         function nowSeconds() {
-            return Math.floor(Date.now() / 1000);
+            return Math.floor(serverNow());
         }
 
         function eggIntervalSeconds() {
@@ -6955,7 +6969,7 @@
         function tickNestShard() {
             const el = document.getElementById('nestShardCard');
             if (!el) return;
-            const now = Date.now() / 1000;
+            const now = serverNow();
             if (nestShardSignature(now) !== nestShardSig) { renderNestShard(); return; }
             const limitReached = (state.nest.shardBoughtToday || 0) >= (state.nest.shardDailyLimit || 4);
             const ready = now >= (state.nest.shardCooldownUntil || 0);
@@ -6972,7 +6986,7 @@
         function renderNestShard() {
             const el = document.getElementById('nestShardCard');
             if (!el) return;
-            const now = Date.now() / 1000;
+            const now = serverNow();
             nestShardSig = nestShardSignature(now);
             const price = CONFIG.nest.shard_price_gram;
             const limit = state.nest.shardDailyLimit || 4;
@@ -7024,7 +7038,7 @@
             const minersRow = document.getElementById('nestMinersRow');
             if (!minersRow) return;
             if (nestMinerSignature() !== nestMinerSig) { renderNestForge(); return; }
-            renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
+            renderNestPendingLabel(nestPendingParticles(serverNow()));
         }
 
         // Обновляет только «Накоплено частичек: X.XX» и disabled кнопки
@@ -7059,7 +7073,7 @@
                 ? Array.from({ length: Math.min(shardCount, 60) }, () => `<div class="nest-miner"><span>💎</span></div>`).join('')
                 : `<div class="nest-miner nest-miner-empty">${t('nest.noMiners')}</div>`;
             setHTMLIfChanged(document.getElementById('nestMinersRow'), rows);
-            renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
+            renderNestPendingLabel(nestPendingParticles(serverNow()));
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
             // Древний Свиток Крафта (Охота): бессрочная скидка на ОДИН крафт.
@@ -8070,7 +8084,7 @@
             valueEl.textContent = `${energy}/${PVP_ENERGY_MAX} ⚡`;
 
             if (timerEl) {
-                const secsLeft = Math.round((state.pvpEnergyResetAt || 0) - Date.now() / 1000);
+                const secsLeft = Math.round((state.pvpEnergyResetAt || 0) - serverNow());
                 timerEl.textContent = (energy < PVP_ENERGY_MAX && secsLeft > 0)
                     ? t('arena.energyResetIn', { time: formatCountdown(secsLeft) }) : '';
             }
@@ -8196,7 +8210,7 @@
             const el = document.getElementById('lbSeasonLine');
             if (!el) return;
             if (!state.arenaSeasonEndsAt) { el.textContent = ''; return; }
-            const daysLeft = Math.max(0, Math.ceil((state.arenaSeasonEndsAt - Date.now() / 1000) / 86400));
+            const daysLeft = Math.max(0, Math.ceil((state.arenaSeasonEndsAt - serverNow()) / 86400));
             el.textContent = t('arena.seasonEndsIn', { days: daysLeft });
         }
 
@@ -8383,7 +8397,7 @@
             // Дробный остаток нельзя забрать — кнопка и так задизейблена ниже
             // 1 частички (см. renderNestPendingLabel), но защищаемся и тут на
             // случай гонки с истёкшим отрисовкой тиком.
-            if (Math.floor(nestPendingParticles(Date.now() / 1000)) < 1) return;
+            if (Math.floor(nestPendingParticles(serverNow())) < 1) return;
             if (farmActionBusy.has('nest-collect')) return;
             farmActionBusy.add('nest-collect');
             try {
@@ -9376,7 +9390,7 @@
             clansEnabled = data.clans_enabled !== false;
             updateClanEntry();
             huntEnabled = data.show_hunt_module === true;
-            if (typeof data.server_time === 'number') huntServerOffset = data.server_time - Date.now() / 1000;
+            setServerClock(data.server_time);
             if (data.hunt_buffs) state.huntBuffs = Object.assign({ rage: false, skin: false, craft_discount: false }, data.hunt_buffs);
             updateHuntEntry();
             state.slots = data.slots || CONFIG.slots.start;
@@ -9938,7 +9952,6 @@
         let huntEnabled = false;
         let huntData = null;            // ответ сервера (hunt_state)
         let huntFetchedAt = 0;          // клиентское время получения huntData (сек)
-        var huntServerOffset = 0;       // server_time - клиентское время (из /api/load и /api/hunt/*)
         let huntTab = 'mine';
         let huntTicker = null;
         let huntFlightSig = '';
@@ -10048,7 +10061,7 @@
             if (!h) return;
             huntData = h;
             huntFetchedAt = Date.now() / 1000;
-            huntServerOffset = (Number(h.server_time) || huntFetchedAt) - huntFetchedAt;
+            setServerClock(Number(h.server_time));
             state.coins = h.coins;
             state.gold = h.gold;
             state.mnstr = h.mnstr;
@@ -10068,7 +10081,7 @@
             renderHunt();
         }
 
-        function huntNow() { return Date.now() / 1000 + huntServerOffset; }
+        function huntNow() { return serverNow(); }
 
         function huntMinePending() {
             if (!huntData) return 0;
