@@ -4261,8 +4261,8 @@
             triggerSpring(document.getElementById('monsterStage'));
             if (isOnHunt(slot)) {
                 if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
-                toast(nowSeconds() >= slot.huntUntil ? '🏹 Орёл вернулся с Охоты — забери добычу во вкладке «Экспедиции»'
-                    : `🏹 Орёл на Охоте — вернётся через ${formatCountdown(slot.huntUntil - nowSeconds())}`);
+                if (nowSeconds() >= slot.huntUntil) { huntCollectFromFarm(i); return; }
+                toast(`🏹 Орёл на Охоте — вернётся через ${formatCountdown(slot.huntUntil - nowSeconds())}`);
                 return;
             }
             if (isOnExpedition(slot)) {
@@ -6290,7 +6290,8 @@
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
                     <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? 'вернулся' : formatCountdown(slot.huntUntil - nowSeconds())}</b></div>
                     <p class="slot-modal-sub slot-listed-note">🔒 Пока орёл в Дальней Экспедиции, его нельзя выставить на Рынок, продать Купцу, отправить в обычную экспедицию, слить или удалить. На Арене он сражается как обычно.</p>
-                    <button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 Открыть Охоту</button>
+                    ${back ? `<button class="btn-primary" style="margin-top:10px" onclick="closeSlotModal(); huntCollectFromFarm(modalSlot);">🎒 Забрать добычу</button>` : ''}
+                    ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 Открыть Охоту</button>` : ''}
                     <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
                 `;
                 return;
@@ -9927,6 +9928,15 @@
             if ((state.mnstr || 0) < (huntCfg().entry_cost_meat || 10)) { toast(`Нужно ${huntCfg().entry_cost_meat || 10} 🥩 Meat`); haptic.notify('warning'); return; }
             const data = await huntPost('api/hunt/start', { zone_id: zoneId, hunt_slot: k }, 'hunt-start');
             if (data) toast(`🏹 ${MONSTERS[data.monster_id].name} улетел: ${zone.name}`);
+        }
+
+        // Сбор прямо с фермы (тап по вернувшемуся орлу или кнопка в его
+        // карточке) — работает, даже если раздел «Охота» скрыт админом.
+        async function huntCollectFromFarm(i) {
+            const slot = state.farm[i];
+            if (!slot || !isOnHunt(slot)) return;
+            await huntCollect(slot.huntSlot || 0);
+            renderAll();
         }
 
         async function huntCollect(k) {

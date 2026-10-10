@@ -2184,7 +2184,10 @@ async def hunt_enabled_for(request: Request) -> bool:
 @app.middleware("http")
 async def hunt_gate(request: Request, call_next):
     try:
-        if request.url.path.startswith("/api/hunt/"):
+        # Сбор добычи открыт всегда: иначе, скрой админ Охоту во время
+        # полёта, вернувшиеся орлы остались бы под замком навсегда (ни Рынка,
+        # ни Купца). Забрать их можно прямо с фермы — новых полётов нет.
+        if request.url.path.startswith("/api/hunt/") and request.url.path != "/api/hunt/collect":
             await refresh_hunt_enabled()
             if not hunt_open_for(request):
                 return JSONResponse(status_code=403, content={"detail": HUNT_DISABLED_DETAIL, "hunt_disabled": True})
