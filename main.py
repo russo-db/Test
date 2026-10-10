@@ -4693,6 +4693,21 @@ class HuntAction(BaseModel):
     user_id: int
 
 
+class HuntMineUpgrade(BaseModel):
+    user_id: int
+    # До какого уровня игрок улучшает (то, что он видел на экране). Не совпал
+    # со следующим уровнем на сервере — повтор (двойной тап, второе окно):
+    # отклоняем, а не улучшаем ещё раз за новую цену.
+    target_level: Optional[int] = None
+
+
+class HuntOpenSlot(BaseModel):
+    user_id: int
+    # Какой слот открывается (0..2). Уже открыт — повтор, второй слот за
+    # GRAM молча не открываем.
+    hunt_slot: Optional[int] = None
+
+
 class HuntStart(BaseModel):
     user_id: int
     zone_id: str
@@ -4903,7 +4918,7 @@ async def hunt_mine_collect(request: HuntAction, x_telegram_init_data: Optional[
 
 
 @app.post("/api/hunt/mine/upgrade")
-async def hunt_mine_upgrade(request: HuntAction, x_telegram_init_data: Optional[str] = Header(None)):
+async def hunt_mine_upgrade(request: HuntMineUpgrade, x_telegram_init_data: Optional[str] = Header(None)):
     """Следующий уровень шахты. Накопленное до улучшения досчитывается по
     СТАРОЙ скорости и не пропадает. GRAM — в TOTAL_BUYBACK_POOL."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
@@ -4911,6 +4926,8 @@ async def hunt_mine_upgrade(request: HuntAction, x_telegram_init_data: Optional[
     def compute(row):
         now = time.time()
         level = mine_level_of(row)
+        if request.target_level is not None and int(request.target_level) != level + 1:
+            raise HTTPException(status_code=409, detail=f"Шахта уже {level} уровня — это улучшение уже сделано")
         if level >= len(HUNT_MINE_LEVELS):
             raise HTTPException(status_code=400, detail="Шахта уже максимального уровня")
         nxt = HUNT_MINE_LEVELS[level]
@@ -4950,13 +4967,17 @@ async def hunt_mine_upgrade(request: HuntAction, x_telegram_init_data: Optional[
 
 
 @app.post("/api/hunt/slot/open")
-async def hunt_open_slot(request: HuntAction, x_telegram_init_data: Optional[str] = Header(None)):
+async def hunt_open_slot(request: HuntOpenSlot, x_telegram_init_data: Optional[str] = Header(None)):
     """Открывает следующий по порядку слот Дальних Экспедиций."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
     def compute(row):
         now = time.time()
         opened = hunt_slots_open_of(row)
+        if request.hunt_slot is not None and int(request.hunt_slot) != opened:
+            if int(request.hunt_slot) < opened:
+                raise HTTPException(status_code=409, detail=f"Слот {int(request.hunt_slot) + 1} уже открыт")
+            raise HTTPException(status_code=400, detail="Сначала открой предыдущий слот")
         if opened >= HUNT_SLOTS:
             raise HTTPException(status_code=400, detail="Все слоты уже открыты")
         price = HUNT_SLOT_PRICES[opened] if opened < len(HUNT_SLOT_PRICES) else {}

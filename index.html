@@ -9822,10 +9822,15 @@
             return m.pending + extra;
         }
 
+        // Ключ держится ещё HUNT_TAP_COOLDOWN_MS после ответа: экран сразу
+        // перерисовывается, и второй тап двойного клика попадал бы в новую
+        // кнопку на том же месте (второй орёл в полёт, второе зелье).
+        const HUNT_TAP_COOLDOWN_MS = 700;
         async function huntPost(url, body, key) {
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
             if (farmActionBusy.has(key)) return null;
             farmActionBusy.add(key);
+            let ok = false;
             try {
                 const response = await fetch(url, {
                     method: 'POST', headers: apiHeaders(),
@@ -9834,8 +9839,10 @@
                 const data = await response.json();
                 if (!response.ok) {
                     if (!data.hunt_disabled) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); }
+                    if (response.status === 409) loadHunt();   // уже сделано (повтор) — показать актуальное
                     return null;
                 }
+                ok = true;
                 applyHunt(data.hunt);
                 haptic.notify('success');
                 return data;
@@ -9843,7 +9850,8 @@
                 toast('Сервер недоступен');
                 return null;
             } finally {
-                farmActionBusy.delete(key);
+                if (ok) setTimeout(() => farmActionBusy.delete(key), HUNT_TAP_COOLDOWN_MS);
+                else farmActionBusy.delete(key);
             }
         }
 
@@ -9868,11 +9876,11 @@
             if (parts.some(p => !p.ok)) { toast('Не хватает ресурсов для улучшения'); haptic.notify('warning'); return; }
             huntConfirm(`⛏️ Шахта: уровень ${next.level}`,
                 `Скорость добычи станет <b>${fmt(next.speed_per_day)} 💎 / 24 ч</b>. Стоимость: <b>${parts.map(p => p.text).join(' + ')}</b>.${next.cost_gram ? ' GRAM уходят в общий фонд выкупа.' : ''}`,
-                'Улучшить', huntMineUpgrade);
+                'Улучшить', () => huntMineUpgrade(next.level));
         }
 
-        async function huntMineUpgrade() {
-            const data = await huntPost('api/hunt/mine/upgrade', {}, 'hunt-mine-upgrade');
+        async function huntMineUpgrade(targetLevel) {
+            const data = await huntPost('api/hunt/mine/upgrade', { target_level: targetLevel }, 'hunt-mine-upgrade');
             if (data) toast(`⛏️ Шахта улучшена до ${data.hunt.mine.level} уровня`);
         }
 
@@ -9882,11 +9890,11 @@
             if (!slot || slot.open || !slot.next_to_open) return;
             const parts = huntCostParts({ gold: slot.price_gold, gram: slot.price_gram });
             if (parts.some(p => !p.ok)) { toast(`Не хватает: ${parts.map(p => p.text).join(' + ')}`); haptic.notify('warning'); return; }
-            huntConfirm(`🔓 Слот экспедиции ${k + 1}`, `Открыть навсегда за <b>${parts.map(p => p.text).join(' + ')}</b>?`, 'Открыть', () => huntOpenSlot());
+            huntConfirm(`🔓 Слот экспедиции ${k + 1}`, `Открыть навсегда за <b>${parts.map(p => p.text).join(' + ')}</b>?`, 'Открыть', () => huntOpenSlot(k));
         }
 
-        async function huntOpenSlot() {
-            const data = await huntPost('api/hunt/slot/open', {}, 'hunt-slot-open');
+        async function huntOpenSlot(k) {
+            const data = await huntPost('api/hunt/slot/open', { hunt_slot: k }, 'hunt-slot-open');
             if (data) toast(`🔓 Слот ${data.opened_slot + 1} открыт`);
         }
 
@@ -9944,7 +9952,7 @@
 
         // --- Склад / Алхимия ---
         async function huntCraft(recipeId) {
-            const data = await huntPost('api/hunt/craft', { recipe_id: recipeId }, 'hunt-craft-' + recipeId);
+            const data = await huntPost('api/hunt/craft', { recipe_id: recipeId }, 'hunt-craft');
             if (data) toast(`⚗️ ${HUNT_ITEM_META[data.crafted].name} отправлено на Склад`);
         }
 
@@ -9988,7 +9996,8 @@
                 <p class="slot-modal-sub">${html}</p>
                 <button class="btn-primary" style="margin-top:12px" id="huntConfirmOk">${okText}</button>
                 <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`;
-            document.getElementById('huntConfirmOk').onclick = () => { closeHuntModal(); onOk(); };
+            let fired = false;
+            document.getElementById('huntConfirmOk').onclick = () => { if (fired) return; fired = true; closeHuntModal(); onOk(); };
             document.getElementById('huntModal').classList.add('open');
         }
 
