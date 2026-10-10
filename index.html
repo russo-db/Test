@@ -4380,7 +4380,6 @@
                 if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
 
                 haptic.notify('success');
-                spawnBurst(14);
                 toast(t('vip.activated', { name: tier.name }));
                 closeVipModal();
                 if (data.monsters) renderAll(); else { renderHeader(); renderVipRail(); }
