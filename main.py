@@ -2302,6 +2302,9 @@ async def serve_config():
         for zone in _cfg_list(hunt_cfg, "zones"):
             zone["rewards"] = [{"item": r.get("item"), "hidden": True} if r.get("hidden") else r
                                for r in _cfg_list(zone, "rewards")]
+        # Таблицу уровней шахты игрокам не показываем: следующий уровень
+        # (цена и скорость) приходит в /api/hunt/state, остальные скрыты.
+        hunt_cfg.pop("mine_levels", None)
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)

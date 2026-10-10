@@ -10369,11 +10369,6 @@
                     <div class="hunt-cost-row">${parts.map(p => `<span class="hunt-cost ${p.ok ? '' : 'lack'}">${p.text}</span>`).join('')}</div>
                     <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntAskMineUpgrade()">${t('hunt.mine.upgradeTo', { level: next.level })}</button>`;
             }
-            const rows = (huntCfg().mine_levels || []).map(lv => {
-                const cost = [lv.cost_gold ? `${fmt(lv.cost_gold)} 🪙` : '', lv.cost_gram ? `${fmtGram(lv.cost_gram)} GRAM` : '',
-                    lv.cost_particles ? t('hunt.particlesShort', { n: fmt(lv.cost_particles) }) : ''].filter(Boolean).join(' + ') || '—';
-                return `<tr class="${lv.level === m.level ? 'cur' : ''}"><td>${lv.level}</td><td>${cost}</td><td>${fmt(lv.speed_per_day)}</td></tr>`;
-            }).join('');
             setHTMLIfChanged(document.getElementById('huntSubMine'), `
                 <div class="hunt-card glass-panel">
                     <h3>⛏️ ${t('hunt.mine.title')} <span class="hunt-level-pill">${t('hunt.mine.levelPill', { level: m.level, max: m.max_level })}</span></h3>
@@ -10384,9 +10379,6 @@
                 <div class="hunt-card glass-panel">
                     <h3>⬆️ ${t('hunt.mine.upgradeTitle')}</h3>
                     ${upgradeHtml}
-                    <details class="hunt-details"><summary>${t('hunt.mine.allLevels')}</summary>
-                        <table class="hunt-levels"><tr><th>${t('hunt.mine.colLevel')}</th><th>${t('hunt.mine.colCost')}</th><th>💎 / 24 ${t('hunt.hoursShort')}</th></tr>${rows}</table>
-                    </details>
                 </div>`);
             tickHuntMine();
         }
