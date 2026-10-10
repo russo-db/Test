@@ -1011,6 +1011,62 @@
         .clan-entry-btn:active { transform: translateX(10px) scale(0.93); }
         .clan-entry-btn .clan-entry-icon { width: 40px; height: auto; object-fit: contain; }
         .clan-entry-btn .clan-entry-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); }
+        /* ---------- Охота ---------- */
+        .hunt-entry-btn { border-color: rgba(124, 255, 107, 0.45); box-shadow: 0 0 14px rgba(124, 255, 107, 0.16); }
+        .hunt-entry-btn .hunt-entry-icon { font-size: 28px; line-height: 40px; height: 40px; }
+        .hunt-entry-btn .clan-entry-label { color: #a7f3a0; }
+        .hunt-wallet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; margin-bottom: 12px; }
+        .hunt-wallet div { text-align: center; font-size: 11px; color: var(--text-muted); min-width: 0; }
+        .hunt-wallet b { display: block; font-size: 13px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+        .hunt-card { padding: 14px; margin-bottom: 12px; }
+        .hunt-card h3 { font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .hunt-card .hunt-sub { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+        .hunt-counter { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 34px; font-weight: 800; text-align: center; margin: 10px 0 2px;
+            color: #c4f1ff; text-shadow: 0 0 18px rgba(79, 195, 255, 0.55); font-variant-numeric: tabular-nums; }
+        .hunt-counter-sub { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+        .hunt-level-pill { margin-left: auto; font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: rgba(79, 195, 255, 0.16); border: 1px solid rgba(79, 195, 255, 0.4); color: #bfe8ff; }
+        .hunt-cost-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+        .hunt-cost { font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-border); }
+        .hunt-cost.lack { border-color: rgba(239, 68, 68, 0.55); color: #fca5a5; }
+        .hunt-levels { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
+        .hunt-levels td, .hunt-levels th { padding: 5px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); text-align: left; }
+        .hunt-levels th { color: var(--text-muted); font-weight: 700; }
+        .hunt-levels tr.cur td { color: #7cff6b; font-weight: 800; }
+        .hunt-details summary { cursor: pointer; font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+        .hunt-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+        .hunt-slot { padding: 10px 6px; text-align: center; border-radius: 16px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .hunt-slot.locked { opacity: 0.85; border-style: dashed; }
+        .hunt-slot img { width: 46px; height: 46px; object-fit: contain; }
+        .hunt-slot .hunt-slot-title { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; }
+        .hunt-slot .hunt-slot-big { font-size: 24px; line-height: 46px; height: 46px; }
+        .hunt-slot .hunt-slot-text { font-size: 11px; line-height: 1.3; min-height: 28px; overflow-wrap: anywhere; }
+        .hunt-slot button { width: 100%; padding: 7px 4px; font-size: 11.5px; border-radius: 12px; }
+        .hunt-bar { width: 100%; height: 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+        .hunt-bar i { display: block; height: 100%; background: linear-gradient(90deg, #34e6a8, #7cff6b); }
+        .hunt-zone { display: flex; gap: 12px; align-items: flex-start; }
+        .hunt-zone-icon { font-size: 34px; line-height: 1; flex: 0 0 auto; }
+        .hunt-zone-body { flex: 1; min-width: 0; }
+        .hunt-zone-meta { font-size: 11.5px; color: var(--text-muted); margin: 2px 0 6px; }
+        .hunt-loot { font-size: 12px; line-height: 1.5; }
+        .hunt-pick { font-size: 11.5px; margin: 6px 0 8px; color: #a7f3a0; }
+        .hunt-pick.none { color: #fca5a5; }
+        .hunt-rules { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; padding: 10px 12px; margin-bottom: 12px; }
+        .hunt-items { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .hunt-item { padding: 12px 6px; text-align: center; border-radius: 16px; cursor: default; min-width: 0; }
+        .hunt-item.usable { cursor: pointer; border-color: rgba(124, 255, 107, 0.45); }
+        .hunt-item.usable:active { transform: scale(0.95); }
+        .hunt-item .hunt-item-ic { font-size: 28px; line-height: 1.2; }
+        .hunt-item .hunt-item-name { font-size: 11px; font-weight: 700; margin-top: 4px; line-height: 1.25; min-height: 28px; }
+        .hunt-item .hunt-item-count { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 18px; font-weight: 800; color: var(--gold-lt); }
+        .hunt-item .hunt-item-use { font-size: 10px; color: #7cff6b; font-weight: 800; text-transform: uppercase; }
+        .hunt-section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin: 14px 0 8px; letter-spacing: 0.04em; }
+        .hunt-buffs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .hunt-buff { font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: rgba(124, 255, 107, 0.12); border: 1px solid rgba(124, 255, 107, 0.45); color: #c8ffc0; }
+        .hunt-buff.off { background: rgba(255, 255, 255, 0.04); border-color: var(--glass-border); color: var(--text-muted); }
+        .hunt-ingredients { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+        .arena-hunt-buffs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: -4px 0 12px; }
+        .nest-discount-note { font-size: 12px; font-weight: 700; color: #a7f3a0; text-align: center; margin-top: 8px; }
+
         /* ---------- Аукцион ---------- */
         .hero-side-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
         .auction-entry-btn .auction-entry-icon { font-size: 30px; line-height: 40px; height: 40px; }
@@ -1283,6 +1339,10 @@
                             <img class="clan-entry-icon" src="assets/clan-icon.png" alt="">
                             <span class="clan-entry-label" data-i18n="nav.clans">Кланы</span>
                         </div>
+                        <div class="clan-entry-btn hunt-entry-btn" id="huntEntryBtn" style="display:none;" onclick="openHuntScreen()">
+                            <span class="hunt-entry-icon">🏹</span>
+                            <span class="clan-entry-label">Охота</span>
+                        </div>
                     </div>
                 </div>
                 <div class="monster-name-tag" id="activeMonsterName">—</div>
@@ -1533,6 +1593,29 @@
             </div>
         </div>
 
+        <div id="hunt" class="content">
+            <div class="clan-screen-header">
+                <div class="clan-back-btn" onclick="closeHuntScreen()">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                </div>
+                <div class="clan-header-info">
+                    <div class="clan-header-name">🏹 Охота</div>
+                    <div class="clan-header-power">Шахта, Дальние Экспедиции и Алхимия</div>
+                </div>
+            </div>
+            <div class="hunt-wallet glass-panel" id="huntWallet"></div>
+            <div class="subtab-bar" id="huntTabBar">
+                <div class="subtab-item active" data-hunttab="mine" onclick="switchHuntTab('mine')">Добыча</div>
+                <div class="subtab-item" data-hunttab="expeditions" onclick="switchHuntTab('expeditions')">Экспедиции</div>
+                <div class="subtab-item" data-hunttab="storage" onclick="switchHuntTab('storage')">Склад</div>
+                <div class="subtab-item" data-hunttab="alchemy" onclick="switchHuntTab('alchemy')">Алхимия</div>
+            </div>
+            <div class="subtab-panel active" id="huntSubMine"></div>
+            <div class="subtab-panel" id="huntSubExpeditions"></div>
+            <div class="subtab-panel" id="huntSubStorage"></div>
+            <div class="subtab-panel" id="huntSubAlchemy"></div>
+        </div>
+
         <div id="arena" class="content">
             <h1 data-i18n="arena.heading">Арена</h1>
             <p class="subtitle" data-i18n="arena.subtitle">Автоматический бой твоего орла против соперника</p>
@@ -1552,6 +1635,7 @@
                 <span data-i18n="arena.leaderboardBtn">Таблица лидеров</span>
             </button>
 
+            <div class="arena-hunt-buffs" id="arenaHuntBuffs"></div>
             <div class="arena-picker" id="arenaPicker"></div>
 
             <div class="arena-hud">
@@ -1773,6 +1857,10 @@
     </div>
 
     <!-- LOCKED SLOT MODAL -->
+    <div class="modal-backdrop" id="huntModal" onclick="if (event.target === this) closeHuntModal()">
+        <div class="modal-box glass-panel" id="huntModalBody"></div>
+    </div>
+
     <div class="modal-backdrop" id="slotBuyModal" onclick="if (event.target === this) closeSlotBuy()">
         <div class="modal-box glass-panel" id="slotBuyBody"></div>
     </div>
@@ -2786,6 +2874,7 @@
             marketListings: [],  // активные лоты P2P-рынка орлов (см. loadMarketListings)
             equipMarketListings: [],    // лоты рынка снаряжения (см. loadEquipMarketListings)
             resourceMarketListings: [], // лоты рынка ресурсов — Осколки/частички (см. loadResourceMarketListings)
+            huntBuffs: { rage: false, skin: false, craft_discount: false }, // баффы Охоты (зелья Арены, свиток Кузницы)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
             merchant: { meatBought: 0, soldByTier: {} }, // общий (не персональный!) выкуп орлов купцом по редкостям, кэш с сервера
             nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} }, // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
@@ -2940,6 +3029,22 @@
             return !!(slot && slot.listingId);
         }
 
+        // Орёл в Дальней Экспедиции (Охота): до сбора добычи его нельзя на
+        // Рынок, Купцу, в обычную экспедицию, слить, удалить или сжечь —
+        // сервер проверяет то же самое. Арена — можно.
+        function isOnHunt(slot) {
+            return !!(slot && (slot.huntUntil || 0) > 0);
+        }
+
+        function huntEsc(v) {
+            return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function huntZoneName(slot) {
+            const zone = ((CONFIG.hunt || {}).zones || []).find(z => z.id === slot.huntZone);
+            return zone ? zone.name : '';
+        }
+
         function expeditionReady(slot) {
             return isOnExpedition(slot) && nowSeconds() >= slot.expeditionUntil;
         }
@@ -2964,6 +3069,7 @@
         // максимальном уровне (готов к улучшению), ⏳ пока яйцо ещё не готово, иначе
         // прогресс кормления текущего уровня.
         function slotBadge(slot) {
+            if (isOnHunt(slot)) return nowSeconds() >= slot.huntUntil ? '🏹!' : '🏹';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
@@ -2973,6 +3079,10 @@
         // Progress bar for a slot cell: tap progress while feeding, egg
         // countdown while it's cooking, full while waiting for fusion.
         function slotProgress(slot) {
+            if (isOnHunt(slot)) {
+                const span = Math.max(1, slot.huntUntil - (slot.huntStartedAt || slot.huntUntil - 43200));
+                return Math.max(0, Math.min(100, 100 - ((slot.huntUntil - nowSeconds()) / span) * 100));
+            }
             if (isOnExpedition(slot)) return expeditionReady(slot) ? 100 : expeditionProgress(slot);
             if (isFullyFed(slot)) return 100;
             if (slot.nextEggAt > 0) return eggProgress(slot);
@@ -3103,7 +3213,9 @@
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
             let status;
-            if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
+            if (isOnHunt(slot)) status = nowSeconds() >= slot.huntUntil ? '🏹 вернулся с Охоты — забери добычу'
+                : `🏹 на Охоте (${huntZoneName(slot)}) — ещё ${formatCountdown(slot.huntUntil - nowSeconds())}`;
+            else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
             else if (isFarmingEgg(slot)) status = t('farm.eggIn', { time: formatCountdown(slot.nextEggAt - nowSeconds()) });
@@ -4147,6 +4259,12 @@
                 return;
             }
             triggerSpring(document.getElementById('monsterStage'));
+            if (isOnHunt(slot)) {
+                if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
+                toast(nowSeconds() >= slot.huntUntil ? '🏹 Орёл вернулся с Охоты — забери добычу во вкладке «Экспедиции»'
+                    : `🏹 Орёл на Охоте — вернётся через ${formatCountdown(slot.huntUntil - nowSeconds())}`);
+                return;
+            }
             if (isOnExpedition(slot)) {
                 if (expeditionReady(slot)) collectExpedition(i);
                 else toast(t('farm.expeditionToast', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) }));
@@ -4170,6 +4288,7 @@
             const slot = state.farm[i];
             if (!slot || isOnExpedition(slot)) return;
             if (isListed(slot)) { toast(t('farm.listedToast')); return; }
+            if (isOnHunt(slot)) { toast('🏹 Орёл в Дальней Экспедиции — в обычную экспедицию его не отправить'); haptic.notify('warning'); return; }
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'expedition-start:' + i;
@@ -4420,7 +4539,7 @@
                 .filter(({ slot }) => {
                     const monster = MONSTERS[slot.id];
                     const offer = monster && merchantBuybackOffer(monster.tier);
-                    return offer && offer.left > 0 && isFullyFed(slot) && !isListed(slot) && !isOnExpedition(slot);
+                    return offer && offer.left > 0 && isFullyFed(slot) && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot);
                 });
         }
 
@@ -5158,7 +5277,7 @@
             return state.farm.filter(slot => {
                 const monster = MONSTERS[slot.id];
                 return monster && tierIndexOf(monster) >= 1 && (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels
-                    && !isListed(slot) && !isOnExpedition(slot);
+                    && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot);
             });
         }
 
@@ -6025,8 +6144,8 @@
 
         function askDeleteEagle() {
             const slot = state.farm[modalSlot];
-            if (slot && (isListed(slot) || isOnExpedition(slot))) {
-                toast(isListed(slot) ? t('farm.listedToast') : t('slot.deleteOnExpedition'));
+            if (slot && (isListed(slot) || isOnExpedition(slot) || isOnHunt(slot))) {
+                toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? '🏹 Орёл в Дальней Экспедиции — удалить нельзя' : t('slot.deleteOnExpedition'));
                 return;
             }
             slotDeleteConfirm = true;
@@ -6110,7 +6229,7 @@
 
         function slotModalSignature(slot) {
             return [
-                modalSlot, slot.id, slotDeleteConfirm, slot.listingId || '',
+                modalSlot, slot.id, slotDeleteConfirm, slot.listingId || '', slot.huntUntil || 0,
                 isOnExpedition(slot), expeditionReady(slot), eggReady(slot),
                 isFullyFed(slot), isFarmingEgg(slot), slot.feedLevel, slot.feedTaps,
             ].join('|');
@@ -6159,6 +6278,19 @@
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
                     <p class="slot-modal-sub slot-listed-note">🔒 ${t('slot.listedNote')}</p>
                     <button class="btn-action" style="margin-top:10px; width:100%" onclick="cancelMarketListing('${slot.listingId}'); closeSlotModal();">${t('slot.unlistBtn')}</button>
+                    <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
+                `;
+                return;
+            }
+            if (isOnHunt(slot)) {
+                const back = nowSeconds() >= slot.huntUntil;
+                document.getElementById('slotModalBody').innerHTML = `
+                    <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    <h2 style="color:${monster.color}">${monster.name}</h2>
+                    <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
+                    <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? 'вернулся' : formatCountdown(slot.huntUntil - nowSeconds())}</b></div>
+                    <p class="slot-modal-sub slot-listed-note">🔒 Пока орёл в Дальней Экспедиции, его нельзя выставить на Рынок, продать Купцу, отправить в обычную экспедицию, слить или удалить. На Арене он сражается как обычно.</p>
+                    <button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 Открыть Охоту</button>
                     <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
                 `;
                 return;
@@ -6685,7 +6817,9 @@
             renderNestPendingLabel(nestPendingParticles(Date.now() / 1000));
 
             const craftCost = CONFIG.nest.craft_cost_particles || 20;
-            const craftCostGold = CONFIG.nest.craft_cost_gold || 300;
+            // Древний Свиток Крафта (Охота): бессрочная скидка на ОДИН крафт.
+            const craftDiscount = !!(state.huntBuffs && state.huntBuffs.craft_discount);
+            const craftCostGold = craftDiscount ? Math.min(huntScrollGold(), CONFIG.nest.craft_cost_gold || 300) : (CONFIG.nest.craft_cost_gold || 300);
             const have = state.nest.particles;
             const hasParticles = have >= craftCost;
             const hasGold = state.gold >= craftCostGold;
@@ -6699,6 +6833,15 @@
                 ? t('nest.craftNotEnoughGold', { cost: craftCostGold })
                 : t('nest.craftBtn', { cost: craftCost, icon: NEST_PARTICLE_ICON_HTML }));
             craftBtn.disabled = !(hasParticles && hasGold);
+            let discountNote = document.getElementById('nestCraftDiscountNote');
+            if (!discountNote) {
+                discountNote = document.createElement('div');
+                discountNote.id = 'nestCraftDiscountNote';
+                discountNote.className = 'nest-discount-note';
+                craftBtn.insertAdjacentElement('afterend', discountNote);
+            }
+            discountNote.style.display = craftDiscount ? '' : 'none';
+            discountNote.textContent = craftDiscount ? `📜 Свиток Крафта: этот крафт — ${fmt(craftCostGold)} 🪙 вместо ${fmt(CONFIG.nest.craft_cost_gold || 300)} 🪙` : '';
 
             const grades = CONFIG.nest.grades || [];
             const types = nestTypeOrder();
@@ -7097,6 +7240,12 @@
                     toast(data.detail || t('arena.noEnergy'));
                     return null;
                 }
+                // Зелья Охоты сгорели в этом бою — сервер уже снял баффы.
+                if (data.buffs_used && state.huntBuffs) {
+                    if (data.buffs_used.rage) state.huntBuffs.rage = false;
+                    if (data.buffs_used.skin) state.huntBuffs.skin = false;
+                    renderArenaHuntBuffs();
+                }
                 return {
                     won: data.won, battleLog: data.battle_log || [],
                     player: data.player, enemy: data.enemy,
@@ -7273,6 +7422,7 @@
         function renderArena() {
             renderArenaPicker();
             renderArenaEnergyBar();
+            renderArenaHuntBuffs();
             // Бой уже идёт (например, игрок ушёл на другую вкладку и вернулся) —
             // ни в коем случае не пересоздавать орлов и не подбирать нового
             // соперника поверх активного arenaStartBattle(): его цикл продолжает
@@ -8027,6 +8177,7 @@
                 state.nest.particles = data.particles;
                 state.gold = data.gold;
                 state.nest.inventory = data.inventory;
+                if (data.craft_discount_used && state.huntBuffs) state.huntBuffs.craft_discount = false;
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
                 toast(t('nest.crafted', { name: CONFIG.nest.item_types[data.item_type].names[data.grade] }));
@@ -8979,6 +9130,9 @@
             state.missions = data.missions || [];
             clansEnabled = data.clans_enabled !== false;
             updateClanEntry();
+            huntEnabled = data.show_hunt_module === true;
+            if (data.hunt_buffs) state.huntBuffs = Object.assign({ rage: false, skin: false, craft_discount: false }, data.hunt_buffs);
+            updateHuntEntry();
             state.slots = data.slots || CONFIG.slots.start;
             normalizeFarmCapacity();
             state.referrals = data.referrals || 0;
@@ -9052,7 +9206,12 @@
                 // замком и ничего не делает, пока лот не куплен или не снят.
                 const listingId = typeof slot.listing_id === 'string' && slot.listing_id ? slot.listing_id
                     : (typeof slot.listingId === 'string' && slot.listingId ? slot.listingId : null);
-                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId });
+                // Охота: орёл в Дальней Экспедиции (замок до сбора добычи).
+                const huntUntil = Math.max(0, Number(slot.hunt_until) || 0);
+                const hunt = huntUntil > 0
+                    ? { huntUntil, huntStartedAt: Number(slot.hunt_started_at) || 0, huntZone: slot.hunt_zone || '', huntSlot: Number(slot.hunt_slot) || 0 }
+                    : { huntUntil: 0 };
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, ...hunt });
                 return farm;
             }, []);
         }
@@ -9474,7 +9633,7 @@
         // Орлы 7 уровня — те же, что уже нельзя дальше кормить (см. FEED_LEVELS);
         // в отличие от eligibleMarketEagles, обычная (common) редкость тоже подходит.
         function eligibleClanBurnEagles() {
-            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot));
+            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot));
         }
 
         // Раздел «Кланы» можно выключить из админки. Состояние приходит в /api/load
@@ -9523,6 +9682,549 @@
             clanBracketStopCountdown();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
+        }
+
+        /* ---------- ОХОТА: Добыча, Экспедиции, Склад, Алхимия ----------
+           Всё считает сервер (/api/hunt/*): здесь только показ и намерения.
+           Видимость раздела — тумблер в админке (show_hunt_module из /api/load);
+           если раздел скрыли, пока игрок внутри, /api/hunt/* отвечает 403
+           с hunt_disabled — экран закрывается, кнопка пропадает. */
+        let huntEnabled = false;
+        let huntData = null;            // ответ сервера (hunt_state)
+        let huntFetchedAt = 0;          // клиентское время получения huntData (сек)
+        let huntServerOffset = 0;       // server_time - клиентское время
+        let huntTab = 'mine';
+        let huntTicker = null;
+        let huntFlightSig = '';
+        let huntModalItem = null;
+
+        const HUNT_ITEM_META = {
+            rock_crystal: { icon: '💎', name: 'Горный Кристалл', desc: 'Добывается в Шахте. Нужен для зелий Алхимии.' },
+            mountain_root: { icon: '🌿', name: 'Горный Корень', desc: 'Добыча Дальних Экспедиций. Нужен для Зелья Ярости.' },
+            shimmer_mushroom: { icon: '🍄', name: 'Мерцающий Гриб', desc: 'Добыча Дальних Экспедиций. Нужен для Отвара Стальной Кожи.' },
+            craft_scroll: { icon: '📜', name: 'Древний Свиток Крафта', buff: 'craft_discount' },
+            potion_rage: { icon: '🔥', name: 'Зелье Ярости', buff: 'rage' },
+            potion_skin: { icon: '🛡️', name: 'Отвар Стальной Кожи', buff: 'skin' },
+        };
+        const HUNT_RESOURCE_KEYS = ['rock_crystal', 'mountain_root', 'shimmer_mushroom'];
+        const HUNT_USABLE_KEYS = ['craft_scroll', 'potion_rage', 'potion_skin'];
+
+        function huntCfg() { return CONFIG.hunt || {}; }
+        function huntPotionPct() { return Number(huntCfg().potion_bonus_pct) || 30; }
+        function huntScrollGold() { return Number(huntCfg().scroll_craft_gold) || 150; }
+
+        function huntItemDesc(key) {
+            if (key === 'potion_rage') return `+${huntPotionPct()}% к Атаке твоего орла в следующем бою Арены. Можно применить вместе с Отваром Стальной Кожи. Сгорает после 1 боя.`;
+            if (key === 'potion_skin') return `+${huntPotionPct()}% к Защите твоего орла в следующем бою Арены. Можно применить вместе с Зельем Ярости. Сгорает после 1 боя.`;
+            if (key === 'craft_scroll') return `Бессрочная скидка: следующий крафт серого снаряжения в Кузнице — за ${CONFIG.nest.craft_cost_particles || 20} частичек и ${huntScrollGold()} 🪙 вместо ${CONFIG.nest.craft_cost_gold || 300} 🪙. Действует, пока не скрафтишь.`;
+            return (HUNT_ITEM_META[key] || {}).desc || '';
+        }
+
+        function updateHuntEntry() {
+            const btn = document.getElementById('huntEntryBtn');
+            if (btn) btn.style.display = huntEnabled ? '' : 'none';
+            const screen = document.getElementById('hunt');
+            if (!huntEnabled && screen && screen.classList.contains('active')) closeHuntScreen();
+            renderArenaHuntBuffs();
+        }
+
+        function onHuntDisabled() {
+            if (!huntEnabled) return;
+            huntEnabled = false;
+            updateHuntEntry();
+            closeHuntModal();
+            toast('Раздел «Охота» сейчас недоступен');
+        }
+
+        {
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = async (...args) => {
+                const response = await nativeFetch(...args);
+                if (response.status === 403 && String(args[0]).includes('api/hunt/')) {
+                    response.clone().json().then(d => { if (d && d.hunt_disabled) onHuntDisabled(); }).catch(() => {});
+                }
+                return response;
+            };
+        }
+
+        async function openHuntScreen(tab) {
+            if (!huntEnabled) { toast('Раздел «Охота» сейчас недоступен'); return; }
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            haptic.select();
+            auctionStop();
+            arenaStopLoop();
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('hunt').classList.add('active');
+            switchHuntTab(tab || huntTab, { silent: true });
+            if (!huntTicker) huntTicker = setInterval(tickHunt, 200);
+            await loadHunt();
+        }
+
+        function closeHuntScreen() {
+            haptic.select();
+            if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById('farm').classList.add('active');
+            renderAll();
+        }
+
+        function switchHuntTab(tab, opts = {}) {
+            if (!opts.silent) haptic.select();
+            huntTab = tab;
+            document.querySelectorAll('#huntTabBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.hunttab === tab));
+            const panels = { mine: 'huntSubMine', expeditions: 'huntSubExpeditions', storage: 'huntSubStorage', alchemy: 'huntSubAlchemy' };
+            Object.entries(panels).forEach(([id, el]) => document.getElementById(el).classList.toggle('active', id === tab));
+            renderHunt();
+        }
+
+        async function loadHunt() {
+            try {
+                const response = await fetch(`api/hunt/state/${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                if (!response.ok) { if (!data.hunt_disabled) toast(data.detail || t('market.serverError')); return; }
+                applyHunt(data);
+            } catch (error) {
+                toast('Сервер недоступен');
+            }
+        }
+
+        // Ответ сервера -> состояние игры (балансы, ферма с замками полёта, баффы).
+        function applyHunt(h) {
+            if (!h) return;
+            huntData = h;
+            huntFetchedAt = Date.now() / 1000;
+            huntServerOffset = (Number(h.server_time) || huntFetchedAt) - huntFetchedAt;
+            state.coins = h.coins;
+            state.gold = h.gold;
+            state.mnstr = h.mnstr;
+            state.nest.particles = h.particles;
+            if (typeof h.ops === 'number') state.ops = h.ops;
+            if (h.buffs) state.huntBuffs = Object.assign({}, h.buffs);
+            if (h.monsters) {
+                const activeId = state.farm[state.activeSlot] ? state.farm[state.activeSlot].id : null;
+                state.farm = readFarm(h.monsters);
+                if (!state.farm[state.activeSlot] || state.farm[state.activeSlot].id !== activeId) {
+                    const idx = state.farm.findIndex(s => s.id === activeId);
+                    state.activeSlot = idx >= 0 ? idx : Math.min(state.activeSlot, Math.max(0, state.farm.length - 1));
+                }
+            }
+            renderHeader();
+            saveLocally();
+            renderHunt();
+        }
+
+        function huntNow() { return Date.now() / 1000 + huntServerOffset; }
+
+        function huntMinePending() {
+            if (!huntData) return 0;
+            const m = huntData.mine;
+            const extra = m.running ? Math.max(0, Date.now() / 1000 - huntFetchedAt) * m.speed_per_day / 86400 : 0;
+            return m.pending + extra;
+        }
+
+        async function huntPost(url, body, key) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            try {
+                const response = await fetch(url, {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify(Object.assign({ user_id: state.userId }, body || {})),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (!data.hunt_disabled) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); }
+                    return null;
+                }
+                applyHunt(data.hunt);
+                haptic.notify('success');
+                return data;
+            } catch (error) {
+                toast('Сервер недоступен');
+                return null;
+            } finally {
+                farmActionBusy.delete(key);
+            }
+        }
+
+        // --- Добыча: Шахта ---
+        async function huntMineCollect() {
+            const data = await huntPost('api/hunt/mine/collect', {}, 'hunt-mine-collect');
+            if (data) toast(`+${data.collected} 💎 Горный Кристалл`);
+        }
+
+        function huntCostParts(cost) {
+            const parts = [];
+            if (cost.gold) parts.push({ text: `${fmt(cost.gold)} 🪙`, ok: (state.gold || 0) >= cost.gold });
+            if (cost.gram) parts.push({ text: `${fmtGram(cost.gram)} GRAM`, ok: (state.coins || 0) >= cost.gram });
+            if (cost.particles) parts.push({ text: `${fmt(cost.particles)} частичек`, ok: (state.nest.particles || 0) >= cost.particles });
+            return parts;
+        }
+
+        function huntAskMineUpgrade() {
+            const next = huntData && huntData.mine.next;
+            if (!next) return;
+            const parts = huntCostParts({ gold: next.cost_gold, gram: next.cost_gram, particles: next.cost_particles });
+            if (parts.some(p => !p.ok)) { toast('Не хватает ресурсов для улучшения'); haptic.notify('warning'); return; }
+            huntConfirm(`⛏️ Шахта: уровень ${next.level}`,
+                `Скорость добычи станет <b>${fmt(next.speed_per_day)} 💎 / 24 ч</b>. Стоимость: <b>${parts.map(p => p.text).join(' + ')}</b>.${next.cost_gram ? ' GRAM уходят в общий фонд выкупа.' : ''}`,
+                'Улучшить', huntMineUpgrade);
+        }
+
+        async function huntMineUpgrade() {
+            const data = await huntPost('api/hunt/mine/upgrade', {}, 'hunt-mine-upgrade');
+            if (data) toast(`⛏️ Шахта улучшена до ${data.hunt.mine.level} уровня`);
+        }
+
+        // --- Экспедиции ---
+        function huntAskOpenSlot(k) {
+            const slot = huntData && huntData.slots[k];
+            if (!slot || slot.open || !slot.next_to_open) return;
+            const parts = huntCostParts({ gold: slot.price_gold, gram: slot.price_gram });
+            if (parts.some(p => !p.ok)) { toast(`Не хватает: ${parts.map(p => p.text).join(' + ')}`); haptic.notify('warning'); return; }
+            huntConfirm(`🔓 Слот экспедиции ${k + 1}`, `Открыть навсегда за <b>${parts.map(p => p.text).join(' + ')}</b>?`, 'Открыть', () => huntOpenSlot());
+        }
+
+        async function huntOpenSlot() {
+            const data = await huntPost('api/hunt/slot/open', {}, 'hunt-slot-open');
+            if (data) toast(`🔓 Слот ${data.opened_slot + 1} открыт`);
+        }
+
+        // Тот же авто-подбор, что и на сервере (hunt_pick_eagle): сильнейший
+        // свободный орёл 7 уровня наивысшей редкости, не ниже минимальной для зоны.
+        function huntPickEagle(zone) {
+            const tiers = CONFIG.tiers.map(t => t.id);
+            const minRank = Math.max(0, tiers.indexOf(zone.min_tier));
+            const level = Number(huntCfg().eagle_level) || CONFIG.fusion.feed_levels;
+            let best = -1, bestRank = -1;
+            state.farm.forEach((slot, i) => {
+                if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot)) return;
+                const rank = tierIndexOf(MONSTERS[slot.id]);
+                if (rank >= minRank && rank > bestRank) { best = i; bestRank = rank; }
+            });
+            return best;
+        }
+
+        function huntFreeSlot() {
+            if (!huntData) return -1;
+            const s = huntData.slots.find(x => x.open && !x.flight);
+            return s ? s.index : -1;
+        }
+
+        async function huntStart(zoneId) {
+            const zone = (huntCfg().zones || []).find(z => z.id === zoneId);
+            if (!zone || !huntData) return;
+            const k = huntFreeSlot();
+            if (k < 0) { toast(huntData.slots_open ? 'Все открытые слоты заняты' : 'Сначала открой слот экспедиции'); haptic.notify('warning'); return; }
+            if ((state.mnstr || 0) < (huntCfg().entry_cost_meat || 10)) { toast(`Нужно ${huntCfg().entry_cost_meat || 10} 🥩 Meat`); haptic.notify('warning'); return; }
+            const data = await huntPost('api/hunt/start', { zone_id: zoneId, hunt_slot: k }, 'hunt-start');
+            if (data) toast(`🏹 ${MONSTERS[data.monster_id].name} улетел: ${zone.name}`);
+        }
+
+        async function huntCollect(k) {
+            const data = await huntPost('api/hunt/collect', { hunt_slot: k }, 'hunt-collect-' + k);
+            if (!data) return;
+            const loot = Object.entries(data.loot || {});
+            if (loot.some(([key]) => key === 'craft_scroll')) haptic.notify('success');
+            huntShowLoot(loot);
+        }
+
+        function huntShowLoot(loot) {
+            const rows = loot.length
+                ? loot.map(([key, n]) => `<div class="stat-row"><span>${HUNT_ITEM_META[key].icon} ${HUNT_ITEM_META[key].name}</span><b style="color:var(--gold-lt)">+${n}</b></div>`).join('')
+                : '<p class="slot-modal-sub">В этот раз пусто.</p>';
+            const rare = loot.some(([key]) => key === 'craft_scroll');
+            document.getElementById('huntModalBody').innerHTML = `
+                <div style="font-size:40px;">${rare ? '📜' : '🎒'}</div>
+                <h2>${rare ? 'Редкая находка!' : 'Добыча'}</h2>
+                ${rows}
+                <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">Забрать на Склад</button>`;
+            document.getElementById('huntModal').classList.add('open');
+        }
+
+        // --- Склад / Алхимия ---
+        async function huntCraft(recipeId) {
+            const data = await huntPost('api/hunt/craft', { recipe_id: recipeId }, 'hunt-craft-' + recipeId);
+            if (data) toast(`⚗️ ${HUNT_ITEM_META[data.crafted].name} отправлено на Склад`);
+        }
+
+        function huntOpenItem(key) {
+            if (!huntData || !HUNT_USABLE_KEYS.includes(key)) return;
+            haptic.select();
+            huntModalItem = key;
+            renderHuntModalItem();
+            document.getElementById('huntModal').classList.add('open');
+        }
+
+        function renderHuntModalItem() {
+            const key = huntModalItem;
+            const meta = HUNT_ITEM_META[key];
+            const count = huntData.items[key] || 0;
+            const active = !!(huntData.buffs || {})[meta.buff];
+            const activeText = key === 'craft_scroll' ? 'Скидка уже действует — сначала скрафти серое снаряжение в Кузнице'
+                : 'Уже действует — сработает в следующем бою Арены';
+            document.getElementById('huntModalBody').innerHTML = `
+                <div style="font-size:44px;">${meta.icon}</div>
+                <h2>${meta.name}</h2>
+                <p class="slot-modal-sub">${huntItemDesc(key)}</p>
+                <div class="stat-row"><span>На Складе</span><b>${count}</b></div>
+                ${active ? `<p class="slot-modal-sub" style="color:#a7f3a0">✅ ${activeText}</p>` : ''}
+                <button class="btn-primary" style="margin-top:12px" ${count < 1 || active ? 'disabled' : ''} onclick="huntUseItem('${key}')">Применить</button>
+                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.close')}</button>`;
+        }
+
+        async function huntUseItem(key) {
+            const data = await huntPost('api/hunt/use', { item: key }, 'hunt-use-' + key);
+            if (!data) return;
+            closeHuntModal();
+            toast(key === 'craft_scroll' ? `📜 Скидка активна: следующий серый крафт — ${huntScrollGold()} 🪙` : `${HUNT_ITEM_META[key].icon} Бафф на следующий бой Арены`);
+            renderNest();
+        }
+
+        function huntConfirm(title, html, okText, onOk) {
+            huntModalItem = null;
+            document.getElementById('huntModalBody').innerHTML = `
+                <h2>${title}</h2>
+                <p class="slot-modal-sub">${html}</p>
+                <button class="btn-primary" style="margin-top:12px" id="huntConfirmOk">${okText}</button>
+                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`;
+            document.getElementById('huntConfirmOk').onclick = () => { closeHuntModal(); onOk(); };
+            document.getElementById('huntModal').classList.add('open');
+        }
+
+        function closeHuntModal() {
+            huntModalItem = null;
+            const modal = document.getElementById('huntModal');
+            if (modal) modal.classList.remove('open');
+        }
+
+        // --- Отрисовка ---
+        function huntBuffChips(buffs) {
+            buffs = buffs || {};
+            const pct = huntPotionPct();
+            return `
+                <span class="hunt-buff ${buffs.rage ? '' : 'off'}">🔥 Атака +${pct}% ${buffs.rage ? '· на 1 бой' : '· нет'}</span>
+                <span class="hunt-buff ${buffs.skin ? '' : 'off'}">🛡️ Защита +${pct}% ${buffs.skin ? '· на 1 бой' : '· нет'}</span>
+                <span class="hunt-buff ${buffs.craft_discount ? '' : 'off'}">📜 Крафт за ${huntScrollGold()} 🪙 ${buffs.craft_discount ? '· активно' : '· нет'}</span>`;
+        }
+
+        function renderArenaHuntBuffs() {
+            const el = document.getElementById('arenaHuntBuffs');
+            if (!el) return;
+            const b = state.huntBuffs || {};
+            const pct = huntPotionPct();
+            const chips = [];
+            if (b.rage) chips.push(`<span class="hunt-buff">🔥 Зелье Ярости: Атака +${pct}% на этот бой</span>`);
+            if (b.skin) chips.push(`<span class="hunt-buff">🛡️ Стальная Кожа: Защита +${pct}% на этот бой</span>`);
+            el.innerHTML = chips.join('');
+            el.style.display = chips.length ? '' : 'none';
+        }
+
+        function renderHunt() {
+            const screen = document.getElementById('hunt');
+            if (!screen || !screen.classList.contains('active')) return;
+            setHTMLIfChanged(document.getElementById('huntWallet'), `
+                <div>Золото<b>${fmt(state.gold || 0)} 🪙</b></div>
+                <div>GRAM<b>${fmtGram(state.coins || 0)}</b></div>
+                <div>Meat<b>${fmtToken(state.mnstr || 0)} 🥩</b></div>
+                <div>Частички<b>${fmt(state.nest.particles || 0)}</b></div>`);
+            if (!huntData) {
+                ['huntSubMine', 'huntSubExpeditions', 'huntSubStorage', 'huntSubAlchemy'].forEach(id =>
+                    setHTMLIfChanged(document.getElementById(id), '<p class="subtitle">Загрузка…</p>'));
+                return;
+            }
+            renderHuntMine();
+            renderHuntExpeditions();
+            renderHuntStorage();
+            renderHuntAlchemy();
+            if (huntModalItem) renderHuntModalItem();
+        }
+
+        function renderHuntMine() {
+            const m = huntData.mine;
+            const next = m.next;
+            let upgradeHtml;
+            if (!next) {
+                upgradeHtml = `<button class="btn-action" style="width:100%" disabled>⛏️ Шахта на максимуме (${m.max_level} ур.)</button>`;
+            } else {
+                const parts = huntCostParts({ gold: next.cost_gold, gram: next.cost_gram, particles: next.cost_particles });
+                const ok = parts.every(p => p.ok);
+                upgradeHtml = `
+                    <div class="hunt-sub">Уровень ${next.level}: ${fmt(m.speed_per_day)} → <b>${fmt(next.speed_per_day)}</b> 💎 / 24 ч</div>
+                    <div class="hunt-cost-row">${parts.map(p => `<span class="hunt-cost ${p.ok ? '' : 'lack'}">${p.text}</span>`).join('')}</div>
+                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntAskMineUpgrade()">Улучшить до ${next.level} ур.</button>`;
+            }
+            const rows = (huntCfg().mine_levels || []).map(lv => {
+                const cost = [lv.cost_gold ? `${fmt(lv.cost_gold)} 🪙` : '', lv.cost_gram ? `${fmtGram(lv.cost_gram)} GRAM` : '',
+                    lv.cost_particles ? `${fmt(lv.cost_particles)} част.` : ''].filter(Boolean).join(' + ') || '—';
+                return `<tr class="${lv.level === m.level ? 'cur' : ''}"><td>${lv.level}</td><td>${cost}</td><td>${fmt(lv.speed_per_day)}</td></tr>`;
+            }).join('');
+            setHTMLIfChanged(document.getElementById('huntSubMine'), `
+                <div class="hunt-card glass-panel">
+                    <h3>⛏️ Шахта Горного Кристалла <span class="hunt-level-pill">${m.level} / ${m.max_level} ур.</span></h3>
+                    <div class="hunt-counter" id="huntMinePending">${huntMinePending().toFixed(2)}</div>
+                    <div class="hunt-counter-sub">💎 накоплено · ${fmt(m.speed_per_day)} шт / 24 ч · собираются только целые</div>
+                    <button class="btn-primary" id="huntMineCollectBtn" onclick="huntMineCollect()">Собрать</button>
+                </div>
+                <div class="hunt-card glass-panel">
+                    <h3>⬆️ Улучшение шахты</h3>
+                    ${upgradeHtml}
+                    <details class="hunt-details"><summary>Все уровни</summary>
+                        <table class="hunt-levels"><tr><th>Ур.</th><th>Стоимость</th><th>💎 / 24 ч</th></tr>${rows}</table>
+                    </details>
+                </div>`);
+            tickHuntMine();
+        }
+
+        function huntLootText(zone) {
+            return (zone.rewards || []).map(r => {
+                const meta = HUNT_ITEM_META[r.item] || { icon: '', name: r.item };
+                const amount = r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`;
+                const chance = Number(r.chance) < 1 ? `${Math.round(Number(r.chance) * 1000) / 10}% шанс: ` : '';
+                return `${meta.icon} ${chance}${amount} ${meta.name}`;
+            }).join('<br>');
+        }
+
+        function renderHuntExpeditions() {
+            const cfg = huntCfg();
+            const now = huntNow();
+            huntFlightSig = huntData.slots.map(s => s.flight ? (now >= s.flight.until ? 'r' : 'f') : (s.open ? 'o' : 'c')).join('');
+            const slotsHtml = huntData.slots.map(s => {
+                if (!s.open) {
+                    const price = [s.price_gold ? `${fmt(s.price_gold)} 🪙` : '', s.price_gram ? `${fmtGram(s.price_gram)} GRAM` : ''].filter(Boolean).join(' + ');
+                    return `<div class="hunt-slot glass-panel locked">
+                        <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                        <div class="hunt-slot-big">🔒</div>
+                        <div class="hunt-slot-text">${price}</div>
+                        ${s.next_to_open ? `<button class="btn-action" onclick="huntAskOpenSlot(${s.index})">Открыть</button>`
+                            : `<div class="hunt-slot-text" style="color:var(--text-muted)">после слота ${s.index}</div>`}
+                    </div>`;
+                }
+                if (!s.flight) {
+                    return `<div class="hunt-slot glass-panel">
+                        <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                        <div class="hunt-slot-big">🪹</div>
+                        <div class="hunt-slot-text">Свободен — выбери зону ниже</div>
+                    </div>`;
+                }
+                const f = s.flight;
+                const monster = MONSTERS[f.monster_id] || {};
+                const zone = (cfg.zones || []).find(z => z.id === f.zone) || {};
+                const ready = now >= f.until;
+                return `<div class="hunt-slot glass-panel">
+                    <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                    <img src="${monster.sprite ? framePath(monster.sprite, 0) : ''}" alt="">
+                    <div class="hunt-slot-text">${zone.icon || ''} ${huntEsc(zone.name || '')}<br><b id="huntFlightTimer${s.index}">${ready ? 'вернулся!' : formatCountdown(f.until - now)}</b></div>
+                    <div class="hunt-bar"><i id="huntFlightBar${s.index}" style="width:${huntFlightPct(f, now)}%"></i></div>
+                    <button class="btn-primary" ${ready ? '' : 'disabled'} onclick="huntCollect(${s.index})">Забрать</button>
+                </div>`;
+            }).join('');
+            const freeSlot = huntFreeSlot();
+            const meat = Number(cfg.entry_cost_meat) || 10;
+            const zonesHtml = (cfg.zones || []).map(zone => {
+                const tier = CONFIG.tiers.find(t => t.id === zone.min_tier) || CONFIG.tiers[0];
+                const pick = huntPickEagle(zone);
+                const pickHtml = pick >= 0
+                    ? `<div class="hunt-pick">Полетит: <b style="color:${MONSTERS[state.farm[pick].id].color}">${MONSTERS[state.farm[pick].id].name}</b> (сильнейший свободный 7 ур.)</div>`
+                    : `<div class="hunt-pick none">Нет свободного орла 7 ур. редкости «${tier.name}» или выше</div>`;
+                const canGo = pick >= 0 && freeSlot >= 0 && (state.mnstr || 0) >= meat;
+                const why = freeSlot < 0 ? (huntData.slots_open ? 'Все слоты заняты' : 'Открой слот') : (state.mnstr || 0) < meat ? `Нужно ${meat} 🥩` : '';
+                return `<div class="hunt-card glass-panel">
+                    <div class="hunt-zone">
+                        <div class="hunt-zone-icon">${zone.icon || '🏹'}</div>
+                        <div class="hunt-zone-body">
+                            <h3>${huntEsc(zone.name)}</h3>
+                            <div class="hunt-zone-meta">⏱ ${fmt(cfg.duration_hours || 12)} ч · 🥩 ${meat} Meat · от <b style="color:${tier.color}">${tier.name}</b> орла ${cfg.eagle_level || 7} ур.</div>
+                            <div class="hunt-loot">${huntLootText(zone)}</div>
+                            ${pickHtml}
+                            <button class="btn-primary" ${canGo ? '' : 'disabled'} onclick="huntStart('${zone.id}')">${canGo ? `Отправить · ${meat} 🥩` : (why || 'Нет подходящего орла')}</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            setHTMLIfChanged(document.getElementById('huntSubExpeditions'), `
+                <div class="hunt-slots">${slotsHtml}</div>
+                <div class="hunt-rules glass-panel">🔒 Пока орёл в Дальней Экспедиции, его <b>нельзя</b> выставить на Рынок, продать Купцу и отправить в обычную экспедицию за золотом. На <b>Арене</b> он сражается как обычно. Летают только полностью обученные орлы ${cfg.eagle_level || 7} уровня; полёт всегда ${fmt(cfg.duration_hours || 12)} ч.</div>
+                ${zonesHtml}`);
+        }
+
+        function huntFlightPct(f, now) {
+            const span = Math.max(1, f.until - (f.started_at || f.until - 43200));
+            return Math.max(0, Math.min(100, 100 - ((f.until - now) / span) * 100));
+        }
+
+        function renderHuntStorage() {
+            const items = huntData.items;
+            const tile = key => {
+                const meta = HUNT_ITEM_META[key];
+                const usable = HUNT_USABLE_KEYS.includes(key);
+                return `<div class="hunt-item glass-panel ${usable ? 'usable' : ''}" ${usable ? `onclick="huntOpenItem('${key}')"` : ''}>
+                    <div class="hunt-item-ic">${meta.icon}</div>
+                    <div class="hunt-item-name">${meta.name}</div>
+                    <div class="hunt-item-count">${items[key] || 0}</div>
+                    ${usable ? '<div class="hunt-item-use">Применить ›</div>' : ''}
+                </div>`;
+            };
+            setHTMLIfChanged(document.getElementById('huntSubStorage'), `
+                <div class="hunt-section-title">Активные эффекты</div>
+                <div class="hunt-buffs">${huntBuffChips(huntData.buffs)}</div>
+                <div class="hunt-section-title">Ресурсы</div>
+                <div class="hunt-items">${HUNT_RESOURCE_KEYS.map(tile).join('')}</div>
+                <div class="hunt-section-title">Предметы — нажми, чтобы применить</div>
+                <div class="hunt-items">${HUNT_USABLE_KEYS.map(tile).join('')}</div>`);
+        }
+
+        function renderHuntAlchemy() {
+            const items = huntData.items;
+            const html = (huntCfg().recipes || []).map(r => {
+                const meta = HUNT_ITEM_META[r.id] || { icon: '⚗️', name: r.name };
+                const ings = Object.entries(r.cost || {}).map(([key, need]) => {
+                    const have = items[key] || 0;
+                    return `<span class="hunt-cost ${have >= need ? '' : 'lack'}">${HUNT_ITEM_META[key].icon} ${have}/${need} ${HUNT_ITEM_META[key].name}</span>`;
+                }).join('');
+                const ok = Object.entries(r.cost || {}).every(([key, need]) => (items[key] || 0) >= need);
+                return `<div class="hunt-card glass-panel">
+                    <h3>${meta.icon} ${huntEsc(r.name || meta.name)} <span class="hunt-level-pill">на Складе: ${items[r.id] || 0}</span></h3>
+                    <div class="hunt-sub">${huntItemDesc(r.id)}</div>
+                    <div class="hunt-ingredients">${ings}</div>
+                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntCraft('${r.id}')">Сварить</button>
+                </div>`;
+            }).join('');
+            setHTMLIfChanged(document.getElementById('huntSubAlchemy'), html);
+        }
+
+        function tickHuntMine() {
+            const el = document.getElementById('huntMinePending');
+            if (!el || !huntData) return;
+            const pending = huntMinePending();
+            el.textContent = pending.toFixed(2);
+            const whole = Math.floor(pending + 1e-9);
+            const btn = document.getElementById('huntMineCollectBtn');
+            if (btn) {
+                btn.disabled = whole < 1;
+                const label = whole < 1 ? 'Собрать (нужен целый кристалл)' : `Собрать ${whole} 💎`;
+                if (btn.textContent !== label) btn.textContent = label;
+            }
+        }
+
+        function tickHunt() {
+            const screen = document.getElementById('hunt');
+            if (!screen || !screen.classList.contains('active')) {
+                if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
+                return;
+            }
+            if (!huntData) return;
+            tickHuntMine();
+            const now = huntNow();
+            const sig = huntData.slots.map(s => s.flight ? (now >= s.flight.until ? 'r' : 'f') : (s.open ? 'o' : 'c')).join('');
+            if (sig !== huntFlightSig) { renderHuntExpeditions(); return; }
+            huntData.slots.forEach(s => {
+                if (!s.flight) return;
+                const timer = document.getElementById('huntFlightTimer' + s.index);
+                const bar = document.getElementById('huntFlightBar' + s.index);
+                if (timer) timer.textContent = now >= s.flight.until ? 'вернулся!' : formatCountdown(s.flight.until - now);
+                if (bar) bar.style.width = huntFlightPct(s.flight, now) + '%';
+            });
         }
 
         async function loadClanMine() {

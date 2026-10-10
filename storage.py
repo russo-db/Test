@@ -454,6 +454,8 @@ class MongoStore:
             return {"status": "listed"}
         if int(farm[slot_index].get("expedition_until") or 0) > 0:
             return {"status": "on_expedition"}
+        if int(farm[slot_index].get("hunt_until") or 0) > 0:
+            return {"status": "on_hunt"}   # Дальняя Экспедиция (Охота)
         if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
             return {"status": "not_fed"}
         if len(farm) <= 1:
@@ -520,13 +522,16 @@ class MongoStore:
                 idx = slot_index
             else:
                 idx = next((i for i, m in enumerate(farm)
-                            if fits(m) and not m.get("listing_id") and not int(m.get("expedition_until") or 0)), None)
+                            if fits(m) and not m.get("listing_id") and not int(m.get("expedition_until") or 0)
+                            and not int(m.get("hunt_until") or 0)), None)
                 if idx is None:
                     return None, "not_found"
             if farm[idx].get("listing_id"):
                 return None, "listed"
             if int(farm[idx].get("expedition_until") or 0) > 0:
                 return None, "on_expedition"
+            if int(farm[idx].get("hunt_until") or 0) > 0:
+                return None, "on_hunt"   # Дальняя Экспедиция (Охота)
 
             oid = ObjectId()
             farm[idx] = dict(farm[idx], listing_id=str(oid))
@@ -1850,6 +1855,49 @@ class MongoStore:
             out[row["_id"]] = row.get("created_at")
         return out
 
+    # --- ОХОТА: мониторинг ресурсов игроков (админка) ---
+
+    HUNT_ITEM_KEYS = ("rock_crystal", "mountain_root", "shimmer_mushroom", "craft_scroll", "potion_rage", "potion_skin")
+    HUNT_TOUCHED = {"$or": [{"hunt_items": {"$exists": True}}, {"mine_last": {"$gt": 0}},
+                            {"hunt_slots_open": {"$gt": 0}}]}
+
+    async def list_hunt_players(self, search: str = "", limit: int = 50, offset: int = 0) -> tuple:
+        """Игроки, заходившие в Охоту (или найденные поиском по id/имени), по
+        убыванию суммы ресурсов и предметов на Складе."""
+        query = {"is_bot": {"$ne": True}}
+        search = (search or "").strip()
+        if search:
+            ors = [{"name": {"$regex": re.escape(search.lstrip("@")), "$options": "i"}}]
+            if search.lstrip("-").isdigit():
+                ors.append({"_id": int(search)})
+            query["$or"] = ors
+        else:
+            query.update(self.HUNT_TOUCHED)
+        proj = {"name": 1, "hunt_items": 1, "mine_level": 1, "mine_acc": 1, "mine_last": 1, "hunt_slots_open": 1,
+                "buff_rage": 1, "buff_skin": 1, "buff_craft_discount": 1, "monsters": 1}
+        rows = [r async for r in self.users.find(query, proj)]
+
+        def weight(r):
+            items = r.get("hunt_items") if isinstance(r.get("hunt_items"), dict) else {}
+            return sum(int(items.get(k) or 0) for k in self.HUNT_ITEM_KEYS)
+
+        rows.sort(key=lambda r: (-weight(r), r["_id"]))
+        return rows[offset:offset + limit], len(rows)
+
+    async def hunt_totals(self) -> dict:
+        """Сумма каждого ресурса/предмета Охоты по всем игрокам."""
+        totals = {k: 0 for k in self.HUNT_ITEM_KEYS}
+        players = 0
+        async for r in self.users.find({"is_bot": {"$ne": True}, **self.HUNT_TOUCHED}, {"hunt_items": 1}):
+            players += 1
+            items = r.get("hunt_items") if isinstance(r.get("hunt_items"), dict) else {}
+            for k in self.HUNT_ITEM_KEYS:
+                totals[k] += int(items.get(k) or 0)
+        return {"players": players, "items": totals}
+
+    async def economy_total(self) -> dict:
+        return await self.economy.find_one({"_id": "total"}) or {}
+
     # --- ЖУРНАЛ НАГРАД ЕЖЕДНЕВНОГО ВХОДА ---
 
     async def add_daily_claim(self, doc: dict) -> None:
@@ -2016,7 +2064,8 @@ class MongoStore:
         # Орёл на рынке (замок) или в экспедиции не сжигается.
         idx = next((i for i, m in enumerate(farm)
                     if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels
-                    and not m.get("listing_id") and not int(m.get("expedition_until") or 0)), None)
+                    and not m.get("listing_id") and not int(m.get("expedition_until") or 0)
+                    and not int(m.get("hunt_until") or 0)), None)
         if idx is None:
             return None
         original = farm[:]

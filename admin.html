@@ -246,6 +246,7 @@
             <button class="nav-btn" data-page="config">⚙️ Конфиг</button>
             <button class="nav-btn" data-page="missions">📋 Задания</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
+            <button class="nav-btn" data-page="hunt">🏹 Охота</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="arena">⚔️ Арена</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
@@ -403,6 +404,41 @@
                 <button class="primary" id="configSave">Сохранить</button>
             </div>
             <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
+        </div>
+
+        <div class="page" id="page-hunt">
+            <h2>🏹 Охота</h2>
+            <div class="nft-interval-panel">
+                <div class="nft-interval-head">
+                    <b>Модуль «ОХОТА» в игре (show_hunt_module):</b> <span id="huntStateBadge" class="nft-mode">…</span>
+                    <button id="huntToggleBtn">…</button>
+                </div>
+                <div class="muted" style="font-size:12px;">Скрыто — кнопка «Охота» под Кланами пропадает у всех игроков, а прямые запросы
+                    к /api/hunt/* отклоняются. Ресурсы игроков и уже летящие орлы сохраняются: добычу заберут после включения.
+                    Владельцы и тестеры техработ видят модуль всегда, чтобы проверить его до запуска.</div>
+            </div>
+            <div class="card-grid" id="huntCards"></div>
+            <h3 style="margin:20px 0 10px;">Мониторинг ресурсов</h3>
+            <div class="toolbar">
+                <input id="huntSearch" placeholder="ID игрока или имя">
+                <button id="huntSearchBtn">Найти</button>
+                <button id="huntRefreshBtn">Обновить</button>
+            </div>
+            <p class="muted" style="font-size:12px;">Игроки, открывавшие Охоту, — по убыванию запасов на Складе. Поиск показывает и тех, кто в Охоту ещё не заходил.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Игрок</th><th>💎 Кристаллы</th><th>🌿 Корни</th><th>🍄 Грибы</th><th>📜 Свитки</th>
+                        <th>🔥 Ярость</th><th>🛡️ Ст. Кожа</th><th>Шахта</th><th>Слоты / в полёте</th><th>Баффы</th>
+                    </tr></thead>
+                    <tbody id="huntBody"></tbody>
+                </table>
+            </div>
+            <div class="pager">
+                <button id="huntPrev">← Назад</button>
+                <span id="huntPageInfo" class="muted"></span>
+                <button id="huntNext">Вперёд →</button>
+            </div>
         </div>
 
         <div class="page" id="page-clans">
@@ -850,6 +886,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'missions') loadMissionsAdmin();
         if (btn.dataset.page === 'economy') loadEconomy();
         if (btn.dataset.page === 'retention') { loadRetention(); loadDailyStats(); }
+        if (btn.dataset.page === 'hunt') loadHuntAdmin();
         else tournamentStopCountdowns();
     };
 });
@@ -2364,6 +2401,75 @@ document.getElementById('configSave').onclick = async () => {
         if (e.message !== 'unauthorized') errEl.textContent = e.message;
     }
 };
+
+/* ---------- охота ---------- */
+let huntEnabledAdmin = false;
+const huntAdmin = { search: '', limit: 50, offset: 0, total: 0 };
+function renderHuntToggle(enabled) {
+    huntEnabledAdmin = enabled;
+    const badge = document.getElementById('huntStateBadge');
+    badge.className = 'nft-mode ' + (enabled ? 'prod' : 'test');
+    badge.textContent = enabled ? 'включён — виден игрокам' : 'скрыт';
+    const btn = document.getElementById('huntToggleBtn');
+    btn.textContent = enabled ? 'Скрыть ОХОТУ' : 'Включить ОХОТУ';
+    btn.className = enabled ? 'danger' : 'primary';
+}
+document.getElementById('huntToggleBtn').onclick = async e => {
+    const next = !huntEnabledAdmin;
+    if (!confirm(next ? 'Включить модуль «ОХОТА»? Кнопка появится у всех игроков.'
+                      : 'Скрыть модуль «ОХОТА»? Кнопка пропадёт у всех игроков, прямой доступ будет закрыт.')) return;
+    await withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            const r = await api('/admin/api/hunt/enabled', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: next }),
+            });
+            huntEnabledAdmin = r.enabled;
+            toast(r.enabled ? 'Охота включена' : 'Охота скрыта');
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+    renderHuntToggle(huntEnabledAdmin);
+};
+async function loadHuntAdmin() {
+    try {
+        const params = new URLSearchParams({ search: huntAdmin.search, limit: huntAdmin.limit, offset: huntAdmin.offset });
+        const data = await api('/admin/api/hunt?' + params);
+        renderHuntToggle(!!data.enabled);
+        huntAdmin.total = data.total;
+        const tt = data.totals.items;
+        const card = (label, value, sub) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}</div>`;
+        document.getElementById('huntCards').innerHTML = [
+            card('TOTAL_BUYBACK_POOL', `${fmtNum(data.buyback_pool)} GRAM`, 'GRAM, потраченные в Охоте (шахта, слоты)'),
+            card('Игроков в Охоте', fmtNum(data.totals.players), 'открывали раздел хотя бы раз'),
+            card('Кристаллы / Корни / Грибы', `${fmtNum(tt.rock_crystal)} / ${fmtNum(tt.mountain_root)} / ${fmtNum(tt.shimmer_mushroom)}`, 'на Складах всех игроков'),
+            card('Свитки / Ярость / Ст. Кожа', `${fmtNum(tt.craft_scroll)} / ${fmtNum(tt.potion_rage)} / ${fmtNum(tt.potion_skin)}`, 'неиспользованные предметы'),
+        ].join('');
+        const buffs = b => [b.rage ? '🔥' : '', b.skin ? '🛡️' : '', b.craft_discount ? '📜' : ''].filter(Boolean).join(' ') || '—';
+        document.getElementById('huntBody').innerHTML = data.items.map(p => `
+            <tr>
+                <td data-label="Игрок">${escHtml(p.name || '—')} <span class="muted">${p.user_id}</span></td>
+                <td data-label="💎 Кристаллы"><b>${p.items.rock_crystal}</b> <span class="muted">+${p.mine_pending}</span></td>
+                <td data-label="🌿 Корни">${p.items.mountain_root}</td>
+                <td data-label="🍄 Грибы">${p.items.shimmer_mushroom}</td>
+                <td data-label="📜 Свитки">${p.items.craft_scroll}</td>
+                <td data-label="🔥 Ярость">${p.items.potion_rage}</td>
+                <td data-label="🛡️ Ст. Кожа">${p.items.potion_skin}</td>
+                <td data-label="Шахта">${p.mine_level} ур.</td>
+                <td data-label="Слоты / в полёте">${p.slots_open}/3 · ${p.flying}</td>
+                <td data-label="Баффы">${buffs(p.buffs)}</td>
+            </tr>`).join('') || '<tr><td colspan="10" class="muted">Никто ещё не заходил в Охоту</td></tr>';
+        const from = data.total ? huntAdmin.offset + 1 : 0;
+        const to = Math.min(huntAdmin.offset + huntAdmin.limit, data.total);
+        document.getElementById('huntPageInfo').textContent = `${from}–${to} из ${data.total}`;
+        document.getElementById('huntPrev').disabled = huntAdmin.offset <= 0;
+        document.getElementById('huntNext').disabled = to >= data.total;
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('huntSearchBtn').onclick = () => { huntAdmin.search = document.getElementById('huntSearch').value.trim(); huntAdmin.offset = 0; loadHuntAdmin(); };
+document.getElementById('huntSearch').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('huntSearchBtn').click(); });
+document.getElementById('huntRefreshBtn').onclick = e => withBusyButton(e.currentTarget, '…', loadHuntAdmin);
+document.getElementById('huntPrev').onclick = () => { huntAdmin.offset = Math.max(0, huntAdmin.offset - huntAdmin.limit); loadHuntAdmin(); };
+document.getElementById('huntNext').onclick = () => { huntAdmin.offset += huntAdmin.limit; loadHuntAdmin(); };
 
 /* ---------- кланы ---------- */
 let clansEnabledAdmin = true;

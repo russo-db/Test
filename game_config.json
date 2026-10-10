@@ -580,5 +580,54 @@
         "expedition_reduction_hours": 3
       }
     ]
+  },
+  "hunt": {
+    "duration_hours": 12,
+    "entry_cost_meat": 10,
+    "eagle_level": 7,
+    "potion_bonus_pct": 30,
+    "scroll_craft_gold": 150,
+    "mine_levels": [
+      {"level": 1, "cost_gold": 0, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 1.0},
+      {"level": 2, "cost_gold": 100, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 2.0},
+      {"level": 3, "cost_gold": 200, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 3.5},
+      {"level": 4, "cost_gold": 300, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 5.0},
+      {"level": 5, "cost_gold": 400, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 7.5},
+      {"level": 6, "cost_gold": 500, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 7.5},
+      {"level": 7, "cost_gold": 0, "cost_gram": 1, "cost_particles": 10, "speed_per_day": 12.0},
+      {"level": 8, "cost_gold": 0, "cost_gram": 2, "cost_particles": 20, "speed_per_day": 18.0},
+      {"level": 9, "cost_gold": 0, "cost_gram": 3, "cost_particles": 30, "speed_per_day": 25.0},
+      {"level": 10, "cost_gold": 0, "cost_gram": 3, "cost_particles": 40, "speed_per_day": 32.0},
+      {"level": 11, "cost_gold": 0, "cost_gram": 3, "cost_particles": 50, "speed_per_day": 40.0},
+      {"level": 12, "cost_gold": 0, "cost_gram": 5, "cost_particles": 60, "speed_per_day": 48.0},
+      {"level": 13, "cost_gold": 0, "cost_gram": 6, "cost_particles": 70, "speed_per_day": 56.0},
+      {"level": 14, "cost_gold": 0, "cost_gram": 7, "cost_particles": 80, "speed_per_day": 64.0},
+      {"level": 15, "cost_gold": 0, "cost_gram": 8, "cost_particles": 90, "speed_per_day": 80.0}
+    ],
+    "slot_prices": [
+      {"gold": 10, "gram": 0},
+      {"gold": 0, "gram": 10},
+      {"gold": 0, "gram": 20}
+    ],
+    "zones": [
+      {"id": "forest", "name": "Ближний Бор", "icon": "🌲", "min_tier": "uncommon", "rewards": [
+        {"item": "mountain_root", "min": 1, "max": 3, "chance": 1.0},
+        {"item": "shimmer_mushroom", "min": 1, "max": 1, "chance": 0.2}
+      ]},
+      {"id": "mountains", "name": "Древние Горы", "icon": "⛰️", "min_tier": "rare", "rewards": [
+        {"item": "mountain_root", "min": 3, "max": 5, "chance": 1.0},
+        {"item": "shimmer_mushroom", "min": 2, "max": 3, "chance": 1.0},
+        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.01, "hidden": true}
+      ]},
+      {"id": "canyon", "name": "Затерянный Каньон", "icon": "🏜️", "min_tier": "epic", "rewards": [
+        {"item": "shimmer_mushroom", "min": 4, "max": 6, "chance": 1.0},
+        {"item": "mountain_root", "min": 2, "max": 4, "chance": 1.0},
+        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.03, "hidden": true}
+      ]}
+    ],
+    "recipes": [
+      {"id": "potion_rage", "name": "Зелье Ярости", "cost": {"mountain_root": 5, "rock_crystal": 3}},
+      {"id": "potion_skin", "name": "Отвар Стальной Кожи", "cost": {"shimmer_mushroom": 4, "rock_crystal": 5}}
+    ]
   }
 }

@@ -122,6 +122,8 @@ def apply_config(cfg: dict):
     global COMBAT_BASE_STATS, CLAN_CFG, CLAN_CREATE_COST_GRAM, CLAN_CREATE_COST_GOLD, CLAN_CREATE_COST_MEAT
     global CLAN_MEMBER_LIMIT, CLAN_INITIAL_OPEN_SLOTS, CLAN_SLOT_PRICE_GRAM, CLAN_BURN_POWER_BY_TIER
     global CLAN_ROSTER_SIZE
+    global HUNT_CFG, HUNT_DURATION_SECONDS, HUNT_ENTRY_MEAT, HUNT_EAGLE_LEVEL, HUNT_POTION_PCT, HUNT_SCROLL_GOLD
+    global HUNT_MINE_LEVELS, HUNT_SLOT_PRICES, HUNT_ZONES, HUNT_RECIPES
 
     CONFIG = cfg
     MISSIONS = {m["id"]: m for m in CONFIG["missions"]}
@@ -245,6 +247,19 @@ def apply_config(cfg: dict):
     CLAN_SLOT_PRICE_GRAM = float(CLAN_CFG.get("slot_price_gram", 5))
     CLAN_BURN_POWER_BY_TIER = {k: float(v) for k, v in (CLAN_CFG.get("burn_power_by_tier") or {}).items()}
     CLAN_ROSTER_SIZE = int(CLAN_CFG.get("roster_size", 10))
+    # ОХОТА: шахта Горного Кристалла, Дальние Экспедиции (свои 3 слота),
+    # Алхимия, зелья для Арены и свиток скидки Кузницы (см. /api/hunt/*).
+    HUNT_CFG = CONFIG.get("hunt") or {}
+    HUNT_DURATION_SECONDS = float(HUNT_CFG.get("duration_hours", 12)) * 3600
+    HUNT_ENTRY_MEAT = float(HUNT_CFG.get("entry_cost_meat", 10))
+    HUNT_EAGLE_LEVEL = int(HUNT_CFG.get("eagle_level", 7))
+    HUNT_POTION_PCT = float(HUNT_CFG.get("potion_bonus_pct", 30))
+    HUNT_SCROLL_GOLD = float(HUNT_CFG.get("scroll_craft_gold", 150))
+    HUNT_MINE_LEVELS = sorted(HUNT_CFG.get("mine_levels") or [{"level": 1, "speed_per_day": 1.0}],
+                              key=lambda lv: int(lv.get("level") or 0))
+    HUNT_SLOT_PRICES = list(HUNT_CFG.get("slot_prices") or [])
+    HUNT_ZONES = {z["id"]: z for z in (HUNT_CFG.get("zones") or [])}
+    HUNT_RECIPES = {r["id"]: r for r in (HUNT_CFG.get("recipes") or [])}
 
 
 apply_config(load_config())
@@ -594,6 +609,20 @@ def read_farm(raw) -> List[dict]:
         listing_id = entry.get("listing_id")
         if isinstance(listing_id, str) and listing_id:
             slot["listing_id"] = listing_id
+        # Охота: орёл в Дальней Экспедиции (hunt_slot — какой из 3 слотов
+        # Охоты он занимает). Отметку сохраняем при любой перезаписи фермы.
+        try:
+            hunt_until = int(entry.get("hunt_until") or 0)
+        except (TypeError, ValueError):
+            hunt_until = 0
+        if hunt_until > 0 and entry.get("hunt_zone") in HUNT_ZONES:
+            try:
+                slot["hunt_until"] = hunt_until
+                slot["hunt_started_at"] = int(entry.get("hunt_started_at") or 0)
+                slot["hunt_zone"] = entry["hunt_zone"]
+                slot["hunt_slot"] = int(entry.get("hunt_slot") or 0)
+            except (TypeError, ValueError):
+                pass
         farm.append(slot)
     return farm
 
@@ -605,6 +634,19 @@ def slot_listed(slot: dict) -> bool:
 def slot_on_expedition(slot: dict) -> bool:
     """В экспедиции — с момента отправки и до сбора награды."""
     return int(slot.get("expedition_until") or 0) > 0
+
+
+def slot_on_hunt(slot: dict) -> bool:
+    """В Дальней Экспедиции (Охота) — с отправки и до сбора добычи."""
+    return int(slot.get("hunt_until") or 0) > 0
+
+
+HUNT_LOCK_DETAIL = "Орёл в Дальней Экспедиции (Охота) — до возвращения его нельзя {action}"
+
+
+def ensure_slot_not_on_hunt(slot: dict, action: str) -> None:
+    if slot_on_hunt(slot):
+        raise HTTPException(status_code=400, detail=HUNT_LOCK_DETAIL.format(action=action))
 
 
 STALE_SLOT_DETAIL = "stale: в этой ячейке уже другой орёл — ферма обновилась, проверь и повтори"
@@ -2101,6 +2143,56 @@ async def clans_gate(request: Request, call_next):
     return await call_next(request)
 
 
+# Модуль «ОХОТА» прячется тумблером в админке (вкладка «Охота»): флаг в БД
+# (settings → show_hunt_module), чтобы деплой его не сбрасывал. По умолчанию
+# скрыт — кнопка не появится у игроков, пока админ её не включит. Скрыто —
+# кнопки «Охота» в игре нет, а все /api/hunt/* отвечают 403 (прямой доступ
+# закрыт); владельцы (MAINTENANCE_WHITELIST) и тестеры видят модуль, чтобы
+# проверить его до запуска. Уже летящие орлы при выключении не теряются:
+# их добычу заберут после включения.
+HUNT_SETTING = "show_hunt_module"
+HUNT_REFRESH_SECONDS = 10
+HUNT_DISABLED_DETAIL = "Раздел «Охота» сейчас недоступен"
+_hunt_enabled = False
+_hunt_loaded_at = 0.0
+
+
+async def refresh_hunt_enabled(force: bool = False) -> None:
+    global _hunt_enabled, _hunt_loaded_at
+    now = time.time()
+    if not force and now - _hunt_loaded_at < HUNT_REFRESH_SECONDS:
+        return
+    _hunt_loaded_at = now
+    try:
+        _hunt_enabled = bool(await store.get_setting(HUNT_SETTING, False))
+    except Exception as e:
+        print(f"[hunt] не удалось прочитать флаг раздела: {type(e).__name__}: {e}")
+
+
+def hunt_open_for(request: Request) -> bool:
+    return _hunt_enabled or is_maintenance_tester(request)
+
+
+async def hunt_enabled_for(request: Request) -> bool:
+    try:
+        await refresh_hunt_enabled()
+        return hunt_open_for(request)
+    except Exception:
+        return False
+
+
+@app.middleware("http")
+async def hunt_gate(request: Request, call_next):
+    try:
+        if request.url.path.startswith("/api/hunt/"):
+            await refresh_hunt_enabled()
+            if not hunt_open_for(request):
+                return JSONResponse(status_code=403, content={"detail": HUNT_DISABLED_DETAIL, "hunt_disabled": True})
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def maintenance_gate(request: Request, call_next):
     """В режиме техработ /api/* отвечает 503 всем, кроме тестеров из списка
@@ -2176,6 +2268,9 @@ async def serve_config():
         cfg["missions"] = [{k: m.get(k) for k in ("id", "title", "type", "gram", "mnstr", "url") if k in m}
                            for m in missions_list()]
         cfg["missions_enabled"] = missions_on()
+        # Скрытые шансы Охоты (Древний Свиток) клиенту не показываем.
+        for zone in (cfg.get("hunt") or {}).get("zones") or []:
+            zone["rewards"] = [r for r in zone.get("rewards") or [] if not r.get("hidden")]
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
@@ -2249,6 +2344,10 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "active_slot": int(row.get("active_slot") or 0),
         "missions": row.get("missions") or [],
         "clans_enabled": await clans_enabled_for(request),
+        "show_hunt_module": await hunt_enabled_for(request),
+        # Баффы Охоты: зелья на следующий бой Арены и скидка свитка в Кузнице.
+        "hunt_buffs": {"rage": bool(row.get("buff_rage")), "skin": bool(row.get("buff_skin")),
+                       "craft_discount": bool(row.get("buff_craft_discount"))},
         "slots": int(row.get("slots") or START_SLOTS),
         "referrals": int(row.get("referrals") or 0),
         "invited_by": await inviter_name(row.get("referred_by")),
@@ -2417,6 +2516,8 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
         ensure_slot_not_listed(b)
         if slot_on_expedition(a) or slot_on_expedition(b):
             raise HTTPException(status_code=400, detail="Орёл в экспедиции")
+        ensure_slot_not_on_hunt(a, "сливать")
+        ensure_slot_not_on_hunt(b, "сливать")
         if a["id"] != b["id"]:
             raise HTTPException(status_code=400, detail="Разные виды орлов")
         if a["feed_level"] < FEED_LEVELS or b["feed_level"] < FEED_LEVELS:
@@ -2501,6 +2602,7 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
         slot = farm[i]
         ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
+        ensure_slot_not_on_hunt(slot, "отправить в обычную экспедицию")
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
         if slot["feed_level"] < FEED_LEVELS:
@@ -2591,6 +2693,7 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
         ensure_slot_not_listed(farm[i])
         if slot_on_expedition(farm[i]):
             raise HTTPException(status_code=400, detail="Орёл в экспедиции — его нельзя удалить")
+        ensure_slot_not_on_hunt(farm[i], "удалить")
         if len(farm) <= 1:
             raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
 
@@ -2833,6 +2936,16 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
 
     equipped = normalize_nest_equipped(row.get("nest_equipped"))
     player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id))}
+    # Зелья Охоты: +HUNT_POTION_PCT% к атаке (Ярость) и/или защите (Стальная
+    # Кожа) ровно на ОДИН бой — списываются в той же CAS-записи, что и энергия.
+    buff_rage, buff_skin = bool(row.get("buff_rage")), bool(row.get("buff_skin"))
+    if buff_rage or buff_skin:
+        stats = dict(player_fighter["stats"])
+        if buff_rage:
+            stats["atk"] = round(stats["atk"] * (1 + HUNT_POTION_PCT / 100))
+        if buff_skin:
+            stats["def"] = round(stats["def"] * (1 + HUNT_POTION_PCT / 100))
+        player_fighter["stats"] = stats
 
     opponent_id = match.get("opponent_id")
     is_bot = opponent_id is None
@@ -2857,10 +2970,18 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         energy, day = pvp_energy_of(fresh_row)
         if energy < PVP_ENERGY_COST:
             raise HTTPException(status_code=400, detail="Нет энергии")
+        if (buff_rage and not fresh_row.get("buff_rage")) or (buff_skin and not fresh_row.get("buff_skin")):
+            # Тот же бафф уже ушёл на параллельный бой — этот бой с ним не считаем.
+            raise HTTPException(status_code=409, detail="Зелье уже израсходовано в другом бою — найди соперника заново")
         energy -= PVP_ENERGY_COST
         new_rating = max(0, pvp_rating_of(fresh_row) + (PVP_RATING_WIN if player_won else -PVP_RATING_LOSS))
         fields = {"pvp_energy": energy, "pvp_energy_day": day, "pvp_rating": new_rating}
+        if buff_rage:
+            fields["buff_rage"] = False
+        if buff_skin:
+            fields["buff_skin"] = False
         extra = {
+            "buffs_used": {"rage": buff_rage, "skin": buff_skin},
             "won": player_won, "pvp_rating": new_rating, "pvp_energy": energy,
             "energy_reset_at": arena_energy_reset_at(day), "battle_log": result["log"],
             "player": {"stats": player_fighter["stats"]},
@@ -4230,22 +4351,29 @@ async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = 
         if particles < NEST_CRAFT_COST_PARTICLES:
             raise HTTPException(status_code=400, detail=f"Нужно {NEST_CRAFT_COST_PARTICLES} частичек")
         gold = float(row.get("gold") or 0)
-        if gold < NEST_CRAFT_COST_GOLD:
-            raise HTTPException(status_code=400, detail=f"Недостаточно золота ({NEST_CRAFT_COST_GOLD:.0f} 🪙)")
+        # Древний Свиток Крафта (Охота): бессрочная скидка на ОДИН крафт —
+        # золото HUNT_SCROLL_GOLD вместо NEST_CRAFT_COST_GOLD, частички те же.
+        discount = bool(row.get("buff_craft_discount"))
+        gold_cost = min(HUNT_SCROLL_GOLD, NEST_CRAFT_COST_GOLD) if discount else NEST_CRAFT_COST_GOLD
+        if gold < gold_cost:
+            raise HTTPException(status_code=400, detail=f"Недостаточно золота ({gold_cost:.0f} 🪙)")
         particles -= NEST_CRAFT_COST_PARTICLES
-        gold -= NEST_CRAFT_COST_GOLD
+        gold -= gold_cost
         item_type = random.choice(NEST_TYPE_ORDER)
         grade = NEST_GRADES[0]
         inventory = normalize_nest_inventory(row.get("nest_inventory"))
         inventory[item_type][grade] += 1
         fields = {"nest_particles": particles, "gold": gold, "nest_inventory": inventory}
+        if discount:
+            fields["buff_craft_discount"] = False
         return fields, {
             "particles": particles, "gold": gold,
             "inventory": inventory, "item_type": item_type, "grade": grade,
+            "gold_cost": gold_cost, "craft_discount_used": discount, "buff_craft_discount": False,
         }
 
     result = await run_farm_action(user_id, compute)
-    await record_economy(gold_craft=NEST_CRAFT_COST_GOLD, particles_craft=NEST_CRAFT_COST_PARTICLES, crafts=1)
+    await record_economy(gold_craft=result["gold_cost"], particles_craft=NEST_CRAFT_COST_PARTICLES, crafts=1)
     return result
 
 
@@ -4540,6 +4668,502 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
         return fields, dict(fields, eggs_sped_up=eggs_sped_up, expeditions_sped_up=expeditions_sped_up)
 
     return await run_farm_action(user_id, compute)
+
+
+# --- ОХОТА: шахта, Дальние Экспедиции, Склад, Алхимия ---
+# Всё считает и пишет сервер одной CAS-записью (run_farm_action), клиент
+# только шлёт намерение и показывает ответ. Ресурсы и предметы — в
+# hunt_items игрока; шахта — mine_level / mine_acc (накоплено, с дробью) /
+# mine_last (с какого момента досчитывать); слоты Охоты — hunt_slots_open;
+# летящий орёл помечен прямо в ячейке фермы (hunt_until/hunt_zone/hunt_slot,
+# см. read_farm), поэтому замок «в полёте» действует во всех действиях с
+# фермой. Баффы: buff_rage/buff_skin — на один бой Арены, buff_craft_discount
+# — бессрочная скидка на один крафт серого снаряжения в Кузнице.
+HUNT_RESOURCES = ("rock_crystal", "mountain_root", "shimmer_mushroom")
+HUNT_USABLES = ("craft_scroll", "potion_rage", "potion_skin")
+HUNT_ITEMS = HUNT_RESOURCES + HUNT_USABLES
+HUNT_ITEM_NAMES = {
+    "rock_crystal": "Горный Кристалл", "mountain_root": "Горный Корень", "shimmer_mushroom": "Мерцающий Гриб",
+    "craft_scroll": "Древний Свиток Крафта", "potion_rage": "Зелье Ярости", "potion_skin": "Отвар Стальной Кожи",
+}
+HUNT_SLOTS = 3
+
+
+class HuntAction(BaseModel):
+    user_id: int
+
+
+class HuntStart(BaseModel):
+    user_id: int
+    zone_id: str
+    hunt_slot: int
+
+
+class HuntSlotAction(BaseModel):
+    user_id: int
+    hunt_slot: int
+
+
+class HuntCraft(BaseModel):
+    user_id: int
+    recipe_id: str
+
+
+class HuntUse(BaseModel):
+    user_id: int
+    item: str
+
+
+def hunt_items_of(row: dict) -> dict:
+    raw = row.get("hunt_items") if isinstance(row.get("hunt_items"), dict) else {}
+    out = {}
+    for key in HUNT_ITEMS:
+        try:
+            out[key] = max(0, int(raw.get(key) or 0))
+        except (TypeError, ValueError):
+            out[key] = 0
+    return out
+
+
+def mine_level_of(row: dict) -> int:
+    try:
+        level = int(row.get("mine_level") or 1)
+    except (TypeError, ValueError):
+        level = 1
+    return max(1, min(len(HUNT_MINE_LEVELS), level))
+
+
+def mine_speed(level: int) -> float:
+    """Горный Кристалл в сутки на уровне level."""
+    return float(HUNT_MINE_LEVELS[level - 1].get("speed_per_day") or 0)
+
+
+def mine_pending(row: dict, now: float) -> float:
+    """Накоплено в шахте к моменту now (с дробью): сохранённый остаток плюс
+    добыча с mine_last по текущей скорости. mine_last = 0 — шахта ещё не
+    запущена (запускается при первом открытии Охоты)."""
+    acc = max(0.0, float(row.get("mine_acc") or 0))
+    last = float(row.get("mine_last") or 0)
+    if last <= 0:
+        return acc
+    return acc + max(0.0, now - last) * mine_speed(mine_level_of(row)) / 86400
+
+
+def hunt_slots_open_of(row: dict) -> int:
+    try:
+        return max(0, min(HUNT_SLOTS, int(row.get("hunt_slots_open") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def hunt_flights(farm: List[dict]) -> dict:
+    """{слот Охоты: (индекс ячейки фермы, ячейка)} — кто сейчас летит."""
+    out = {}
+    for i, slot in enumerate(farm):
+        if slot_on_hunt(slot):
+            out.setdefault(int(slot.get("hunt_slot") or 0), (i, slot))
+    return out
+
+
+def hunt_tier_rank(tier_id: Optional[str]) -> int:
+    return TIER_INDEX.get(tier_id, 0)
+
+
+def hunt_pick_eagle(farm: List[dict], zone: dict) -> Optional[int]:
+    """Авто-подбор: самый сильный СВОБОДНЫЙ орёл 7 уровня — наивысшей
+    редкости, но не ниже минимальной для зоны. Свободный = не на рынке, не в
+    обычной экспедиции и не в другой Дальней Экспедиции."""
+    min_rank = hunt_tier_rank(zone.get("min_tier"))
+    best, best_rank = None, -1
+    for i, slot in enumerate(farm):
+        if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot):
+            continue
+        rank = tier_index(slot["id"])
+        if rank >= min_rank and rank > best_rank:
+            best, best_rank = i, rank
+    return best
+
+
+def hunt_roll_rewards(zone: dict, rng=random) -> dict:
+    loot = {}
+    for r in zone.get("rewards") or []:
+        if r.get("item") not in HUNT_ITEMS:
+            continue
+        if rng.random() < float(r.get("chance", 1.0)):
+            amount = rng.randint(int(r.get("min", 1)), int(r.get("max", r.get("min", 1))))
+            if amount > 0:
+                loot[r["item"]] = loot.get(r["item"], 0) + amount
+    return loot
+
+
+def hunt_state(row: dict, now: Optional[float] = None) -> dict:
+    """Всё, что нужно экрану Охоты."""
+    now = time.time() if now is None else now
+    farm = read_farm(row.get("monsters"))
+    level = mine_level_of(row)
+    nxt = HUNT_MINE_LEVELS[level] if level < len(HUNT_MINE_LEVELS) else None
+    opened = hunt_slots_open_of(row)
+    flights = hunt_flights(farm)
+    slots = []
+    for k in range(HUNT_SLOTS):
+        price = HUNT_SLOT_PRICES[k] if k < len(HUNT_SLOT_PRICES) else {}
+        flight = None
+        if k in flights:
+            idx, slot = flights[k]
+            flight = {"slot_index": idx, "monster_id": slot["id"], "zone": slot.get("hunt_zone"),
+                      "started_at": int(slot.get("hunt_started_at") or 0), "until": int(slot["hunt_until"]),
+                      "ready": now >= int(slot["hunt_until"])}
+        slots.append({"index": k, "open": k < opened, "next_to_open": k == opened,
+                      "price_gold": float(price.get("gold") or 0), "price_gram": float(price.get("gram") or 0),
+                      "flight": flight})
+    return {
+        "server_time": now,
+        "items": hunt_items_of(row),
+        "mine": {
+            "level": level, "max_level": len(HUNT_MINE_LEVELS), "speed_per_day": mine_speed(level),
+            "pending": mine_pending(row, now), "running": float(row.get("mine_last") or 0) > 0,
+            "next": None if not nxt else {
+                "level": int(nxt.get("level") or level + 1), "speed_per_day": float(nxt.get("speed_per_day") or 0),
+                "cost_gold": float(nxt.get("cost_gold") or 0), "cost_gram": float(nxt.get("cost_gram") or 0),
+                "cost_particles": float(nxt.get("cost_particles") or 0),
+            },
+        },
+        "slots_open": opened, "slots": slots,
+        "buffs": {"rage": bool(row.get("buff_rage")), "skin": bool(row.get("buff_skin")),
+                  "craft_discount": bool(row.get("buff_craft_discount"))},
+        "coins": float(row.get("coins") or 0), "gold": float(row.get("gold") or 0),
+        "mnstr": float(row.get("mnstr") or 0), "particles": float(row.get("nest_particles") or 0),
+        "monsters": farm,
+        "ops": int(row.get("ops") or 0),
+    }
+
+
+def _hunt_result(fields: dict, row: dict, now: float, **extra) -> tuple:
+    fresh = dict(row)
+    fresh.update(fields)
+    fresh["ops"] = int(row.get("ops") or 0) + 1
+    return fields, dict(extra, hunt=hunt_state(fresh, now))
+
+
+async def hunt_record_gram(gram: float, gold: float = 0.0) -> None:
+    """GRAM, потраченные в Охоте, копятся в общем TOTAL_BUYBACK_POOL
+    (economy → gram_buyback_pool, видно во вкладке «Охота» админки)."""
+    if gram or gold:
+        await record_economy(gram_buyback_pool=gram, gram_hunt=gram, gold_hunt=gold)
+
+
+@app.get("/api/hunt/state/{user_id}")
+async def hunt_get_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Состояние Охоты. Первое открытие запускает шахту (mine_last = сейчас)."""
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        row = await fetch_user(user_id)
+        if float(row.get("mine_last") or 0) <= 0:
+            def compute(r):
+                now = time.time()
+                if float(r.get("mine_last") or 0) > 0:
+                    return {}, {"hunt": None}
+                return _hunt_result({"mine_last": now, "mine_acc": float(r.get("mine_acc") or 0)}, r, now)
+            result = await run_farm_action(user_id, compute)
+            if result.get("hunt"):
+                return dict(result["hunt"], status="success")
+            row = await fetch_user(user_id)
+        return dict(hunt_state(row), status="success")
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить Охоту — попробуй ещё раз")
+
+
+@app.post("/api/hunt/mine/collect")
+async def hunt_mine_collect(request: HuntAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Забирает из шахты целые кристаллы (floor); дробный остаток копится дальше."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        pending = mine_pending(row, now)
+        take = int(math.floor(pending + 1e-9))
+        if take < 1:
+            raise HTTPException(status_code=400, detail="Целого кристалла ещё не накопилось")
+        items = hunt_items_of(row)
+        items["rock_crystal"] += take
+        fields = {"hunt_items": items, "mine_acc": max(0.0, pending - take), "mine_last": now}
+        return _hunt_result(fields, row, now, collected=take)
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось собрать кристаллы — попробуй ещё раз")
+
+
+@app.post("/api/hunt/mine/upgrade")
+async def hunt_mine_upgrade(request: HuntAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Следующий уровень шахты. Накопленное до улучшения досчитывается по
+    СТАРОЙ скорости и не пропадает. GRAM — в TOTAL_BUYBACK_POOL."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        level = mine_level_of(row)
+        if level >= len(HUNT_MINE_LEVELS):
+            raise HTTPException(status_code=400, detail="Шахта уже максимального уровня")
+        nxt = HUNT_MINE_LEVELS[level]
+        cost_gold = float(nxt.get("cost_gold") or 0)
+        cost_gram = float(nxt.get("cost_gram") or 0)
+        cost_particles = float(nxt.get("cost_particles") or 0)
+        gold = float(row.get("gold") or 0)
+        coins = float(row.get("coins") or 0)
+        particles = float(row.get("nest_particles") or 0)
+        if gold < cost_gold:
+            raise HTTPException(status_code=400, detail=f"Не хватает золота: нужно {cost_gold:g} 🪙")
+        if coins < cost_gram:
+            raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {cost_gram:g}")
+        if particles < cost_particles:
+            raise HTTPException(status_code=400, detail=f"Не хватает частичек снаряжения: нужно {cost_particles:g}")
+        fields = {
+            "mine_level": level + 1, "mine_acc": mine_pending(row, now),
+            "mine_last": now if float(row.get("mine_last") or 0) > 0 else 0,
+        }
+        if cost_gold:
+            fields["gold"] = gold - cost_gold
+        if cost_gram:
+            fields["coins"] = coins - cost_gram
+        if cost_particles:
+            fields["nest_particles"] = particles - cost_particles
+        return _hunt_result(fields, row, now, spent_gram=cost_gram, spent_gold=cost_gold)
+
+    try:
+        result = await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось улучшить шахту — попробуй ещё раз")
+    await hunt_record_gram(result["spent_gram"], result["spent_gold"])
+    return result
+
+
+@app.post("/api/hunt/slot/open")
+async def hunt_open_slot(request: HuntAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Открывает следующий по порядку слот Дальних Экспедиций."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        opened = hunt_slots_open_of(row)
+        if opened >= HUNT_SLOTS:
+            raise HTTPException(status_code=400, detail="Все слоты уже открыты")
+        price = HUNT_SLOT_PRICES[opened] if opened < len(HUNT_SLOT_PRICES) else {}
+        cost_gold, cost_gram = float(price.get("gold") or 0), float(price.get("gram") or 0)
+        gold, coins = float(row.get("gold") or 0), float(row.get("coins") or 0)
+        if gold < cost_gold:
+            raise HTTPException(status_code=400, detail=f"Не хватает золота: нужно {cost_gold:g} 🪙")
+        if coins < cost_gram:
+            raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {cost_gram:g}")
+        fields = {"hunt_slots_open": opened + 1}
+        if cost_gold:
+            fields["gold"] = gold - cost_gold
+        if cost_gram:
+            fields["coins"] = coins - cost_gram
+        return _hunt_result(fields, row, now, opened_slot=opened, spent_gram=cost_gram, spent_gold=cost_gold)
+
+    try:
+        result = await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось открыть слот — попробуй ещё раз")
+    await hunt_record_gram(result["spent_gram"], result["spent_gold"])
+    return result
+
+
+@app.post("/api/hunt/start")
+async def hunt_start(request: HuntStart, x_telegram_init_data: Optional[str] = Header(None)):
+    """Отправляет в зону самого сильного свободного орла 7 уровня (авто-подбор)
+    за HUNT_ENTRY_MEAT Meat. Полёт — ровно HUNT_DURATION_SECONDS, без ускорений."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    zone = HUNT_ZONES.get(request.zone_id)
+    if not zone:
+        raise HTTPException(status_code=404, detail="Зона не найдена")
+
+    def compute(row):
+        now = time.time()
+        k = request.hunt_slot
+        if not (0 <= k < hunt_slots_open_of(row)):
+            raise HTTPException(status_code=400, detail="Этот слот экспедиций ещё закрыт")
+        farm = read_farm(row.get("monsters"))
+        if k in hunt_flights(farm):
+            raise HTTPException(status_code=400, detail="В этом слоте уже летит орёл")
+        mnstr = float(row.get("mnstr") or 0)
+        if mnstr < HUNT_ENTRY_MEAT:
+            raise HTTPException(status_code=400, detail=f"Нужно {HUNT_ENTRY_MEAT:g} Meat")
+        idx = hunt_pick_eagle(farm, zone)
+        if idx is None:
+            tier = next((t for t in CONFIG["tiers"] if t["id"] == zone.get("min_tier")), None)
+            raise HTTPException(status_code=400, detail=(
+                f"Нет свободного орла {HUNT_EAGLE_LEVEL} уровня редкости «{tier['name'] if tier else zone.get('min_tier')}» или выше"))
+        slot = farm[idx]
+        slot["hunt_started_at"] = int(now)
+        slot["hunt_until"] = int(now + HUNT_DURATION_SECONDS)
+        slot["hunt_zone"] = zone["id"]
+        slot["hunt_slot"] = k
+        fields = {"monsters": farm, "mnstr": mnstr - HUNT_ENTRY_MEAT}
+        return _hunt_result(fields, row, now, slot_index=idx, monster_id=slot["id"])
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось отправить орла — попробуй ещё раз")
+
+
+@app.post("/api/hunt/collect")
+async def hunt_collect(request: HuntSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Забирает добычу вернувшегося орла; добычу разыгрывает сервер."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        farm = read_farm(row.get("monsters"))
+        flight = hunt_flights(farm).get(request.hunt_slot)
+        if not flight:
+            raise HTTPException(status_code=404, detail="В этом слоте никто не летит")
+        idx, slot = flight
+        if now < int(slot["hunt_until"]):
+            raise HTTPException(status_code=400, detail="Орёл ещё не вернулся")
+        zone = HUNT_ZONES.get(slot.get("hunt_zone")) or {}
+        loot = hunt_roll_rewards(zone)
+        items = hunt_items_of(row)
+        for key, amount in loot.items():
+            items[key] += amount
+        for key in ("hunt_until", "hunt_started_at", "hunt_zone", "hunt_slot"):
+            slot.pop(key, None)
+        fields = {"monsters": farm, "hunt_items": items}
+        return _hunt_result(fields, row, now, loot=loot, zone=zone.get("id"), slot_index=idx)
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось забрать добычу — попробуй ещё раз")
+
+
+@app.post("/api/hunt/craft")
+async def hunt_craft(request: HuntCraft, x_telegram_init_data: Optional[str] = Header(None)):
+    """Алхимия: сырьё со Склада -> зелье на Склад."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    recipe = HUNT_RECIPES.get(request.recipe_id)
+    if not recipe or recipe["id"] not in HUNT_USABLES:
+        raise HTTPException(status_code=404, detail="Рецепт не найден")
+
+    def compute(row):
+        now = time.time()
+        items = hunt_items_of(row)
+        for key, need in (recipe.get("cost") or {}).items():
+            if items.get(key, 0) < int(need):
+                raise HTTPException(status_code=400, detail=f"Не хватает: {HUNT_ITEM_NAMES.get(key, key)} ({int(need)})")
+        for key, need in (recipe.get("cost") or {}).items():
+            items[key] -= int(need)
+        items[recipe["id"]] += 1
+        return _hunt_result({"hunt_items": items}, row, now, crafted=recipe["id"])
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось сварить зелье — попробуй ещё раз")
+
+
+HUNT_BUFF_FIELD = {"potion_rage": "buff_rage", "potion_skin": "buff_skin", "craft_scroll": "buff_craft_discount"}
+
+
+@app.post("/api/hunt/use")
+async def hunt_use(request: HuntUse, x_telegram_init_data: Optional[str] = Header(None)):
+    """Применяет предмет со Склада: зелье — бафф на следующий бой Арены,
+    свиток — бессрочная скидка на крафт серого снаряжения в Кузнице. Тот же
+    бафф повторно не включается, пока не израсходован (иначе предмет сгорел
+    бы впустую)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    buff_field = HUNT_BUFF_FIELD.get(request.item)
+    if not buff_field:
+        raise HTTPException(status_code=404, detail="Этот предмет нельзя применить")
+
+    def compute(row):
+        now = time.time()
+        items = hunt_items_of(row)
+        if items[request.item] < 1:
+            raise HTTPException(status_code=400, detail="Такого предмета на Складе нет")
+        if row.get(buff_field):
+            detail = ("Скидка свитка уже действует — сначала скрафти серое снаряжение в Кузнице"
+                      if request.item == "craft_scroll" else "Это зелье уже действует — оно сработает в следующем бою Арены")
+            raise HTTPException(status_code=400, detail=detail)
+        items[request.item] -= 1
+        return _hunt_result({"hunt_items": items, buff_field: True}, row, now, used=request.item)
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось применить предмет — попробуй ещё раз")
+
+
+# --- АДМИН: ОХОТА (тумблер раздела и мониторинг ресурсов игроков) ---
+
+class AdminHuntToggle(BaseModel):
+    enabled: bool
+
+
+@app.get("/admin/api/hunt")
+async def admin_hunt(search: str = "", limit: int = 50, offset: int = 0, _: None = Depends(require_admin)):
+    try:
+        await refresh_hunt_enabled(force=True)
+        rows, total = await store.list_hunt_players(search, max(1, min(200, int(limit))), max(0, int(offset)))
+        now = time.time()
+        items = []
+        for row in rows:
+            farm = read_farm(row.get("monsters"))
+            items.append({
+                "user_id": row["_id"], "name": row.get("name") or "",
+                "items": hunt_items_of(row), "mine_level": mine_level_of(row),
+                "mine_pending": round(mine_pending(row, now), 2),
+                "slots_open": hunt_slots_open_of(row), "flying": len(hunt_flights(farm)),
+                "buffs": {"rage": bool(row.get("buff_rage")), "skin": bool(row.get("buff_skin")),
+                          "craft_discount": bool(row.get("buff_craft_discount"))},
+            })
+        totals = await store.hunt_totals()
+        economy = await store.economy_total()
+        return {"enabled": _hunt_enabled, "items": items, "total": total, "totals": totals,
+                "buyback_pool": float(economy.get("gram_buyback_pool") or 0)}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить Охоту: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/hunt/enabled")
+async def admin_toggle_hunt(body: AdminHuntToggle, _: None = Depends(require_admin)):
+    """[Включить / Скрыть ОХОТУ] — CONFIG.show_hunt_module для всех игроков."""
+    try:
+        await store.set_setting(HUNT_SETTING, bool(body.enabled))
+        await refresh_hunt_enabled(force=True)
+        print(f"[admin] раздел «Охота»: {'ВКЛ' if _hunt_enabled else 'скрыт'}")
+        return {"enabled": _hunt_enabled}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось переключить Охоту: {type(e).__name__}: {e}")
 
 
 # --- ЗАДАНИЯ: список редактируется в админке (вкладка «Задания») и хранится
@@ -4942,6 +5566,8 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
         raise HTTPException(status_code=400, detail="Орёл выставлен на рынок — сначала сними лот")
     if result["status"] == "on_expedition":
         raise HTTPException(status_code=400, detail="Орёл в экспедиции — купцу его не продать")
+    if result["status"] == "on_hunt":
+        raise HTTPException(status_code=400, detail=HUNT_LOCK_DETAIL.format(action="продать купцу"))
     if result["status"] == "not_fed":
         raise HTTPException(status_code=400, detail="Купец берёт только полностью откормленных орлов")
     if result["status"] == "last_eagle":
@@ -5019,6 +5645,7 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
         messages = {
             "listed": "Этот орёл уже выставлен на рынок",
             "on_expedition": "Орёл в экспедиции — его нельзя выставить на рынок",
+            "on_hunt": HUNT_LOCK_DETAIL.format(action="выставить на рынок"),
             "conflict": "Ферма изменилась — попробуй ещё раз",
         }
         raise HTTPException(status_code=400, detail=messages.get(reason, "Нет такого прокачанного орла на ферме"))
