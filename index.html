@@ -9149,7 +9149,26 @@
 
             setInterval(saveNow, 10000);
             window.addEventListener('pagehide', saveNow);
-            document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) saveNow(); else syncVipMeatIfDue();
+            });
+            setInterval(syncVipMeatIfDue, 60000);
+        }
+
+        // VIP-Meat начисляет сервер при загрузке (/api/load). Если игра долго
+        // открыта или висит в фоне Telegram, наступившие сутки иначе
+        // дошли бы только при следующем запуске — подтягиваем их сами.
+        // Условие то же, что у сервера (vip_meat_due): есть день, наступивший
+        // раньше окончания тарифа.
+        let vipMeatSyncAt = 0;
+        function syncVipMeatIfDue() {
+            const v = state.vip || {};
+            const last = Number(v.lastMeatAt) || 0, now = nowSeconds();
+            if (!v.tier || last <= 0 || offlineOnly || !state.userId || document.hidden) return;
+            if (!(last + 86400 <= now && last + 86400 < (Number(v.expiresAt) || 0))) return;
+            if (Date.now() - vipMeatSyncAt < 5 * 60 * 1000) return;
+            vipMeatSyncAt = Date.now();
+            syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
         }
 
         function bootFail(message) {

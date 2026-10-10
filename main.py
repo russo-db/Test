@@ -1116,40 +1116,53 @@ def ledger_labelled(source: str):
     return deco
 
 
+VIP_MEAT_DAY = 86400
+
+
+def vip_meat_due(row: dict, now: float) -> tuple:
+    """Сколько VIP-Meat положено с прошлого начисления: (дней, Meat, новый
+    vip_last_meat_at). Выплата k-го дня — в момент last + k суток и только
+    пока тариф ещё действовал (строго раньше vip_expires_at): первый день
+    платит сама покупка, так что за весь срок выходит ровно duration_days
+    выплат. Зашёл после окончания — недоплаченные дни срока всё равно
+    приходят, но ни одного дня сверх срока."""
+    tier = VIP_TIERS.get(row.get("vip_tier") or "")
+    per_day = float(tier.get("meat_per_day") or 0) if tier else 0.0
+    last = float(row.get("vip_last_meat_at") or 0)
+    expires = float(row.get("vip_expires_at") or 0)
+    if per_day <= 0 or last <= 0 or expires <= last:
+        return 0, 0.0, last
+    days = int((now - last) // VIP_MEAT_DAY)
+    days_in_term = int(math.ceil((expires - last) / VIP_MEAT_DAY - 1e-9)) - 1
+    days = max(0, min(days, days_in_term))
+    return days, days * per_day, last + days * VIP_MEAT_DAY
+
+
 @ledger_labelled("vip:meat")
 async def accrue_vip_meat(user_id: int, row: dict) -> dict:
     """Начисляет накопленный VIP-Meat (раз в сутки, с наверстыванием за
-    время офлайн, но не дольше, чем тариф был активен) — раньше это делал
-    клиент в collectVipDailyMeat() при каждом заходе. Вызывается из
-    /api/load, чтобы офлайн-время не пропадало зря."""
-    if not vip_active(row):
-        return row
-    tier = current_vip_tier(row)
-    if not tier or not tier.get("meat_per_day"):
-        return row
-    now = time.time()
-    day_len = 86400
-    last = float(row.get("vip_last_meat_at") or 0)
-    days = int((now - last) // day_len)
-    if days <= 0:
-        return row
-    cap_at = min(now, float(row.get("vip_expires_at") or 0))
-    days = min(days, max(0, int((cap_at - last) // day_len)))
-    if days <= 0:
-        return row
-
-    for _ in range(3):
+    время офлайн, но не дольше, чем тариф был активен). Вызывается из
+    /api/load. CAS по ops; при конфликте долг пересчитывается по СВЕЖЕМУ
+    документу — параллельный /api/load мог уже выплатить эти дни (раньше
+    повтор шёл по старому расчёту и выплачивал их второй раз)."""
+    for _ in range(5):
+        now = time.time()
+        days, amount, new_last = vip_meat_due(row, now)
+        if days > 0:
+            fields = {"vip_last_meat_at": new_last, "mnstr": float(row.get("mnstr") or 0) + amount}
+        elif vip_active(row) and float(row.get("vip_last_meat_at") or 0) <= 0:
+            # VIP без отметки начислений (выдан из админки до исправления) —
+            # считаем от сейчас, а не от 1970 года.
+            fields = {"vip_last_meat_at": now}
+        else:
+            return row
         ops = int(row.get("ops") or 0)
-        new_last = last + days * day_len
-        amount = days * float(tier["meat_per_day"])
-        mnstr = float(row.get("mnstr") or 0) + amount
-        fields = {"vip_last_meat_at": new_last, "mnstr": mnstr}
         if await store.cas_update(user_id, fields, ops):
             row = dict(row)
             row.update(fields)
             row["ops"] = ops + 1
             return row
-        row = await fetch_user(user_id)  # гонка с другим действием — перечитать и попробовать снова
+        row = await fetch_user(user_id)  # гонка с другим действием — перечитать и посчитать заново
     return row
 
 
@@ -4502,7 +4515,10 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
         now = time.time()
         expires_at = now + float(tier.get("duration_days") or 0) * 86400
         meat_per_day = float(tier.get("meat_per_day") or 0)
-        mnstr = float(row.get("mnstr") or 0) + meat_per_day
+        # Недоплаченные дни прошлого (истёкшего) тарифа — до того, как новая
+        # покупка перезапишет vip_last_meat_at.
+        _, old_due, _ = vip_meat_due(row, now)
+        mnstr = float(row.get("mnstr") or 0) + old_due + meat_per_day
         coins -= price
 
         # Яйца, которые уже зреют, и орлы, уже ушедшие в экспедицию, тоже
@@ -5505,9 +5521,29 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
     if "eggs_board_unlocked" in fields:
         fields["eggs_board_unlocked"] = max(2, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
 
+    def compute(row):
+        out = dict(fields)
+        if "vip_tier" in out or "vip_expires_at" in out:
+            now = time.time()
+            merged = dict(row)
+            merged.update(out)
+            was_active = vip_active(row)
+            if not was_active and "mnstr" not in out:
+                # Недоплаченные дни истёкшего тарифа — до сброса отметки ниже.
+                _, due, _ = vip_meat_due(row, now)
+                if due:
+                    out["mnstr"] = float(row.get("mnstr") or 0) + due
+            if vip_active(merged) and (not was_active or merged.get("vip_tier") != row.get("vip_tier")
+                                       or float(row.get("vip_last_meat_at") or 0) <= 0):
+                # Выданный/сменённый админом VIP начисляет Meat с этого момента.
+                # Без этого отметка оставалась 0 и первый же вход выплачивал
+                # Meat «за все дни с 1970 года» (сотни тысяч).
+                out["vip_last_meat_at"] = now
+        return out, {}
+
     # Через CAS (ops+1), как и действия игрока: иначе тап игрока, прочитавший
     # документ до правки админа, записал бы свои старые поля поверх неё.
-    await run_farm_action(user_id, lambda row: (fields, {}))
+    await run_farm_action(user_id, compute)
     fresh = await store.get(user_id)
     fresh["monsters"] = read_farm(fresh.get("monsters"))
     return fresh

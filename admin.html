@@ -2264,14 +2264,20 @@ async function savePlayerModal() {
         gold: Number(document.getElementById('fGold').value) || 0,
         slots: Number(document.getElementById('fSlots').value) || 3,
         active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
-        vip_tier: document.getElementById('fVipTier').value,
-        vip_expires_at: (() => {
-            const days = Number(document.getElementById('fVipDays').value) || 0;
-            return days > 0 ? Math.floor(Date.now() / 1000) + days * 86400 : 0;
-        })(),
         monsters: editingPlayer.monsters,
         eggs_board: eggsBoard,
     };
+    // VIP отправляем, только если его поменяли: «дней осталось» округлено
+    // вверх, и пересчёт срока при каждом сохранении карточки незаметно
+    // продлевал VIP игроку почти на сутки.
+    const vipTierEl = document.getElementById('fVipTier'), vipDaysEl = document.getElementById('fVipDays');
+    if (vipTierEl.value !== (editingPlayer.vip_tier || '') || vipDaysEl.value !== vipDaysEl.defaultValue) {
+        const days = Number(vipDaysEl.value) || 0;
+        payload.vip_tier = vipTierEl.value;
+        payload.vip_expires_at = vipDaysEl.value !== vipDaysEl.defaultValue
+            ? (days > 0 ? Math.floor(Date.now() / 1000) + days * 86400 : 0)
+            : Number(editingPlayer.vip_expires_at) || 0;
+    }
     try {
         await api(`/admin/api/players/${editingPlayer.user_id}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
