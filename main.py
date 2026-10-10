@@ -2171,6 +2171,15 @@ async def clans_gate(request: Request, call_next):
 # проверить его до запуска. Уже летящие орлы при выключении не теряются:
 # их добычу заберут после включения.
 HUNT_SETTING = "show_hunt_module"
+# Время полёта Дальних Экспедиций (Охота), мс — задаётся в админке (вкладка
+# «Охота»), хранится в БД (settings), чтобы деплой его не сбрасывал. Нет
+# значения — берётся hunt.duration_hours из конфига (12 ч). Влияет только на
+# НОВЫЕ полёты Охоты: у летящих орлов время возврата уже записано в ячейке,
+# а обычные экспедиции за золотом и прочие таймеры его не читают.
+HUNT_FLIGHT_SETTING = "hunt_flight_duration_ms"
+HUNT_FLIGHT_MIN_MS = 1000                      # 1 секунда
+HUNT_FLIGHT_MAX_MS = 30 * 24 * 3600 * 1000     # 30 суток
+_hunt_flight_ms: Optional[int] = None
 HUNT_REFRESH_SECONDS = 10
 HUNT_DISABLED_DETAIL = "Раздел «Охота» сейчас недоступен"
 _hunt_enabled = False
@@ -2192,6 +2201,25 @@ async def refresh_hunt_enabled(force: bool = False) -> None:
         _hunt_loaded_at = time.time()
     except Exception as e:
         print(f"[hunt] не удалось прочитать флаг раздела: {type(e).__name__}: {e}")
+    try:
+        _set_hunt_flight_ms(await store.get_setting(HUNT_FLIGHT_SETTING, None))
+    except Exception as e:
+        print(f"[hunt] не удалось прочитать время полёта: {type(e).__name__}: {e}")
+
+
+def _set_hunt_flight_ms(value) -> None:
+    global _hunt_flight_ms
+    try:
+        ms = int(value) if value is not None else None
+    except (TypeError, ValueError):
+        ms = None
+    _hunt_flight_ms = ms if ms is not None and HUNT_FLIGHT_MIN_MS <= ms <= HUNT_FLIGHT_MAX_MS else None
+    CONFIG["hunt_flight_duration_ms"] = hunt_flight_ms()
+
+
+def hunt_flight_ms() -> int:
+    """CONFIG.hunt_flight_duration_ms: настройка из админки, иначе конфиг (12 ч)."""
+    return _hunt_flight_ms if _hunt_flight_ms is not None else int(HUNT_DURATION_SECONDS * 1000)
 
 
 def hunt_open_for(request: Request) -> bool:
@@ -2302,6 +2330,8 @@ async def serve_config():
         for zone in _cfg_list(hunt_cfg, "zones"):
             zone["rewards"] = [{"item": r.get("item"), "hidden": True} if r.get("hidden") else r
                                for r in _cfg_list(zone, "rewards")]
+        hunt_cfg["hunt_flight_duration_ms"] = hunt_flight_ms()
+        cfg["hunt_flight_duration_ms"] = hunt_flight_ms()
         # Таблицу уровней шахты игрокам не показываем: следующий уровень
         # (цена и скорость) приходит в /api/hunt/state, остальные скрыты.
         hunt_cfg.pop("mine_levels", None)
@@ -4889,6 +4919,7 @@ def hunt_state(row: dict, now: Optional[float] = None) -> dict:
             },
         },
         "slots_open": opened, "slots": slots,
+        "flight_seconds": hunt_flight_ms() / 1000,
         "buffs": {"rage": bool(row.get("buff_rage")), "skin": bool(row.get("buff_skin")),
                   "craft_discount": bool(row.get("buff_craft_discount"))},
         "coins": float(row.get("coins") or 0), "gold": float(row.get("gold") or 0),
@@ -5051,7 +5082,7 @@ async def hunt_open_slot(request: HuntOpenSlot, x_telegram_init_data: Optional[s
 @app.post("/api/hunt/start")
 async def hunt_start(request: HuntStart, x_telegram_init_data: Optional[str] = Header(None)):
     """Отправляет в зону самого слабого подходящего свободного орла 7 уровня (авто-подбор)
-    за HUNT_ENTRY_MEAT Meat. Полёт — ровно HUNT_DURATION_SECONDS, без ускорений."""
+    за HUNT_ENTRY_MEAT Meat. Полёт — hunt_flight_ms() (настройка админки), без ускорений."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     zone = HUNT_ZONES.get(request.zone_id)
     if not zone:
@@ -5075,7 +5106,7 @@ async def hunt_start(request: HuntStart, x_telegram_init_data: Optional[str] = H
                 f"Нет свободного орла {HUNT_EAGLE_LEVEL} уровня редкости «{tier['name'] if tier else zone.get('min_tier')}» или выше"))
         slot = farm[idx]
         slot["hunt_started_at"] = int(now)
-        slot["hunt_until"] = int(now + HUNT_DURATION_SECONDS)
+        slot["hunt_until"] = int(now + hunt_flight_ms() / 1000)
         slot["hunt_zone"] = zone["id"]
         slot["hunt_slot"] = k
         fields = {"monsters": farm, "mnstr": mnstr - HUNT_ENTRY_MEAT}
@@ -5217,10 +5248,33 @@ async def admin_hunt(search: str = "", limit: int = 50, offset: int = 0, _: None
         totals = await store.hunt_totals()
         economy = await store.economy_total()
         return {"enabled": _hunt_enabled, "items": items, "total": total, "totals": totals,
-                "buyback_pool": float(economy.get("gram_buyback_pool") or 0)}
+                "buyback_pool": float(economy.get("gram_buyback_pool") or 0),
+                "flight_duration_ms": hunt_flight_ms(), "flight_duration_custom": _hunt_flight_ms is not None}
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось загрузить Охоту: {type(e).__name__}: {e}")
+
+
+class AdminHuntFlight(BaseModel):
+    duration_ms: int
+
+
+@app.post("/admin/api/hunt/flight_duration")
+async def admin_hunt_flight_duration(body: AdminHuntFlight, _: None = Depends(require_admin)):
+    """Время полёта Дальних Экспедиций — только для новых полётов Охоты."""
+    try:
+        ms = int(body.duration_ms)
+        if not HUNT_FLIGHT_MIN_MS <= ms <= HUNT_FLIGHT_MAX_MS:
+            raise HTTPException(status_code=400, detail="Время полёта — от 1 секунды до 30 суток")
+        await store.set_setting(HUNT_FLIGHT_SETTING, ms)
+        _set_hunt_flight_ms(ms)
+        print(f"[admin] время полёта Охоты: {ms} мс")
+        return {"flight_duration_ms": hunt_flight_ms()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить время полёта: {type(e).__name__}: {e}")
 
 
 @app.post("/admin/api/hunt/enabled")

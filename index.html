@@ -2541,7 +2541,8 @@
                 'hunt.slot.collect': 'Забрать',
                 'hunt.slot.confirmTitle': '🔓 Слот экспедиции {n}',
                 'hunt.slot.confirmText': 'Открыть навсегда за <b>{cost}</b>?',
-                'hunt.zone.meta': '⏱ {hours} ч · 🥩 {meat} Meat · от {tier} орла {level} ур.',
+                'hunt.zone.meta': '⏱ {dur} · 🥩 {meat} Meat · от {tier} орла {level} ур.',
+                'hunt.unit.h': 'ч', 'hunt.unit.m': 'мин', 'hunt.unit.s': 'с',
                 'hunt.zone.pick': 'Полетит: {name} (самый слабый подходящий {level} ур.)',
                 'hunt.zone.noEagle': 'Нет свободного орла {level} ур. редкости «{tier}» или выше',
                 'hunt.zone.slotsBusy': 'Все слоты заняты',
@@ -2549,7 +2550,7 @@
                 'hunt.zone.needMeat': 'Нужно {n} 🥩',
                 'hunt.zone.send': 'Отправить · {n} 🥩',
                 'hunt.zone.noSuitable': 'Нет подходящего орла',
-                'hunt.rules': 'Пока орёл в Дальней Экспедиции, его <b>нельзя</b> выставить на Рынок, продать Купцу и отправить в обычную экспедицию за золотом. На <b>Арене</b> он сражается как обычно. Летают только полностью обученные орлы {level} уровня; полёт всегда {hours} ч.',
+                'hunt.rules': 'Пока орёл в Дальней Экспедиции, его <b>нельзя</b> выставить на Рынок, продать Купцу и отправить в обычную экспедицию за золотом. На <b>Арене</b> он сражается как обычно. Летают только полностью обученные орлы {level} уровня; полёт длится {dur}.',
                 'hunt.loot.title': 'Добыча',
                 'hunt.loot.rare': 'Редкая находка!',
                 'hunt.loot.empty': 'В этот раз пусто.',
@@ -2985,7 +2986,8 @@
                 'hunt.slot.collect': 'Collect',
                 'hunt.slot.confirmTitle': '🔓 Expedition slot {n}',
                 'hunt.slot.confirmText': 'Unlock forever for <b>{cost}</b>?',
-                'hunt.zone.meta': '⏱ {hours} h · 🥩 {meat} Meat · {tier} eagle lvl {level} or better',
+                'hunt.zone.meta': '⏱ {dur} · 🥩 {meat} Meat · {tier} eagle lvl {level} or better',
+                'hunt.unit.h': 'h', 'hunt.unit.m': 'min', 'hunt.unit.s': 's',
                 'hunt.zone.pick': 'Flies: {name} (weakest suitable lvl {level})',
                 'hunt.zone.noEagle': 'No free lvl {level} eagle of «{tier}» rarity or higher',
                 'hunt.zone.slotsBusy': 'All slots busy',
@@ -2993,7 +2995,7 @@
                 'hunt.zone.needMeat': 'Need {n} 🥩',
                 'hunt.zone.send': 'Send · {n} 🥩',
                 'hunt.zone.noSuitable': 'No suitable eagle',
-                'hunt.rules': 'While an eagle is on a Far Expedition, it <b>cannot</b> be listed on the Market, sold to the Merchant or sent on a regular gold expedition. In the <b>Arena</b> it fights as usual. Only fully trained level {level} eagles can fly; a flight always takes {hours} h.',
+                'hunt.rules': 'While an eagle is on a Far Expedition, it <b>cannot</b> be listed on the Market, sold to the Merchant or sent on a regular gold expedition. In the <b>Arena</b> it fights as usual. Only fully trained level {level} eagles can fly; a flight takes {dur}.',
                 'hunt.loot.title': 'Loot',
                 'hunt.loot.rare': 'Rare find!',
                 'hunt.loot.empty': 'Nothing this time.',
@@ -3345,7 +3347,7 @@
         // countdown while it's cooking, full while waiting for fusion.
         function slotProgress(slot) {
             if (isOnHunt(slot)) {
-                const span = Math.max(1, slot.huntUntil - (slot.huntStartedAt || slot.huntUntil - 43200));
+                const span = Math.max(1, slot.huntUntil - (slot.huntStartedAt || slot.huntUntil - huntFlightSeconds()));
                 return Math.max(0, Math.min(100, 100 - ((slot.huntUntil - huntNow()) / span) * 100));
             }
             if (isOnExpedition(slot)) return expeditionReady(slot) ? 100 : expeditionProgress(slot);
@@ -10006,6 +10008,26 @@
         const HUNT_USABLE_KEYS = ['craft_scroll', 'potion_rage', 'potion_skin'];
 
         function huntCfg() { return CONFIG.hunt || {}; }
+
+        // Время полёта Дальних Экспедиций (настройка админки): из ответа
+        // сервера Охоты, иначе из конфига, иначе duration_hours (12 ч).
+        function huntFlightSeconds() {
+            if (huntData && Number(huntData.flight_seconds) > 0) return Number(huntData.flight_seconds);
+            const ms = Number(CONFIG.hunt_flight_duration_ms || huntCfg().hunt_flight_duration_ms);
+            if (ms > 0) return ms / 1000;
+            return (Number(huntCfg().duration_hours) || 12) * 3600;
+        }
+
+        function huntFlightText() {
+            let sec = Math.round(huntFlightSeconds());
+            const h = Math.floor(sec / 3600); sec -= h * 3600;
+            const m = Math.floor(sec / 60); const s = sec - m * 60;
+            const parts = [];
+            if (h) parts.push(`${h} ${t('hunt.unit.h')}`);
+            if (m) parts.push(`${m} ${t('hunt.unit.m')}`);
+            if (s || !parts.length) parts.push(`${s} ${t('hunt.unit.s')}`);
+            return parts.join(' ');
+        }
         function huntPotionPct() { return Number(huntCfg().potion_bonus_pct) || 30; }
         function huntScrollGold() { return Number(huntCfg().scroll_craft_gold) || 150; }
 
@@ -10443,7 +10465,7 @@
                         <div class="hunt-zone-icon">${zone.icon || '🏹'}</div>
                         <div class="hunt-zone-body">
                             <h3>${huntEsc(huntZoneTitle(zone))}</h3>
-                            <div class="hunt-zone-meta">${t('hunt.zone.meta', { hours: fmt(cfg.duration_hours || 12), meat, tier: `<b style="color:${tier.color}">${tier.name}</b>`, level: cfg.eagle_level || 7 })}</div>
+                            <div class="hunt-zone-meta">${t('hunt.zone.meta', { dur: huntFlightText(), meat, tier: `<b style="color:${tier.color}">${tier.name}</b>`, level: cfg.eagle_level || 7 })}</div>
                             <div class="hunt-loot">${huntLootText(zone)}</div>
                             ${pickHtml}
                             <button class="btn-primary" ${canGo ? '' : 'disabled'} onclick="huntStart('${zone.id}')">${canGo ? t('hunt.zone.send', { n: meat }) : (why || t('hunt.zone.noSuitable'))}</button>
@@ -10453,12 +10475,12 @@
             }).join('');
             setHTMLIfChanged(document.getElementById('huntSubExpeditions'), `
                 <div class="hunt-slots">${slotsHtml}</div>
-                <div class="hunt-rules glass-panel">🔒 ${t('hunt.rules', { level: cfg.eagle_level || 7, hours: fmt(cfg.duration_hours || 12) })}</div>
+                <div class="hunt-rules glass-panel">🔒 ${t('hunt.rules', { level: cfg.eagle_level || 7, dur: huntFlightText() })}</div>
                 ${zonesHtml}`);
         }
 
         function huntFlightPct(f, now) {
-            const span = Math.max(1, f.until - (f.started_at || f.until - 43200));
+            const span = Math.max(1, f.until - (f.started_at || f.until - huntFlightSeconds()));
             return Math.max(0, Math.min(100, 100 - ((f.until - now) / span) * 100));
         }
 

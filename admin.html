@@ -417,6 +417,22 @@
                     к /api/hunt/* отклоняются. Ресурсы игроков и уже летящие орлы сохраняются: добычу заберут после включения.
                     Владельцы и тестеры техработ видят модуль всегда, чтобы проверить его до запуска.</div>
             </div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <div class="nft-interval-head">
+                    <b>Время полёта Дальних Экспедиций:</b>
+                    <input id="huntFlightValue" type="number" min="1" step="1" value="12" style="width:110px;">
+                    <select id="huntFlightUnit">
+                        <option value="1000">секунды</option>
+                        <option value="60000">минуты</option>
+                        <option value="3600000" selected>часы</option>
+                    </select>
+                    <button id="huntFlightSaveBtn" class="primary">Сохранить</button>
+                    <span class="muted" id="huntFlightCurrent" style="font-size:12px;"></span>
+                </div>
+                <div class="muted" style="font-size:12px;">CONFIG.hunt_flight_duration_ms. Действует только на <b>новые</b> полёты Охоты:
+                    орлы, которые уже летят, вернутся по старому времени. Обычные экспедиции за золотом и другие таймеры игры
+                    не меняются. По умолчанию 12 часов; от 1 секунды до 30 суток.</div>
+            </div>
             <div class="card-grid" id="huntCards"></div>
             <h3 style="margin:20px 0 10px;">Мониторинг ресурсов</h3>
             <div class="toolbar">
@@ -2432,11 +2448,42 @@ document.getElementById('huntToggleBtn').onclick = async e => {
     });
     renderHuntToggle(huntEnabledAdmin);
 };
+function huntFlightHuman(ms) {
+    let sec = Math.round(ms / 1000);
+    const h = Math.floor(sec / 3600); sec -= h * 3600;
+    const m = Math.floor(sec / 60); const s = sec - m * 60;
+    return [h ? `${h} ч` : '', m ? `${m} мин` : '', (s || (!h && !m)) ? `${s} с` : ''].filter(Boolean).join(' ');
+}
+// Показ текущего значения: самая крупная единица, в которой оно целое.
+function renderHuntFlight(ms) {
+    const unit = ms % 3600000 === 0 ? 3600000 : ms % 60000 === 0 ? 60000 : 1000;
+    document.getElementById('huntFlightValue').value = Math.round(ms / unit);
+    document.getElementById('huntFlightUnit').value = String(unit);
+    document.getElementById('huntFlightCurrent').textContent = `сейчас: ${huntFlightHuman(ms)}`;
+}
+document.getElementById('huntFlightSaveBtn').onclick = async e => {
+    const value = Number(document.getElementById('huntFlightValue').value);
+    const unit = Number(document.getElementById('huntFlightUnit').value);
+    if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) { toast('Введите целое число больше нуля', true); return; }
+    const ms = value * unit;
+    if (ms < 1000 || ms > 30 * 24 * 3600 * 1000) { toast('От 1 секунды до 30 суток', true); return; }
+    await withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            const r = await api('/admin/api/hunt/flight_duration', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ duration_ms: ms }),
+            });
+            renderHuntFlight(r.flight_duration_ms);
+            toast(`Время полёта: ${huntFlightHuman(r.flight_duration_ms)} — для новых полётов`);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
 async function loadHuntAdmin() {
     try {
         const params = new URLSearchParams({ search: huntAdmin.search, limit: huntAdmin.limit, offset: huntAdmin.offset });
         const data = await api('/admin/api/hunt?' + params);
         renderHuntToggle(!!data.enabled);
+        if (data.flight_duration_ms) renderHuntFlight(data.flight_duration_ms);
         huntAdmin.total = data.total;
         const tt = data.totals.items;
         const card = (label, value, sub) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}</div>`;
