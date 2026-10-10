@@ -5067,12 +5067,14 @@ async def hunt_start(request: HuntStart, x_telegram_init_data: Optional[str] = H
         return _hunt_result(fields, row, now, slot_index=idx, monster_id=slot["id"])
 
     try:
-        return await run_farm_action(user_id, compute)
+        result = await run_farm_action(user_id, compute)
     except HTTPException:
         raise
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось отправить орла — попробуй ещё раз")
+    await record_economy(meat_hunt=HUNT_ENTRY_MEAT, hunts=1)
+    return result
 
 
 @app.post("/api/hunt/collect")
@@ -7482,6 +7484,10 @@ LEDGER_LABELS = [
     ("/admin/api/deposits/reverse", "Отмена пополнения админом"),
     ("/admin/api/players", "Правка админом"),
     ("/api/nft/", "NFT «Небесный орел»"),
+    ("/api/hunt/mine/upgrade", "Охота: улучшение шахты"),
+    ("/api/hunt/slot/open", "Охота: открытие слота экспедиции"),
+    ("/api/hunt/start", "Охота: отправка в экспедицию"),
+    ("/api/hunt/", "Охота"),
 ]
 
 

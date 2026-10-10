@@ -646,7 +646,7 @@
             <h2>Экономика: куда уходит золото</h2>
             <p class="muted">
                 Золото приходит только из экспедиций, а уходит в крафт снаряжения (300 за предмет), обмен на мясо у купца,
-                создание кланов и энергию Арены. Скрещивание можно оплатить мясом или GRAM — чем больше доля мяса,
+                создание кланов, энергию Арены и Охоту (шахта, первый слот экспедиций). Скрещивание можно оплатить мясом или GRAM — чем больше доля мяса,
                 тем сильнее «бесплатное» мясо заменяет доход в GRAM. Счётчики ведутся с момента этого обновления, сутки — по UTC.
             </p>
             <button id="economyRefreshBtn">Обновить</button>
@@ -658,7 +658,7 @@
                 <table>
                     <thead><tr>
                         <th>День (UTC)</th><th>Золото добыто</th><th>→ крафт</th><th>→ мясо</th><th>Мяса получено</th>
-                        <th>→ кланы</th><th>→ Арена</th><th>Скрещ. за мясо</th><th>Скрещ. за GRAM</th>
+                        <th>→ кланы</th><th>→ Арена</th><th>→ Охота</th><th>Скрещ. за мясо</th><th>Скрещ. за GRAM</th>
                     </tr></thead>
                     <tbody id="economyDaily"></tbody>
                 </table>
@@ -1962,7 +1962,7 @@ async function loadEconomy() {
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
     const t = data.total || {};
     const n = k => Number(t[k]) || 0;
-    const goldSpent = n('gold_craft') + n('gold_to_meat') + n('gold_clans') + n('gold_arena');
+    const goldSpent = n('gold_craft') + n('gold_to_meat') + n('gold_clans') + n('gold_arena') + n('gold_hunt');
     const pct = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '—';
     const card = (label, value, sub) => `
         <div class="stat-card">
@@ -1977,6 +1977,7 @@ async function loadEconomy() {
         card('Золото → мясо у купца', fmtNum(n('gold_to_meat')), `получено ${fmtNum(n('meat_from_gold'))} мяса · ${pct(n('gold_to_meat'), goldSpent)} трат`),
         card('Золото → кланы', fmtNum(n('gold_clans')), `+ ${fmtNum(n('meat_clans'))} мяса и ${fmtNum(n('gram_clans'))} GRAM`),
         card('Золото → энергия Арены', fmtNum(n('gold_arena')), `за GRAM: ${fmtNum(n('gram_arena'))}`),
+        card('Золото → Охота', fmtNum(n('gold_hunt')), `+ ${fmtNum(n('gram_hunt'))} GRAM в фонд выкупа · ${fmtNum(n('meat_hunt'))} мяса за ${fmtNum(n('hunts'))} полётов`),
         card('Баланс потока золота (добыто − потрачено)', fmtNum(n('gold_expeditions') - goldSpent),
              n('gold_expeditions') - goldSpent >= 0 ? 'плюс — золото копится у игроков' : 'минус — тратят золото, накопленное раньше'),
         card('Скрещивания за мясо', fmtNum(n('fusion_tries_meat')), `${fmtNum(n('meat_fusion'))} мяса · ${pct(n('fusion_tries_meat'), tries)} попыток`),
@@ -1998,6 +1999,7 @@ async function loadEconomy() {
         { label: 'Мясо у купца', v: n('gold_to_meat'), color: '#f0b429' },
         { label: 'Кланы', v: n('gold_clans'), color: '#7cc4ff' },
         { label: 'Энергия Арены', v: n('gold_arena'), color: '#c084fc' },
+        { label: 'Охота', v: n('gold_hunt'), color: '#34e6a8' },
     ]);
 
     const rows = data.daily || [];
@@ -2005,9 +2007,9 @@ async function loadEconomy() {
     document.getElementById('economyDaily').innerHTML = rows.length ? rows.map(r => `
         <tr>
             <td>${r.day}</td><td>${d(r, 'gold_expeditions')}</td><td>${d(r, 'gold_craft')}</td><td>${d(r, 'gold_to_meat')}</td>
-            <td>${d(r, 'meat_from_gold')}</td><td>${d(r, 'gold_clans')}</td><td>${d(r, 'gold_arena')}</td>
+            <td>${d(r, 'meat_from_gold')}</td><td>${d(r, 'gold_clans')}</td><td>${d(r, 'gold_arena')}</td><td>${d(r, 'gold_hunt')}</td>
             <td>${d(r, 'fusion_tries_meat')}</td><td>${d(r, 'fusion_tries_gram')}</td>
-        </tr>`).join('') : '<tr><td colspan="9" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="10" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
 }
 document.getElementById('economyRefreshBtn').onclick = loadEconomy;
 
