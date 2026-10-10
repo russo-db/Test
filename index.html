@@ -1076,6 +1076,7 @@
         .hunt-zone-body { flex: 1; min-width: 0; }
         .hunt-zone-meta { font-size: 11.5px; color: var(--text-muted); margin: 2px 0 6px; }
         .hunt-loot { font-size: 12px; line-height: 1.5; }
+        .hunt-rare-find { color: #f5d27a; font-weight: 700; }
         .hunt-pick { font-size: 11.5px; margin: 6px 0 8px; color: #a7f3a0; }
         .hunt-pick.none { color: #fca5a5; }
         .hunt-rules { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; padding: 10px 12px; margin-bottom: 12px; }
@@ -2512,6 +2513,7 @@
                 'hunt.particlesShort': '{n} част.',
                 'hunt.hoursShort': 'ч',
                 'hunt.chance': '{pct}% шанс:',
+                'hunt.rareFind': 'Редкая находка: {name}',
                 'hunt.wallet.gold': 'Золото',
                 'hunt.wallet.particles': 'Частички',
                 'hunt.mine.title': 'Шахта Горного Кристалла',
@@ -2955,6 +2957,7 @@
                 'hunt.particlesShort': '{n} part.',
                 'hunt.hoursShort': 'h',
                 'hunt.chance': '{pct}% chance:',
+                'hunt.rareFind': 'Rare find: {name}',
                 'hunt.wallet.gold': 'Gold',
                 'hunt.wallet.particles': 'Particles',
                 'hunt.mine.title': 'Rock Crystal Mine',
@@ -10391,6 +10394,8 @@
         function huntLootText(zone) {
             return (zone.rewards || []).map(r => {
                 const meta = HUNT_ITEM_META[r.item] || { icon: '', name: r.item };
+                // Редкая находка: что может выпасть — видно, шанс — нет.
+                if (r.hidden) return `<span class="hunt-rare-find">${meta.icon} ${t('hunt.rareFind', { name: meta.name })}</span>`;
                 const amount = r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`;
                 const chance = Number(r.chance) < 1 ? t('hunt.chance', { pct: Math.round(Number(r.chance) * 1000) / 10 }) + ' ' : '';
                 return `${meta.icon} ${chance}${amount} ${meta.name}`;

@@ -2296,10 +2296,12 @@ async def serve_config():
         cfg["missions"] = [{k: m.get(k) for k in ("id", "title", "type", "gram", "mnstr", "url") if k in m}
                            for m in missions_list()]
         cfg["missions_enabled"] = missions_on()
-        # Скрытые шансы Охоты (Древний Свиток) клиенту не показываем.
+        # Скрытые награды Охоты (Древний Свиток): клиент знает только, ЧТО
+        # может выпасть, — шанс и количество ему не отдаём.
         hunt_cfg = cfg.get("hunt") if isinstance(cfg.get("hunt"), dict) else {}
         for zone in _cfg_list(hunt_cfg, "zones"):
-            zone["rewards"] = [r for r in _cfg_list(zone, "rewards") if not r.get("hidden")]
+            zone["rewards"] = [{"item": r.get("item"), "hidden": True} if r.get("hidden") else r
+                               for r in _cfg_list(zone, "rewards")]
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
