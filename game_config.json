@@ -585,7 +585,7 @@
     "duration_hours": 12,
     "entry_cost_meat": 10,
     "eagle_level": 7,
-    "potion_bonus_pct": 30,
+    "potion_bonus_pct": 100,
     "scroll_craft_gold": 150,
     "mine_levels": [
       {"level": 1, "cost_gold": 0, "cost_gram": 0, "cost_particles": 0, "speed_per_day": 1.0},
