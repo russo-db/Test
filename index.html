@@ -1341,7 +1341,7 @@
                         </div>
                         <div class="clan-entry-btn hunt-entry-btn" id="huntEntryBtn" style="display:none;" onclick="openHuntScreen()">
                             <span class="hunt-entry-icon">🏹</span>
-                            <span class="clan-entry-label">Охота</span>
+                            <span class="clan-entry-label" data-i18n="hunt.nav">Охота</span>
                         </div>
                     </div>
                 </div>
@@ -1599,16 +1599,16 @@
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
                 </div>
                 <div class="clan-header-info">
-                    <div class="clan-header-name">🏹 Охота</div>
-                    <div class="clan-header-power">Шахта, Дальние Экспедиции и Алхимия</div>
+                    <div class="clan-header-name" data-i18n="hunt.heading">🏹 Охота</div>
+                    <div class="clan-header-power" data-i18n="hunt.subheading">Шахта, Дальние Экспедиции и Алхимия</div>
                 </div>
             </div>
             <div class="hunt-wallet glass-panel" id="huntWallet"></div>
             <div class="subtab-bar" id="huntTabBar">
-                <div class="subtab-item active" data-hunttab="mine" onclick="switchHuntTab('mine')">Добыча</div>
-                <div class="subtab-item" data-hunttab="expeditions" onclick="switchHuntTab('expeditions')">Экспедиции</div>
-                <div class="subtab-item" data-hunttab="storage" onclick="switchHuntTab('storage')">Склад</div>
-                <div class="subtab-item" data-hunttab="alchemy" onclick="switchHuntTab('alchemy')">Алхимия</div>
+                <div class="subtab-item active" data-hunttab="mine" onclick="switchHuntTab('mine')" data-i18n="hunt.tab.mine">Добыча</div>
+                <div class="subtab-item" data-hunttab="expeditions" onclick="switchHuntTab('expeditions')" data-i18n="hunt.tab.expeditions">Экспедиции</div>
+                <div class="subtab-item" data-hunttab="storage" onclick="switchHuntTab('storage')" data-i18n="hunt.tab.storage">Склад</div>
+                <div class="subtab-item" data-hunttab="alchemy" onclick="switchHuntTab('alchemy')" data-i18n="hunt.tab.alchemy">Алхимия</div>
             </div>
             <div class="subtab-panel active" id="huntSubMine"></div>
             <div class="subtab-panel" id="huntSubExpeditions"></div>
@@ -2455,6 +2455,114 @@
                 'clan.matchNotFound': 'Матч не найден', 'clan.matchNotReady': 'Матч ещё не разрешён',
                 'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
                 'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
+                'hunt.nav': 'Охота',
+                'hunt.heading': '🏹 Охота',
+                'hunt.subheading': 'Шахта, Дальние Экспедиции и Алхимия',
+                'hunt.tab.mine': 'Добыча',
+                'hunt.tab.expeditions': 'Экспедиции',
+                'hunt.tab.storage': 'Склад',
+                'hunt.tab.alchemy': 'Алхимия',
+                'hunt.disabled': 'Раздел «Охота» сейчас недоступен',
+                'hunt.serverDown': 'Сервер недоступен',
+                'hunt.loading': 'Загрузка…',
+                'hunt.item.rock_crystal': 'Горный Кристалл',
+                'hunt.item.mountain_root': 'Горный Корень',
+                'hunt.item.shimmer_mushroom': 'Мерцающий Гриб',
+                'hunt.item.craft_scroll': 'Древний Свиток Крафта',
+                'hunt.item.potion_rage': 'Зелье Ярости',
+                'hunt.item.potion_skin': 'Отвар Стальной Кожи',
+                'hunt.desc.rock_crystal': 'Добывается в Шахте. Нужен для зелий Алхимии.',
+                'hunt.desc.mountain_root': 'Добыча Дальних Экспедиций. Нужен для Зелья Ярости.',
+                'hunt.desc.shimmer_mushroom': 'Добыча Дальних Экспедиций. Нужен для Отвара Стальной Кожи.',
+                'hunt.desc.potion_rage': '+{pct}% к Атаке твоего орла в следующем бою Арены. Можно применить вместе с Отваром Стальной Кожи. Сгорает после 1 боя.',
+                'hunt.desc.potion_skin': '+{pct}% к Защите твоего орла в следующем бою Арены. Можно применить вместе с Зельем Ярости. Сгорает после 1 боя.',
+                'hunt.desc.craft_scroll': 'Бессрочная скидка: следующий крафт серого снаряжения в Кузнице — за {particles} частичек и {gold} 🪙 вместо {full} 🪙. Действует, пока не скрафтишь.',
+                'hunt.zone.forest': 'Ближний Бор',
+                'hunt.zone.mountains': 'Древние Горы',
+                'hunt.zone.canyon': 'Затерянный Каньон',
+                'hunt.particlesN': '{n} частичек',
+                'hunt.particlesShort': '{n} част.',
+                'hunt.hoursShort': 'ч',
+                'hunt.chance': '{pct}% шанс:',
+                'hunt.wallet.gold': 'Золото',
+                'hunt.wallet.particles': 'Частички',
+                'hunt.mine.title': 'Шахта Горного Кристалла',
+                'hunt.mine.levelPill': '{level} / {max} ур.',
+                'hunt.mine.counterSub': '💎 накоплено · {speed} шт / 24 ч · собираются только целые',
+                'hunt.mine.collect': 'Собрать',
+                'hunt.mine.collectNeedWhole': 'Собрать (нужен целый кристалл)',
+                'hunt.mine.collectN': 'Собрать {n} 💎',
+                'hunt.mine.upgradeTitle': 'Улучшение шахты',
+                'hunt.mine.nextLevel': 'Уровень {level}: {from} → <b>{to}</b> 💎 / 24 ч',
+                'hunt.mine.upgradeTo': 'Улучшить до {level} ур.',
+                'hunt.mine.upgradeShort': 'Улучшить',
+                'hunt.mine.maxed': '⛏️ Шахта на максимуме ({max} ур.)',
+                'hunt.mine.allLevels': 'Все уровни',
+                'hunt.mine.colLevel': 'Ур.',
+                'hunt.mine.colCost': 'Стоимость',
+                'hunt.mine.confirmTitle': '⛏️ Шахта: уровень {level}',
+                'hunt.mine.confirmText': 'Скорость добычи станет <b>{speed} 💎 / 24 ч</b>. Стоимость: <b>{cost}</b>.',
+                'hunt.mine.confirmPool': 'GRAM уходят в общий фонд выкупа.',
+                'hunt.slot.title': 'Слот {n}',
+                'hunt.slot.open': 'Открыть',
+                'hunt.slot.after': 'после слота {n}',
+                'hunt.slot.free': 'Свободен — выбери зону ниже',
+                'hunt.slot.back': 'вернулся!',
+                'hunt.slot.collect': 'Забрать',
+                'hunt.slot.confirmTitle': '🔓 Слот экспедиции {n}',
+                'hunt.slot.confirmText': 'Открыть навсегда за <b>{cost}</b>?',
+                'hunt.zone.meta': '⏱ {hours} ч · 🥩 {meat} Meat · от {tier} орла {level} ур.',
+                'hunt.zone.pick': 'Полетит: {name} (самый слабый подходящий {level} ур.)',
+                'hunt.zone.noEagle': 'Нет свободного орла {level} ур. редкости «{tier}» или выше',
+                'hunt.zone.slotsBusy': 'Все слоты заняты',
+                'hunt.zone.openSlot': 'Открой слот',
+                'hunt.zone.needMeat': 'Нужно {n} 🥩',
+                'hunt.zone.send': 'Отправить · {n} 🥩',
+                'hunt.zone.noSuitable': 'Нет подходящего орла',
+                'hunt.rules': 'Пока орёл в Дальней Экспедиции, его <b>нельзя</b> выставить на Рынок, продать Купцу и отправить в обычную экспедицию за золотом. На <b>Арене</b> он сражается как обычно. Летают только полностью обученные орлы {level} уровня; полёт всегда {hours} ч.',
+                'hunt.loot.title': 'Добыча',
+                'hunt.loot.rare': 'Редкая находка!',
+                'hunt.loot.empty': 'В этот раз пусто.',
+                'hunt.loot.take': 'Забрать на Склад',
+                'hunt.item.inStorage': 'На Складе',
+                'hunt.item.apply': 'Применить',
+                'hunt.item.scrollActive': 'Скидка уже действует — сначала скрафти серое снаряжение в Кузнице',
+                'hunt.item.potionActive': 'Уже действует — сработает в следующем бою Арены',
+                'hunt.storage.effects': 'Активные эффекты',
+                'hunt.storage.resources': 'Ресурсы',
+                'hunt.storage.items': 'Предметы — нажми, чтобы применить',
+                'hunt.alchemy.inStorage': 'на Складе: {n}',
+                'hunt.alchemy.brew': 'Сварить',
+                'hunt.buff.atk': 'Атака +{pct}%',
+                'hunt.buff.def': 'Защита +{pct}%',
+                'hunt.buff.craft': 'Крафт за {gold} 🪙',
+                'hunt.buff.oneFight': 'на 1 бой',
+                'hunt.buff.active': 'активно',
+                'hunt.buff.none': 'нет',
+                'hunt.arena.rage': 'Зелье Ярости: Атака +{pct}% на этот бой',
+                'hunt.arena.skin': 'Стальная Кожа: Защита +{pct}% на этот бой',
+                'hunt.toast.crystals': '+{n} 💎 {name}',
+                'hunt.toast.notEnoughUpgrade': 'Не хватает ресурсов для улучшения',
+                'hunt.toast.mineUpgraded': '⛏️ Шахта улучшена до {level} уровня',
+                'hunt.toast.notEnough': 'Не хватает: {cost}',
+                'hunt.toast.slotOpened': '🔓 Слот {n} открыт',
+                'hunt.toast.slotsBusy': 'Все открытые слоты заняты',
+                'hunt.toast.openSlotFirst': 'Сначала открой слот экспедиции',
+                'hunt.toast.needMeat': 'Нужно {n} 🥩 Meat',
+                'hunt.toast.flewAway': '🏹 {name} улетел: {zone}',
+                'hunt.toast.brewed': '⚗️ {name} отправлено на Склад',
+                'hunt.toast.scrollOn': '📜 Скидка активна: следующий серый крафт — {gold} 🪙',
+                'hunt.toast.potionOn': '{icon} Бафф на следующий бой Арены',
+                'hunt.farm.backStatus': '🏹 вернулся с Охоты — забери добычу',
+                'hunt.farm.flyingStatus': '🏹 на Охоте ({zone}) — ещё {time}',
+                'hunt.farm.flyingToast': '🏹 Орёл на Охоте — вернётся через {time}',
+                'hunt.farm.noExpedition': '🏹 Орёл в Дальней Экспедиции — в обычную экспедицию его не отправить',
+                'hunt.farm.noDelete': '🏹 Орёл в Дальней Экспедиции — удалить нельзя',
+                'hunt.farm.backShort': 'вернулся',
+                'hunt.farm.lockNote': 'Пока орёл в Дальней Экспедиции, его нельзя выставить на Рынок, продать Купцу, отправить в обычную экспедицию, слить или удалить. На Арене он сражается как обычно.',
+                'hunt.farm.collectLoot': 'Забрать добычу',
+                'hunt.farm.openHunt': 'Открыть Охоту',
+                'hunt.nest.discountNote': '📜 Свиток Крафта: этот крафт — {gold} 🪙 вместо {full} 🪙',
             },
             en: {
                 'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.market': 'Market', 'nav.profile': 'Profile',
@@ -2790,6 +2898,114 @@
                 'clan.matchNotFound': 'Match not found', 'clan.matchNotReady': 'Match not resolved yet',
                 'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
                 'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
+                'hunt.nav': 'Hunt',
+                'hunt.heading': '🏹 Hunt',
+                'hunt.subheading': 'Mine, Far Expeditions and Alchemy',
+                'hunt.tab.mine': 'Mining',
+                'hunt.tab.expeditions': 'Expeditions',
+                'hunt.tab.storage': 'Storage',
+                'hunt.tab.alchemy': 'Alchemy',
+                'hunt.disabled': 'The Hunt is not available right now',
+                'hunt.serverDown': 'Server unavailable',
+                'hunt.loading': 'Loading…',
+                'hunt.item.rock_crystal': 'Rock Crystal',
+                'hunt.item.mountain_root': 'Mountain Root',
+                'hunt.item.shimmer_mushroom': 'Shimmer Mushroom',
+                'hunt.item.craft_scroll': 'Ancient Crafting Scroll',
+                'hunt.item.potion_rage': 'Potion of Rage',
+                'hunt.item.potion_skin': 'Steelskin Brew',
+                'hunt.desc.rock_crystal': 'Mined in the Mine. Used for Alchemy potions.',
+                'hunt.desc.mountain_root': 'Found on Far Expeditions. Used for the Potion of Rage.',
+                'hunt.desc.shimmer_mushroom': 'Found on Far Expeditions. Used for the Steelskin Brew.',
+                'hunt.desc.potion_rage': '+{pct}% Attack for your eagle in the next Arena battle. Can be used together with the Steelskin Brew. Wears off after 1 battle.',
+                'hunt.desc.potion_skin': '+{pct}% Defense for your eagle in the next Arena battle. Can be used together with the Potion of Rage. Wears off after 1 battle.',
+                'hunt.desc.craft_scroll': 'Permanent discount: your next grey gear craft in the Forge costs {particles} particles and {gold} 🪙 instead of {full} 🪙. Lasts until you craft.',
+                'hunt.zone.forest': 'Nearby Pinewood',
+                'hunt.zone.mountains': 'Ancient Mountains',
+                'hunt.zone.canyon': 'Lost Canyon',
+                'hunt.particlesN': '{n} particles',
+                'hunt.particlesShort': '{n} part.',
+                'hunt.hoursShort': 'h',
+                'hunt.chance': '{pct}% chance:',
+                'hunt.wallet.gold': 'Gold',
+                'hunt.wallet.particles': 'Particles',
+                'hunt.mine.title': 'Rock Crystal Mine',
+                'hunt.mine.levelPill': 'lvl {level} / {max}',
+                'hunt.mine.counterSub': '💎 mined · {speed} per 24 h · only whole crystals can be collected',
+                'hunt.mine.collect': 'Collect',
+                'hunt.mine.collectNeedWhole': 'Collect (needs a whole crystal)',
+                'hunt.mine.collectN': 'Collect {n} 💎',
+                'hunt.mine.upgradeTitle': 'Mine upgrade',
+                'hunt.mine.nextLevel': 'Level {level}: {from} → <b>{to}</b> 💎 / 24 h',
+                'hunt.mine.upgradeTo': 'Upgrade to lvl {level}',
+                'hunt.mine.upgradeShort': 'Upgrade',
+                'hunt.mine.maxed': '⛏️ Mine is maxed out (lvl {max})',
+                'hunt.mine.allLevels': 'All levels',
+                'hunt.mine.colLevel': 'Lvl',
+                'hunt.mine.colCost': 'Cost',
+                'hunt.mine.confirmTitle': '⛏️ Mine: level {level}',
+                'hunt.mine.confirmText': 'Mining speed becomes <b>{speed} 💎 / 24 h</b>. Cost: <b>{cost}</b>.',
+                'hunt.mine.confirmPool': 'GRAM goes to the shared buyback pool.',
+                'hunt.slot.title': 'Slot {n}',
+                'hunt.slot.open': 'Unlock',
+                'hunt.slot.after': 'after slot {n}',
+                'hunt.slot.free': 'Free — pick a zone below',
+                'hunt.slot.back': 'back!',
+                'hunt.slot.collect': 'Collect',
+                'hunt.slot.confirmTitle': '🔓 Expedition slot {n}',
+                'hunt.slot.confirmText': 'Unlock forever for <b>{cost}</b>?',
+                'hunt.zone.meta': '⏱ {hours} h · 🥩 {meat} Meat · {tier} eagle lvl {level} or better',
+                'hunt.zone.pick': 'Flies: {name} (weakest suitable lvl {level})',
+                'hunt.zone.noEagle': 'No free lvl {level} eagle of «{tier}» rarity or higher',
+                'hunt.zone.slotsBusy': 'All slots busy',
+                'hunt.zone.openSlot': 'Unlock a slot',
+                'hunt.zone.needMeat': 'Need {n} 🥩',
+                'hunt.zone.send': 'Send · {n} 🥩',
+                'hunt.zone.noSuitable': 'No suitable eagle',
+                'hunt.rules': 'While an eagle is on a Far Expedition, it <b>cannot</b> be listed on the Market, sold to the Merchant or sent on a regular gold expedition. In the <b>Arena</b> it fights as usual. Only fully trained level {level} eagles can fly; a flight always takes {hours} h.',
+                'hunt.loot.title': 'Loot',
+                'hunt.loot.rare': 'Rare find!',
+                'hunt.loot.empty': 'Nothing this time.',
+                'hunt.loot.take': 'Send to Storage',
+                'hunt.item.inStorage': 'In Storage',
+                'hunt.item.apply': 'Use',
+                'hunt.item.scrollActive': 'The discount is already active — craft grey gear in the Forge first',
+                'hunt.item.potionActive': 'Already active — it will work in your next Arena battle',
+                'hunt.storage.effects': 'Active effects',
+                'hunt.storage.resources': 'Resources',
+                'hunt.storage.items': 'Items — tap to use',
+                'hunt.alchemy.inStorage': 'in Storage: {n}',
+                'hunt.alchemy.brew': 'Brew',
+                'hunt.buff.atk': 'Attack +{pct}%',
+                'hunt.buff.def': 'Defense +{pct}%',
+                'hunt.buff.craft': 'Craft for {gold} 🪙',
+                'hunt.buff.oneFight': 'for 1 battle',
+                'hunt.buff.active': 'active',
+                'hunt.buff.none': 'none',
+                'hunt.arena.rage': 'Potion of Rage: Attack +{pct}% this battle',
+                'hunt.arena.skin': 'Steelskin: Defense +{pct}% this battle',
+                'hunt.toast.crystals': '+{n} 💎 {name}',
+                'hunt.toast.notEnoughUpgrade': 'Not enough resources for the upgrade',
+                'hunt.toast.mineUpgraded': '⛏️ Mine upgraded to level {level}',
+                'hunt.toast.notEnough': 'Not enough: {cost}',
+                'hunt.toast.slotOpened': '🔓 Slot {n} unlocked',
+                'hunt.toast.slotsBusy': 'All unlocked slots are busy',
+                'hunt.toast.openSlotFirst': 'Unlock an expedition slot first',
+                'hunt.toast.needMeat': 'Need {n} 🥩 Meat',
+                'hunt.toast.flewAway': '🏹 {name} flew off: {zone}',
+                'hunt.toast.brewed': '⚗️ {name} sent to Storage',
+                'hunt.toast.scrollOn': '📜 Discount active: next grey craft costs {gold} 🪙',
+                'hunt.toast.potionOn': '{icon} Buff for your next Arena battle',
+                'hunt.farm.backStatus': '🏹 back from the Hunt — collect the loot',
+                'hunt.farm.flyingStatus': '🏹 on the Hunt ({zone}) — {time} left',
+                'hunt.farm.flyingToast': '🏹 Eagle is on the Hunt — back in {time}',
+                'hunt.farm.noExpedition': '🏹 Eagle is on a Far Expedition — it cannot go on a regular expedition',
+                'hunt.farm.noDelete': '🏹 Eagle is on a Far Expedition — it cannot be deleted',
+                'hunt.farm.backShort': 'back',
+                'hunt.farm.lockNote': 'While the eagle is on a Far Expedition, it cannot be listed on the Market, sold to the Merchant, sent on a regular expedition, fused or deleted. In the Arena it fights as usual.',
+                'hunt.farm.collectLoot': 'Collect loot',
+                'hunt.farm.openHunt': 'Open the Hunt',
+                'hunt.nest.discountNote': '📜 Crafting Scroll: this craft costs {gold} 🪙 instead of {full} 🪙',
             },
         };
 
@@ -3042,7 +3258,7 @@
 
         function huntZoneName(slot) {
             const zone = ((CONFIG.hunt || {}).zones || []).find(z => z.id === slot.huntZone);
-            return zone ? zone.name : '';
+            return zone ? huntZoneTitle(zone) : '';
         }
 
         function expeditionReady(slot) {
@@ -3100,9 +3316,10 @@
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
             const s = seconds % 60;
-            if (h > 0) return `${h}ч ${m}м`;
-            if (m > 0) return `${m}м ${s}с`;
-            return `${s}с`;
+            const [uh, um, us] = LANG === 'en' ? ['h', 'm', 's'] : ['ч', 'м', 'с'];
+            if (h > 0) return `${h}${uh} ${m}${um}`;
+            if (m > 0) return `${m}${um} ${s}${us}`;
+            return `${s}${us}`;
         }
 
         function activeSlotEntry() {
@@ -3213,8 +3430,8 @@
             stage.style.display = 'flex';
             const slot = activeSlotEntry();
             let status;
-            if (isOnHunt(slot)) status = nowSeconds() >= slot.huntUntil ? '🏹 вернулся с Охоты — забери добычу'
-                : `🏹 на Охоте (${huntZoneName(slot)}) — ещё ${formatCountdown(slot.huntUntil - nowSeconds())}`;
+            if (isOnHunt(slot)) status = nowSeconds() >= slot.huntUntil ? t('hunt.farm.backStatus')
+                : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - nowSeconds()) });
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
@@ -4262,7 +4479,7 @@
             if (isOnHunt(slot)) {
                 if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
                 if (nowSeconds() >= slot.huntUntil) { huntCollectFromFarm(i); return; }
-                toast(`🏹 Орёл на Охоте — вернётся через ${formatCountdown(slot.huntUntil - nowSeconds())}`);
+                toast(t('hunt.farm.flyingToast', { time: formatCountdown(slot.huntUntil - nowSeconds()) }));
                 return;
             }
             if (isOnExpedition(slot)) {
@@ -4288,7 +4505,7 @@
             const slot = state.farm[i];
             if (!slot || isOnExpedition(slot)) return;
             if (isListed(slot)) { toast(t('farm.listedToast')); return; }
-            if (isOnHunt(slot)) { toast('🏹 Орёл в Дальней Экспедиции — в обычную экспедицию его не отправить'); haptic.notify('warning'); return; }
+            if (isOnHunt(slot)) { toast(t('hunt.farm.noExpedition')); haptic.notify('warning'); return; }
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'expedition-start:' + i;
@@ -6026,6 +6243,8 @@
             renderVipRail();
             renderNest();
             updateWheelButton();
+            renderHunt();
+            renderArenaHuntBuffs();
         }
 
         /* ---------- reward particles flying to the balance ---------- */
@@ -6145,7 +6364,7 @@
         function askDeleteEagle() {
             const slot = state.farm[modalSlot];
             if (slot && (isListed(slot) || isOnExpedition(slot) || isOnHunt(slot))) {
-                toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? '🏹 Орёл в Дальней Экспедиции — удалить нельзя' : t('slot.deleteOnExpedition'));
+                toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? t('hunt.farm.noDelete') : t('slot.deleteOnExpedition'));
                 return;
             }
             slotDeleteConfirm = true;
@@ -6288,10 +6507,10 @@
                     <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <h2 style="color:${monster.color}">${monster.name}</h2>
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
-                    <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? 'вернулся' : formatCountdown(slot.huntUntil - nowSeconds())}</b></div>
-                    <p class="slot-modal-sub slot-listed-note">🔒 Пока орёл в Дальней Экспедиции, его нельзя выставить на Рынок, продать Купцу, отправить в обычную экспедицию, слить или удалить. На Арене он сражается как обычно.</p>
-                    ${back ? `<button class="btn-primary" style="margin-top:10px" onclick="closeSlotModal(); huntCollectFromFarm(modalSlot);">🎒 Забрать добычу</button>` : ''}
-                    ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 Открыть Охоту</button>` : ''}
+                    <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? t('hunt.farm.backShort') : formatCountdown(slot.huntUntil - nowSeconds())}</b></div>
+                    <p class="slot-modal-sub slot-listed-note">🔒 ${t('hunt.farm.lockNote')}</p>
+                    ${back ? `<button class="btn-primary" style="margin-top:10px" onclick="closeSlotModal(); huntCollectFromFarm(modalSlot);">🎒 ${t('hunt.farm.collectLoot')}</button>` : ''}
+                    ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 ${t('hunt.farm.openHunt')}</button>` : ''}
                     <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
                 `;
                 return;
@@ -6842,7 +7061,7 @@
                 craftBtn.insertAdjacentElement('afterend', discountNote);
             }
             discountNote.style.display = craftDiscount ? '' : 'none';
-            discountNote.textContent = craftDiscount ? `📜 Свиток Крафта: этот крафт — ${fmt(craftCostGold)} 🪙 вместо ${fmt(CONFIG.nest.craft_cost_gold || 300)} 🪙` : '';
+            discountNote.textContent = craftDiscount ? t('hunt.nest.discountNote', { gold: fmt(craftCostGold), full: fmt(CONFIG.nest.craft_cost_gold || 300) }) : '';
 
             const grades = CONFIG.nest.grades || [];
             const types = nestTypeOrder();
@@ -9700,13 +9919,22 @@
         let huntModalItem = null;
 
         const HUNT_ITEM_META = {
-            rock_crystal: { icon: '💎', name: 'Горный Кристалл', desc: 'Добывается в Шахте. Нужен для зелий Алхимии.' },
-            mountain_root: { icon: '🌿', name: 'Горный Корень', desc: 'Добыча Дальних Экспедиций. Нужен для Зелья Ярости.' },
-            shimmer_mushroom: { icon: '🍄', name: 'Мерцающий Гриб', desc: 'Добыча Дальних Экспедиций. Нужен для Отвара Стальной Кожи.' },
-            craft_scroll: { icon: '📜', name: 'Древний Свиток Крафта', buff: 'craft_discount' },
-            potion_rage: { icon: '🔥', name: 'Зелье Ярости', buff: 'rage' },
-            potion_skin: { icon: '🛡️', name: 'Отвар Стальной Кожи', buff: 'skin' },
+            rock_crystal: { icon: '💎', get name() { return t('hunt.item.rock_crystal'); } },
+            mountain_root: { icon: '🌿', get name() { return t('hunt.item.mountain_root'); } },
+            shimmer_mushroom: { icon: '🍄', get name() { return t('hunt.item.shimmer_mushroom'); } },
+            craft_scroll: { icon: '📜', buff: 'craft_discount', get name() { return t('hunt.item.craft_scroll'); } },
+            potion_rage: { icon: '🔥', buff: 'rage', get name() { return t('hunt.item.potion_rage'); } },
+            potion_skin: { icon: '🛡️', buff: 'skin', get name() { return t('hunt.item.potion_skin'); } },
         };
+
+        // Название зоны на языке игрока; зона, добавленная в конфиг без
+        // перевода, показывается как есть (name из конфига).
+        function huntZoneTitle(zone) {
+            if (!zone) return '';
+            const key = 'hunt.zone.' + zone.id;
+            const dict = I18N[LANG] || I18N.ru;
+            return dict[key] !== undefined ? dict[key] : (zone.name || zone.id);
+        }
         const HUNT_RESOURCE_KEYS = ['rock_crystal', 'mountain_root', 'shimmer_mushroom'];
         const HUNT_USABLE_KEYS = ['craft_scroll', 'potion_rage', 'potion_skin'];
 
@@ -9715,10 +9943,10 @@
         function huntScrollGold() { return Number(huntCfg().scroll_craft_gold) || 150; }
 
         function huntItemDesc(key) {
-            if (key === 'potion_rage') return `+${huntPotionPct()}% к Атаке твоего орла в следующем бою Арены. Можно применить вместе с Отваром Стальной Кожи. Сгорает после 1 боя.`;
-            if (key === 'potion_skin') return `+${huntPotionPct()}% к Защите твоего орла в следующем бою Арены. Можно применить вместе с Зельем Ярости. Сгорает после 1 боя.`;
-            if (key === 'craft_scroll') return `Бессрочная скидка: следующий крафт серого снаряжения в Кузнице — за ${CONFIG.nest.craft_cost_particles || 20} частичек и ${huntScrollGold()} 🪙 вместо ${CONFIG.nest.craft_cost_gold || 300} 🪙. Действует, пока не скрафтишь.`;
-            return (HUNT_ITEM_META[key] || {}).desc || '';
+            return t('hunt.desc.' + key, {
+                pct: huntPotionPct(), particles: CONFIG.nest.craft_cost_particles || 20,
+                gold: huntScrollGold(), full: CONFIG.nest.craft_cost_gold || 300,
+            });
         }
 
         function updateHuntEntry() {
@@ -9734,7 +9962,7 @@
             huntEnabled = false;
             updateHuntEntry();
             closeHuntModal();
-            toast('Раздел «Охота» сейчас недоступен');
+            toast(t('hunt.disabled'));
         }
 
         {
@@ -9749,7 +9977,7 @@
         }
 
         async function openHuntScreen(tab) {
-            if (!huntEnabled) { toast('Раздел «Охота» сейчас недоступен'); return; }
+            if (!huntEnabled) { toast(t('hunt.disabled')); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             haptic.select();
             auctionStop();
@@ -9785,7 +10013,7 @@
                 if (!response.ok) { if (!data.hunt_disabled) toast(data.detail || t('market.serverError')); return; }
                 applyHunt(data);
             } catch (error) {
-                toast('Сервер недоступен');
+                toast(t('hunt.serverDown'));
             }
         }
 
@@ -9848,7 +10076,7 @@
                 haptic.notify('success');
                 return data;
             } catch (error) {
-                toast('Сервер недоступен');
+                toast(t('hunt.serverDown'));
                 return null;
             } finally {
                 if (ok) setTimeout(() => farmActionBusy.delete(key), HUNT_TAP_COOLDOWN_MS);
@@ -9859,14 +10087,14 @@
         // --- Добыча: Шахта ---
         async function huntMineCollect() {
             const data = await huntPost('api/hunt/mine/collect', {}, 'hunt-mine-collect');
-            if (data) toast(`+${data.collected} 💎 Горный Кристалл`);
+            if (data) toast(t('hunt.toast.crystals', { n: data.collected, name: HUNT_ITEM_META.rock_crystal.name }));
         }
 
         function huntCostParts(cost) {
             const parts = [];
             if (cost.gold) parts.push({ text: `${fmt(cost.gold)} 🪙`, ok: (state.gold || 0) >= cost.gold });
             if (cost.gram) parts.push({ text: `${fmtGram(cost.gram)} GRAM`, ok: (state.coins || 0) >= cost.gram });
-            if (cost.particles) parts.push({ text: `${fmt(cost.particles)} частичек`, ok: (state.nest.particles || 0) >= cost.particles });
+            if (cost.particles) parts.push({ text: t('hunt.particlesN', { n: fmt(cost.particles) }), ok: (state.nest.particles || 0) >= cost.particles });
             return parts;
         }
 
@@ -9874,15 +10102,16 @@
             const next = huntData && huntData.mine.next;
             if (!next) return;
             const parts = huntCostParts({ gold: next.cost_gold, gram: next.cost_gram, particles: next.cost_particles });
-            if (parts.some(p => !p.ok)) { toast('Не хватает ресурсов для улучшения'); haptic.notify('warning'); return; }
-            huntConfirm(`⛏️ Шахта: уровень ${next.level}`,
-                `Скорость добычи станет <b>${fmt(next.speed_per_day)} 💎 / 24 ч</b>. Стоимость: <b>${parts.map(p => p.text).join(' + ')}</b>.${next.cost_gram ? ' GRAM уходят в общий фонд выкупа.' : ''}`,
-                'Улучшить', () => huntMineUpgrade(next.level));
+            if (parts.some(p => !p.ok)) { toast(t('hunt.toast.notEnoughUpgrade')); haptic.notify('warning'); return; }
+            huntConfirm(t('hunt.mine.confirmTitle', { level: next.level }),
+                t('hunt.mine.confirmText', { speed: fmt(next.speed_per_day), cost: parts.map(p => p.text).join(' + ') })
+                    + (next.cost_gram ? ' ' + t('hunt.mine.confirmPool') : ''),
+                t('hunt.mine.upgradeShort'), () => huntMineUpgrade(next.level));
         }
 
         async function huntMineUpgrade(targetLevel) {
             const data = await huntPost('api/hunt/mine/upgrade', { target_level: targetLevel }, 'hunt-mine-upgrade');
-            if (data) toast(`⛏️ Шахта улучшена до ${data.hunt.mine.level} уровня`);
+            if (data) toast(t('hunt.toast.mineUpgraded', { level: data.hunt.mine.level }));
         }
 
         // --- Экспедиции ---
@@ -9890,13 +10119,14 @@
             const slot = huntData && huntData.slots[k];
             if (!slot || slot.open || !slot.next_to_open) return;
             const parts = huntCostParts({ gold: slot.price_gold, gram: slot.price_gram });
-            if (parts.some(p => !p.ok)) { toast(`Не хватает: ${parts.map(p => p.text).join(' + ')}`); haptic.notify('warning'); return; }
-            huntConfirm(`🔓 Слот экспедиции ${k + 1}`, `Открыть навсегда за <b>${parts.map(p => p.text).join(' + ')}</b>?`, 'Открыть', () => huntOpenSlot(k));
+            const costText = parts.map(p => p.text).join(' + ');
+            if (parts.some(p => !p.ok)) { toast(t('hunt.toast.notEnough', { cost: costText })); haptic.notify('warning'); return; }
+            huntConfirm(t('hunt.slot.confirmTitle', { n: k + 1 }), t('hunt.slot.confirmText', { cost: costText }), t('hunt.slot.open'), () => huntOpenSlot(k));
         }
 
         async function huntOpenSlot(k) {
             const data = await huntPost('api/hunt/slot/open', { hunt_slot: k }, 'hunt-slot-open');
-            if (data) toast(`🔓 Слот ${data.opened_slot + 1} открыт`);
+            if (data) toast(t('hunt.toast.slotOpened', { n: data.opened_slot + 1 }));
         }
 
         // Тот же авто-подбор, что и на сервере (hunt_pick_eagle): самый слабый
@@ -9924,10 +10154,10 @@
             const zone = (huntCfg().zones || []).find(z => z.id === zoneId);
             if (!zone || !huntData) return;
             const k = huntFreeSlot();
-            if (k < 0) { toast(huntData.slots_open ? 'Все открытые слоты заняты' : 'Сначала открой слот экспедиции'); haptic.notify('warning'); return; }
-            if ((state.mnstr || 0) < (huntCfg().entry_cost_meat || 10)) { toast(`Нужно ${huntCfg().entry_cost_meat || 10} 🥩 Meat`); haptic.notify('warning'); return; }
+            if (k < 0) { toast(huntData.slots_open ? t('hunt.toast.slotsBusy') : t('hunt.toast.openSlotFirst')); haptic.notify('warning'); return; }
+            if ((state.mnstr || 0) < (huntCfg().entry_cost_meat || 10)) { toast(t('hunt.toast.needMeat', { n: huntCfg().entry_cost_meat || 10 })); haptic.notify('warning'); return; }
             const data = await huntPost('api/hunt/start', { zone_id: zoneId, hunt_slot: k }, 'hunt-start');
-            if (data) toast(`🏹 ${MONSTERS[data.monster_id].name} улетел: ${zone.name}`);
+            if (data) toast(t('hunt.toast.flewAway', { name: MONSTERS[data.monster_id].name, zone: huntZoneTitle(zone) }));
         }
 
         // Сбор прямо с фермы (тап по вернувшемуся орлу или кнопка в его
@@ -9950,20 +10180,20 @@
         function huntShowLoot(loot) {
             const rows = loot.length
                 ? loot.map(([key, n]) => `<div class="stat-row"><span>${HUNT_ITEM_META[key].icon} ${HUNT_ITEM_META[key].name}</span><b style="color:var(--gold-lt)">+${n}</b></div>`).join('')
-                : '<p class="slot-modal-sub">В этот раз пусто.</p>';
+                : `<p class="slot-modal-sub">${t('hunt.loot.empty')}</p>`;
             const rare = loot.some(([key]) => key === 'craft_scroll');
             document.getElementById('huntModalBody').innerHTML = `
                 <div style="font-size:40px;">${rare ? '📜' : '🎒'}</div>
-                <h2>${rare ? 'Редкая находка!' : 'Добыча'}</h2>
+                <h2>${rare ? t('hunt.loot.rare') : t('hunt.loot.title')}</h2>
                 ${rows}
-                <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">Забрать на Склад</button>`;
+                <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">${t('hunt.loot.take')}</button>`;
             document.getElementById('huntModal').classList.add('open');
         }
 
         // --- Склад / Алхимия ---
         async function huntCraft(recipeId) {
             const data = await huntPost('api/hunt/craft', { recipe_id: recipeId }, 'hunt-craft');
-            if (data) toast(`⚗️ ${HUNT_ITEM_META[data.crafted].name} отправлено на Склад`);
+            if (data) toast(t('hunt.toast.brewed', { name: HUNT_ITEM_META[data.crafted].name }));
         }
 
         function huntOpenItem(key) {
@@ -9979,15 +10209,14 @@
             const meta = HUNT_ITEM_META[key];
             const count = huntData.items[key] || 0;
             const active = !!(huntData.buffs || {})[meta.buff];
-            const activeText = key === 'craft_scroll' ? 'Скидка уже действует — сначала скрафти серое снаряжение в Кузнице'
-                : 'Уже действует — сработает в следующем бою Арены';
+            const activeText = key === 'craft_scroll' ? t('hunt.item.scrollActive') : t('hunt.item.potionActive');
             document.getElementById('huntModalBody').innerHTML = `
                 <div style="font-size:44px;">${meta.icon}</div>
                 <h2>${meta.name}</h2>
                 <p class="slot-modal-sub">${huntItemDesc(key)}</p>
-                <div class="stat-row"><span>На Складе</span><b>${count}</b></div>
+                <div class="stat-row"><span>${t('hunt.item.inStorage')}</span><b>${count}</b></div>
                 ${active ? `<p class="slot-modal-sub" style="color:#a7f3a0">✅ ${activeText}</p>` : ''}
-                <button class="btn-primary" style="margin-top:12px" ${count < 1 || active ? 'disabled' : ''} onclick="huntUseItem('${key}')">Применить</button>
+                <button class="btn-primary" style="margin-top:12px" ${count < 1 || active ? 'disabled' : ''} onclick="huntUseItem('${key}')">${t('hunt.item.apply')}</button>
                 <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.close')}</button>`;
         }
 
@@ -9995,7 +10224,7 @@
             const data = await huntPost('api/hunt/use', { item: key }, 'hunt-use-' + key);
             if (!data) return;
             closeHuntModal();
-            toast(key === 'craft_scroll' ? `📜 Скидка активна: следующий серый крафт — ${huntScrollGold()} 🪙` : `${HUNT_ITEM_META[key].icon} Бафф на следующий бой Арены`);
+            toast(key === 'craft_scroll' ? t('hunt.toast.scrollOn', { gold: huntScrollGold() }) : t('hunt.toast.potionOn', { icon: HUNT_ITEM_META[key].icon }));
             renderNest();
         }
 
@@ -10022,9 +10251,9 @@
             buffs = buffs || {};
             const pct = huntPotionPct();
             return `
-                <span class="hunt-buff ${buffs.rage ? '' : 'off'}">🔥 Атака +${pct}% ${buffs.rage ? '· на 1 бой' : '· нет'}</span>
-                <span class="hunt-buff ${buffs.skin ? '' : 'off'}">🛡️ Защита +${pct}% ${buffs.skin ? '· на 1 бой' : '· нет'}</span>
-                <span class="hunt-buff ${buffs.craft_discount ? '' : 'off'}">📜 Крафт за ${huntScrollGold()} 🪙 ${buffs.craft_discount ? '· активно' : '· нет'}</span>`;
+                <span class="hunt-buff ${buffs.rage ? '' : 'off'}">🔥 ${t('hunt.buff.atk', { pct })} · ${buffs.rage ? t('hunt.buff.oneFight') : t('hunt.buff.none')}</span>
+                <span class="hunt-buff ${buffs.skin ? '' : 'off'}">🛡️ ${t('hunt.buff.def', { pct })} · ${buffs.skin ? t('hunt.buff.oneFight') : t('hunt.buff.none')}</span>
+                <span class="hunt-buff ${buffs.craft_discount ? '' : 'off'}">📜 ${t('hunt.buff.craft', { gold: huntScrollGold() })} · ${buffs.craft_discount ? t('hunt.buff.active') : t('hunt.buff.none')}</span>`;
         }
 
         function renderArenaHuntBuffs() {
@@ -10033,8 +10262,8 @@
             const b = state.huntBuffs || {};
             const pct = huntPotionPct();
             const chips = [];
-            if (b.rage) chips.push(`<span class="hunt-buff">🔥 Зелье Ярости: Атака +${pct}% на этот бой</span>`);
-            if (b.skin) chips.push(`<span class="hunt-buff">🛡️ Стальная Кожа: Защита +${pct}% на этот бой</span>`);
+            if (b.rage) chips.push(`<span class="hunt-buff">🔥 ${t('hunt.arena.rage', { pct })}</span>`);
+            if (b.skin) chips.push(`<span class="hunt-buff">🛡️ ${t('hunt.arena.skin', { pct })}</span>`);
             el.innerHTML = chips.join('');
             el.style.display = chips.length ? '' : 'none';
         }
@@ -10043,13 +10272,13 @@
             const screen = document.getElementById('hunt');
             if (!screen || !screen.classList.contains('active')) return;
             setHTMLIfChanged(document.getElementById('huntWallet'), `
-                <div>Золото<b>${fmt(state.gold || 0)} 🪙</b></div>
+                <div>${t('hunt.wallet.gold')}<b>${fmt(state.gold || 0)} 🪙</b></div>
                 <div>GRAM<b>${fmtGram(state.coins || 0)}</b></div>
                 <div>Meat<b>${fmtToken(state.mnstr || 0)} 🥩</b></div>
-                <div>Частички<b>${fmt(state.nest.particles || 0)}</b></div>`);
+                <div>${t('hunt.wallet.particles')}<b>${fmt(state.nest.particles || 0)}</b></div>`);
             if (!huntData) {
                 ['huntSubMine', 'huntSubExpeditions', 'huntSubStorage', 'huntSubAlchemy'].forEach(id =>
-                    setHTMLIfChanged(document.getElementById(id), '<p class="subtitle">Загрузка…</p>'));
+                    setHTMLIfChanged(document.getElementById(id), `<p class="subtitle">${t('hunt.loading')}</p>`));
                 return;
             }
             renderHuntMine();
@@ -10064,32 +10293,32 @@
             const next = m.next;
             let upgradeHtml;
             if (!next) {
-                upgradeHtml = `<button class="btn-action" style="width:100%" disabled>⛏️ Шахта на максимуме (${m.max_level} ур.)</button>`;
+                upgradeHtml = `<button class="btn-action" style="width:100%" disabled>${t('hunt.mine.maxed', { max: m.max_level })}</button>`;
             } else {
                 const parts = huntCostParts({ gold: next.cost_gold, gram: next.cost_gram, particles: next.cost_particles });
                 const ok = parts.every(p => p.ok);
                 upgradeHtml = `
-                    <div class="hunt-sub">Уровень ${next.level}: ${fmt(m.speed_per_day)} → <b>${fmt(next.speed_per_day)}</b> 💎 / 24 ч</div>
+                    <div class="hunt-sub">${t('hunt.mine.nextLevel', { level: next.level, from: fmt(m.speed_per_day), to: fmt(next.speed_per_day) })}</div>
                     <div class="hunt-cost-row">${parts.map(p => `<span class="hunt-cost ${p.ok ? '' : 'lack'}">${p.text}</span>`).join('')}</div>
-                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntAskMineUpgrade()">Улучшить до ${next.level} ур.</button>`;
+                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntAskMineUpgrade()">${t('hunt.mine.upgradeTo', { level: next.level })}</button>`;
             }
             const rows = (huntCfg().mine_levels || []).map(lv => {
                 const cost = [lv.cost_gold ? `${fmt(lv.cost_gold)} 🪙` : '', lv.cost_gram ? `${fmtGram(lv.cost_gram)} GRAM` : '',
-                    lv.cost_particles ? `${fmt(lv.cost_particles)} част.` : ''].filter(Boolean).join(' + ') || '—';
+                    lv.cost_particles ? t('hunt.particlesShort', { n: fmt(lv.cost_particles) }) : ''].filter(Boolean).join(' + ') || '—';
                 return `<tr class="${lv.level === m.level ? 'cur' : ''}"><td>${lv.level}</td><td>${cost}</td><td>${fmt(lv.speed_per_day)}</td></tr>`;
             }).join('');
             setHTMLIfChanged(document.getElementById('huntSubMine'), `
                 <div class="hunt-card glass-panel">
-                    <h3>⛏️ Шахта Горного Кристалла <span class="hunt-level-pill">${m.level} / ${m.max_level} ур.</span></h3>
+                    <h3>⛏️ ${t('hunt.mine.title')} <span class="hunt-level-pill">${t('hunt.mine.levelPill', { level: m.level, max: m.max_level })}</span></h3>
                     <div class="hunt-counter" id="huntMinePending">${huntMinePending().toFixed(2)}</div>
-                    <div class="hunt-counter-sub">💎 накоплено · ${fmt(m.speed_per_day)} шт / 24 ч · собираются только целые</div>
-                    <button class="btn-primary" id="huntMineCollectBtn" onclick="huntMineCollect()">Собрать</button>
+                    <div class="hunt-counter-sub">${t('hunt.mine.counterSub', { speed: fmt(m.speed_per_day) })}</div>
+                    <button class="btn-primary" id="huntMineCollectBtn" onclick="huntMineCollect()">${t('hunt.mine.collect')}</button>
                 </div>
                 <div class="hunt-card glass-panel">
-                    <h3>⬆️ Улучшение шахты</h3>
+                    <h3>⬆️ ${t('hunt.mine.upgradeTitle')}</h3>
                     ${upgradeHtml}
-                    <details class="hunt-details"><summary>Все уровни</summary>
-                        <table class="hunt-levels"><tr><th>Ур.</th><th>Стоимость</th><th>💎 / 24 ч</th></tr>${rows}</table>
+                    <details class="hunt-details"><summary>${t('hunt.mine.allLevels')}</summary>
+                        <table class="hunt-levels"><tr><th>${t('hunt.mine.colLevel')}</th><th>${t('hunt.mine.colCost')}</th><th>💎 / 24 ${t('hunt.hoursShort')}</th></tr>${rows}</table>
                     </details>
                 </div>`);
             tickHuntMine();
@@ -10099,7 +10328,7 @@
             return (zone.rewards || []).map(r => {
                 const meta = HUNT_ITEM_META[r.item] || { icon: '', name: r.item };
                 const amount = r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`;
-                const chance = Number(r.chance) < 1 ? `${Math.round(Number(r.chance) * 1000) / 10}% шанс: ` : '';
+                const chance = Number(r.chance) < 1 ? t('hunt.chance', { pct: Math.round(Number(r.chance) * 1000) / 10 }) + ' ' : '';
                 return `${meta.icon} ${chance}${amount} ${meta.name}`;
             }).join('<br>');
         }
@@ -10112,18 +10341,18 @@
                 if (!s.open) {
                     const price = [s.price_gold ? `${fmt(s.price_gold)} 🪙` : '', s.price_gram ? `${fmtGram(s.price_gram)} GRAM` : ''].filter(Boolean).join(' + ');
                     return `<div class="hunt-slot glass-panel locked">
-                        <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                        <div class="hunt-slot-title">${t('hunt.slot.title', { n: s.index + 1 })}</div>
                         <div class="hunt-slot-big">🔒</div>
                         <div class="hunt-slot-text">${price}</div>
-                        ${s.next_to_open ? `<button class="btn-action" onclick="huntAskOpenSlot(${s.index})">Открыть</button>`
-                            : `<div class="hunt-slot-text" style="color:var(--text-muted)">после слота ${s.index}</div>`}
+                        ${s.next_to_open ? `<button class="btn-action" onclick="huntAskOpenSlot(${s.index})">${t('hunt.slot.open')}</button>`
+                            : `<div class="hunt-slot-text" style="color:var(--text-muted)">${t('hunt.slot.after', { n: s.index })}</div>`}
                     </div>`;
                 }
                 if (!s.flight) {
                     return `<div class="hunt-slot glass-panel">
-                        <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                        <div class="hunt-slot-title">${t('hunt.slot.title', { n: s.index + 1 })}</div>
                         <div class="hunt-slot-big">🪹</div>
-                        <div class="hunt-slot-text">Свободен — выбери зону ниже</div>
+                        <div class="hunt-slot-text">${t('hunt.slot.free')}</div>
                     </div>`;
                 }
                 const f = s.flight;
@@ -10131,11 +10360,11 @@
                 const zone = (cfg.zones || []).find(z => z.id === f.zone) || {};
                 const ready = now >= f.until;
                 return `<div class="hunt-slot glass-panel">
-                    <div class="hunt-slot-title">Слот ${s.index + 1}</div>
+                    <div class="hunt-slot-title">${t('hunt.slot.title', { n: s.index + 1 })}</div>
                     <img src="${monster.sprite ? framePath(monster.sprite, 0) : ''}" alt="">
-                    <div class="hunt-slot-text">${zone.icon || ''} ${huntEsc(zone.name || '')}<br><b id="huntFlightTimer${s.index}">${ready ? 'вернулся!' : formatCountdown(f.until - now)}</b></div>
+                    <div class="hunt-slot-text">${zone.icon || ''} ${huntEsc(huntZoneTitle(zone))}<br><b id="huntFlightTimer${s.index}">${ready ? t('hunt.slot.back') : formatCountdown(f.until - now)}</b></div>
                     <div class="hunt-bar"><i id="huntFlightBar${s.index}" style="width:${huntFlightPct(f, now)}%"></i></div>
-                    <button class="btn-primary" ${ready ? '' : 'disabled'} onclick="huntCollect(${s.index})">Забрать</button>
+                    <button class="btn-primary" ${ready ? '' : 'disabled'} onclick="huntCollect(${s.index})">${t('hunt.slot.collect')}</button>
                 </div>`;
             }).join('');
             const freeSlot = huntFreeSlot();
@@ -10144,26 +10373,26 @@
                 const tier = CONFIG.tiers.find(t => t.id === zone.min_tier) || CONFIG.tiers[0];
                 const pick = huntPickEagle(zone);
                 const pickHtml = pick >= 0
-                    ? `<div class="hunt-pick">Полетит: <b style="color:${MONSTERS[state.farm[pick].id].color}">${MONSTERS[state.farm[pick].id].name}</b> (самый слабый подходящий 7 ур.)</div>`
-                    : `<div class="hunt-pick none">Нет свободного орла 7 ур. редкости «${tier.name}» или выше</div>`;
+                    ? `<div class="hunt-pick">${t('hunt.zone.pick', { name: `<b style="color:${MONSTERS[state.farm[pick].id].color}">${MONSTERS[state.farm[pick].id].name}</b>`, level: cfg.eagle_level || 7 })}</div>`
+                    : `<div class="hunt-pick none">${t('hunt.zone.noEagle', { tier: tier.name, level: cfg.eagle_level || 7 })}</div>`;
                 const canGo = pick >= 0 && freeSlot >= 0 && (state.mnstr || 0) >= meat;
-                const why = freeSlot < 0 ? (huntData.slots_open ? 'Все слоты заняты' : 'Открой слот') : (state.mnstr || 0) < meat ? `Нужно ${meat} 🥩` : '';
+                const why = freeSlot < 0 ? (huntData.slots_open ? t('hunt.zone.slotsBusy') : t('hunt.zone.openSlot')) : (state.mnstr || 0) < meat ? t('hunt.zone.needMeat', { n: meat }) : '';
                 return `<div class="hunt-card glass-panel">
                     <div class="hunt-zone">
                         <div class="hunt-zone-icon">${zone.icon || '🏹'}</div>
                         <div class="hunt-zone-body">
-                            <h3>${huntEsc(zone.name)}</h3>
-                            <div class="hunt-zone-meta">⏱ ${fmt(cfg.duration_hours || 12)} ч · 🥩 ${meat} Meat · от <b style="color:${tier.color}">${tier.name}</b> орла ${cfg.eagle_level || 7} ур.</div>
+                            <h3>${huntEsc(huntZoneTitle(zone))}</h3>
+                            <div class="hunt-zone-meta">${t('hunt.zone.meta', { hours: fmt(cfg.duration_hours || 12), meat, tier: `<b style="color:${tier.color}">${tier.name}</b>`, level: cfg.eagle_level || 7 })}</div>
                             <div class="hunt-loot">${huntLootText(zone)}</div>
                             ${pickHtml}
-                            <button class="btn-primary" ${canGo ? '' : 'disabled'} onclick="huntStart('${zone.id}')">${canGo ? `Отправить · ${meat} 🥩` : (why || 'Нет подходящего орла')}</button>
+                            <button class="btn-primary" ${canGo ? '' : 'disabled'} onclick="huntStart('${zone.id}')">${canGo ? t('hunt.zone.send', { n: meat }) : (why || t('hunt.zone.noSuitable'))}</button>
                         </div>
                     </div>
                 </div>`;
             }).join('');
             setHTMLIfChanged(document.getElementById('huntSubExpeditions'), `
                 <div class="hunt-slots">${slotsHtml}</div>
-                <div class="hunt-rules glass-panel">🔒 Пока орёл в Дальней Экспедиции, его <b>нельзя</b> выставить на Рынок, продать Купцу и отправить в обычную экспедицию за золотом. На <b>Арене</b> он сражается как обычно. Летают только полностью обученные орлы ${cfg.eagle_level || 7} уровня; полёт всегда ${fmt(cfg.duration_hours || 12)} ч.</div>
+                <div class="hunt-rules glass-panel">🔒 ${t('hunt.rules', { level: cfg.eagle_level || 7, hours: fmt(cfg.duration_hours || 12) })}</div>
                 ${zonesHtml}`);
         }
 
@@ -10181,15 +10410,15 @@
                     <div class="hunt-item-ic">${meta.icon}</div>
                     <div class="hunt-item-name">${meta.name}</div>
                     <div class="hunt-item-count">${items[key] || 0}</div>
-                    ${usable ? '<div class="hunt-item-use">Применить ›</div>' : ''}
+                    ${usable ? `<div class="hunt-item-use">${t('hunt.item.apply')} ›</div>` : ''}
                 </div>`;
             };
             setHTMLIfChanged(document.getElementById('huntSubStorage'), `
-                <div class="hunt-section-title">Активные эффекты</div>
+                <div class="hunt-section-title">${t('hunt.storage.effects')}</div>
                 <div class="hunt-buffs">${huntBuffChips(huntData.buffs)}</div>
-                <div class="hunt-section-title">Ресурсы</div>
+                <div class="hunt-section-title">${t('hunt.storage.resources')}</div>
                 <div class="hunt-items">${HUNT_RESOURCE_KEYS.map(tile).join('')}</div>
-                <div class="hunt-section-title">Предметы — нажми, чтобы применить</div>
+                <div class="hunt-section-title">${t('hunt.storage.items')}</div>
                 <div class="hunt-items">${HUNT_USABLE_KEYS.map(tile).join('')}</div>`);
         }
 
@@ -10203,10 +10432,10 @@
                 }).join('');
                 const ok = Object.entries(r.cost || {}).every(([key, need]) => (items[key] || 0) >= need);
                 return `<div class="hunt-card glass-panel">
-                    <h3>${meta.icon} ${huntEsc(r.name || meta.name)} <span class="hunt-level-pill">на Складе: ${items[r.id] || 0}</span></h3>
+                    <h3>${meta.icon} ${huntEsc(HUNT_ITEM_META[r.id] ? meta.name : (r.name || r.id))} <span class="hunt-level-pill">${t('hunt.alchemy.inStorage', { n: items[r.id] || 0 })}</span></h3>
                     <div class="hunt-sub">${huntItemDesc(r.id)}</div>
                     <div class="hunt-ingredients">${ings}</div>
-                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntCraft('${r.id}')">Сварить</button>
+                    <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntCraft('${r.id}')">${t('hunt.alchemy.brew')}</button>
                 </div>`;
             }).join('');
             setHTMLIfChanged(document.getElementById('huntSubAlchemy'), html);
@@ -10221,7 +10450,7 @@
             const btn = document.getElementById('huntMineCollectBtn');
             if (btn) {
                 btn.disabled = whole < 1;
-                const label = whole < 1 ? 'Собрать (нужен целый кристалл)' : `Собрать ${whole} 💎`;
+                const label = whole < 1 ? t('hunt.mine.collectNeedWhole') : t('hunt.mine.collectN', { n: whole });
                 if (btn.textContent !== label) btn.textContent = label;
             }
         }
@@ -10241,7 +10470,7 @@
                 if (!s.flight) return;
                 const timer = document.getElementById('huntFlightTimer' + s.index);
                 const bar = document.getElementById('huntFlightBar' + s.index);
-                if (timer) timer.textContent = now >= s.flight.until ? 'вернулся!' : formatCountdown(s.flight.until - now);
+                if (timer) timer.textContent = now >= s.flight.until ? t('hunt.slot.back') : formatCountdown(s.flight.until - now);
                 if (bar) bar.style.width = huntFlightPct(s.flight, now) + '%';
             });
         }
