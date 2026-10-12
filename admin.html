@@ -247,6 +247,7 @@
             <button class="nav-btn" data-page="missions">📋 Задания</button>
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="hunt">🏹 Охота</button>
+            <button class="nav-btn" data-page="shares">📈 Акции</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="arena">⚔️ Арена</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
@@ -404,6 +405,40 @@
                 <button class="primary" id="configSave">Сохранить</button>
             </div>
             <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
+        </div>
+
+        <div class="page" id="page-shares">
+            <h2>📈 Управление Золотыми Акциями</h2>
+            <div class="card-grid" id="sharesCards"></div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <div class="nft-interval-head">
+                    <b>Новый пул:</b>
+                    <label>Новая цена пула (Gram) <input id="sharesPoolPrice" type="number" min="0.01" step="0.01" style="width:120px;"></label>
+                    <label>Количество акций в пуле <input id="sharesPoolCount" type="number" min="1" step="1" style="width:110px;"></label>
+                    <button id="sharesLaunchBtn" class="primary">🚀 Запустить новый Пул</button>
+                    <button id="sharesStopBtn">⏹ Остановить продажу</button>
+                </div>
+                <div class="muted" style="font-size:12px;">Лимит эмиссии — 1000 акций на весь сервер. Запуск <b>перезаписывает</b> цену и остаток
+                    текущего пула; кнопка покупки у игроков открывается сразу (вкладка обновляется раз в 5 с). Количество не может
+                    превышать «1000 − уже продано». Пока ни один пул не запущен, купить акции нельзя.</div>
+            </div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <div class="nft-interval-head">
+                    <b>Дивиденды:</b>
+                    <button id="sharesMidnightBtn">⏳ Имитировать наступление 00:00 (Начислить дивиденды)</button>
+                    <span class="muted" id="sharesMidnightResult" style="font-size:12px;"></span>
+                </div>
+                <div class="muted" style="font-size:12px;">Настоящее начисление — раз в сутки в 00:00 UTC: <b>8 🪙</b> за акцию, если в эту полночь у игрока
+                    активен Gold Eagle VIP, иначе <b>4 🪙</b> (без VIP, Bronze, Silver). Кнопка добавляет каждому владельцу одну выплату
+                    сразу, по его статусу VIP на текущий момент (для тестов); настоящие полночи начисляются как обычно.</div>
+            </div>
+            <h3 style="margin:20px 0 10px;">Владельцы акций</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Игрок</th><th>Акций</th><th>Gold Eagle VIP</th><th>Ставка/сутки</th><th>Не забрано</th><th>Забрано всего</th></tr></thead>
+                    <tbody id="sharesHolders"></tbody>
+                </table>
+            </div>
         </div>
 
         <div class="page" id="page-hunt">
@@ -934,6 +969,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'economy') loadEconomy();
         if (btn.dataset.page === 'retention') { loadRetention(); loadDailyStats(); }
         if (btn.dataset.page === 'hunt') loadHuntAdmin();
+        if (btn.dataset.page === 'shares') loadSharesAdmin();
         else tournamentStopCountdowns();
     };
 });
@@ -2083,8 +2119,9 @@ async function loadEconomy() {
         card('Золото → кланы', fmtNum(n('gold_clans')), `+ ${fmtNum(n('meat_clans'))} мяса и ${fmtNum(n('gram_clans'))} GRAM`),
         card('Золото → энергия Арены', fmtNum(n('gold_arena')), `за GRAM: ${fmtNum(n('gram_arena'))}`),
         card('Золото → Охота', fmtNum(n('gold_hunt')), `+ ${fmtNum(n('gram_hunt'))} GRAM в фонд выкупа · ${fmtNum(n('meat_hunt'))} мяса за ${fmtNum(n('hunts'))} полётов`),
-        card('Баланс потока золота (добыто − потрачено)', fmtNum(n('gold_expeditions') - goldSpent),
-             n('gold_expeditions') - goldSpent >= 0 ? 'плюс — золото копится у игроков' : 'минус — тратят золото, накопленное раньше'),
+        card('Золото ← дивиденды акций', fmtNum(n('gold_shares')), `забрано игроками · на акции потрачено ${fmtNum(n('gram_shares'))} GRAM за ${fmtNum(n('shares_bought'))} шт.`),
+        card('Баланс потока золота (добыто − потрачено)', fmtNum(n('gold_expeditions') + n('gold_shares') - goldSpent),
+             n('gold_expeditions') + n('gold_shares') - goldSpent >= 0 ? 'плюс — золото копится у игроков (экспедиции + дивиденды)' : 'минус — тратят золото, накопленное раньше'),
         card('Скрещивания за мясо', fmtNum(n('fusion_tries_meat')), `${fmtNum(n('meat_fusion'))} мяса · ${pct(n('fusion_tries_meat'), tries)} попыток`),
         card('Скрещивания за GRAM', fmtNum(n('fusion_tries_gram')), `${fmtNum(n('gram_fusion'))} GRAM · ${pct(n('fusion_tries_gram'), tries)} попыток`),
     ].join('');
@@ -2602,6 +2639,66 @@ document.getElementById('huntFlightSaveBtn').onclick = async e => {
         } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
     });
 };
+/* ---------- 📈 Золотые Акции ---------- */
+function renderSharesAdmin(d) {
+    const p = d.pool;
+    const card = (label, value, sub) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}</div>`;
+    document.getElementById('sharesCards').innerHTML = [
+        card('Выкуплено на сервере', `${fmtNum(p.sold)} / ${fmtNum(p.cap)}`, `свободно для эмиссии: ${fmtNum(p.cap - p.sold)}`),
+        card('Текущий пул', p.available > 0 ? `${fmtNum(p.available)} шт. × ${fmtNum(p.price)} GRAM` : '🛑 закрыт',
+             p.pool_size ? `пул #${p.pool_id}, выпущено в нём ${fmtNum(p.pool_size)}` : 'пулы ещё не запускались'),
+        card('Владельцев', fmtNum(d.holders_count), `с Gold Eagle VIP: ${fmtNum(d.gold_vip_holders)}`),
+        card('Выплата за сутки', `${fmtNum(d.daily_payout)} 🪙`, 'по текущим статусам VIP'),
+        card('Не забрано дивидендов', `${fmtNum(d.unclaimed_total)} 🪙`, `забрано всего: ${fmtNum(d.claimed_total)} 🪙`),
+    ].join('');
+    document.getElementById('sharesHolders').innerHTML = (d.holders || []).map(h => `
+        <tr>
+            <td data-label="Игрок">${escHtml(h.name || '—')} <span class="muted">${h.user_id}</span></td>
+            <td data-label="Акций"><b>${fmtNum(h.owned)}</b></td>
+            <td data-label="Gold Eagle VIP">${h.gold_vip ? '👑 да' : '—'}</td>
+            <td data-label="Ставка/сутки">${fmtNum(h.owned * h.rate)} 🪙 <span class="muted">(${h.rate}/акция)</span></td>
+            <td data-label="Не забрано">${fmtNum(h.unclaimed)} 🪙</td>
+            <td data-label="Забрано всего">${fmtNum(h.claimed)} 🪙</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="muted">Акций ещё никто не купил</td></tr>';
+}
+async function loadSharesAdmin() {
+    try { renderSharesAdmin(await api('/admin/api/shares')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('sharesLaunchBtn').onclick = e => {
+    const price = Number(document.getElementById('sharesPoolPrice').value);
+    const count = Math.floor(Number(document.getElementById('sharesPoolCount').value));
+    if (!(price > 0)) { toast('Укажите цену пула больше 0', true); return; }
+    if (!(count >= 1)) { toast('Укажите количество акций (от 1)', true); return; }
+    if (!confirm(`Запустить новый пул: ${count} акций по ${price} GRAM?\nОстаток текущего пула будет заменён.`)) return;
+    withBusyButton(e.currentTarget, 'Запускаю…', async () => {
+        try {
+            const r = await api('/admin/api/shares/pool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price, count }) });
+            renderSharesAdmin(r);
+            toast(`🚀 Пул запущен: ${count} шт. по ${price} GRAM`);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+document.getElementById('sharesStopBtn').onclick = e => {
+    if (!confirm('Остановить продажу текущего пула? Игроки увидят «Ожидайте запуск нового пула».')) return;
+    withBusyButton(e.currentTarget, '…', async () => {
+        try { renderSharesAdmin(await api('/admin/api/shares/pool/stop', { method: 'POST' })); toast('Продажа остановлена'); }
+        catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+document.getElementById('sharesMidnightBtn').onclick = e => {
+    if (!confirm('Начислить всем владельцам акций дивиденды за одни сутки прямо сейчас?')) return;
+    withBusyButton(e.currentTarget, 'Начисляю…', async () => {
+        try {
+            const r = await api('/admin/api/shares/simulate_midnight', { method: 'POST' });
+            renderSharesAdmin(r);
+            const msg = `Начислено ${fmtNum(r.paid_total)} 🪙 — ${fmtNum(r.paid_players)} владельцам (с Gold Eagle VIP: ${fmtNum(r.paid_gold_vip)})`;
+            document.getElementById('sharesMidnightResult').textContent = msg;
+            toast(msg);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+
 async function loadHuntAdmin() {
     try {
         const params = new URLSearchParams({ search: huntAdmin.search, limit: huntAdmin.limit, offset: huntAdmin.offset });

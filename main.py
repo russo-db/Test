@@ -2389,6 +2389,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         except Exception as e:
             print(f"[load] не удалось обновить имя {user_id}: {type(e).__name__}: {e}")
     row = await accrue_vip_meat(user_id, row)
+    row = await accrue_shares_dividends(user_id, row)
     row = await reconcile_queues(user_id, row)
     row = await reconcile_pvp_energy(user_id, row)
     row = await reconcile_nest_particles(user_id, row)
@@ -2436,6 +2437,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
         "daily_subscription": daily_sub_view(row, await refresh_daily_sub()),
+        "shares": shares_view(row, await store.get_shares_pool()),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
         "eggs_board_unlocked": max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2))),
         "eggs_queue": normalize_eggs_queue(row.get("eggs_queue")),
@@ -2749,6 +2751,340 @@ def gold_eagle_vip(row: dict) -> bool:
 def ensure_gold_eagle_vip(row: dict) -> None:
     if not gold_eagle_vip(row):
         raise HTTPException(status_code=403, detail="Доступно только с активным Gold Eagle VIP")
+
+
+# --- ЗОЛОТЫЕ АКЦИИ (Гнездо Воинов → «📈 Акции») ---
+# Эмиссия ограничена SHARES_CAP штуками на весь сервер. Продажа идёт пулами,
+# которые запускает только админ (цена в GRAM + количество); на старте пула
+# нет — купить нечего. Пул и счётчики — один документ settings/gold_shares
+# с атомарными операциями (store.reserve_share/launch_shares_pool).
+# У игрока: shares_owned, shares_dividends_unclaimed (накоплено, не забрано),
+# shares_div_day — по какие сутки UTC дивиденды уже посчитаны.
+# Дивиденды — раз в сутки в 00:00 UTC: за каждую акцию SHARES_DIV_GOLD_VIP
+# золота, если в эту полночь у игрока был активен Gold Eagle VIP, иначе
+# SHARES_DIV_BASE (без VIP, Bronze, Silver). Считаются лениво, но точно:
+# статус на каждую полночь восстанавливается по vip_tier/vip_expires_at, а
+# любое изменение VIP или числа акций сперва досчитывает прошлые полночи по
+# старым данным (shares_settle_fields) — купленный после полуночи VIP не
+# даёт ставку 8 за уже прошедшую полночь, а истёкший до неё — даёт 4.
+SHARES_CAP = 1000
+SHARES_DIV_GOLD_VIP = 8.0
+SHARES_DIV_BASE = 4.0
+SHARES_DIV_MAX_DAYS = 3650
+SHARES_PRICE_MAX = 1_000_000.0
+SHARES_POOL_EMPTY_DETAIL = "🛑 Ожидайте запуск нового пула администрацией"
+
+
+def shares_owned_of(row: dict) -> int:
+    try:
+        return max(0, int(row.get("shares_owned") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def shares_rate(row: dict) -> float:
+    """Ставка «сейчас» — для подсказки игроку и админской «⏳ 00:00»."""
+    return SHARES_DIV_GOLD_VIP if gold_eagle_vip(row) else SHARES_DIV_BASE
+
+
+def shares_dividend_due(row: dict, today: int) -> tuple:
+    """(золото, полночей, из них с Gold Eagle VIP) за полночи после
+    shares_div_day по today включительно. Полночь суток d — момент d*86400:
+    Gold-ставка, если тариф gold и vip_expires_at позже этой полуночи."""
+    owned = shares_owned_of(row)
+    last = int(row.get("shares_div_day") or 0)
+    if owned <= 0 or last <= 0 or last >= today:
+        return 0.0, 0, 0
+    days = min(today - last, SHARES_DIV_MAX_DAYS)
+    first = today - days + 1
+    gold_days = 0
+    if row.get("vip_tier") == GOLD_EAGLE_VIP_TIER:
+        expires = float(row.get("vip_expires_at") or 0)
+        last_gold = math.ceil(expires / 86400) - 1      # последняя полночь строго раньше expires
+        gold_days = max(0, min(today, last_gold) - first + 1)
+    amount = owned * (gold_days * SHARES_DIV_GOLD_VIP + (days - gold_days) * SHARES_DIV_BASE)
+    return float(amount), days, gold_days
+
+
+def shares_settle_fields(row: dict, now: Optional[float] = None) -> dict:
+    """Поля для $set: досчитать дивиденды за прошедшие полночи по ТЕКУЩИМ
+    (ещё не изменённым) данным игрока. Вызывать в compute ДО смены VIP или
+    числа акций."""
+    owned = shares_owned_of(row)
+    if owned <= 0:
+        return {}
+    today = day_index(now)
+    if int(row.get("shares_div_day") or 0) <= 0:
+        return {"shares_div_day": today}
+    amount, days, _ = shares_dividend_due(row, today)
+    if days <= 0:
+        return {}
+    return {"shares_div_day": today,
+            "shares_dividends_unclaimed": round(float(row.get("shares_dividends_unclaimed") or 0) + amount, 6)}
+
+
+def shares_pool_view(pool: Optional[dict]) -> dict:
+    pool = pool or {}
+    return {
+        "price": float(pool.get("price") or 0), "available": int(pool.get("available") or 0),
+        "sold": int(pool.get("sold") or 0), "cap": SHARES_CAP, "pool_id": int(pool.get("pool_id") or 0),
+        "pool_size": int(pool.get("pool_size") or 0),
+    }
+
+
+def shares_view(row: dict, pool: Optional[dict]) -> dict:
+    return {
+        "owned": shares_owned_of(row),
+        "unclaimed": round(float(row.get("shares_dividends_unclaimed") or 0), 6),
+        "claimed_total": round(float(row.get("shares_dividends_claimed") or 0), 6),
+        "rate_now": shares_rate(row), "rate_gold_vip": SHARES_DIV_GOLD_VIP, "rate_base": SHARES_DIV_BASE,
+        "pool": shares_pool_view(pool),
+    }
+
+
+async def accrue_shares_dividends(user_id: int, row: dict) -> dict:
+    """Досчитывает дивиденды за прошедшие полночи (из /api/load и состояния
+    акций). CAS по ops; при гонке — пересчёт по свежему документу."""
+    for _ in range(5):
+        fields = shares_settle_fields(row)
+        if not fields:
+            return row
+        ops = int(row.get("ops") or 0)
+        if await store.cas_update(user_id, fields, ops):
+            row = dict(row)
+            row.update(fields)
+            row["ops"] = ops + 1
+            return row
+        row = await fetch_user(user_id)
+    return row
+
+
+class SharesBuy(BaseModel):
+    user_id: int
+    pool_id: int
+    price: float
+
+
+class SharesClaim(BaseModel):
+    user_id: int
+
+
+@app.get("/api/shares/state/{user_id}")
+async def shares_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        row = await accrue_shares_dividends(user_id, await fetch_user(user_id))
+        out = shares_view(row, await store.get_shares_pool())
+        out.update({"status": "success", "coins": float(row.get("coins") or 0), "gold": float(row.get("gold") or 0),
+                    "ops": int(row.get("ops") or 0), "server_time": time.time()})
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить акции: {type(e).__name__}: {e}")
+
+
+@app.post("/api/shares/buy")
+async def shares_buy(request: SharesBuy, x_telegram_init_data: Optional[str] = Header(None)):
+    """[Купить 1 Акцию]: сначала атомарно резервируем акцию в пуле (тот же
+    пул и та же цена, что видел игрок; пул не пуст; лимит эмиссии не
+    превышен), затем одной CAS-записью списываем GRAM и начисляем акцию.
+    Не хватило GRAM / сбой — резерв возвращается в пул."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        pool = await store.get_shares_pool()
+        if int(pool.get("available") or 0) <= 0:
+            raise HTTPException(status_code=409, detail=SHARES_POOL_EMPTY_DETAIL)
+        price = float(pool.get("price") or 0)
+        if int(pool.get("pool_id") or 0) != int(request.pool_id) or price != float(request.price):
+            raise HTTPException(status_code=409, detail="Пул акций обновился — проверьте цену и попробуйте снова")
+        row = await fetch_user(user_id)
+        if float(row.get("coins") or 0) < price:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+        reserved = await store.reserve_share(price, int(request.pool_id), SHARES_CAP)
+        if not reserved:
+            fresh_pool = await store.get_shares_pool()
+            raise HTTPException(status_code=409, detail=SHARES_POOL_EMPTY_DETAIL
+                                if int(fresh_pool.get("available") or 0) <= 0
+                                else "Пул акций обновился — проверьте цену и попробуйте снова")
+
+        def compute(row):
+            coins = float(row.get("coins") or 0)
+            if coins < price:
+                raise HTTPException(status_code=400, detail="Не хватает GRAM")
+            now = time.time()
+            fields = shares_settle_fields(row, now)
+            merged = dict(row)
+            merged.update(fields)
+            owned = shares_owned_of(merged) + 1
+            fields.update({
+                "coins": coins - price, "shares_owned": owned,
+                "shares_spent_gram": round(float(row.get("shares_spent_gram") or 0) + price, 6),
+            })
+            if int(merged.get("shares_div_day") or 0) <= 0:
+                fields["shares_div_day"] = day_index(now)   # первая выплата — в ближайшую полночь
+            merged.update(fields)
+            return fields, {"owned": owned, "unclaimed": round(float(merged.get("shares_dividends_unclaimed") or 0), 6),
+                            "coins": fields["coins"], "price": price}
+
+        try:
+            result = await run_farm_action(user_id, compute)
+        except Exception:
+            await store.release_share(int(request.pool_id))
+            raise
+        await record_economy(gram_shares=price, shares_bought=1)
+        result["pool"] = shares_pool_view(reserved)
+        result["rate_now"] = shares_rate(await store.get(user_id) or {})
+        print(f"[shares] {user_id} купил акцию за {price:g} GRAM (пул #{reserved.get('pool_id')}, "
+              f"продано {reserved.get('sold')}/{SHARES_CAP}, осталось {reserved.get('available')})")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось купить акцию: {type(e).__name__}: {e}")
+
+
+@app.post("/api/shares/claim")
+async def shares_claim(request: SharesClaim, x_telegram_init_data: Optional[str] = Header(None)):
+    """[Забрать дивиденды 🪙]: всё накопленное — в золото, счётчик в 0."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        def compute(row):
+            fields = shares_settle_fields(row)
+            merged = dict(row)
+            merged.update(fields)
+            amount = round(float(merged.get("shares_dividends_unclaimed") or 0), 6)
+            if amount <= 0:
+                raise HTTPException(status_code=400, detail="Нет накопленных дивидендов")
+            gold = float(row.get("gold") or 0) + amount
+            fields.update({
+                "gold": gold, "shares_dividends_unclaimed": 0.0,
+                "shares_dividends_claimed": round(float(row.get("shares_dividends_claimed") or 0) + amount, 6),
+            })
+            return fields, {"claimed": amount, "gold": gold, "unclaimed": 0.0, "owned": shares_owned_of(merged)}
+
+        result = await run_farm_action(user_id, compute)
+        await record_economy(gold_shares=result["claimed"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось забрать дивиденды: {type(e).__name__}: {e}")
+
+
+# --- АДМИН: «Управление Золотыми Акциями» ---
+class AdminSharesPool(BaseModel):
+    price: float
+    count: int
+
+
+@app.get("/admin/api/shares")
+async def admin_shares(_: None = Depends(require_admin)):
+    try:
+        pool = await store.get_shares_pool()
+        holders = await store.list_shareholders()
+        today = day_index()
+        rows, owned_total, unclaimed_total, claimed_total, gold_vip = [], 0, 0.0, 0.0, 0
+        for h in holders:
+            pending, _, _ = shares_dividend_due(h, today)
+            unclaimed = float(h.get("shares_dividends_unclaimed") or 0) + pending
+            is_gold = gold_eagle_vip(h)
+            owned_total += shares_owned_of(h)
+            unclaimed_total += unclaimed
+            claimed_total += float(h.get("shares_dividends_claimed") or 0)
+            gold_vip += 1 if is_gold else 0
+            rows.append({"user_id": h["_id"], "name": h.get("name") or "", "owned": shares_owned_of(h),
+                         "unclaimed": round(unclaimed, 6), "claimed": round(float(h.get("shares_dividends_claimed") or 0), 6),
+                         "gold_vip": is_gold, "rate": SHARES_DIV_GOLD_VIP if is_gold else SHARES_DIV_BASE})
+        return {"pool": shares_pool_view(pool), "holders": rows[:200], "holders_count": len(rows),
+                "owned_total": owned_total, "unclaimed_total": round(unclaimed_total, 6),
+                "claimed_total": round(claimed_total, 6), "gold_vip_holders": gold_vip,
+                "daily_payout": sum(r["owned"] * r["rate"] for r in rows),
+                "rate_gold_vip": SHARES_DIV_GOLD_VIP, "rate_base": SHARES_DIV_BASE}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить акции: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/shares/pool")
+async def admin_shares_launch(body: AdminSharesPool, _: None = Depends(require_admin)):
+    """[🚀 Запустить новый Пул]: цена и количество текущего пула
+    перезаписываются — продажа открывается сразу."""
+    try:
+        price = float(body.price)
+        count = int(body.count)
+        if not (math.isfinite(price) and 0 < price <= SHARES_PRICE_MAX):
+            raise HTTPException(status_code=400, detail=f"Цена пула — от 0 до {SHARES_PRICE_MAX:g} GRAM (больше нуля)")
+        if count < 1:
+            raise HTTPException(status_code=400, detail="Количество акций в пуле — не меньше 1")
+        pool = await store.get_shares_pool()
+        free = SHARES_CAP - int(pool.get("sold") or 0)
+        if count > free:
+            raise HTTPException(status_code=400, detail=f"Лимит эмиссии {SHARES_CAP}: продано {int(pool.get('sold') or 0)}, "
+                                                        f"в новый пул можно выпустить не больше {max(0, free)}")
+        launched = await store.launch_shares_pool(round(price, 6), count, SHARES_CAP, time.time())
+        if not launched:
+            raise HTTPException(status_code=409, detail="Пока запускали пул, акции докупили — проверьте лимит и повторите")
+        print(f"[admin] акции: запущен пул #{launched['pool_id']} — {count} шт. по {price:g} GRAM "
+              f"(продано {launched['sold']}/{SHARES_CAP})")
+        return await admin_shares()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось запустить пул: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/shares/pool/stop")
+async def admin_shares_stop(_: None = Depends(require_admin)):
+    try:
+        await store.stop_shares_pool()
+        print("[admin] акции: продажа текущего пула остановлена")
+        return await admin_shares()
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось остановить пул: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/shares/simulate_midnight")
+async def admin_shares_simulate_midnight(_: None = Depends(require_admin)):
+    """[⏳ Имитировать наступление 00:00]: каждому владельцу акций сразу
+    начисляется одна выплата по ТЕКУЩЕМУ статусу — Gold Eagle VIP активен:
+    акции × 8, иначе (нет VIP, Bronze, Silver) акции × 4. Настоящие полночи
+    продолжают начисляться как обычно."""
+    try:
+        holders = await store.list_shareholders()
+        paid_players, paid_total, gold_players = 0, 0.0, 0
+        for h in holders:
+            def compute(row):
+                fields = shares_settle_fields(row)
+                merged = dict(row)
+                merged.update(fields)
+                owned = shares_owned_of(merged)
+                if owned <= 0:
+                    raise HTTPException(status_code=409, detail="Акций уже нет")
+                rate = shares_rate(merged)
+                pay = owned * rate
+                fields["shares_dividends_unclaimed"] = round(float(merged.get("shares_dividends_unclaimed") or 0) + pay, 6)
+                return fields, {"pay": pay, "gold_vip": rate == SHARES_DIV_GOLD_VIP}
+            try:
+                r = await run_farm_action(int(h["_id"]), compute)
+            except HTTPException:
+                continue
+            paid_players += 1
+            paid_total += r["pay"]
+            gold_players += 1 if r["gold_vip"] else 0
+        print(f"[admin] акции: имитация 00:00 — {paid_players} владельцев, {paid_total:g} золота "
+              f"(с Gold Eagle VIP: {gold_players})")
+        out = await admin_shares()
+        out.update({"paid_players": paid_players, "paid_total": round(paid_total, 6), "paid_gold_vip": gold_players})
+        return out
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось начислить дивиденды: {type(e).__name__}: {e}")
 
 
 def vip_expedition_free(slot: dict) -> bool:
@@ -4840,10 +5176,12 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
         expeditions_sped_up = vip_speed_up_expeditions(farm, duration, now) + vip_speed_up_expeditions(farm_queue, duration, now)
         sped_up = eggs_sped_up + expeditions_sped_up
 
-        fields = {
+        # Дивиденды акций за прошедшие полночи — по старому статусу VIP.
+        fields = shares_settle_fields(row, now)
+        fields.update({
             "coins": coins, "mnstr": mnstr,
             "vip_tier": tier["id"], "vip_expires_at": expires_at, "vip_last_meat_at": now,
-        }
+        })
         if sped_up:
             fields.update({"monsters": farm, "farm_queue": farm_queue})
         return fields, dict(fields, eggs_sped_up=eggs_sped_up, expeditions_sped_up=expeditions_sped_up)
@@ -6605,6 +6943,8 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
         out = dict(fields)
         if "vip_tier" in out or "vip_expires_at" in out:
             now = time.time()
+            # Дивиденды акций за прошедшие полночи — по VIP до правки админа.
+            out.update({k: v for k, v in shares_settle_fields(row, now).items() if k not in out})
             merged = dict(row)
             merged.update(out)
             was_active = vip_active(row)
@@ -6641,8 +6981,9 @@ async def admin_reset_gold_vip(user_id: int, _: None = Depends(require_admin)):
         def compute(row):
             if row.get("vip_tier") != GOLD_EAGLE_VIP_TIER:
                 raise HTTPException(status_code=400, detail="У игрока нет Gold Eagle VIP")
-            fields = {"vip_tier": "", "vip_expires_at": 0}
-            return fields, dict(fields)
+            fields = shares_settle_fields(row)   # прошлые полночи — ещё по ставке Gold VIP
+            fields.update({"vip_tier": "", "vip_expires_at": 0})
+            return fields, {"vip_tier": "", "vip_expires_at": 0}
 
         return await run_farm_action(user_id, compute)
     except HTTPException:
@@ -8024,6 +8365,8 @@ LEDGER_LABELS = [
     ("/api/hunt/slot/open", "Охота: открытие слота экспедиции"),
     ("/api/hunt/start", "Охота: отправка в экспедицию"),
     ("/api/hunt/", "Охота"),
+    ("/api/shares/buy", "Акции: покупка"),
+    ("/api/shares/claim", "Акции: дивиденды"),
 ]
 
 

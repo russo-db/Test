@@ -1861,6 +1861,70 @@ class MongoStore:
     HUNT_TOUCHED = {"$or": [{"hunt_items": {"$exists": True}}, {"mine_last": {"$gt": 0}},
                             {"hunt_slots_open": {"$gt": 0}}]}
 
+    # --- ЗОЛОТЫЕ АКЦИИ: один документ settings/_id=gold_shares с полями
+    # price (цена текущего пула, GRAM), available (осталось в пуле), sold
+    # (продано всего, ≤ cap), pool_id (номер пула — меняется при каждом
+    # запуске). Все изменения — атомарными операциями над этим документом:
+    # инвариант sold + available ≤ cap держится при любых гонках.
+    SHARES_KEY = "gold_shares"
+
+    async def get_shares_pool(self) -> dict:
+        doc = await self.settings.find_one({"_id": self.SHARES_KEY})
+        if doc:
+            return doc
+        await self.settings.update_one(
+            {"_id": self.SHARES_KEY},
+            {"$setOnInsert": {"price": 0.0, "available": 0, "sold": 0, "pool_id": 0, "pool_size": 0, "started_at": 0.0}},
+            upsert=True)
+        return await self.settings.find_one({"_id": self.SHARES_KEY})
+
+    async def reserve_share(self, price: float, pool_id: int, cap: int) -> Optional[dict]:
+        """Берёт 1 акцию из пула, только если пул тот же, цена та же, акции
+        есть и лимит эмиссии не исчерпан. None — нельзя (раскуплено/сменилось)."""
+        from pymongo import ReturnDocument
+        await self.get_shares_pool()
+        return await self.settings.find_one_and_update(
+            {"_id": self.SHARES_KEY, "pool_id": pool_id, "price": price,
+             "available": {"$gt": 0}, "sold": {"$lt": cap}},
+            {"$inc": {"available": -1, "sold": 1}},
+            return_document=ReturnDocument.AFTER)
+
+    async def release_share(self, pool_id: int) -> None:
+        """Возврат резерва, если списать GRAM не удалось. Пул уже сменился —
+        в новый пул акция не добавляется, только откатывается счётчик продаж."""
+        res = await self.settings.update_one({"_id": self.SHARES_KEY, "pool_id": pool_id, "sold": {"$gt": 0}},
+                                             {"$inc": {"available": 1, "sold": -1}})
+        if not res.modified_count:
+            await self.settings.update_one({"_id": self.SHARES_KEY, "sold": {"$gt": 0}}, {"$inc": {"sold": -1}})
+
+    async def launch_shares_pool(self, price: float, count: int, cap: int, now: float) -> Optional[dict]:
+        """Новый пул: цена и количество перезаписываются. Только если
+        sold + count ≤ cap — иначе None."""
+        from pymongo import ReturnDocument
+        await self.get_shares_pool()
+        return await self.settings.find_one_and_update(
+            {"_id": self.SHARES_KEY, "sold": {"$lte": cap - count}},
+            {"$set": {"price": price, "available": count, "pool_size": count, "started_at": now},
+             "$inc": {"pool_id": 1}},
+            return_document=ReturnDocument.AFTER)
+
+    async def stop_shares_pool(self) -> dict:
+        from pymongo import ReturnDocument
+        await self.get_shares_pool()
+        return await self.settings.find_one_and_update(
+            # pool_id тоже меняем: возврат резерва из остановленного пула не
+            # должен снова открыть в нём продажу (см. release_share).
+            {"_id": self.SHARES_KEY}, {"$set": {"available": 0}, "$inc": {"pool_id": 1}},
+            return_document=ReturnDocument.AFTER)
+
+    async def list_shareholders(self, limit: int = 0) -> list:
+        cur = self.users.find({"shares_owned": {"$gt": 0}},
+                              {"name": 1, "shares_owned": 1, "shares_dividends_unclaimed": 1, "shares_div_day": 1,
+                               "shares_dividends_claimed": 1, "vip_tier": 1, "vip_expires_at": 1}).sort("shares_owned", -1)
+        if limit:
+            cur = cur.limit(limit)
+        return [doc async for doc in cur]
+
     async def list_hunt_players(self, search: str = "", limit: int = 50, offset: int = 0) -> tuple:
         """Игроки, заходившие в Охоту (или найденные поиском по id/имени), по
         убыванию суммы ресурсов и предметов на Складе."""

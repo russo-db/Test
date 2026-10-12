@@ -816,6 +816,36 @@
 
         /* ---------- Гнездо Воинов ---------- */
         .nest-card { margin-top: 12px; padding: 14px; }
+
+        /* ---------- 📈 Акции (Гнездо Воинов) ---------- */
+        .shares-fund, .shares-portfolio { margin-top: 12px; padding: 16px 14px; position: relative; overflow: hidden; }
+        .shares-fund {
+            background: linear-gradient(160deg, rgba(56, 189, 248, 0.16), rgba(15, 9, 26, 0.66) 60%);
+            border: 1px solid rgba(56, 189, 248, 0.36);
+        }
+        .shares-portfolio {
+            margin-top: 16px;
+            background: linear-gradient(160deg, rgba(251, 191, 36, 0.18), rgba(15, 9, 26, 0.66) 60%);
+            border: 1px solid rgba(251, 191, 36, 0.38);
+        }
+        .shares-fund h3, .shares-portfolio h3 { font-size: 16px; font-weight: 800; margin: 0 0 12px 0; }
+        .shares-progress { height: 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin: -2px 0 10px; }
+        .shares-progress i { display: block; height: 100%; background: linear-gradient(90deg, #38bdf8, #a78bfa); border-radius: 6px; transition: width .4s; }
+        .shares-offer {
+            display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: 14px; margin-bottom: 12px;
+            font-size: 13px; font-weight: 700; line-height: 1.35;
+            background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        .shares-offer .coin-icon { width: 16px; height: 16px; vertical-align: -3px; }
+        .shares-offer.closed { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.35); color: #fecaca; }
+        .shares-rules {
+            padding: 11px 13px; border-radius: 14px; margin-bottom: 8px; font-size: 12.5px; line-height: 1.5;
+            background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(251, 191, 36, 0.4);
+        }
+        .shares-rules b { display: block; margin-bottom: 3px; font-size: 13px; }
+        .shares-rules .on { color: var(--gold); font-weight: 700; }
+        .shares-rate-now { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 2px 0 10px; }
+        .shares-btn { width: 100%; justify-content: center; }
         .nest-shard-card {
             margin-top: 12px; padding: 14px;
             background: linear-gradient(160deg, rgba(251, 191, 36, 0.16), rgba(15, 9, 26, 0.6));
@@ -1490,6 +1520,7 @@
             <div class="subtab-bar">
                 <div class="subtab-item active" data-subtab="forge" onclick="switchNestSubtab('forge')" data-i18n="nest.subtabForge">🔨 Кузница</div>
                 <div class="subtab-item" data-subtab="eagle" onclick="switchNestSubtab('eagle')" data-i18n="nest.subtabEagle">🦅 Боевой Орёл</div>
+                <div class="subtab-item" data-subtab="shares" onclick="switchNestSubtab('shares')" data-i18n="nest.subtabShares">📈 Акции</div>
             </div>
 
             <div class="subtab-panel active" id="nestSubForge">
@@ -1514,6 +1545,12 @@
 
             <div class="subtab-panel" id="nestSubEagle">
                 <div id="nestEagleList"></div>
+            </div>
+
+            <!-- 📈 АКЦИИ: сверху Акционерный Фонд (пулы), снизу Мой Портфель -->
+            <div class="subtab-panel" id="nestSubShares">
+                <div class="glass-panel shares-fund" id="sharesFund"></div>
+                <div class="glass-panel shares-portfolio" id="sharesPortfolio"></div>
             </div>
         </div>
 
@@ -2198,7 +2235,25 @@
                 'nav.arena': 'Арена',
                 'nest.heading': 'Гнездо Воинов',
                 'nest.subtitle': 'Небесные Осколки, частички и снаряжение для твоих орлов',
-                'nest.subtabForge': '🔨 Кузница', 'nest.subtabEagle': '🦅 Боевой Орёл',
+                'nest.subtabForge': '🔨 Кузница', 'nest.subtabEagle': '🦅 Боевой Орёл', 'nest.subtabShares': '📈 Акции',
+                'shares.fundTitle': '📈 Акционерный Фонд (Лимит: {cap} шт)',
+                'shares.soldOnServer': 'Всего выкуплено на сервере',
+                'shares.offer': 'Доступно в текущем пуле: {n} шт. по цене {price} Gram',
+                'shares.poolEmpty': '🛑 Ожидайте запуск нового пула администрацией',
+                'shares.buyBtn': 'Купить 1 Акцию',
+                'shares.portfolioTitle': '💰 Мой Портфель',
+                'shares.ownedLabel': 'У вас во владении',
+                'shares.rulesTitle': '📊 Правила доходности акций:',
+                'shares.ruleGold': 'С активным статусом Gold Eagle VIP: +{n} Золота 🪙 за акцию каждые сутки.',
+                'shares.ruleBase': 'Без VIP или с обычным Бронзовым/Серебряным VIP: +{n} Золота 🪙 за акцию каждые сутки.',
+                'shares.rateNowGold': 'Сейчас у вас Gold Eagle VIP: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC)',
+                'shares.rateNowBase': 'Ваша ставка сейчас: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC)',
+                'shares.unclaimedLabel': 'Накопленные дивиденды',
+                'shares.claimBtn': 'Забрать дивиденды 🪙',
+                'shares.noGram': 'Не хватает GRAM',
+                'shares.serverOnly': 'Акции продаёт сервер — откройте игру через Telegram',
+                'shares.bought': '📈 Акция куплена за {price} GRAM — у вас {n} {word}',
+                'shares.claimed': '+{n} 🪙 дивидендов зачислено на баланс золота',
                 'nest.shardTitle': 'Небесный Осколок',
                 'nest.shardSub': 'Цена {price} GRAM · доступно строго 1 шт. за раз',
                 'nest.shardBuy': 'Купить за {price} GRAM', 'nest.shardNotEnough': 'Не хватает GRAM',
@@ -2666,7 +2721,25 @@
                 'nav.arena': 'Arena',
                 'nest.heading': "Warriors' Nest",
                 'nest.subtitle': 'Sky Shards, particles and gear for your eagles',
-                'nest.subtabForge': '🔨 Forge', 'nest.subtabEagle': '🦅 Battle Eagle',
+                'nest.subtabForge': '🔨 Forge', 'nest.subtabEagle': '🦅 Battle Eagle', 'nest.subtabShares': '📈 Shares',
+                'shares.fundTitle': '📈 Shareholder Fund (Limit: {cap})',
+                'shares.soldOnServer': 'Bought on the server',
+                'shares.offer': 'Available in the current pool: {n} at {price} Gram',
+                'shares.poolEmpty': '🛑 Wait for the administration to launch a new pool',
+                'shares.buyBtn': 'Buy 1 Share',
+                'shares.portfolioTitle': '💰 My Portfolio',
+                'shares.ownedLabel': 'You own',
+                'shares.rulesTitle': '📊 Share income rules:',
+                'shares.ruleGold': 'With an active Gold Eagle VIP: +{n} Gold 🪙 per share every day.',
+                'shares.ruleBase': 'Without VIP or with Bronze/Silver VIP: +{n} Gold 🪙 per share every day.',
+                'shares.rateNowGold': 'You have Gold Eagle VIP: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC)',
+                'shares.rateNowBase': 'Your current rate: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC)',
+                'shares.unclaimedLabel': 'Accumulated dividends',
+                'shares.claimBtn': 'Claim dividends 🪙',
+                'shares.noGram': 'Not enough GRAM',
+                'shares.serverOnly': 'Shares are sold by the server — open the game in Telegram',
+                'shares.bought': '📈 Share bought for {price} GRAM — you own {n} {word}',
+                'shares.claimed': '+{n} 🪙 dividends added to your gold',
                 'nest.shardTitle': 'Sky Shard',
                 'nest.shardSub': 'Price {price} GRAM · only 1 available at a time',
                 'nest.shardBuy': 'Buy for {price} GRAM', 'nest.shardNotEnough': 'Not enough GRAM',
@@ -3207,6 +3280,8 @@
             resourceMarketListings: [], // лоты рынка ресурсов — Осколки/частички (см. loadResourceMarketListings)
             huntBuffs: { rage: false, skin: false, craft_discount: false }, // баффы Охоты (зелья Арены, свиток Кузницы)
             vip: { tier: null, expiresAt: 0, lastMeatAt: 0 }, // текущий VIP-тариф (см. buyVip; накопление Meat — на сервере)
+            // 📈 Акции: owned = shares_owned, unclaimed = shares_dividends_unclaimed (сервер), pool — общий пул на всех.
+            shares: { owned: 0, unclaimed: 0, rateNow: 4, rateGold: 8, rateBase: 4, pool: { price: 0, available: 0, sold: 0, cap: 1000, poolId: 0 } },
             merchant: { meatBought: 0, soldByTier: {} }, // общий (не персональный!) выкуп орлов купцом по редкостям, кэш с сервера
             nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {} }, // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
             clanId: null, // id клана текущего игрока, или null — см. loadClanMine
@@ -4953,6 +5028,7 @@
                 state.coins = data.coins;
                 state.mnstr = data.mnstr;
                 state.vip = { tier: data.vip_tier, expiresAt: data.vip_expires_at, lastMeatAt: data.vip_last_meat_at };
+                if (sharesTabOpen()) renderShares();   // ставка дивидендов зависит от Gold Eagle VIP
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 // Сервер ускорил уже зреющие яйца и экспедиции — берём новые таймеры.
                 if (data.monsters) state.farm = readFarm(data.monsters);
@@ -7200,7 +7276,7 @@
             if (tabId === 'missions') renderMissions();
             if (tabId === 'market') refreshActiveMarketDept();
             if (tabId === 'merchant') { renderMerchantShop(); refreshMerchantState(); }
-            if (tabId === 'nest') { renderNest(); refreshNestShardState(); }
+            if (tabId === 'nest') { renderNest(); refreshNestShardState(); if (sharesTabOpen()) { renderShares(); loadShares(); } }
             if (tabId === 'arena') { renderArena(); arenaStartLoop(); } else { arenaStopLoop(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
             if (tabId === 'profile') { loadNftStatus(); if (activeProfileSubtab === 'nft') loadAuctionWins(); } else nftStopTimer();
@@ -7227,7 +7303,167 @@
             haptic.select();
             document.querySelectorAll('#nest .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.subtab === id));
             document.querySelectorAll('#nest .subtab-panel').forEach(el => el.classList.remove('active'));
-            document.getElementById(id === 'forge' ? 'nestSubForge' : 'nestSubEagle').classList.add('active');
+            const panels = { forge: 'nestSubForge', eagle: 'nestSubEagle', shares: 'nestSubShares' };
+            document.getElementById(panels[id] || 'nestSubForge').classList.add('active');
+            if (id === 'shares') { renderShares(); loadShares(); }
+        }
+
+        /* ---------- 📈 Акции ---------- */
+        // Всё считает сервер: пул (цена/остаток/продано) общий на всех, акции
+        // и дивиденды — в документе игрока. Клиент только показывает и шлёт
+        // намерение; пока вкладка открыта, состояние обновляется раз в 5 с —
+        // новый пул от админа и чужие покупки видны без перезахода.
+        const SHARES_POLL_MS = 5000;
+        let sharesLoadedAt = 0;
+
+        function applyShares(sh) {
+            if (!sh) return;
+            const pool = sh.pool || {};
+            state.shares = {
+                owned: Number(sh.owned) || 0,
+                unclaimed: Number(sh.unclaimed) || 0,
+                rateNow: Number(sh.rate_now) || 4,
+                rateGold: Number(sh.rate_gold_vip) || 8,
+                rateBase: Number(sh.rate_base) || 4,
+                pool: {
+                    price: Number(pool.price) || 0, available: Number(pool.available) || 0,
+                    sold: Number(pool.sold) || 0, cap: Number(pool.cap) || 1000, poolId: Number(pool.pool_id) || 0,
+                },
+            };
+        }
+
+        function sharesTabOpen() {
+            const panel = document.getElementById('nestSubShares');
+            return !!panel && panel.classList.contains('active') && document.getElementById('nest').classList.contains('active');
+        }
+
+        function fmtShareGold(v) {
+            v = Number(v) || 0;
+            return Number.isInteger(v) ? String(v) : v.toFixed(2);
+        }
+
+        function sharesWord(n) {
+            if (LANG === 'en') return n === 1 ? 'share' : 'shares';
+            return plural(n, 'акция', 'акции', 'акций');
+        }
+
+        function renderShares() {
+            const sh = state.shares || { owned: 0, unclaimed: 0, rateNow: 4, rateGold: 8, rateBase: 4, pool: { price: 0, available: 0, sold: 0, cap: 1000, poolId: 0 } };
+            const pool = sh.pool;
+            const open = pool.available > 0;
+            const busyBuy = farmActionBusy.has('shares-buy');
+            const busyClaim = farmActionBusy.has('shares-claim');
+            const pct = Math.min(100, pool.cap ? pool.sold / pool.cap * 100 : 0);
+            setHTMLIfChanged(document.getElementById('sharesFund'), `
+                <h3>${t('shares.fundTitle', { cap: pool.cap })}</h3>
+                <div class="stat-row"><span>${t('shares.soldOnServer')}</span><b>${pool.sold} / ${pool.cap}</b></div>
+                <div class="shares-progress"><i style="width:${pct.toFixed(1)}%"></i></div>
+                ${open
+                    ? `<div class="shares-offer">${t('shares.offer', { n: pool.available, price: fmtGram(pool.price) })} <img class="coin-icon" src="assets/coin.png" alt=""></div>`
+                    : `<div class="shares-offer closed">${t('shares.poolEmpty')}</div>`}
+                <button class="btn-primary shares-btn" id="sharesBuyBtn" onclick="sharesBuy()" ${open && !busyBuy ? '' : 'disabled'}>${t('shares.buyBtn')}</button>
+            `);
+            const gold = state.vip && state.vip.tier === 'gold' && (state.vip.expiresAt || 0) > serverNow();
+            setHTMLIfChanged(document.getElementById('sharesPortfolio'), `
+                <h3>${t('shares.portfolioTitle')}</h3>
+                <div class="stat-row"><span>${t('shares.ownedLabel')}</span><b>${sh.owned} ${sharesWord(sh.owned)}</b></div>
+                <div class="shares-rules">
+                    <b>${t('shares.rulesTitle')}</b>
+                    <div class="${gold ? 'on' : ''}">• ${t('shares.ruleGold', { n: fmtShareGold(sh.rateGold) })}</div>
+                    <div class="${gold ? '' : 'on'}">• ${t('shares.ruleBase', { n: fmtShareGold(sh.rateBase) })}</div>
+                </div>
+                <div class="shares-rate-now">${t(gold ? 'shares.rateNowGold' : 'shares.rateNowBase', { n: fmtShareGold(gold ? sh.rateGold : sh.rateBase), total: fmtShareGold(sh.owned * (gold ? sh.rateGold : sh.rateBase)) })}</div>
+                <div class="stat-row"><span>${t('shares.unclaimedLabel')}</span><b>${fmtShareGold(sh.unclaimed)} 🪙</b></div>
+                <button class="btn-primary shares-btn" id="sharesClaimBtn" onclick="sharesClaim()" ${sh.unclaimed > 0 && !busyClaim ? '' : 'disabled'}>${t('shares.claimBtn')}</button>
+            `);
+        }
+
+        async function loadShares() {
+            if (offlineOnly || !state.userId) { renderShares(); return; }
+            sharesLoadedAt = Date.now();
+            try {
+                const response = await fetch(`api/shares/state/${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) return;
+                const data = await response.json();
+                // Пока шла загрузка, игрок мог купить/забрать — старый ответ не
+                // должен перетереть свежий результат действия.
+                if (farmActionBusy.has('shares-buy') || farmActionBusy.has('shares-claim')) return;
+                if (typeof data.ops === 'number' && data.ops < state.ops) return;
+                applyShares(data);
+                if (typeof data.coins === 'number') state.coins = data.coins;
+                if (typeof data.gold === 'number') state.gold = data.gold;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                setServerClock(data.server_time);
+                renderShares();
+                renderHeader();
+            } catch (e) { /* сеть — покажем, что есть */ }
+        }
+
+        function tickShares() {
+            if (sharesTabOpen() && Date.now() - sharesLoadedAt >= SHARES_POLL_MS) loadShares();
+        }
+
+        async function sharesPost(path, body, key) {
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            renderShares();
+            try {
+                const response = await fetch(path, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(Object.assign({ user_id: state.userId }, body)) });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    haptic.notify('warning');
+                    toast(data.detail || t('hunt.serverDown'));
+                    return { error: response.status };
+                }
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                return data;
+            } catch (e) {
+                toast(t('hunt.serverDown'));
+                return { error: 0 };
+            } finally {
+                // Держим кнопку ещё 700 мс после ответа — медленный двойной
+                // тап не отправит второй запрос сразу вслед за первым.
+                setTimeout(() => { farmActionBusy.delete(key); renderShares(); }, 700);
+            }
+        }
+
+        async function sharesBuy() {
+            const sh = state.shares;
+            if (!sh || sh.pool.available <= 0) { toast(t('shares.poolEmpty')); return; }
+            if (offlineOnly || !state.userId) { toast(t('shares.serverOnly')); return; }
+            if (state.coins < sh.pool.price) { haptic.notify('warning'); toast(t('shares.noGram')); return; }
+            const data = await sharesPost('api/shares/buy', { pool_id: sh.pool.poolId, price: sh.pool.price }, 'shares-buy');
+            if (!data) return;
+            if (data.error !== undefined) {
+                if (data.error === 409 || data.error === 400) { sharesLoadedAt = 0; setTimeout(loadShares, 750); }
+                return;
+            }
+            haptic.notify('success');
+            state.coins = data.coins;
+            state.shares.owned = data.owned;
+            state.shares.unclaimed = data.unclaimed;
+            if (data.rate_now) state.shares.rateNow = data.rate_now;
+            if (data.pool) applyShares(Object.assign({}, { owned: data.owned, unclaimed: data.unclaimed, rate_now: state.shares.rateNow,
+                rate_gold_vip: state.shares.rateGold, rate_base: state.shares.rateBase, pool: data.pool }));
+            toast(t('shares.bought', { n: data.owned, word: sharesWord(data.owned), price: fmtGram(data.price) }));
+            spawnBurst(8);
+            renderHeader();
+            renderShares();
+        }
+
+        async function sharesClaim() {
+            const sh = state.shares;
+            if (!sh || sh.unclaimed <= 0) return;
+            const data = await sharesPost('api/shares/claim', {}, 'shares-claim');
+            if (!data) return;
+            if (data.error !== undefined) { sharesLoadedAt = 0; setTimeout(loadShares, 750); return; }
+            haptic.notify('success');
+            state.gold = data.gold;
+            state.shares.unclaimed = 0;
+            toast(t('shares.claimed', { n: fmtShareGold(data.claimed) }));
+            spawnBurst(12);
+            renderHeader();
+            renderShares();
         }
 
         function nestGradeIndex(grade) { return (CONFIG.nest.grades || []).indexOf(grade); }
@@ -7302,6 +7538,7 @@
         function tickNest() {
             tickNestShard();
             tickNestForge();
+            tickShares();
         }
 
         function nestShardSignature(now) {
@@ -9753,6 +9990,8 @@
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
             applyDailySubscription(data.daily_subscription);
+            applyShares(data.shares);
+            if (sharesTabOpen()) renderShares();
             state.eggBoard = normalizeEggBoard(data.eggs_board);
             state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);
@@ -9907,6 +10146,7 @@
             resetSubscriptionIfNewDay();
             renderMissions();
             if (document.getElementById('dailyModal').classList.contains('open')) renderDaily();
+            if (sharesTabOpen()) { sharesLoadedAt = 0; setTimeout(loadShares, 1500); }   // дивиденды за полночь
         }
 
         function startLoops() {
