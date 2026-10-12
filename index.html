@@ -2436,6 +2436,10 @@
                 'daily.claim': 'Забрать', 'daily.comeTomorrow': 'Приходи завтра',
                 'daily.tomorrowPrefix': 'завтра: ', 'daily.open': 'Открыть',
                 'daily.cardStreak': 'День {day} из {days} • серия {count} {word}',
+                'daily.dayN': 'День {day}', 'daily.eagle': 'Орёл',
+                'daily.claimedToast': 'День {day}: +{reward}',
+                'daily.alreadyToday': 'Сегодня награда уже забрана',
+                'daily.unavailable': 'Награда пока недоступна',
                 'daily.subTitle': '⚠️ Для получения ежедневной награды необходимо состоять в нашем канале и чате!',
                 'daily.subChannel': '📢 Наш канал', 'daily.subChat': '💬 Наш чат',
                 'daily.subCheck': 'Проверить подписку', 'daily.subChecking': 'Проверяю…',
@@ -2900,6 +2904,10 @@
                 'daily.claim': 'Claim', 'daily.comeTomorrow': 'Come back tomorrow',
                 'daily.tomorrowPrefix': 'tomorrow: ', 'daily.open': 'Open',
                 'daily.cardStreak': 'Day {day} of {days} • streak {count} {word}',
+                'daily.dayN': 'Day {day}', 'daily.eagle': 'Eagle',
+                'daily.claimedToast': 'Day {day}: +{reward}',
+                'daily.alreadyToday': 'Today\'s reward is already claimed',
+                'daily.unavailable': 'Reward is not available yet',
                 'daily.subTitle': '⚠️ To get the daily reward you must be a member of our channel and chat!',
                 'daily.subChannel': '📢 Our channel', 'daily.subChat': '💬 Our chat',
                 'daily.subCheck': 'Check subscription', 'daily.subChecking': 'Checking…',
@@ -5307,7 +5315,7 @@
         }
 
         function dailyLabel(reward) {
-            if (reward.monster) return (MONSTERS[reward.monster] || {}).name || 'Орёл';
+            if (reward.monster) return (MONSTERS[reward.monster] || {}).name || t('daily.eagle');
             return reward.gram ? fmtGram(reward.gram) : String(reward.mnstr);
         }
 
@@ -5320,10 +5328,12 @@
 
         function renderDailyCard(list) {
             const status = dailyStatus();
-            // Забрал сегодня — показываем, что ждёт завтра.
+            // Забрал сегодня — показываем, что ждёт завтра. Сегодня закрыт
+            // последний день круга — завтра начнётся новый круг с 1-го дня
+            // (раньше превью показывало награду последнего дня ещё раз).
             const preview = status.ready
                 ? status.day
-                : Math.min(status.claimed + 1, CONFIG.daily.days);
+                : (status.claimed >= status.days ? 1 : status.claimed + 1);
             const reward = dailyReward(preview, state.dailyFirstLap !== false);
 
             const card = document.createElement('div');
@@ -5367,7 +5377,7 @@
             else if (status.ready && day === status.day) classes.push('today');
             return `
                 <div class="${classes.join(' ')}">
-                    <span class="d-num">День ${day}</span>
+                    <span class="d-num">${t('daily.dayN', { day })}</span>
                     <img src="${dailyIcon(reward)}" alt="">
                     <span class="d-amount">${dailyLabel(reward)}</span>
                 </div>`;
@@ -5406,7 +5416,7 @@
             const suffix = reward.monster ? '' : (reward.gram ? ' GRAM' : ' Meat');
             toast(toQueue
                 ? t('daily.toQueue', { day, reward: dailyLabel(reward) })
-                : `День ${day}: +${dailyLabel(reward)}${suffix}`);
+                : t('daily.claimedToast', { day, reward: dailyLabel(reward) + suffix }));
             spawnBurst(12);
             renderAll();
             renderDaily();
@@ -5428,7 +5438,7 @@
 
         async function claimDaily() {
             const status = dailyStatus();
-            if (!status.ready) { toast('Сегодня награда уже забрана'); return; }
+            if (!status.ready) { toast(t('daily.alreadyToday')); return; }
 
             if (offlineOnly || !state.userId) {
                 claimDailyLocal(status.day);
@@ -5456,7 +5466,7 @@
                         openDailySub(data.subscription && data.subscription.check_error);
                         return;
                     }
-                    toast(data.detail || 'Награда пока недоступна');
+                    toast(data.detail || t('daily.unavailable'));
                     haptic.notify('warning');
                     return;
                 }
@@ -5474,9 +5484,11 @@
                 applyDaily(data.daily);
                 // Свободной ячейки не было — орёл-награда встал в очередь; говорим
                 // об этом прямо, чтобы игрок знал, где его искать.
-                finishDaily(data.reward, data.day, !!data.reward.monster && (state.farmQueue || []).length > queueBefore);
+                finishDaily(data.reward, data.day, data.placed
+                    ? data.placed === 'queue'
+                    : !!data.reward.monster && (state.farmQueue || []).length > queueBefore);
             } catch (error) {
-                toast('Сервер недоступен');
+                toast(t('hunt.serverDown'));
             } finally {
                 const b = document.getElementById('dailyClaimBtn');
                 if (b && dailyStatus().ready) b.disabled = false;
@@ -9867,10 +9879,25 @@
             if (navIcon) navIcon.classList.add('nav-avatar');
         }
 
+        // Полночь UTC при открытом приложении: карточка и окно ежедневной
+        // награды сами не перерисовывались — «Забрать» не появлялось, пока
+        // игрок не переключит вкладку. Флаги подписки в новый день — false.
+        let dailyTickDay = null;
+        function tickDailyDay() {
+            const today = dayIndex();
+            if (dailyTickDay === null) { dailyTickDay = today; return; }
+            if (today === dailyTickDay) return;
+            dailyTickDay = today;
+            resetSubscriptionIfNewDay();
+            renderMissions();
+            if (document.getElementById('dailyModal').classList.contains('open')) renderDaily();
+        }
+
         function startLoops() {
             // One tick a second: countdowns move and slots light up once ready.
             setInterval(() => {
                 renderHeader();
+                tickDailyDay();
                 updateSlotProgress();
                 if (document.getElementById('farm').classList.contains('active')) {
                     renderActiveMonster();

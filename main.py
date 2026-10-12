@@ -5841,6 +5841,7 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
         "status": "success",
         "day": result["day"],
         "reward": result["reward"],
+        "placed": result["placed"],   # орёл-награда: "farm" / "queue" (None — без орла)
         "coins": float(fresh.get("coins") or 0.0),
         "mnstr": float(fresh.get("mnstr") or 0.0),
         "total_earned": float(fresh.get("total_earned") or 0.0),
