@@ -2409,6 +2409,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "missions": row.get("missions") or [],
         "clans_enabled": await clans_enabled_for(request),
         "show_hunt_module": await hunt_enabled_for(request),
+        "gold_eagle_vip": gold_eagle_vip(row),
         # Время сервера: по нему клиент считает таймеры Охоты на ферме — часы
         # телефона могут спешить или отставать на часы.
         "server_time": time.time(),
@@ -2713,6 +2714,101 @@ async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data:
 
     result = await run_farm_action(user_id, compute)
     await record_economy(gold_expeditions=result["reward"], expeditions=1)
+    return result
+
+
+# --- GOLD EAGLE VIP: автоматизация обычных экспедиций за золотом ---
+# Две кнопки для владельцев активного тарифа «Gold Eagle VIP» (vip_tier =
+# gold, покупается в VIP за 10 GRAM): отправить всех свободных орлов 7 ур.
+# в экспедицию одним кликом и собрать золото со всех вернувшихся. Работают
+# ТОЛЬКО с обычными экспедициями за золото: орлов Охоты не трогают, ресурсы
+# Охоты не собирают. Всё — одной CAS-записью, как и одиночные действия.
+GOLD_EAGLE_VIP_TIER = "gold"
+
+
+def gold_eagle_vip(row: dict) -> bool:
+    return vip_active(row) and row.get("vip_tier") == GOLD_EAGLE_VIP_TIER
+
+
+def ensure_gold_eagle_vip(row: dict) -> None:
+    if not gold_eagle_vip(row):
+        raise HTTPException(status_code=403, detail="Доступно только с активным Gold Eagle VIP")
+
+
+def vip_expedition_free(slot: dict) -> bool:
+    """Полностью свободный орёл: 7 ур., не на Охоте, не на Рынке и не в
+    обычной экспедиции (включая вернувшихся, но ещё не собранных)."""
+    return (slot["feed_level"] >= FEED_LEVELS and not slot_on_hunt(slot)
+            and not slot_listed(slot) and not slot_on_expedition(slot))
+
+
+@app.post("/api/farm/expedition/vip_send_all")
+async def farm_expedition_vip_send_all(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """🚀 VIP: отправить всех свободных орлов 7 ур. в экспедицию за золотом.
+    Мясо (EXPEDITION_COST_MEAT за орла) проверяется на ВСЮ стаю заранее: не
+    хватает хотя бы на одного — не улетает никто."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        ensure_gold_eagle_vip(row)
+        farm = read_farm(row.get("monsters"))
+        picked = [i for i, slot in enumerate(farm) if vip_expedition_free(slot)]
+        if not picked:
+            raise HTTPException(status_code=400, detail="Нет свободных орлов 7 уровня для отправки")
+        cost = EXPEDITION_COST_MEAT * len(picked)
+        mnstr = float(row.get("mnstr") or 0)
+        if mnstr < cost:
+            raise HTTPException(status_code=400, detail="❌ Не хватает мяса для выполнения операции!")
+        now = int(time.time())
+        duration = expedition_duration_seconds(row)
+        for i in picked:
+            farm[i]["expedition_started_at"] = now
+            farm[i]["expedition_until"] = int(now + duration)
+        fields = {"monsters": farm, "mnstr": mnstr - cost}
+        return fields, {"sent": len(picked), "slots": picked, "meat_spent": cost,
+                        "monsters": farm, "mnstr": mnstr - cost}
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось отправить орлов — попробуй ещё раз")
+
+
+@app.post("/api/farm/expedition/vip_collect_all")
+async def farm_expedition_vip_collect_all(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """💰 VIP: собрать золото СТРОГО с вернувшихся орлов. Те, у кого таймер ещё
+    идёт, продолжают лететь — их экспедиция не прерывается."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        ensure_gold_eagle_vip(row)
+        farm = read_farm(row.get("monsters"))
+        now = time.time()
+        flying = [i for i, slot in enumerate(farm) if slot_on_expedition(slot)]
+        returned = [i for i in flying if now >= farm[i]["expedition_until"]]
+        if not returned:
+            raise HTTPException(status_code=400, detail="Птицы еще в пути!" if flying else "Ни один орёл не в экспедиции")
+        reward = 0.0
+        for i in returned:
+            reward += expedition_gold_reward(farm[i]["id"])
+            farm[i]["expedition_until"] = 0
+            farm[i]["expedition_started_at"] = 0
+        gold = max(0.0, float(row.get("gold") or 0)) + reward
+        fields = {"monsters": farm, "gold": gold}
+        return fields, {"collected": len(returned), "still_flying": len(flying) - len(returned),
+                        "reward": reward, "slots": returned, "monsters": farm, "gold": gold}
+
+    try:
+        result = await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось собрать золото — попробуй ещё раз")
+    await record_economy(gold_expeditions=result["reward"], expeditions=result["collected"])
     return result
 
 
@@ -6300,6 +6396,29 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
     return fresh
 
 
+@app.post("/admin/api/players/{user_id}/reset_gold_vip")
+async def admin_reset_gold_vip(user_id: int, _: None = Depends(require_admin)):
+    """👑 Сбросить Gold Eagle VIP (для тестов): тариф снимается сразу. Орлы,
+    уже отправленные в экспедицию, долетают и собираются как обычно."""
+    try:
+        doc = await store.get(user_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+
+        def compute(row):
+            if row.get("vip_tier") != GOLD_EAGLE_VIP_TIER:
+                raise HTTPException(status_code=400, detail="У игрока нет Gold Eagle VIP")
+            fields = {"vip_tier": "", "vip_expires_at": 0}
+            return fields, dict(fields)
+
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сбросить VIP: {type(e).__name__}: {e}")
+
+
 @app.post("/admin/api/players/{user_id}/grant_shards")
 async def admin_grant_shards(user_id: int, body: AdminGrantShards, _: None = Depends(require_admin)):
     """Начисляет игроку N Небесных Осколков напрямую, в обход общего (на
@@ -7520,6 +7639,8 @@ LEDGER_LABELS = [
     ("/api/farm/feed", "Кормление орла"),
     ("/api/farm/collect_egg", "Сбор яйца"),
     ("/api/farm/fusion_attempt", "Скрещивание"),
+    ("/api/farm/expedition/vip_send_all", "Gold Eagle VIP: отправка всех в экспедиции"),
+    ("/api/farm/expedition/vip_collect_all", "Gold Eagle VIP: сбор золота со всех"),
     ("/api/farm/expedition/start", "Экспедиция: отправка"),
     ("/api/farm/expedition/collect", "Экспедиция: награда"),
     ("/api/farm/buy_slot", "Покупка слота фермы"),

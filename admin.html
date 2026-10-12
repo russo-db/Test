@@ -2171,6 +2171,7 @@ async function openPlayerModal(userId) {
                         <option value="gold" ${doc.vip_tier === 'gold' ? 'selected' : ''}>Gold</option>
                     </select></label>
                     <label>VIP дней осталось <input id="fVipDays" type="number" step="1" value="${doc.vip_expires_at ? Math.max(0, Math.ceil((doc.vip_expires_at - Date.now()/1000) / 86400)) : 0}"></label>
+                    <label>&nbsp;<button type="button" id="resetGoldVipBtn" onclick="resetGoldVip(event)" ${doc.vip_tier === 'gold' ? '' : 'disabled title="У игрока нет Gold Eagle VIP"'}>👑 Сбросить Gold Eagle VIP</button></label>
                 </div>
 
                 <b>Ферма (${doc.monsters.length} орлов)</b>
@@ -2307,6 +2308,19 @@ function renderFarmList() {
 function closePlayerModal() {
     document.getElementById('modalRoot').innerHTML = '';
     editingPlayer = null;
+}
+
+// Для тестов: снимает тариф Gold Eagle VIP у открытого игрока (кнопки
+// массовой отправки/сбора у него сразу пропадают).
+async function resetGoldVip(e) {
+    if (!editingPlayer || !confirm(`Сбросить Gold Eagle VIP у игрока ${editingPlayer.user_id}?`)) return;
+    await withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            await api(`/admin/api/players/${editingPlayer.user_id}/reset_gold_vip`, { method: 'POST' });
+            toast('Gold Eagle VIP сброшен');
+            await openPlayerModal(editingPlayer.user_id);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
 }
 
 async function savePlayerModal() {

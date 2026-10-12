@@ -1018,6 +1018,17 @@
         .clan-entry-btn:active { transform: translateX(10px) scale(0.93); }
         .clan-entry-btn .clan-entry-icon { width: 40px; height: auto; object-fit: contain; }
         .clan-entry-btn .clan-entry-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); }
+        /* ---------- Gold Eagle VIP: автоматизация экспедиций ---------- */
+        .gold-vip-block { margin: 14px 0 4px; padding: 14px; border-radius: 20px; text-align: center;
+            background: linear-gradient(160deg, rgba(255, 210, 90, 0.14), rgba(255, 176, 32, 0.04)), rgba(10, 6, 20, 0.82);
+            border: 1px solid rgba(255, 200, 80, 0.55); box-shadow: 0 0 22px rgba(255, 176, 32, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
+        .gold-vip-block h3 { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 15px; font-weight: 800; color: #ffd76a; margin-bottom: 4px; }
+        .gold-vip-block .gvip-sub { font-size: 12px; color: #e8d6b6; margin-bottom: 10px; line-height: 1.4; }
+        .gold-vip-block .gvip-btn { width: 100%; margin-top: 8px; padding: 12px 10px; font-size: 13.5px; }
+        .gold-vip-block .gvip-btn.gold { background: linear-gradient(135deg, #ffd76a, #f59e0b); color: #2a1404; text-shadow: none; }
+        .gold-vip-block .gvip-note { font-size: 11px; color: #cdb99a; margin-top: 4px; }
+
         /* ---------- Охота ---------- */
         /* Подложка экрана: тёмная вуаль поверх приглушённых гор, плотные
            тёмные карточки и обводка текста — иначе светлые буквы сливались
@@ -1391,6 +1402,7 @@
                     <p class="farm-queue-label" data-i18n="farm.queueLabel">Не поместились — ждут своей очереди</p>
                     <div class="farm-queue" id="farmQueue"></div>
                 </div>
+                <div class="gold-vip-block" id="goldVipBlock"></div>
             </div>
         </div>
 
@@ -2488,6 +2500,18 @@
                 'clan.matchNotFound': 'Матч не найден', 'clan.matchNotReady': 'Матч ещё не разрешён',
                 'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
                 'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
+                'gvip.title': '👑 Доступ к Gold Eagle VIP',
+                'gvip.activeSub': 'Активен · осталось {time}. Отправка и сбор золота — в 1 клик.',
+                'gvip.inactiveSub': 'Отправляй всех свободных орлов 7 ур. в экспедиции и собирай золото со всех вернувшихся — в 1 клик.',
+                'gvip.otherActive': 'Сейчас активен {name}. Gold Eagle VIP можно будет активировать после его окончания.',
+                'gvip.buy': 'Активировать Gold Eagle VIP за {price} GRAM 💎',
+                'gvip.send': '🚀 VIP: Отправить всех в экспедиции за Золотом',
+                'gvip.sendNote': 'Готовы к вылету: {n} · нужно {meat} 🥩',
+                'gvip.collect': '💰 VIP: Собрать золото со всех Орлов',
+                'gvip.collectNote': 'Вернулись: {n} · ещё в пути: {flying}',
+                'gvip.sent': '🚀 В экспедиции улетели {n} орл. (−{meat} 🥩)',
+                'gvip.collected': '💰 +{gold} 🪙 с {n} орл.{rest}',
+                'gvip.restFlying': ' · ещё в пути: {n}',
                 'hunt.nav': 'Охота',
                 'hunt.heading': '🏹 Охота',
                 'hunt.subheading': 'Шахта, Дальние Экспедиции и Алхимия',
@@ -2933,6 +2957,18 @@
                 'clan.matchNotFound': 'Match not found', 'clan.matchNotReady': 'Match not resolved yet',
                 'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
                 'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
+                'gvip.title': '👑 Gold Eagle VIP Access',
+                'gvip.activeSub': 'Active · {time} left. Send and collect gold in 1 tap.',
+                'gvip.inactiveSub': 'Send every free lvl 7 eagle on expeditions and collect gold from all returned ones — in 1 tap.',
+                'gvip.otherActive': '{name} is active now. Gold Eagle VIP can be activated after it ends.',
+                'gvip.buy': 'Activate Gold Eagle VIP for {price} GRAM 💎',
+                'gvip.send': '🚀 VIP: Send all on gold expeditions',
+                'gvip.sendNote': 'Ready to fly: {n} · needs {meat} 🥩',
+                'gvip.collect': '💰 VIP: Collect gold from all eagles',
+                'gvip.collectNote': 'Returned: {n} · still flying: {flying}',
+                'gvip.sent': '🚀 {n} eagle(s) flew off (−{meat} 🥩)',
+                'gvip.collected': '💰 +{gold} 🪙 from {n} eagle(s){rest}',
+                'gvip.restFlying': ' · still flying: {n}',
                 'hunt.nav': 'Hunt',
                 'hunt.heading': '🏹 Hunt',
                 'hunt.subheading': 'Mine, Far Expeditions and Alchemy',
@@ -4694,6 +4730,90 @@
             `).join('');
         }
 
+        /* ---------- Gold Eagle VIP: массовая отправка и сбор золота ----------
+           Кнопки видны только при активном тарифе gold; сервер проверяет его
+           сам (/api/farm/expedition/vip_*). Обычные экспедиции за золото —
+           орлов Охоты и её ресурсы эти кнопки не трогают. */
+        function goldEagleVipActive() {
+            return vipActive() && state.vip.tier === 'gold';
+        }
+
+        function goldVipFreeEagles() {
+            return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isListed(s) && !isOnExpedition(s));
+        }
+
+        function renderGoldVipBlock() {
+            const el = document.getElementById('goldVipBlock');
+            if (!el || !CONFIG || !CONFIG.vip) return;
+            const gold = (CONFIG.vip.tiers || []).find(t => t.id === 'gold');
+            if (!gold) { el.style.display = 'none'; return; }
+            el.style.display = '';
+            let body;
+            if (goldEagleVipActive()) {
+                const free = goldVipFreeEagles().length;
+                const meat = free * (Number(CONFIG.expeditions.cost_meat) || 1);
+                const flying = state.farm.filter(s => isOnExpedition(s));
+                const back = flying.filter(s => expeditionReady(s)).length;
+                body = `<div class="gvip-sub">${t('gvip.activeSub', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</div>
+                    <button class="btn-primary gvip-btn" onclick="goldVipSendAll()">${t('gvip.send')}</button>
+                    <div class="gvip-note">${t('gvip.sendNote', { n: free, meat: Number.isInteger(meat) ? meat : fmt(meat) })}</div>
+                    <button class="btn-primary gvip-btn gold" onclick="goldVipCollectAll()">${t('gvip.collect')}</button>
+                    <div class="gvip-note">${t('gvip.collectNote', { n: back, flying: flying.length - back })}</div>`;
+            } else if (vipActive()) {
+                const cur = vipTierDef(state.vip.tier);
+                body = `<div class="gvip-sub">${t('gvip.otherActive', { name: cur ? cur.name : state.vip.tier })}</div>
+                    <button class="btn-primary gvip-btn gold" disabled>${t('gvip.buy', { price: fmtGram(gold.price_gram) })}</button>`;
+            } else {
+                body = `<div class="gvip-sub">${t('gvip.inactiveSub')}</div>
+                    <button class="btn-primary gvip-btn gold" onclick="openVipModal('gold')">${t('gvip.buy', { price: fmtGram(gold.price_gram) })}</button>`;
+            }
+            setHTMLIfChanged(el, `<h3>${t('gvip.title')}</h3>${body}`);
+        }
+
+        async function goldVipAction(url, key) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                const response = await fetch(url, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ user_id: state.userId }) });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || t('market.serverError'));
+                    haptic.notify('warning');
+                    if (response.status === 403 || response.status === 409) syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+                    return null;
+                }
+                ok = true;
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (typeof data.mnstr === 'number') state.mnstr = data.mnstr;
+                if (typeof data.gold === 'number') state.gold = data.gold;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                renderAll();
+                saveLocally();
+                return data;
+            } catch (error) {
+                toast('Сервер недоступен');
+                return null;
+            } finally {
+                // Держим ключ после успеха: второй тап двойного клика не должен
+                // попасть в перерисованную кнопку (см. HUNT_TAP_COOLDOWN_MS).
+                if (ok) setTimeout(() => farmActionBusy.delete(key), 700); else farmActionBusy.delete(key);
+            }
+        }
+
+        async function goldVipSendAll() {
+            const data = await goldVipAction('api/farm/expedition/vip_send_all', 'gvip-send');
+            if (data) toast(t('gvip.sent', { n: data.sent, meat: Number.isInteger(data.meat_spent) ? data.meat_spent : fmt(data.meat_spent) }));
+        }
+
+        async function goldVipCollectAll() {
+            const data = await goldVipAction('api/farm/expedition/vip_collect_all', 'gvip-collect');
+            if (data) toast(t('gvip.collected', { gold: fmtGram(data.reward), n: data.collected,
+                rest: data.still_flying ? t('gvip.restFlying', { n: data.still_flying }) : '' }));
+        }
+
         function openVipModal(tierId) {
             vipModalTier = tierId;
             renderVipModal();
@@ -4791,7 +4911,7 @@
                 haptic.notify('success');
                 toast(t('vip.activated', { name: tier.name }));
                 closeVipModal();
-                if (data.monsters) renderAll(); else { renderHeader(); renderVipRail(); }
+                if (data.monsters) renderAll(); else { renderHeader(); renderVipRail(); renderGoldVipBlock(); }
                 saveLocally();
             } catch (error) {
                 toast('Сервер недоступен');
@@ -6314,6 +6434,7 @@
             renderEquipMarket();
             renderResourceMarket();
             renderVipRail();
+            renderGoldVipBlock();
             renderNest();
             updateWheelButton();
             renderHunt();
@@ -9585,6 +9706,7 @@
                 updateSlotProgress();
                 if (document.getElementById('farm').classList.contains('active')) {
                     renderActiveMonster();
+                    renderGoldVipBlock();
                 }
                 if (document.getElementById('slotModal').classList.contains('open')) {
                     tickSlotModal();
