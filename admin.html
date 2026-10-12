@@ -2809,9 +2809,14 @@ async function loadBotClanStatus() {
 async function withBusyButton(btn, busyText, fn) {
     if (btn.disabled) return;
     const label = btn.textContent;
+    // Ширину держим на время запроса: короткая надпись «…» сужала кнопку,
+    // соседняя съезжала под курсор, и второй клик двойного клика попадал в
+    // неё (так «🚀 Запустить пул» сразу же «⏹ Останавливал» продажу).
+    const prevMinWidth = btn.style.minWidth;
+    btn.style.minWidth = btn.offsetWidth + 'px';
     btn.disabled = true;
     btn.textContent = busyText;
-    try { await fn(); } finally { btn.disabled = false; btn.textContent = label; }
+    try { await fn(); } finally { btn.disabled = false; btn.textContent = label; btn.style.minWidth = prevMinWidth; }
 }
 
 document.getElementById('botClanCreateBtn').onclick = async () => {

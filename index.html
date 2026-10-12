@@ -846,6 +846,11 @@
         .shares-rules .on { color: var(--gold); font-weight: 700; }
         .shares-rate-now { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 2px 0 10px; }
         .shares-btn { width: 100%; justify-content: center; }
+        .shares-fund .stat-row b, .shares-portfolio .stat-row b { white-space: nowrap; }
+        /* Три вкладки Гнезда на узком телефоне: надписи не слипаются */
+        @media (max-width: 380px) {
+            #nest .subtab-item { font-size: 11px; letter-spacing: 0; padding-left: 1px; padding-right: 1px; }
+        }
         .nest-shard-card {
             margin-top: 12px; padding: 14px;
             background: linear-gradient(160deg, rgba(251, 191, 36, 0.16), rgba(15, 9, 26, 0.6));
