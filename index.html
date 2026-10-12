@@ -5230,8 +5230,11 @@
         /* ---------- ежедневный вход ---------- */
 
         // Сутки считаем по UTC — так же, как сервер, поэтому день не «плывёт».
+        // Сутки UTC по часам сервера (serverNow): со сбитыми часами телефона
+        // кнопка «Забрать» иначе бывала неактивной, когда награда уже доступна
+        // (или активной, когда сервер ответит «уже забрана»).
         function dayIndex() {
-            return Math.floor(Date.now() / 86400000);
+            return Math.floor(serverNow() / 86400);
         }
 
         function dailyReward(day, firstLap = true) {
@@ -5505,8 +5508,15 @@
                 <button class="btn-primary daily-claim" id="dailySubCheckBtn" onclick="checkDailySubscription()">${t('daily.subCheck')}</button>
                 <button class="btn-action daily-close" onclick="closeDailySub()">${t('common.close')}</button>
             `;
+            // Двойной тап по ссылке открывал канал/чат дважды.
             document.querySelectorAll('#dailySubBody [data-sub-link]').forEach(b => {
-                b.onclick = () => openTgLink((state.dailySub || {})[b.dataset.subLink]);
+                b.onclick = () => {
+                    const key = 'daily-sub-link-' + b.dataset.subLink;
+                    if (farmActionBusy.has(key)) return;
+                    farmActionBusy.add(key);
+                    setTimeout(() => farmActionBusy.delete(key), 1000);
+                    openTgLink((state.dailySub || {})[b.dataset.subLink]);
+                };
             });
         }
 

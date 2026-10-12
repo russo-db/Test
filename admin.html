@@ -1840,6 +1840,8 @@ async function loadDailySubAdmin() {
 }
 async function checkDailySubBot(inputId, outId) {
     const out = document.getElementById(outId);
+    if (out.dataset.busy) return;
+    out.dataset.busy = '1';
     out.textContent = 'Проверяю…'; out.style.color = '';
     try {
         const r = await api('/admin/api/missions/check_channel', {
@@ -1849,6 +1851,7 @@ async function checkDailySubBot(inputId, outId) {
         out.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.detail;
         out.style.color = r.ok ? '#4ade80' : '#f0b429';
     } catch (e) { if (e.message !== 'unauthorized') { out.textContent = '❌ ' + e.message; out.style.color = '#f87171'; } }
+    finally { delete out.dataset.busy; }
 }
 document.getElementById('dsCheckChannel').onclick = () => checkDailySubBot('dsChannel', 'dsChannelCheck');
 document.getElementById('dsCheckChat').onclick = () => checkDailySubBot('dsChat', 'dsChatCheck');

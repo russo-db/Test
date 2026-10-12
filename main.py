@@ -514,14 +514,29 @@ async def inviter_name(referrer_id) -> str:
     return (doc or {}).get("name") or ""
 
 
+_tg_api_bot = None
+
+
+def tg_api_bot():
+    """Один общий Bot для запросов к Bot API из игрового сервера. Раньше
+    каждый вызов создавал новый Bot — а с ним новый httpx-клиент, который
+    никто не закрывал: с проверкой подписки на каждое «Забрать» соединения
+    копились бы. Пул на 32 соединения — параллельные игроки не ждут друг друга."""
+    global _tg_api_bot
+    if _tg_api_bot is None:
+        from telegram import Bot
+        from telegram.request import HTTPXRequest
+        _tg_api_bot = Bot(BOT_TOKEN, request=HTTPXRequest(connection_pool_size=32, pool_timeout=10.0))
+    return _tg_api_bot
+
+
 async def tg_send(chat_id, text: str):
     """Пишет в Telegram. Блокировка бота игроком не должна ронять запрос."""
     if not BOT_TOKEN or not chat_id:
         return False
-    from telegram import Bot
 
     try:
-        await Bot(BOT_TOKEN).send_message(
+        await tg_api_bot().send_message(
             chat_id=chat_id, text=text, parse_mode=ParseMode.HTML
         )
         return True
@@ -5503,11 +5518,10 @@ async def channel_subscribed(user_id: int, chat: str) -> bool:
     if not BOT_TOKEN:
         print("[missions] channel_subscribed: BOT_TOKEN не задан")
         return False
-    from telegram import Bot
     from telegram.error import TelegramError
 
     try:
-        member = await Bot(BOT_TOKEN).get_chat_member(chat_id=chat, user_id=user_id)
+        member = await tg_api_bot().get_chat_member(chat_id=chat, user_id=user_id)
     except TelegramError as e:
         # Частая причина: бот не добавлен в канал администратором — тогда
         # Telegram отказывает в getChatMember даже для реального подписчика.
@@ -5641,11 +5655,10 @@ async def tg_is_member(chat: str, user_id: int) -> Optional[bool]:
     if not BOT_TOKEN:
         print("[daily-sub] BOT_TOKEN не задан — проверить подписку нельзя")
         return None
-    from telegram import Bot
     from telegram.error import TelegramError
 
     try:
-        member = await Bot(BOT_TOKEN).get_chat_member(chat_id=chat, user_id=user_id)
+        member = await tg_api_bot().get_chat_member(chat_id=chat, user_id=user_id)
     except TelegramError as e:
         if "user not found" in str(e).lower() or "participant_id_invalid" in str(e).lower():
             return False
@@ -6985,9 +6998,8 @@ async def admin_check_mission_channel(body: AdminMissionChannelCheck, _: None = 
     if not BOT_TOKEN:
         return {"ok": False, "chat": chat, "detail": "BOT_TOKEN не задан на сервере — проверить подписку нельзя"}
     try:
-        from telegram import Bot
         from telegram.error import TelegramError
-        bot = Bot(BOT_TOKEN)
+        bot = tg_api_bot()
         try:
             info = await bot.get_chat(chat)
         except TelegramError as e:
