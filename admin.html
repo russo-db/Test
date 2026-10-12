@@ -1085,7 +1085,16 @@ function renderFeatures() {
     renderTestersHint();
 }
 
+const featureToggleBusy = new Set();
 async function toggleFeature(key) {
+    // Двойной клик по «Колесу»/«Заданиям» включал и тут же выключал функцию:
+    // каждый клик переворачивал текущее состояние. Пока идёт запрос и ещё
+    // 0,7 с после ответа повторные клики по тому же переключателю игнорируются.
+    if (featureToggleBusy.has(key)) return;
+    featureToggleBusy.add(key);
+    try { await toggleFeatureNow(key); } finally { setTimeout(() => featureToggleBusy.delete(key), 700); }
+}
+async function toggleFeatureNow(key) {
     if (key === 'maintenance_enabled' && !featuresState.maintenance_enabled
         && !confirm(maintenanceTesters.length
             ? `Включить техработы? Играть смогут только тестеры (${maintenanceTesters.length}): ${maintenanceTesters.join(', ')}.`
@@ -2825,7 +2834,13 @@ async function withBusyButton(btn, busyText, fn) {
     btn.style.minWidth = btn.offsetWidth + 'px';
     btn.disabled = true;
     btn.textContent = busyText;
-    try { await fn(); } finally { btn.disabled = false; btn.textContent = label; btn.style.minWidth = prevMinWidth; }
+    try { await fn(); } finally {
+        btn.textContent = label; btn.style.minWidth = prevMinWidth;
+        // Ещё 0,7 с после ответа кнопка неактивна: на быстром сервере ответ
+        // приходил раньше второго клика двойного клика, и переключатели
+        // («Кланы», «Задания») тут же щёлкались обратно.
+        setTimeout(() => { btn.disabled = false; }, 700);
+    }
 }
 
 document.getElementById('botClanCreateBtn').onclick = async () => {
