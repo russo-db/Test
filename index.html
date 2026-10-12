@@ -692,6 +692,14 @@
         .daily-actions { flex: 0 0 auto; margin: 0 -8px; padding: 14px 8px 0 8px; border-top: 1px solid var(--glass-border); }
         .daily-claim { width: 100%; justify-content: center; }
         .daily-close { width: 100%; justify-content: center; margin-top: 9px; }
+        /* Окно «нужна подписка» поверх ежедневной награды */
+        .daily-sub-box { max-width: 340px; text-align: center; }
+        .daily-sub-box h2 { font-size: 17px; line-height: 1.35; margin-bottom: 14px; }
+        .daily-sub-links { display: flex; flex-direction: column; gap: 9px; margin-bottom: 12px; }
+        .daily-sub-link { width: 100%; justify-content: space-between; text-align: left; }
+        .daily-sub-link .sub-mark { font-size: 15px; flex: 0 0 auto; }
+        .daily-sub-note { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; min-height: 16px; }
+        .daily-sub-note.warn { color: var(--gold); }
 
         /* ---------- Кошелёк TON ---------- */
         .wallet-connect { width: 100%; justify-content: center; margin-top: 4px; }
@@ -1963,6 +1971,11 @@
         <div class="modal-box glass-panel daily-box" id="dailyBody"></div>
     </div>
 
+    <!-- DAILY REWARD: SUBSCRIPTION REQUIRED (поверх dailyModal) -->
+    <div class="modal-backdrop" id="dailySubModal" onclick="if (event.target === this) closeDailySub()">
+        <div class="modal-box glass-panel daily-sub-box" id="dailySubBody"></div>
+    </div>
+
     <!-- CLAN CREATE MODAL -->
     <div class="modal-backdrop" id="clanCreateModal" onclick="if (event.target === this) closeCreateClanModal()">
         <div class="modal-box glass-panel pay-box" id="clanCreateBody"></div>
@@ -2423,6 +2436,13 @@
                 'daily.claim': 'Забрать', 'daily.comeTomorrow': 'Приходи завтра',
                 'daily.tomorrowPrefix': 'завтра: ', 'daily.open': 'Открыть',
                 'daily.cardStreak': 'День {day} из {days} • серия {count} {word}',
+                'daily.subTitle': '⚠️ Для получения ежедневной награды необходимо состоять в нашем канале и чате!',
+                'daily.subChannel': '📢 Наш канал', 'daily.subChat': '💬 Наш чат',
+                'daily.subCheck': 'Проверить подписку', 'daily.subChecking': 'Проверяю…',
+                'daily.subHint': 'Вступи в канал и чат, затем нажми «Проверить подписку».',
+                'daily.subMissing': 'Подписка не найдена — вступи в канал и чат (❌) и проверь ещё раз.',
+                'daily.subError': 'Не удалось проверить подписку — попробуй ещё раз через минуту.',
+                'daily.subOk': '✅ Подписка подтверждена — теперь нажми «Забрать»!',
                 'missions.claim': 'Забрать', 'missions.done': 'Готово',
                 'deposit.title': 'Пополнение', 'deposit.amountLabel': 'Сумма, GRAM',
                 'deposit.addressLabel': 'Адрес проекта', 'deposit.addressCopied': 'Адрес скопирован',
@@ -2880,6 +2900,13 @@
                 'daily.claim': 'Claim', 'daily.comeTomorrow': 'Come back tomorrow',
                 'daily.tomorrowPrefix': 'tomorrow: ', 'daily.open': 'Open',
                 'daily.cardStreak': 'Day {day} of {days} • streak {count} {word}',
+                'daily.subTitle': '⚠️ To get the daily reward you must be a member of our channel and chat!',
+                'daily.subChannel': '📢 Our channel', 'daily.subChat': '💬 Our chat',
+                'daily.subCheck': 'Check subscription', 'daily.subChecking': 'Checking…',
+                'daily.subHint': 'Join the channel and the chat, then tap “Check subscription”.',
+                'daily.subMissing': 'Subscription not found — join the channel and chat (❌) and check again.',
+                'daily.subError': 'Could not check the subscription — try again in a minute.',
+                'daily.subOk': '✅ Subscription confirmed — now tap “Claim”!',
                 'missions.claim': 'Claim', 'missions.done': 'Done',
                 'deposit.title': 'Deposit', 'deposit.amountLabel': 'Amount, GRAM',
                 'deposit.addressLabel': 'Project address', 'deposit.addressCopied': 'Address copied',
@@ -3154,6 +3181,13 @@
             dailyClaimed: 0,     // сколько дней подряд уже забрано
             dailyLast: 0,        // номер суток последнего забора
             dailyFirstLap: true, // первый круг ежедневных наград ещё не пройден
+            // Подписка на официальный канал и чат — условие «Забрать». Флаги
+            // выставляет только сервер (проверка через бота) и только на
+            // сутки subscriptionDay: новый день сбрасывает их в false.
+            isSubscribedChannel: false,
+            isSubscribedChat: false,
+            subscriptionDay: 0,
+            dailySub: { enabled: false, channel_url: '', chat_url: '' },
             eggBoard: Array(16).fill(0),   // 4×4, 0 = пусто, иначе уровень яйца (= редкость орла-родителя)
             eggBoardUnlocked: 2,           // сколько ячеек поля открыто (2..16, первые 2 бесплатны)
             eggQueue: [],                  // яйца, не поместившиеся на доску, ждут своей очереди по порядку
@@ -5239,6 +5273,28 @@
             if (typeof daily.first_lap === 'boolean') state.dailyFirstLap = daily.first_lap;
         }
 
+        function applyDailySubscription(sub) {
+            if (!sub) return;
+            state.dailySub = {
+                enabled: !!sub.enabled,
+                channel_url: sub.channel_url || '',
+                chat_url: sub.chat_url || '',
+            };
+            state.isSubscribedChannel = !!sub.is_subscribed_channel;
+            state.isSubscribedChat = !!sub.is_subscribed_chat;
+            state.subscriptionDay = Number(sub.day) || 0;
+        }
+
+        // Наступил новый день — флаги подписки намертво false, пока сервер
+        // заново не подтвердит её при следующем «Забрать».
+        function resetSubscriptionIfNewDay() {
+            if (state.subscriptionDay && state.subscriptionDay !== dayIndex()) {
+                state.isSubscribedChannel = false;
+                state.isSubscribedChat = false;
+                state.subscriptionDay = 0;
+            }
+        }
+
         function dailyIcon(reward) {
             if (reward.monster) {
                 const monster = MONSTERS[reward.monster];
@@ -5376,6 +5432,13 @@
                 return;
             }
 
+            // Подписку проверяет сервер прямо в этом запросе (флаги на клиенте —
+            // только для отображения): нет подписки — награда не выдаётся, сервер
+            // отвечает 403 subscription_required, и мы открываем окно подписки.
+            // Повторное нажатие отсекает guardMarketAction (ключ 'daily-claim').
+            resetSubscriptionIfNewDay();
+            const btn = document.getElementById('dailyClaimBtn');
+            if (btn) btn.disabled = true;
             try {
                 const response = await fetch('api/daily/claim', {
                     method: 'POST',
@@ -5384,6 +5447,12 @@
                 });
                 const data = await response.json();
                 if (!response.ok) {
+                    if (data.code === 'subscription_required') {
+                        applyDailySubscription(data.subscription);
+                        haptic.notify('warning');
+                        openDailySub(data.subscription && data.subscription.check_error);
+                        return;
+                    }
                     toast(data.detail || 'Награда пока недоступна');
                     haptic.notify('warning');
                     return;
@@ -5405,6 +5474,86 @@
                 finishDaily(data.reward, data.day, !!data.reward.monster && (state.farmQueue || []).length > queueBefore);
             } catch (error) {
                 toast('Сервер недоступен');
+            } finally {
+                const b = document.getElementById('dailyClaimBtn');
+                if (b && dailyStatus().ready) b.disabled = false;
+            }
+        }
+
+        /* ---------- ежедневная награда: обязательная подписка ---------- */
+
+        function openTgLink(url) {
+            if (!url) return;
+            try { tg.openTelegramLink(url); } catch (e) {
+                try { tg.openLink(url); } catch (e2) { window.open(url, '_blank'); }
+            }
+        }
+
+        function renderDailySub(note, warn) {
+            const sub = state.dailySub || {};
+            const row = (key, url, done, label) => url ? `
+                <button class="btn-action daily-sub-link" data-sub-link="${key}">
+                    <span>${label}</span><span class="sub-mark">${done ? '✅' : '❌'}</span>
+                </button>` : '';
+            document.getElementById('dailySubBody').innerHTML = `
+                <h2>${t('daily.subTitle')}</h2>
+                <div class="daily-sub-links">
+                    ${row('channel_url', sub.channel_url, state.isSubscribedChannel, t('daily.subChannel'))}
+                    ${row('chat_url', sub.chat_url, state.isSubscribedChat, t('daily.subChat'))}
+                </div>
+                <div class="daily-sub-note ${warn ? 'warn' : ''}" id="dailySubNote">${escapeMissionText(note || t('daily.subHint'))}</div>
+                <button class="btn-primary daily-claim" id="dailySubCheckBtn" onclick="checkDailySubscription()">${t('daily.subCheck')}</button>
+                <button class="btn-action daily-close" onclick="closeDailySub()">${t('common.close')}</button>
+            `;
+            document.querySelectorAll('#dailySubBody [data-sub-link]').forEach(b => {
+                b.onclick = () => openTgLink((state.dailySub || {})[b.dataset.subLink]);
+            });
+        }
+
+        function openDailySub(checkError) {
+            renderDailySub(checkError ? t('daily.subError') : '', !!checkError);
+            document.getElementById('dailySubModal').classList.add('open');
+        }
+
+        function closeDailySub() {
+            document.getElementById('dailySubModal').classList.remove('open');
+        }
+
+        // «Проверить подписку»: сервер спрашивает Telegram (getChatMember) о
+        // канале и чате и запоминает флаги на сегодня. Оба true — окно
+        // закрывается, и следующее «Забрать» выдаёт награду.
+        async function checkDailySubscription() {
+            if (farmActionBusy.has('daily-sub-check')) return;
+            farmActionBusy.add('daily-sub-check');
+            const btn = document.getElementById('dailySubCheckBtn');
+            if (btn) { btn.disabled = true; btn.textContent = t('daily.subChecking'); }
+            try {
+                const response = await fetch('api/daily/check_subscription', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    renderDailySub(data.detail || t('daily.subError'), true);
+                    haptic.notify('warning');
+                    return;
+                }
+                applyDailySubscription(data.subscription);
+                if (data.subscribed) {
+                    haptic.notify('success');
+                    closeDailySub();
+                    toast(t('daily.subOk'));
+                    renderDaily();
+                    return;
+                }
+                haptic.notify('warning');
+                const s = data.subscription || {};
+                renderDailySub(s.check_error ? t('daily.subError') : t('daily.subMissing'), true);
+            } catch (error) {
+                renderDailySub(t('daily.subError'), true);
+            } finally {
+                farmActionBusy.delete('daily-sub-check');
             }
         }
 
@@ -9565,6 +9714,7 @@
             state.ops = data.ops || 0;
             if (data.ton) TON_CFG = Object.assign(TON_CFG, data.ton);
             applyDaily(data.daily);
+            applyDailySubscription(data.daily_subscription);
             state.eggBoard = normalizeEggBoard(data.eggs_board);
             state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);

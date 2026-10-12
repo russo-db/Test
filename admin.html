@@ -610,6 +610,37 @@
                 <button class="primary" id="missionsSaveBtn">💾 Сохранить задания</button>
                 <span class="muted" id="missionsDirty" style="font-size:12px;"></span>
             </div>
+
+            <h2 style="margin-top:24px;">🔒 Подписка для ежедневной награды</h2>
+            <div class="nft-interval-panel">
+                <div class="muted" style="font-size:12px; margin-bottom:8px;">
+                    Кнопка «Забрать» ежедневной награды выдаёт ресурсы, только если игрок состоит в канале <b>и</b> чате — сервер проверяет это через бота при нажатии.
+                    Проверка действует до конца суток (UTC): в новый день флаги подписки сбрасываются и проверяются заново.
+                    Бот должен быть <b>администратором канала</b> и <b>участником чата</b>. Чат по ссылке-приглашению проверяется только по числовому ID —
+                    добавьте бота в чат и напишите там <code>/chatid</code>. Пустой ID — эта часть не проверяется.
+                </div>
+                <div class="nft-interval-row" style="margin-bottom:8px;">
+                    <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="dsEnabled"> Требовать подписку</label>
+                    <span class="muted" id="dsVerified" style="font-size:12px;"></span>
+                </div>
+                <div class="field-row">
+                    <label>Канал (@username или -100…) <input id="dsChannel" placeholder="@SKYLORDSgramm"></label>
+                    <label>Ссылка на канал <input id="dsChannelUrl" placeholder="https://t.me/…"></label>
+                    <label>&nbsp;<button type="button" id="dsCheckChannel">Проверить бота</button></label>
+                </div>
+                <div class="muted" id="dsChannelCheck" style="font-size:12px; margin:4px 0 8px;"></div>
+                <div class="field-row">
+                    <label>Чат (ID -100…) <input id="dsChat" placeholder="-100…"></label>
+                    <label>Ссылка на чат <input id="dsChatUrl" placeholder="https://t.me/+…"></label>
+                    <label>&nbsp;<button type="button" id="dsCheckChat">Проверить бота</button></label>
+                </div>
+                <div class="muted" id="dsChatCheck" style="font-size:12px; margin:4px 0 8px;"></div>
+                <div id="dsWarnings" style="font-size:12px; color:#f0b429; margin-bottom:8px;"></div>
+                <div class="toolbar">
+                    <button class="primary" id="dsSave">💾 Сохранить</button>
+                    <button id="dsResetAll" title="Как наступление нового дня: всем игрокам снова нужна проверка">🔄 Сбросить проверку подписки у всех</button>
+                </div>
+            </div>
         </div>
 
         <div class="page" id="page-arena">
@@ -899,7 +930,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'tournament') loadTournamentStatus();
         if (btn.dataset.page === 'auction') loadAuctionAdmin(); else auctionAdminStop();
         if (btn.dataset.page === 'arena') loadArenaAdmin(); else arenaAdminStop();
-        if (btn.dataset.page === 'missions') loadMissionsAdmin();
+        if (btn.dataset.page === 'missions') { loadMissionsAdmin(); loadDailySubAdmin(); }
         if (btn.dataset.page === 'economy') loadEconomy();
         if (btn.dataset.page === 'retention') { loadRetention(); loadDailyStats(); }
         if (btn.dataset.page === 'hunt') loadHuntAdmin();
@@ -1793,6 +1824,61 @@ document.getElementById('missionsToggleBtn').onclick = async e => { await withBu
     } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 }); renderMissionsHead(); };
 
+/* ---------- подписка для ежедневной награды ---------- */
+function applyDailySubAdmin(r) {
+    document.getElementById('dsEnabled').checked = !!r.enabled;
+    document.getElementById('dsChannel').value = r.channel || '';
+    document.getElementById('dsChannelUrl').value = r.channel_url || '';
+    document.getElementById('dsChat').value = r.chat || '';
+    document.getElementById('dsChatUrl').value = r.chat_url || '';
+    document.getElementById('dsVerified').textContent = `Подписка подтверждена сегодня: ${fmtNum(r.verified_today || 0)} игроков`;
+    document.getElementById('dsWarnings').innerHTML = (r.warnings || []).map(w => '⚠️ ' + escHtml(w)).join('<br>');
+}
+async function loadDailySubAdmin() {
+    try { applyDailySubAdmin(await api('/admin/api/daily_sub')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+async function checkDailySubBot(inputId, outId) {
+    const out = document.getElementById(outId);
+    out.textContent = 'Проверяю…'; out.style.color = '';
+    try {
+        const r = await api('/admin/api/missions/check_channel', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat: document.getElementById(inputId).value || '' }),
+        });
+        out.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.detail;
+        out.style.color = r.ok ? '#4ade80' : '#f0b429';
+    } catch (e) { if (e.message !== 'unauthorized') { out.textContent = '❌ ' + e.message; out.style.color = '#f87171'; } }
+}
+document.getElementById('dsCheckChannel').onclick = () => checkDailySubBot('dsChannel', 'dsChannelCheck');
+document.getElementById('dsCheckChat').onclick = () => checkDailySubBot('dsChat', 'dsChatCheck');
+document.getElementById('dsSave').onclick = e => withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
+    try {
+        const r = await api('/admin/api/daily_sub', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: document.getElementById('dsEnabled').checked,
+                channel: document.getElementById('dsChannel').value,
+                channel_url: document.getElementById('dsChannelUrl').value,
+                chat: document.getElementById('dsChat').value,
+                chat_url: document.getElementById('dsChatUrl').value,
+            }),
+        });
+        applyDailySubAdmin(r);
+        toast(r.enabled ? 'Подписка для награды сохранена (включена)' : 'Сохранено: подписка не требуется');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+});
+document.getElementById('dsResetAll').onclick = e => {
+    if (!confirm('Сбросить флаги подписки у всех игроков? Следующее «Забрать» у каждого заново проверит канал и чат.')) return;
+    withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            const r = await api('/admin/api/daily_sub/reset_all', { method: 'POST' });
+            toast(`Проверка подписки сброшена у ${fmtNum(r.reset)} игроков`);
+            await loadDailySubAdmin();
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+
 /* ---------- транзакции: пополнения и выводы ---------- */
 const txState = { items: [], offset: 0 };
 const WD_STATUS = { pending: '⏳ ожидает', approved: '✅ выплачен', rejected: '❌ отклонён' };
@@ -2172,6 +2258,12 @@ async function openPlayerModal(userId) {
                     </select></label>
                     <label>VIP дней осталось <input id="fVipDays" type="number" step="1" value="${doc.vip_expires_at ? Math.max(0, Math.ceil((doc.vip_expires_at - Date.now()/1000) / 86400)) : 0}"></label>
                     <label>&nbsp;<button type="button" id="resetGoldVipBtn" onclick="resetGoldVip(event)" ${doc.vip_tier === 'gold' ? '' : 'disabled title="У игрока нет Gold Eagle VIP"'}>👑 Сбросить Gold Eagle VIP</button></label>
+                    <label>&nbsp;<button type="button" id="simulateNewDayBtn" onclick="simulateNewDay(event)" title="Сбрасывает флаги подписки и снова открывает награду дня (серия не прерывается)">🔄 Имитировать Новый День</button></label>
+                </div>
+                <div class="muted" style="font-size:12px; margin:-4px 0 10px;">
+                    Ежедневная награда: серия ${doc.daily_day || 0} дн. ·
+                    подписка на сегодня: канал ${doc.subscription_day === dayIndexUtc() && doc.is_subscribed_channel ? '✅' : '❌'},
+                    чат ${doc.subscription_day === dayIndexUtc() && doc.is_subscribed_chat ? '✅' : '❌'}
                 </div>
 
                 <b>Ферма (${doc.monsters.length} орлов)</b>
@@ -2312,6 +2404,21 @@ function closePlayerModal() {
 
 // Для тестов: снимает тариф Gold Eagle VIP у открытого игрока (кнопки
 // массовой отправки/сбора у него сразу пропадают).
+function dayIndexUtc() { return Math.floor(Date.now() / 86400000); }
+
+// Для тестов: «новый день» для открытого игрока — флаги подписки сбрасываются
+// в false, а забранная сегодня награда снова доступна (следующий день серии).
+async function simulateNewDay(e) {
+    if (!editingPlayer || !confirm(`Имитировать новый день для игрока ${editingPlayer.user_id}?\nФлаги подписки сбросятся, награда дня снова станет доступна.`)) return;
+    await withBusyButton(e.currentTarget, '…', async () => {
+        try {
+            const r = await api(`/admin/api/players/${editingPlayer.user_id}/simulate_new_day`, { method: 'POST' });
+            toast(r.daily_reopened ? 'Новый день: подписка сброшена, награда снова доступна' : 'Новый день: подписка сброшена');
+            await openPlayerModal(editingPlayer.user_id);
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+}
+
 async function resetGoldVip(e) {
     if (!editingPlayer || !confirm(`Сбросить Gold Eagle VIP у игрока ${editingPlayer.user_id}?`)) return;
     await withBusyButton(e.currentTarget, '…', async () => {

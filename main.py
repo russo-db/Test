@@ -2420,6 +2420,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "referrals": int(row.get("referrals") or 0),
         "invited_by": await inviter_name(row.get("referred_by")),
         "daily": daily_state(row),
+        "daily_subscription": daily_sub_view(row, await refresh_daily_sub()),
         "eggs_board": normalize_eggs_board(row.get("eggs_board")),
         "eggs_board_unlocked": max(2, min(EGG_BOARD_SIZE, int(row.get("eggs_board_unlocked") or 2))),
         "eggs_queue": normalize_eggs_queue(row.get("eggs_queue")),
@@ -5552,10 +5553,223 @@ async def claim_mission(request: MissionClaim, x_telegram_init_data: Optional[st
     }
 
 
+# --- ПОДПИСКА ДЛЯ ЕЖЕДНЕВНОЙ НАГРАДЫ: «Забрать» выдаёт награду, только если
+# игрок состоит в официальном канале И чате. Проверяет сервер через бота
+# (getChatMember) прямо при нажатии — клиентским флагам верить нельзя, их
+# легко подделать. Результат проверки хранится у игрока (is_subscribed_channel /
+# is_subscribed_chat) вместе с номером суток UTC (subscription_day) и действует
+# только в эти сутки: с наступлением нового дня флаги считаются false, и
+# следующее «Забрать» снова спрашивает Telegram — отписавшийся за сутки
+# награду не получит. Настройки (канал, чат, ссылки, вкл/выкл) — в БД
+# (settings → daily_sub_state), чтобы деплой их не сбрасывал.
+# Бот должен быть администратором канала и участником чата.
+DAILY_SUB_SETTING = "daily_sub_state"
+DAILY_SUB_REFRESH_SECONDS = 10
+DAILY_SUB_CHECK_COOLDOWN = 3.0      # не чаще одного запроса к Telegram на игрока
+DAILY_SUB_CHAT_RE = re.compile(r"^(@[A-Za-z0-9_]{4,32}|-\d{5,20})$")
+DAILY_SUB_DEFAULTS = {
+    "enabled": True,
+    "channel": "@SKYLORDSgramm",
+    "channel_url": "https://t.me/SKYLORDSgramm",
+    # Чат открывается по ссылке-приглашению — getChatMember по ней не
+    # работает, нужен числовой ID (-100…): админка → Задания, или /chatid в чате.
+    "chat": "",
+    "chat_url": "https://t.me/+-i4Zc1Ak5m5iZTZi",
+}
+DAILY_SUB_REQUIRED_DETAIL = "⚠️ Для получения ежедневной награды необходимо состоять в нашем канале и чате!"
+_daily_sub: dict = dict(DAILY_SUB_DEFAULTS)
+_daily_sub_loaded_at = 0.0
+_daily_sub_checks: dict = {}         # user_id -> (ts, flags) — защита от спама кнопкой
+_daily_sub_inflight: dict = {}       # user_id -> идущая проверка (asyncio.Task)
+
+
+async def refresh_daily_sub(force: bool = False) -> dict:
+    global _daily_sub, _daily_sub_loaded_at
+    now = time.time()
+    if not force and now - _daily_sub_loaded_at < DAILY_SUB_REFRESH_SECONDS:
+        return _daily_sub
+    # До первого чтения не помечаем кэш свежим: иначе параллельные запросы
+    # сразу после рестарта получили бы умолчания вместо настроек из БД.
+    if _daily_sub_loaded_at:
+        _daily_sub_loaded_at = now
+    try:
+        doc = await store.get_setting(DAILY_SUB_SETTING, None)
+        merged = dict(DAILY_SUB_DEFAULTS)
+        if isinstance(doc, dict):
+            merged.update({k: doc[k] for k in DAILY_SUB_DEFAULTS if k in doc})
+        _daily_sub = merged
+        _daily_sub_loaded_at = now
+    except Exception as e:
+        print(f"[daily-sub] не удалось прочитать настройки из БД: {type(e).__name__}: {e}")
+    return _daily_sub
+
+
+def normalize_tg_chat(chat: str) -> str:
+    chat = (chat or "").strip()
+    if chat.startswith("https://t.me/") and "+" not in chat:
+        chat = "@" + chat[len("https://t.me/"):].strip("/").split("/")[0]
+    return chat
+
+
+def subscription_flags(row: dict, today: Optional[int] = None) -> dict:
+    """Флаги подписки игрока на сегодня. Проверка вчерашнего дня не в счёт —
+    новые сутки сбрасывают оба флага в false."""
+    today = day_index() if today is None else today
+    fresh = int(row.get("subscription_day") or 0) == today
+    return {
+        "is_subscribed_channel": fresh and bool(row.get("is_subscribed_channel")),
+        "is_subscribed_chat": fresh and bool(row.get("is_subscribed_chat")),
+    }
+
+
+def daily_sub_view(row: dict, cfg: Optional[dict] = None) -> dict:
+    """Что нужно клиенту: включена ли проверка, ссылки и флаги на сегодня."""
+    cfg = cfg or _daily_sub
+    out = {
+        "enabled": bool(cfg.get("enabled")),
+        "channel_url": cfg.get("channel_url") or "",
+        "chat_url": cfg.get("chat_url") or "",
+        "day": day_index(),
+    }
+    out.update(subscription_flags(row))
+    return out
+
+
+async def tg_is_member(chat: str, user_id: int) -> Optional[bool]:
+    """True/False — состоит ли игрок в канале/чате; None — Telegram не ответил
+    (бот не админ канала, не в чате, сеть) — подробности в логе."""
+    if not BOT_TOKEN:
+        print("[daily-sub] BOT_TOKEN не задан — проверить подписку нельзя")
+        return None
+    from telegram import Bot
+    from telegram.error import TelegramError
+
+    try:
+        member = await Bot(BOT_TOKEN).get_chat_member(chat_id=chat, user_id=user_id)
+    except TelegramError as e:
+        if "user not found" in str(e).lower() or "participant_id_invalid" in str(e).lower():
+            return False
+        print(f"[daily-sub] getChatMember({chat!r}, {user_id}) FAILED: {type(e).__name__}: {e}")
+        return None
+    if member.status in ("member", "administrator", "creator"):
+        return True
+    # restricted — в группе с ограничениями: состоит, если is_member.
+    return member.status == "restricted" and bool(getattr(member, "is_member", False))
+
+
+async def check_daily_subscription(user_id: int) -> dict:
+    """Спрашивает Telegram о канале и чате, записывает флаги на сегодня.
+    Пустой ID в настройках — эта часть не проверяется (флаг true): так
+    ненастроенный чат не блокирует награду всем игрокам сразу. Параллельные
+    нажатия одного игрока ждут одну общую проверку, а повтор в течение
+    DAILY_SUB_CHECK_COOLDOWN берёт её результат — Telegram не спамим."""
+    cached = _daily_sub_checks.get(user_id)
+    if cached and time.time() - cached[0] < DAILY_SUB_CHECK_COOLDOWN:
+        return cached[1]
+    task = _daily_sub_inflight.get(user_id)
+    if task is None:
+        task = asyncio.ensure_future(_check_daily_subscription(user_id))
+        _daily_sub_inflight[user_id] = task
+        task.add_done_callback(lambda _t, uid=user_id: _daily_sub_inflight.pop(uid, None))
+    return await asyncio.shield(task)
+
+
+async def _check_daily_subscription(user_id: int) -> dict:
+    now = time.time()
+    cfg = await refresh_daily_sub()
+    channel = normalize_tg_chat(cfg.get("channel") or "")
+    chat = normalize_tg_chat(cfg.get("chat") or "")
+    channel_ok, chat_ok = await asyncio.gather(
+        tg_is_member(channel, user_id) if channel else asyncio.sleep(0, True),
+        tg_is_member(chat, user_id) if chat else asyncio.sleep(0, True),
+    )
+    flags = {
+        "is_subscribed_channel": channel_ok is True,
+        "is_subscribed_chat": chat_ok is True,
+        "check_error": channel_ok is None or chat_ok is None,
+    }
+    try:
+        await store.update(user_id, {
+            "is_subscribed_channel": flags["is_subscribed_channel"],
+            "is_subscribed_chat": flags["is_subscribed_chat"],
+            "subscription_day": day_index(now),
+        })
+    except Exception as e:
+        print(f"[daily-sub] не удалось записать флаги {user_id}: {type(e).__name__}: {e}")
+    if len(_daily_sub_checks) > 50_000:
+        _daily_sub_checks.clear()
+    _daily_sub_checks[user_id] = (now, flags)
+    return flags
+
+
+def daily_sub_required_response(flags: dict) -> JSONResponse:
+    return JSONResponse(status_code=403, content={
+        "detail": DAILY_SUB_REQUIRED_DETAIL,
+        "code": "subscription_required",
+        "subscription": {
+            "enabled": True,
+            "channel_url": _daily_sub.get("channel_url") or "",
+            "chat_url": _daily_sub.get("chat_url") or "",
+            "day": day_index(),
+            "is_subscribed_channel": bool(flags.get("is_subscribed_channel")),
+            "is_subscribed_chat": bool(flags.get("is_subscribed_chat")),
+            "check_error": bool(flags.get("check_error")),
+        },
+    })
+
+
+@app.post("/api/daily/check_subscription")
+async def check_daily_subscription_endpoint(request: DailyClaim, x_telegram_init_data: Optional[str] = Header(None)):
+    """Кнопка «Проверить подписку» в окне ежедневной награды."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        cfg = await refresh_daily_sub()
+        await ensure_user(user_id)
+        if not cfg.get("enabled"):
+            flags = {"is_subscribed_channel": True, "is_subscribed_chat": True, "check_error": False}
+        else:
+            flags = await check_daily_subscription(user_id)
+        return {
+            "status": "success",
+            "subscribed": flags["is_subscribed_channel"] and flags["is_subscribed_chat"],
+            "subscription": {
+                "enabled": bool(cfg.get("enabled")),
+                "channel_url": cfg.get("channel_url") or "",
+                "chat_url": cfg.get("chat_url") or "",
+                "day": day_index(),
+                **flags,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось проверить подписку: {type(e).__name__}: {e}")
+
+
 @app.post("/api/daily/claim")
 async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] = Header(None)):
     """Награда за ежедневный вход. День серии и награду считает сервер."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    # Подписка на канал и чат — до выдачи. Уже забравшему сегодня Telegram
+    # не дёргаем (ответит 409 ниже). Флаги действуют только в текущие сутки:
+    # первое «Забрать» нового дня всегда заново спрашивает Telegram.
+    try:
+        cfg = await refresh_daily_sub()
+        if cfg.get("enabled"):
+            row = await fetch_user(user_id)
+            if int(row.get("daily_last") or 0) != day_index():
+                flags = subscription_flags(row)
+                if not (flags["is_subscribed_channel"] and flags["is_subscribed_chat"]):
+                    flags = await check_daily_subscription(user_id)
+                    if not (flags["is_subscribed_channel"] and flags["is_subscribed_chat"]):
+                        return daily_sub_required_response(flags)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось проверить подписку: {type(e).__name__}: {e}")
 
     # Одной CAS-записью (run_farm_action): проверка «сегодня ещё не брал»,
     # награда и место для орла считаются по одному и тому же свежему
@@ -6765,10 +6979,8 @@ async def admin_check_mission_channel(body: AdminMissionChannelCheck, _: None = 
     """Проверка для задания «подписка»: видит ли бот канал и админ ли он там —
     без прав админа Telegram не скажет, подписан ли игрок, и задание никому
     не засчитается."""
-    chat = (body.chat or "").strip()
-    if chat.startswith("https://t.me/") and "+" not in chat:
-        chat = "@" + chat[len("https://t.me/"):].strip("/").split("/")[0]
-    if not MISSION_CHAT_RE.match(chat):
+    chat = normalize_tg_chat(body.chat)
+    if not DAILY_SUB_CHAT_RE.match(chat):
         raise HTTPException(status_code=400, detail="Укажите @username канала или его числовой ID (-100…)")
     if not BOT_TOKEN:
         return {"ok": False, "chat": chat, "detail": "BOT_TOKEN не задан на сервере — проверить подписку нельзя"}
@@ -6786,14 +6998,130 @@ async def admin_check_mission_channel(body: AdminMissionChannelCheck, _: None = 
             status = member.status
         except TelegramError as e:
             status = f"ошибка: {e}"
-        ok = status in ("administrator", "creator")
         title = getattr(info, "title", "") or chat
+        # В группе/супергруппе getChatMember работает и у обычного участника,
+        # в канале — только у администратора.
+        if getattr(info, "type", "") in ("group", "supergroup"):
+            ok = status in ("member", "administrator", "creator")
+            return {"ok": ok, "chat": chat, "title": title, "bot_status": status,
+                    "detail": f"«{title}» (чат): бот в чате, подписка проверяется" if ok
+                    else f"«{title}» (чат): бота нет в чате ({status}). Добавьте @{me.username} в чат."}
+        ok = status in ("administrator", "creator")
         return {"ok": ok, "chat": chat, "title": title, "bot_status": status,
                 "detail": f"«{title}»: бот — администратор, подписка проверяется" if ok
                 else f"«{title}»: бот не администратор ({status}). Сделайте @{me.username} админом канала, иначе задание не засчитается."}
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось проверить канал: {type(e).__name__}: {e}")
+
+
+# --- АДМИН: ПОДПИСКА ДЛЯ ЕЖЕДНЕВНОЙ НАГРАДЫ (см. refresh_daily_sub) ---
+class AdminDailySubSave(BaseModel):
+    enabled: bool
+    channel: str = ""
+    channel_url: str = ""
+    chat: str = ""
+    chat_url: str = ""
+
+
+def daily_sub_admin_view(cfg: dict) -> dict:
+    warnings = []
+    if not BOT_TOKEN:
+        warnings.append("BOT_TOKEN не задан на сервере — проверка подписки всегда будет неуспешной")
+    if not cfg.get("channel"):
+        warnings.append("Канал не задан — подписка на канал не проверяется")
+    if not cfg.get("chat"):
+        warnings.append("ID чата не задан — подписка на чат не проверяется. Добавьте бота в чат и напишите там /chatid")
+    return {**{k: cfg.get(k) for k in DAILY_SUB_DEFAULTS}, "warnings": warnings, "today": day_index()}
+
+
+@app.get("/admin/api/daily_sub")
+async def admin_daily_sub(_: None = Depends(require_admin)):
+    try:
+        cfg = await refresh_daily_sub(force=True)
+        out = daily_sub_admin_view(cfg)
+        out["verified_today"] = await store.users.count_documents({
+            "subscription_day": day_index(), "is_subscribed_channel": True, "is_subscribed_chat": True})
+        return out
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить настройки подписки: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/daily_sub")
+async def admin_save_daily_sub(body: AdminDailySubSave, _: None = Depends(require_admin)):
+    try:
+        doc = {"enabled": bool(body.enabled)}
+        for key, url_key, name in (("channel", "channel_url", "Канал"), ("chat", "chat_url", "Чат")):
+            ident = normalize_tg_chat(getattr(body, key))
+            url = (getattr(body, url_key) or "").strip()
+            if ident and not DAILY_SUB_CHAT_RE.match(ident):
+                raise HTTPException(status_code=400, detail=f"{name}: укажите @username или числовой ID (-100…)")
+            if not url and ident.startswith("@"):
+                url = f"https://t.me/{ident[1:]}"
+            if url and not re.match(r"^https://\S{3,500}$", url):
+                raise HTTPException(status_code=400, detail=f"{name}: ссылка должна начинаться с https://")
+            if ident and not url:
+                raise HTTPException(status_code=400, detail=f"{name}: укажите ссылку, по которой игрок вступит")
+            doc[key], doc[url_key] = ident, url
+        await store.set_setting(DAILY_SUB_SETTING, doc)
+        _daily_sub_checks.clear()
+        cfg = await refresh_daily_sub(force=True)
+        print(f"[admin] подписка для ежедневной награды: {'ВКЛ' if cfg['enabled'] else 'выкл'}, "
+              f"канал {cfg['channel'] or '—'}, чат {cfg['chat'] or '—'}")
+        return await admin_daily_sub()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить настройки подписки: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/daily_sub/reset_all")
+async def admin_reset_daily_sub(_: None = Depends(require_admin)):
+    """Сбрасывает флаги подписки всем — как наступление нового дня для них:
+    следующее «Забрать» заново проверит канал и чат."""
+    try:
+        result = await store.users.update_many(
+            {"$or": [{"is_subscribed_channel": True}, {"is_subscribed_chat": True}]},
+            {"$set": {"is_subscribed_channel": False, "is_subscribed_chat": False, "subscription_day": 0}})
+        _daily_sub_checks.clear()
+        print(f"[admin] флаги подписки сброшены у {result.modified_count} игроков")
+        return {"reset": int(result.modified_count)}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сбросить подписки: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/players/{user_id}/simulate_new_day")
+async def admin_simulate_new_day(user_id: int, _: None = Depends(require_admin)):
+    """🔄 Имитировать Новый День для игрока (для тестов): флаги подписки
+    намертво сбрасываются в false, а если сегодняшняя награда уже забрана —
+    она снова доступна как следующий день серии (серия не прерывается)."""
+    try:
+        doc = await store.get(user_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+
+        def compute(row):
+            today = day_index()
+            fields = {"is_subscribed_channel": False, "is_subscribed_chat": False, "subscription_day": 0}
+            if int(row.get("daily_last") or 0) == today:
+                fields["daily_last"] = today - 1
+            fresh = dict(row)
+            fresh.update(fields)
+            return fields, {"daily": daily_state(fresh), "daily_reopened": "daily_last" in fields}
+
+        result = await run_farm_action(user_id, compute)
+        _daily_sub_checks.pop(user_id, None)
+        print(f"[admin] новый день для {user_id}: подписка сброшена"
+              f"{', награда дня снова доступна' if result['daily_reopened'] else ''}")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось имитировать новый день: {type(e).__name__}: {e}")
 
 
 # --- АДМИН: УПРАВЛЕНИЕ КЛАНАМИ ---
@@ -8312,6 +8640,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/chatid в группе/канале — показывает его числовой ID для настройки
+    проверки подписки (чат по ссылке-приглашению иначе не проверить).
+    Отвечает только админам из MAINTENANCE_WHITELIST."""
+    try:
+        user = update.effective_user
+        chat = update.effective_chat
+        if not user or not chat or user.id not in MAINTENANCE_WHITELIST or not update.effective_message:
+            return
+        await update.effective_message.reply_text(
+            f"ID этого чата: {chat.id}\nВставьте его в админке → Задания → «Подписка для ежедневной награды».")
+    except Exception as e:
+        print(f"[bot] /chatid failed: {type(e).__name__}: {e}")
+
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/admin — кнопка, открывающая админку внутри Telegram: тогда её запросы
     подписаны initData, и владельцу доступны техработы и интервал NFT.
@@ -8607,6 +8950,7 @@ async def run_bot():
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("create_auction", create_auction_command))
     application.add_handler(CommandHandler("admin_retention", admin_retention_command))
+    application.add_handler(CommandHandler("chatid", chatid_command))
 
     await application.initialize()
     # Имя из getMe надёжнее ручной переменной: без опечаток и лишней @.
