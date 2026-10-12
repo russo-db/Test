@@ -1354,9 +1354,9 @@ def daily_reward(day: int, first_lap: bool = True) -> dict:
     return {"gram": 0.0, "mnstr": round(day * DAILY_STEP, 2), "monster": None}
 
 
-def daily_state(row: dict) -> dict:
+def daily_state(row: dict, today: Optional[int] = None) -> dict:
     """Что показать игроку: сколько дней подряд забрано и доступен ли сегодняшний."""
-    today = day_index()
+    today = day_index() if today is None else today
     last = int(row.get("daily_last") or 0)
     streak = int(row.get("daily_day") or 0)
     if last != today and last != today - 1:
@@ -5764,6 +5764,12 @@ async def check_daily_subscription_endpoint(request: DailyClaim, x_telegram_init
 async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] = Header(None)):
     """Награда за ежедневный вход. День серии и награду считает сервер."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    # Сутки фиксируем один раз на весь запрос: если полночь наступит между
+    # проверкой подписки и начислением, награда всё равно засчитается за тот
+    # день, за который её проверили. Раньше начисление брало уже новые сутки —
+    # неподписанный игрок в 23:59:59 получал награду нового дня без проверки,
+    # а подписанный терял серию (вчерашний день считался пропущенным).
+    today = day_index()
 
     # Подписка на канал и чат — до выдачи. Уже забравшему сегодня Telegram
     # не дёргаем (ответит 409 ниже). Флаги действуют только в текущие сутки:
@@ -5772,8 +5778,8 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
         cfg = await refresh_daily_sub()
         if cfg.get("enabled"):
             row = await fetch_user(user_id)
-            if int(row.get("daily_last") or 0) != day_index():
-                flags = subscription_flags(row)
+            if int(row.get("daily_last") or 0) != today:
+                flags = subscription_flags(row, today)
                 if not (flags["is_subscribed_channel"] and flags["is_subscribed_chat"]):
                     flags = await check_daily_subscription(user_id)
                     if not (flags["is_subscribed_channel"] and flags["is_subscribed_chat"]):
@@ -5788,10 +5794,9 @@ async def claim_daily(request: DailyClaim, x_telegram_init_data: Optional[str] =
     # награда и место для орла считаются по одному и тому же свежему
     # документу — параллельное действие не даст поселить орла сверх слотов.
     def compute(row):
-        today = day_index()
-        if int(row.get("daily_last") or 0) == today:
+        if int(row.get("daily_last") or 0) >= today:
             raise HTTPException(status_code=409, detail="Сегодня награда уже забрана")
-        day = daily_state(row)["day"]
+        day = daily_state(row, today)["day"]
         first_lap = int(row.get("daily_cycles") or 0) == 0
         reward = daily_reward(day, first_lap)
         coins = float(row.get("coins") or 0) + reward["gram"]
