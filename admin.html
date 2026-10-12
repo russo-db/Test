@@ -2240,6 +2240,7 @@ document.getElementById('playersNext').onclick = () => {
 };
 
 let editingPlayer = null;
+let editingPlayerMonstersOrig = "[]";   // орлы на момент открытия карточки — чтобы слать их, только если изменились
 let monsterCatalog = null;
 let fusionFeedLevels = 7;
 let nestConfig = {};
@@ -2269,6 +2270,7 @@ async function openPlayerModal(userId) {
     try { doc = await api(`/admin/api/players/${userId}`); }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
     editingPlayer = doc;
+    editingPlayerMonstersOrig = JSON.stringify(doc.monsters || []);
     const catalog = await getMonsterCatalog();
 
     const board = (doc.eggs_board || []).slice(0, 16);
@@ -2303,7 +2305,8 @@ async function openPlayerModal(userId) {
                 <div class="muted" style="font-size:12px; margin:-4px 0 10px;">
                     Ежедневная награда: серия ${doc.daily_day || 0} дн. ·
                     подписка на сегодня: канал ${doc.subscription_day === dayIndexUtc() && doc.is_subscribed_channel ? '✅' : '❌'},
-                    чат ${doc.subscription_day === dayIndexUtc() && doc.is_subscribed_chat ? '✅' : '❌'}
+                    чат ${doc.subscription_day === dayIndexUtc() && doc.is_subscribed_chat ? '✅' : '❌'} ·
+                    📈 акций: ${fmtNum(doc.shares_owned || 0)}, дивидендов не забрано: ${fmtNum(doc.shares_dividends_unclaimed || 0)} 🪙
                 </div>
 
                 <b>Ферма (${doc.monsters.length} орлов)</b>
@@ -2471,18 +2474,23 @@ async function resetGoldVip(e) {
 }
 
 async function savePlayerModal() {
-    const eggsBoard = Array.from(document.querySelectorAll('[data-egg]')).map(el => Number(el.value) || 0);
-    const payload = {
-        name: document.getElementById('fName').value,
-        wallet: document.getElementById('fWallet').value,
-        coins: Number(document.getElementById('fCoins').value) || 0,
-        mnstr: Number(document.getElementById('fMnstr').value) || 0,
-        gold: Number(document.getElementById('fGold').value) || 0,
-        slots: Number(document.getElementById('fSlots').value) || 3,
-        active_slot: Number(document.getElementById('fActiveSlot').value) || 0,
-        monsters: editingPlayer.monsters,
-        eggs_board: eggsBoard,
-    };
+    // Отправляем только то, что админ изменил. Раньше карточка слала все
+    // балансы, орлов и яйца в виде «на момент открытия» — всё, что игрок
+    // успел сделать, пока карточка открыта (забрал дивиденды акций, купил
+    // акцию, собрал золото, вылупил яйцо), откатывалось: дивиденды
+    // пропадали, а купленная акция доставалась бесплатно (GRAM возвращался).
+    const changed = id => { const el = document.getElementById(id); return el && el.value !== el.defaultValue; };
+    const payload = {};
+    if (changed('fName')) payload.name = document.getElementById('fName').value;
+    if (changed('fWallet')) payload.wallet = document.getElementById('fWallet').value;
+    if (changed('fCoins')) payload.coins = Number(document.getElementById('fCoins').value) || 0;
+    if (changed('fMnstr')) payload.mnstr = Number(document.getElementById('fMnstr').value) || 0;
+    if (changed('fGold')) payload.gold = Number(document.getElementById('fGold').value) || 0;
+    if (changed('fSlots')) payload.slots = Number(document.getElementById('fSlots').value) || 3;
+    if (changed('fActiveSlot')) payload.active_slot = Number(document.getElementById('fActiveSlot').value) || 0;
+    if (JSON.stringify(editingPlayer.monsters || []) !== editingPlayerMonstersOrig) payload.monsters = editingPlayer.monsters;
+    const eggInputs = Array.from(document.querySelectorAll('[data-egg]'));
+    if (eggInputs.some(el => el.value !== el.defaultValue)) payload.eggs_board = eggInputs.map(el => Number(el.value) || 0);
     // VIP отправляем, только если его поменяли: «дней осталось» округлено
     // вверх, и пересчёт срока при каждом сохранении карточки незаметно
     // продлевал VIP игроку почти на сутки.
@@ -2494,6 +2502,7 @@ async function savePlayerModal() {
             ? (days > 0 ? Math.floor(Date.now() / 1000) + days * 86400 : 0)
             : Number(editingPlayer.vip_expires_at) || 0;
     }
+    if (!Object.keys(payload).length) { toast('Изменений нет'); closePlayerModal(); return; }
     try {
         await api(`/admin/api/players/${editingPlayer.user_id}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
