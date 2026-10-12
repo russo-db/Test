@@ -5398,7 +5398,7 @@
                     <div class="daily-grid">${days.map(day => dailyCell(day, status)).join('')}</div>
                 </div>
                 <div class="daily-actions">
-                    <button class="btn-primary daily-claim" id="dailyClaimBtn" ${status.ready ? '' : 'disabled'}>
+                    <button class="btn-primary daily-claim" id="dailyClaimBtn" ${status.ready && !farmActionBusy.has('daily-claim') ? '' : 'disabled'}>
                         ${status.ready
                             ? `${t('daily.claim')} ${dailyLabel(reward)} <img class="coin-icon" src="${dailyIcon(reward)}" alt="">`
                             : t('daily.comeTomorrow')}
@@ -5468,6 +5468,11 @@
                     }
                     toast(data.detail || t('daily.unavailable'));
                     haptic.notify('warning');
+                    // 409 «уже забрана» — награду забрали на другом устройстве
+                    // (или в предыдущем запросе, ответ на который потерялся):
+                    // подтягиваем с сервера серию и баланс, иначе кнопка так и
+                    // оставалась «Забрать», а баланс — старым.
+                    if (response.status === 409) await resyncDaily();
                     return;
                 }
 
@@ -5489,10 +5494,21 @@
                     : !!data.reward.monster && (state.farmQueue || []).length > queueBefore);
             } catch (error) {
                 toast(t('hunt.serverDown'));
+                // Обрыв сети мог случиться уже после начисления — сверяемся с
+                // сервером, чтобы не показывать «Забрать» за уже забранный день.
+                await resyncDaily();
             } finally {
                 const b = document.getElementById('dailyClaimBtn');
                 if (b && dailyStatus().ready) b.disabled = false;
             }
+        }
+
+        async function resyncDaily() {
+            try {
+                await syncFromServer({ keepActiveSlot: true });
+                renderAll();
+                if (document.getElementById('dailyModal').classList.contains('open')) renderDaily();
+            } catch (e) { /* сервер недоступен — останется как есть */ }
         }
 
         /* ---------- ежедневная награда: обязательная подписка ---------- */
