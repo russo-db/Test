@@ -4754,7 +4754,10 @@
                 const meat = free * (Number(CONFIG.expeditions.cost_meat) || 1);
                 const flying = state.farm.filter(s => isOnExpedition(s));
                 const back = flying.filter(s => expeditionReady(s)).length;
-                body = `<div class="gvip-sub">${t('gvip.activeSub', { time: formatCountdown(state.vip.expiresAt - nowSeconds()) })}</div>
+                // Остаток времени — в отдельном span и обновляется ниже текстом:
+                // иначе блок с кнопками пересобирался бы раз в минуту и нажатие
+                // в этот момент терялось.
+                body = `<div class="gvip-sub">${t('gvip.activeSub', { time: '<span id="gvipTimeLeft"></span>' })}</div>
                     <button class="btn-primary gvip-btn" onclick="goldVipSendAll()">${t('gvip.send')}</button>
                     <div class="gvip-note">${t('gvip.sendNote', { n: free, meat: Number.isInteger(meat) ? meat : fmt(meat) })}</div>
                     <button class="btn-primary gvip-btn gold" onclick="goldVipCollectAll()">${t('gvip.collect')}</button>
@@ -4767,7 +4770,12 @@
                 body = `<div class="gvip-sub">${t('gvip.inactiveSub')}</div>
                     <button class="btn-primary gvip-btn gold" onclick="openVipModal('gold')">${t('gvip.buy', { price: fmtGram(gold.price_gram) })}</button>`;
             }
-            setHTMLIfChanged(el, `<h3>${t('gvip.title')}</h3>${body}`);
+            setHTMLIfChanged(el, `<h3>${t('gvip.title')}</h3>${body}`, { allowInnerUpdates: true });
+            const left = document.getElementById('gvipTimeLeft');
+            if (left) {
+                const txt = formatCountdown(state.vip.expiresAt - nowSeconds());
+                if (left.textContent !== txt) left.textContent = txt;
+            }
         }
 
         async function goldVipAction(url, key) {
