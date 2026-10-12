@@ -7389,7 +7389,7 @@
             `);
         }
 
-        async function loadShares() {
+        async function loadShares(force) {
             if (offlineOnly || !state.userId) { renderShares(); return; }
             sharesLoadedAt = Date.now();
             try {
@@ -7398,7 +7398,7 @@
                 const data = await response.json();
                 // Пока шла загрузка, игрок мог купить/забрать — старый ответ не
                 // должен перетереть свежий результат действия.
-                if (farmActionBusy.has('shares-buy') || farmActionBusy.has('shares-claim')) return;
+                if (!force && (farmActionBusy.has('shares-buy') || farmActionBusy.has('shares-claim'))) return;
                 if (typeof data.ops === 'number' && data.ops < state.ops) return;
                 applyShares(data);
                 if (typeof data.coins === 'number') state.coins = data.coins;
@@ -7418,23 +7418,34 @@
             if (farmActionBusy.has(key)) return null;
             farmActionBusy.add(key);
             renderShares();
+            let failed = false;
             try {
                 const response = await fetch(path, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(Object.assign({ user_id: state.userId }, body)) });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
+                    failed = true;
                     haptic.notify('warning');
                     toast(data.detail || t('hunt.serverDown'));
                     return { error: response.status };
                 }
-                if (typeof data.ops === 'number') state.ops = data.ops;
+                // Ответ старее уже применённого (параллельные «Купить» и «Забрать»
+                // пришли в обратном порядке) — его цифры устарели: не применяем,
+                // а сверяемся с сервером.
+                if (typeof data.ops === 'number' && data.ops < state.ops) { data.stale = true; failed = true; }
+                else if (typeof data.ops === 'number') state.ops = data.ops;
                 return data;
             } catch (e) {
+                failed = true;
                 toast(t('hunt.serverDown'));
                 return { error: 0 };
             } finally {
                 // Держим кнопку ещё 700 мс после ответа — медленный двойной
-                // тап не отправит второй запрос сразу вслед за первым.
-                setTimeout(() => { farmActionBusy.delete(key); renderShares(); }, 700);
+                // тап не отправит второй запрос сразу вслед за первым. После
+                // ошибки (в т.ч. обрыва сети, когда сервер мог уже купить
+                // акцию) кнопка ждёт сверки с сервером: иначе игрок видел
+                // старые акции/GRAM и покупал ещё раз, думая, что не вышло.
+                const release = () => setTimeout(() => { farmActionBusy.delete(key); renderShares(); }, 700);
+                if (failed) loadShares(true).finally(release); else release();
             }
         }
 
@@ -7445,19 +7456,17 @@
             if (state.coins < sh.pool.price) { haptic.notify('warning'); toast(t('shares.noGram')); return; }
             const data = await sharesPost('api/shares/buy', { pool_id: sh.pool.poolId, price: sh.pool.price }, 'shares-buy');
             if (!data) return;
-            if (data.error !== undefined) {
-                if (data.error === 409 || data.error === 400) { sharesLoadedAt = 0; setTimeout(loadShares, 750); }
-                return;
-            }
+            if (data.error !== undefined) return;   // sharesPost уже сверился с сервером
             haptic.notify('success');
+            toast(t('shares.bought', { n: data.owned, word: sharesWord(data.owned), price: fmtGram(data.price) }));
+            spawnBurst(8);
+            if (data.stale) return;                 // цифры подтянет сверка в sharesPost
             state.coins = data.coins;
             state.shares.owned = data.owned;
             state.shares.unclaimed = data.unclaimed;
             if (data.rate_now) state.shares.rateNow = data.rate_now;
             if (data.pool) applyShares(Object.assign({}, { owned: data.owned, unclaimed: data.unclaimed, rate_now: state.shares.rateNow,
                 rate_gold_vip: state.shares.rateGold, rate_base: state.shares.rateBase, pool: data.pool }));
-            toast(t('shares.bought', { n: data.owned, word: sharesWord(data.owned), price: fmtGram(data.price) }));
-            spawnBurst(8);
             renderHeader();
             renderShares();
         }
@@ -7467,12 +7476,13 @@
             if (!sh || sh.unclaimed <= 0) return;
             const data = await sharesPost('api/shares/claim', {}, 'shares-claim');
             if (!data) return;
-            if (data.error !== undefined) { sharesLoadedAt = 0; setTimeout(loadShares, 750); return; }
+            if (data.error !== undefined) return;
             haptic.notify('success');
-            state.gold = data.gold;
-            state.shares.unclaimed = 0;
             toast(t('shares.claimed', { n: fmtShareGold(data.claimed) }));
             spawnBurst(12);
+            if (data.stale) return;
+            state.gold = data.gold;
+            state.shares.unclaimed = 0;
             renderHeader();
             renderShares();
         }
