@@ -2251,8 +2251,8 @@
                 'shares.rulesTitle': '📊 Правила доходности акций:',
                 'shares.ruleGold': 'С активным статусом Gold Eagle VIP: +{n} Золота 🪙 за акцию каждые сутки.',
                 'shares.ruleBase': 'Без VIP или с обычным Бронзовым/Серебряным VIP: +{n} Золота 🪙 за акцию каждые сутки.',
-                'shares.rateNowGold': 'Сейчас у вас Gold Eagle VIP: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC)',
-                'shares.rateNowBase': 'Ваша ставка сейчас: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC)',
+                'shares.rateNowGold': 'Сейчас у вас Gold Eagle VIP: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC — у вас в {local})',
+                'shares.rateNowBase': 'Ваша ставка сейчас: {n} 🪙 за акцию — {total} 🪙 в сутки (начисление в 00:00 UTC — у вас в {local})',
                 'shares.unclaimedLabel': 'Накопленные дивиденды',
                 'shares.claimBtn': 'Забрать дивиденды 🪙',
                 'shares.noGram': 'Не хватает GRAM',
@@ -2737,8 +2737,8 @@
                 'shares.rulesTitle': '📊 Share income rules:',
                 'shares.ruleGold': 'With an active Gold Eagle VIP: +{n} Gold 🪙 per share every day.',
                 'shares.ruleBase': 'Without VIP or with Bronze/Silver VIP: +{n} Gold 🪙 per share every day.',
-                'shares.rateNowGold': 'You have Gold Eagle VIP: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC)',
-                'shares.rateNowBase': 'Your current rate: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC)',
+                'shares.rateNowGold': 'You have Gold Eagle VIP: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC — {local} your time)',
+                'shares.rateNowBase': 'Your current rate: {n} 🪙 per share — {total} 🪙 a day (paid at 00:00 UTC — {local} your time)',
                 'shares.unclaimedLabel': 'Accumulated dividends',
                 'shares.claimBtn': 'Claim dividends 🪙',
                 'shares.noGram': 'Not enough GRAM',
@@ -3233,7 +3233,7 @@
             applyI18n();
             renderSoundToggle();
             haptic.select();
-            if (CONFIG) { renderAll(); renderWallet(); }
+            if (CONFIG) { renderAll(); renderWallet(); if (sharesTabOpen()) renderShares(); }
         }
 
         const FRAME_MS = 70;
@@ -7347,6 +7347,12 @@
             return Number.isInteger(v) ? String(v) : v.toFixed(2);
         }
 
+        // Полночь UTC в часах игрока: «00:00 UTC» для Москвы — это 03:00.
+        function sharesPayoutLocalTime() {
+            const d = new Date(Math.ceil(serverNow() / 86400) * 86400 * 1000);
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+
         function sharesWord(n) {
             if (LANG === 'en') return n === 1 ? 'share' : 'shares';
             return plural(n, 'акция', 'акции', 'акций');
@@ -7377,7 +7383,7 @@
                     <div class="${gold ? 'on' : ''}">• ${t('shares.ruleGold', { n: fmtShareGold(sh.rateGold) })}</div>
                     <div class="${gold ? '' : 'on'}">• ${t('shares.ruleBase', { n: fmtShareGold(sh.rateBase) })}</div>
                 </div>
-                <div class="shares-rate-now">${t(gold ? 'shares.rateNowGold' : 'shares.rateNowBase', { n: fmtShareGold(gold ? sh.rateGold : sh.rateBase), total: fmtShareGold(sh.owned * (gold ? sh.rateGold : sh.rateBase)) })}</div>
+                <div class="shares-rate-now">${t(gold ? 'shares.rateNowGold' : 'shares.rateNowBase', { n: fmtShareGold(gold ? sh.rateGold : sh.rateBase), total: fmtShareGold(sh.owned * (gold ? sh.rateGold : sh.rateBase)), local: sharesPayoutLocalTime() })}</div>
                 <div class="stat-row"><span>${t('shares.unclaimedLabel')}</span><b>${fmtShareGold(sh.unclaimed)} 🪙</b></div>
                 <button class="btn-primary shares-btn" id="sharesClaimBtn" onclick="sharesClaim()" ${sh.unclaimed > 0 && !busyClaim ? '' : 'disabled'}>${t('shares.claimBtn')}</button>
             `);

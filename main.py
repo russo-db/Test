@@ -3070,9 +3070,20 @@ async def admin_shares_simulate_midnight(_: None = Depends(require_admin)):
                 pay = owned * rate
                 fields["shares_dividends_unclaimed"] = round(float(merged.get("shares_dividends_unclaimed") or 0) + pay, 6)
                 return fields, {"pay": pay, "gold_vip": rate == SHARES_DIV_GOLD_VIP}
-            try:
-                r = await run_farm_action(int(h["_id"]), compute)
-            except HTTPException:
+            # Гонка с действием самого игрока может исчерпать повторы CAS —
+            # тогда пробуем ещё раз, а не молча пропускаем владельца.
+            r = None
+            for _attempt in range(3):
+                try:
+                    r = await run_farm_action(int(h["_id"]), compute)
+                    break
+                except HTTPException as e:
+                    if e.status_code != 409 or e.detail == "Акций уже нет":
+                        break
+                    await asyncio.sleep(0.05)
+            if r is None:
+                if h.get("_id") is not None:
+                    print(f"[admin] акции: имитация 00:00 — не удалось начислить {h['_id']}")
                 continue
             paid_players += 1
             paid_total += r["pay"]
