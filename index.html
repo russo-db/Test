@@ -133,6 +133,15 @@
         .token-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(251, 113, 133, 0.35); }
         .gold-badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 12px rgba(255, 176, 32, 0.35); }
         .gold-coin-icon { flex: 0 0 auto; filter: drop-shadow(0 0 4px rgba(255, 176, 32, 0.6)); }
+        /* Узкий телефон: логотип + три баланса не помещались — золото
+           обрезалось краем экрана. Текст логотипа прячем (значок профиля
+           остаётся), плашки чуть компактнее. */
+        @media (max-width: 360px) {
+            .top-header { padding-left: 10px; padding-right: 10px; }
+            .brand-stack { display: none; }
+            .top-balance-badge { padding: 4px 6px; font-size: 11px; gap: 3px; }
+            .top-balance-badge .coin-icon { width: 13px; height: 13px; }
+        }
         /* Золотая монета в тексте — вместо эмодзи 🪙, которое на Windows/Samsung
            рисуется серебряным (см. goldify). */
         .gold-inline { display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.16em; flex: 0 0 auto; }
@@ -507,6 +516,12 @@
         .merchant-meat-actions { display: flex; gap: 8px; margin-top: 6px; }
         .merchant-meat-actions .btn-primary { flex: 1 1 auto; margin: 0; }
         .merchant-meat-actions .btn-action { flex: 0 1 auto; white-space: nowrap; }
+        /* Узкий телефон: «Купить» и «На всё золото (…)» не помещались в строку —
+           весь экран Купца становился шире телефона и съезжал вбок. */
+        @media (max-width: 380px) {
+            .merchant-meat-actions { flex-wrap: wrap; }
+            .merchant-meat-actions .btn-primary, .merchant-meat-actions .btn-action { flex: 1 1 100%; justify-content: center; }
+        }
         .merchant-meat-cost.is-short { color: #ff8a8a; }
         .merchant-tier-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
         .merchant-tier-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 6px 8px; border-radius: 14px;
@@ -1092,6 +1107,10 @@
         #hunt .subtab-bar { background: rgba(14, 9, 26, 0.84); border-radius: 14px; padding: 0 4px; border: 1px solid rgba(255, 255, 255, 0.12); }
         #hunt .subtab-item { color: #d9c3b2; }
         #hunt .subtab-item.active { color: #fff; }
+        /* Четыре вкладки Охоты на узком телефоне: «Алхимия» обрезалась */
+        @media (max-width: 380px) {
+            #hunt .subtab-item { font-size: 10px; letter-spacing: 0; padding-left: 1px; padding-right: 1px; }
+        }
         #hunt .hunt-section-title { display: inline-block; padding: 3px 10px; border-radius: 8px; background: rgba(14, 9, 26, 0.8); color: #f1dccb; }
         #hunt .hunt-cost { background: rgba(255, 255, 255, 0.09); }
         #hunt .hunt-buff.off { background: rgba(14, 9, 26, 0.82); color: #cbb6a6; }
@@ -2127,6 +2146,37 @@
         // ускорений для тестов/QA — используется, в частности, обратным
         // отсчётом до открытия матчей турнира кланов (см. clanBracketTickCountdowns).
         const IS_PRODUCTION_MODE = true;
+
+        // Обрыв сети на игровом действии (POST api/…): сервер мог уже
+        // выполнить его (купить, списать, начислить), а ответ не дошёл. Игрок
+        // видел «Сервер недоступен» со старыми цифрами и повторял покупку —
+        // прокрут колеса, мясо у Купца, энергию Арены и т.п. Теперь любой
+        // такой сбой через полсекунды сам перезагружает состояние с сервера
+        // (одна загрузка на серию сбоев). Ответы с ошибкой HTTP сюда не
+        // попадают — их разбирает само действие.
+        (function () {
+            const nativeFetch = window.fetch.bind(window);
+            let resyncTimer = null;
+            window.fetch = async function (input, init) {
+                try {
+                    return await nativeFetch(input, init);
+                } catch (error) {
+                    const url = typeof input === 'string' ? input : ((input && input.url) || '');
+                    const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+                    if (method === 'POST' && /(^|\/)api\//.test(url) && !/api\/save\b/.test(url) && !resyncTimer) {
+                        resyncTimer = setTimeout(async () => {
+                            resyncTimer = null;
+                            try {
+                                if (typeof syncFromServer !== 'function' || !state || !state.userId) return;
+                                await syncFromServer({ keepActiveSlot: true });
+                                renderAll();
+                            } catch (e) { /* сервер всё ещё недоступен */ }
+                        }, 600);
+                    }
+                    throw error;
+                }
+            };
+        })();
 
         // Outside Telegram (e.g. a browser tab) the SDK is missing - fall back to a no-op stub.
         const noop = () => {};
@@ -10168,6 +10218,18 @@
             renderMissions();
             if (document.getElementById('dailyModal').classList.contains('open')) renderDaily();
             if (sharesTabOpen()) { sharesLoadedAt = 0; setTimeout(loadShares, 1500); }   // дивиденды за полночь
+            // Всё остальное, что живёт по суткам (цена прокрута колеса, энергия
+            // Арены, лимит осколков Гнезда, VIP-мясо), — одной перезагрузкой
+            // состояния. Разброс до 30 с — чтобы все игроки онлайн не пришли
+            // на сервер в одну и ту же секунду.
+            if (!offlineOnly && state.userId) {
+                setTimeout(() => {
+                    syncFromServer({ keepActiveSlot: true }).then(() => {
+                        renderAll();
+                        if (document.getElementById('dailyModal').classList.contains('open')) renderDaily();
+                    }).catch(() => {});
+                }, 2000 + Math.random() * 28000);
+            }
         }
 
         function startLoops() {
