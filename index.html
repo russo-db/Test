@@ -6168,6 +6168,7 @@
         }
 
         function openMarketSell() {
+            if (farmActionBusy.has('market-trade')) return;   // второй тап сразу после покупки/снятия
             if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
             if (!eligibleMarketEagles().length) { toast(t('market.noEligible')); haptic.notify('warning'); return; }
             marketSellChoice = null;
@@ -6413,6 +6414,7 @@
         }
 
         function openEquipMarketSell() {
+            if (farmActionBusy.has('equip-trade')) return;   // второй тап сразу после покупки/снятия
             if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
             if (!eligibleEquipItems().length) { toast(t('equipmarket.noEligible')); haptic.notify('warning'); return; }
             equipMarketSellChoice = null;
@@ -6662,6 +6664,7 @@
         }
 
         function openResourceMarketSell() {
+            if (farmActionBusy.has('resource-trade')) return;   // второй тап сразу после покупки/снятия
             if (offlineOnly || !state.userId) { toast(t('market.onlineOnly')); return; }
             resourceMarketSellResource = (resourceMarketActiveTab === 'particles') ? 'particles' : 'shards';
             renderResourceMarketSell();
@@ -6792,23 +6795,31 @@
         // купить/снять лот дважды, но двойной тап «Выставить» при двух
         // подходящих орлах/предметах выставил бы оба, а повторная покупка
         // показывала бы «лот уже продан» сразу после успешной.
-        function guardMarketAction(fn, keyOf) {
+        // holdMs — ключ держится ещё столько после ответа сервера. Для списков
+        // (лоты рынка, заявки клана) ключ ОБЩИЙ на весь отдел: после покупки/
+        // снятия список перерисовывается, на место нажатого лота встаёт
+        // следующий, и второй тап двойного клика покупал/снимал уже ДРУГОЙ
+        // лот — с ключом «на лот» его ничто не останавливало.
+        const LIST_ACTION_HOLD_MS = 700;
+        function guardMarketAction(fn, keyOf, holdMs = 0) {
             return async function (...args) {
                 const key = keyOf(...args);
                 if (farmActionBusy.has(key)) return;
                 farmActionBusy.add(key);
-                try { return await fn.apply(this, args); } finally { farmActionBusy.delete(key); }
+                try { return await fn.apply(this, args); } finally {
+                    if (holdMs) setTimeout(() => farmActionBusy.delete(key), holdMs); else farmActionBusy.delete(key);
+                }
             };
         }
-        confirmMarketSell = guardMarketAction(confirmMarketSell, () => 'market-list');
-        buyMarketListing = guardMarketAction(buyMarketListing, id => 'market-buy-' + id);
-        cancelMarketListing = guardMarketAction(cancelMarketListing, id => 'market-cancel-' + id);
-        confirmEquipMarketSell = guardMarketAction(confirmEquipMarketSell, () => 'equip-list');
-        buyEquipMarketListing = guardMarketAction(buyEquipMarketListing, id => 'equip-buy-' + id);
-        cancelEquipMarketListing = guardMarketAction(cancelEquipMarketListing, id => 'equip-cancel-' + id);
-        confirmResourceMarketSell = guardMarketAction(confirmResourceMarketSell, () => 'resource-list');
-        buyResourceMarketListing = guardMarketAction(buyResourceMarketListing, id => 'resource-buy-' + id);
-        cancelResourceMarketListing = guardMarketAction(cancelResourceMarketListing, id => 'resource-cancel-' + id);
+        confirmMarketSell = guardMarketAction(confirmMarketSell, () => 'market-trade', LIST_ACTION_HOLD_MS);
+        buyMarketListing = guardMarketAction(buyMarketListing, () => 'market-trade', LIST_ACTION_HOLD_MS);
+        cancelMarketListing = guardMarketAction(cancelMarketListing, () => 'market-trade', LIST_ACTION_HOLD_MS);
+        confirmEquipMarketSell = guardMarketAction(confirmEquipMarketSell, () => 'equip-trade', LIST_ACTION_HOLD_MS);
+        buyEquipMarketListing = guardMarketAction(buyEquipMarketListing, () => 'equip-trade', LIST_ACTION_HOLD_MS);
+        cancelEquipMarketListing = guardMarketAction(cancelEquipMarketListing, () => 'equip-trade', LIST_ACTION_HOLD_MS);
+        confirmResourceMarketSell = guardMarketAction(confirmResourceMarketSell, () => 'resource-trade', LIST_ACTION_HOLD_MS);
+        buyResourceMarketListing = guardMarketAction(buyResourceMarketListing, () => 'resource-trade', LIST_ACTION_HOLD_MS);
+        cancelResourceMarketListing = guardMarketAction(cancelResourceMarketListing, () => 'resource-trade', LIST_ACTION_HOLD_MS);
 
         function renderAll() {
             renderHeader();
@@ -11844,12 +11855,12 @@
         // подтверждения выхода/исключения/роспуска всплывали дважды.
         confirmCreateClan = guardMarketAction(confirmCreateClan, () => 'clan-create');
         applyToClan = guardMarketAction(applyToClan, id => 'clan-apply-' + id);
-        kickClanMember = guardMarketAction(kickClanMember, id => 'clan-kick-' + id);
+        kickClanMember = guardMarketAction(kickClanMember, () => 'clan-moderation', LIST_ACTION_HOLD_MS);
         disbandClan = guardMarketAction(disbandClan, () => 'clan-disband');
         leaveClan = guardMarketAction(leaveClan, () => 'clan-leave');
         confirmClanOpenSlot = guardMarketAction(confirmClanOpenSlot, () => 'clan-open-slot');
-        acceptClanApplication = guardMarketAction(acceptClanApplication, id => 'clan-accept-' + id);
-        rejectClanApplication = guardMarketAction(rejectClanApplication, id => 'clan-reject-' + id);
+        acceptClanApplication = guardMarketAction(acceptClanApplication, () => 'clan-moderation', LIST_ACTION_HOLD_MS);
+        rejectClanApplication = guardMarketAction(rejectClanApplication, () => 'clan-moderation', LIST_ACTION_HOLD_MS);
         confirmClanBurn = guardMarketAction(confirmClanBurn, () => 'clan-burn');
         submitClanLineup = guardMarketAction(submitClanLineup, () => 'clan-lineup-submit');
         approveClanLineup = guardMarketAction(approveClanLineup, () => 'clan-lineup-approve');
