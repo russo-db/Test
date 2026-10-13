@@ -7589,32 +7589,82 @@ def market_trade_item_label(t: dict) -> str:
 
 def reconstruct_trades_from_ledger(entries: list) -> list:
     """Сделки до появления журнала сделок — по журналу балансов: списание у
-    покупателя (−цена) + зачисление продавцу (+цена × (1 − комиссия)) в
-    пределах 10 с по тому же отделу. Возврат покупателю (неудачная покупка
-    ресурса) — не сделка."""
-    buyers = [e for e in entries if float((e.get("delta") or {}).get("coins") or 0) < 0]
-    credits = [e for e in entries if float((e.get("delta") or {}).get("coins") or 0) > 0]
-    used, trades = set(), []
-    for b in sorted(buyers, key=lambda e: e["ts"]):
-        price = -float(b["delta"]["coins"])
-        market = MARKET_BUY_SOURCES.get(b.get("source"), "")
-        refund = next((c for c in credits if id(c) not in used and c["user_id"] == b["user_id"]
-                       and c.get("source") == b.get("source") and abs(float(c["delta"]["coins"]) - price) < 1e-9
-                       and 0 <= c["ts"] - b["ts"] <= 10), None)
+    покупателя (−цена) + зачисление продавцу (+цена × (1 − комиссия)).
+
+    Журнал балансов копит операции игрока по 10-минутным корзинам
+    (LEDGER_BUCKET_SECONDS): одна запись = сумма всех его покупок (или
+    продаж) на этом рынке за окно first_ts…ts, count — сколько их было.
+    Поэтому «0.35» может быть двумя покупками у двух продавцов, а
+    зачисление продавцу — суммой продаж нескольким покупателям. Продавца
+    ищем среди зачислений с пересекающимся окном: сначала точное совпадение
+    (один продавец или сумма нескольких), затем — часть зачисления одного
+    продавца, у которого в окне были и другие продажи (approx). Возврат
+    покупателю (неудачная покупка ресурса) — не сделка."""
+    eps = 1e-6
+    coins = lambda e: float((e.get("delta") or {}).get("coins") or 0)
+    win = lambda e: (float(e.get("first_ts") or e["ts"]) - 10, float(e["ts"]) + 10)
+    overlap = lambda a, b: win(a)[0] <= win(b)[1] and win(b)[0] <= win(a)[1]
+    buyers = sorted((e for e in entries if coins(e) < 0), key=lambda e: e["ts"])
+    credits = [e for e in entries if coins(e) > 0]
+    left = {id(c): coins(c) for c in credits}
+
+    def take(c, amount):
+        left[id(c)] = max(0.0, left[id(c)] - amount)
+
+    plans = []
+    for b in buyers:
+        price = -coins(b)
+        # Возврат в другой корзине (на границе 10 минут) — та же сумма тому же игроку.
+        refund = next((c for c in credits if left[id(c)] > eps and c["user_id"] == b["user_id"]
+                       and c.get("source") == b.get("source") and abs(left[id(c)] - price) < 1e-9
+                       and 0 <= float(c.get("first_ts") or c["ts"]) - b["ts"] <= 10), None)
         if refund is not None:
-            used.add(id(refund))
+            take(refund, price)
             continue
-        expected = price * (1 - _market_commission(market))
-        seller = min((c for c in credits if id(c) not in used and c.get("source") == b.get("source")
-                      and c["user_id"] != b["user_id"] and abs(c["ts"] - b["ts"]) <= 10
-                      and abs(float(c["delta"]["coins"]) - expected) < 1e-6),
-                     key=lambda c: abs(c["ts"] - b["ts"]), default=None)
-        if seller is not None:
-            used.add(id(seller))
-        trades.append({"ts": b["ts"], "market": market, "price_gram": price, "buyer_id": b["user_id"],
-                       "seller_id": seller["user_id"] if seller else None,
-                       "seller_credit": float(seller["delta"]["coins"]) if seller else None,
-                       "from_ledger": True})
+        market = MARKET_BUY_SOURCES.get(b.get("source"), "")
+        plans.append({"b": b, "price": price, "market": market,
+                      "expected": price * (1 - _market_commission(market)), "sellers": None, "approx": False})
+
+    def cands(plan):
+        b = plan["b"]
+        return sorted((c for c in credits if left[id(c)] > eps and c.get("source") == b.get("source")
+                       and c["user_id"] != b["user_id"] and overlap(b, c)),
+                      key=lambda c: abs(c["ts"] - b["ts"]))
+
+    # 1) точное совпадение: один продавец или сумма нескольких (корзина покупателя).
+    for plan in plans:
+        cs = cands(plan)[:12]
+        exp = plan["expected"]
+        one = next((c for c in cs if abs(left[id(c)] - exp) < eps), None)
+        pick = [one] if one is not None else None
+        if pick is None and int(plan["b"].get("count") or 1) > 1:
+            for mask in range(1, 1 << len(cs)):
+                sub = [c for i, c in enumerate(cs) if mask >> i & 1]
+                if abs(sum(left[id(c)] for c in sub) - exp) < eps:
+                    pick = sub
+                    break
+        if pick:
+            plan["sellers"] = [(c["user_id"], left[id(c)]) for c in pick]
+            for c in pick:
+                take(c, left[id(c)])
+    # 2) часть зачисления продавца, у которого в том же окне были и другие продажи.
+    for plan in plans:
+        if plan["sellers"] is not None:
+            continue
+        exp = plan["expected"]
+        c = next((c for c in cands(plan) if left[id(c)] >= exp - eps), None)
+        if c is not None:
+            plan["sellers"], plan["approx"] = [(c["user_id"], exp)], True
+            take(c, exp)
+
+    trades = []
+    for plan in plans:
+        b, sellers = plan["b"], plan["sellers"] or []
+        trades.append({"ts": b["ts"], "market": plan["market"], "price_gram": plan["price"], "buyer_id": b["user_id"],
+                       "seller_id": sellers[0][0] if sellers else None,
+                       "seller_credit": round(sum(v for _, v in sellers), 9) if sellers else None,
+                       "sellers": [{"id": uid, "credit": round(v, 9)} for uid, v in sellers],
+                       "count": int(b.get("count") or 1), "approx": plan["approx"], "from_ledger": True})
     trades.sort(key=lambda t: -t["ts"])
     return trades
 
@@ -7631,15 +7681,18 @@ async def admin_market_trades(user_id: Optional[int] = None, market: str = "", l
         entries = await store.ledger_entries_by_sources(sources, time.time() - 90 * 86400, first_ts)
         old = reconstruct_trades_from_ledger(entries)
         if user_id is not None:
-            old = [t for t in old if t["buyer_id"] == user_id or t["seller_id"] == user_id]
+            old = [t for t in old if t["buyer_id"] == user_id or any(x["id"] == user_id for x in t["sellers"])]
         old = old[:limit]
-        ids = {t["buyer_id"] for t in logged + old} | {t["seller_id"] for t in logged + old if t.get("seller_id") is not None}
+        ids = ({t["buyer_id"] for t in logged + old} | {t["seller_id"] for t in logged + old if t.get("seller_id") is not None}
+               | {x["id"] for t in old for x in t["sellers"]})
         names = await store.names_by_ids(ids)
         for t in logged + old:
             t["market_label"] = MARKET_LABELS.get(t.get("market"), t.get("market") or "")
             t["buyer_name"] = names.get(t["buyer_id"], "")
             if t.get("seller_id") is not None:
                 t["seller_name"] = names.get(t["seller_id"], t.get("seller_name") or "")
+            for x in t.get("sellers") or []:
+                x["name"] = names.get(x["id"], "")
             if not t.get("from_ledger"):
                 t["item_label"] = market_trade_item_label(t)
         return {"trades": logged, "ledger_trades": old, "log_since": first_ts}

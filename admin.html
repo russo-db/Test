@@ -429,7 +429,8 @@
             </div>
             <h3 style="margin:20px 0 6px;">Ранее — по журналу балансов</h3>
             <div class="muted" style="font-size:12px; margin-bottom:8px;">Сделки до включения журнала сделок (за последние 90 дней): покупатель найден по списанию GRAM,
-                продавец — по зачислению цены за вычетом комиссии в ту же секунду. Что именно купили, журнал балансов не хранит — смотрите отдел и цену.</div>
+                продавец — по зачислению цены за вычетом комиссии в то же время. Журнал балансов копит операции игрока за 10 минут одной записью,
+                поэтому одна строка может быть несколькими покупками («покупок: N») у нескольких продавцов. Что именно купили, журнал балансов не хранит — смотрите отдел и цену.</div>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Время</th><th>Отдел</th><th>Цена</th><th>Продавец</th><th>Покупатель</th><th>Продавцу</th></tr></thead>
@@ -2692,7 +2693,16 @@ document.getElementById('huntFlightSaveBtn').onclick = async e => {
 /* ---------- 🛒 Сделки рынка ---------- */
 function tradePerson(id, name) {
     if (id === null || id === undefined) return '<span class="muted">не найден</span>';
-    return `${escHtml(name) || '<span class="muted">без имени</span>'}<br><code>${id}</code>`;
+    return `<span>${escHtml(name) || '<span class="muted">без имени</span>'} <code>${id}</code></span>`;
+}
+// Сделка из журнала балансов: продавцов может быть несколько (журнал копит
+// покупки игрока за 10 минут одной записью); «≈» — продавец найден по части
+// его зачисления, в том же окне у него были и другие продажи.
+function ledgerTradeSellers(t) {
+    const list = t.sellers || [];
+    if (!list.length) return '<span class="muted">не найден — зачисление продавцу не совпало по сумме</span>';
+    return '<div>' + list.map(x => `<div>${tradePerson(x.id, x.name)}${list.length > 1 ? ` <span class="muted">· ${fmtNum(x.credit)} GRAM</span>` : ''}</div>`).join('')
+        + (t.approx ? '<div class="muted">≈ в это же время у продавца были и другие продажи</div>' : '') + '</div>';
 }
 async function loadTradesAdmin() {
     const uid = document.getElementById('tradesUser').value.trim();
@@ -2706,7 +2716,7 @@ async function loadTradesAdmin() {
                 <td data-label="Время">${fmtDate(t.ts)}</td>
                 <td data-label="Отдел">${escHtml(t.market_label)}</td>
                 <td data-label="Товар">${escHtml(t.item_label)}</td>
-                <td data-label="Цена"><b>${fmtNum(t.price_gram)} GRAM</b>${t.market === 'resources' && t.amount ? `<br><span class="muted">${fmtNum(t.price_gram / t.amount)} за шт.</span>` : ''}</td>
+                <td data-label="Цена"><div><b>${fmtNum(t.price_gram)} GRAM</b>${t.market === 'resources' && t.amount ? `<br><span class="muted">${fmtNum(t.price_gram / t.amount)} за шт.</span>` : ''}</div></td>
                 <td data-label="Продавец">${tradePerson(t.seller_id, t.seller_name)}</td>
                 <td data-label="Покупатель">${tradePerson(t.buyer_id, t.buyer_name)}</td>
                 <td data-label="Продавцу">${fmtNum(t.seller_credit)} GRAM</td>
@@ -2715,10 +2725,10 @@ async function loadTradesAdmin() {
             <tr>
                 <td data-label="Время">${fmtDate(t.ts)}</td>
                 <td data-label="Отдел">${escHtml(t.market_label)}</td>
-                <td data-label="Цена"><b>${fmtNum(t.price_gram)} GRAM</b></td>
-                <td data-label="Продавец">${tradePerson(t.seller_id, t.seller_name)}</td>
+                <td data-label="Цена"><div><b>${fmtNum(t.price_gram)} GRAM</b>${t.count > 1 ? `<br><span class="muted">покупок: ${t.count}</span>` : ''}</div></td>
+                <td data-label="Продавец">${ledgerTradeSellers(t)}</td>
                 <td data-label="Покупатель">${tradePerson(t.buyer_id, t.buyer_name)}</td>
-                <td data-label="Продавцу">${t.seller_credit != null ? fmtNum(t.seller_credit) + ' GRAM' : '—'}</td>
+                <td data-label="Продавцу">${t.seller_credit != null ? (t.approx ? '≈ ' : '') + fmtNum(t.seller_credit) + ' GRAM' : '—'}</td>
             </tr>`).join('') || '<tr><td colspan="6" class="muted">Нет</td></tr>';
     } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
