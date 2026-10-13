@@ -6733,6 +6733,7 @@
                 if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); return; }
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
+                if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
                 closeResourceMarketSell();
                 haptic.notify('success');
                 toast(t('resourcemarket.listed'));
@@ -6755,6 +6756,7 @@
                 state.coins = data.coins;
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
+                if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
                 haptic.notify('success');
                 spawnBurst(12);
                 toast(t('resourcemarket.bought'));
@@ -6775,6 +6777,7 @@
                 if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadResourceMarketListings(); return; }
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
+                if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
                 haptic.notify('success');
                 toast(t('market.cancelled'));
                 renderAll();

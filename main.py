@@ -6632,6 +6632,16 @@ async def _adjust_user_resource(user_id: int, resource: str, delta: int) -> bool
             else:
                 miners = miners[:new_count]
             fields = {"nest_miners": miners, "nest_last_claim": new_last_claim}
+            if new_count == 0:
+                # Продаются ВСЕ Осколки: копить накопленное дальше нечем
+                # (скорость 0), и nest_settle_particles просто сбрасывал
+                # отсчёт — несобранные частички пропадали. Целые зачисляем
+                # в инвентарь, как при обычном «Собрать».
+                row_now = dict(row)
+                row_now["nest_last_claim"] = nest_last_claim_of(row, now)
+                banked = int(nest_pending_particles(row_now, now))
+                if banked > 0:
+                    fields["nest_particles"] = float(row.get("nest_particles") or 0) + banked
         else:  # particles
             particles = float(row.get("nest_particles") or 0)
             if particles + delta < -1e-9:
@@ -6686,6 +6696,9 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
         "status": "success", "listing_id": listing_id,
         "particles": float(fresh.get("nest_particles") or 0),
         "shard_count": nest_owned_shards(fresh),
+        # Момент отсчёта добычи сдвигается при смене числа Осколков — без него
+        # клиент до перезахода показывал неверное «Готово к сбору».
+        "last_claim": nest_last_claim_of(fresh, time.time()),
     }
 
 
@@ -6725,6 +6738,9 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
         "coins": float(fresh.get("coins") or 0.0),
         "particles": float(fresh.get("nest_particles") or 0),
         "shard_count": nest_owned_shards(fresh),
+        # Момент отсчёта добычи сдвигается при смене числа Осколков — без него
+        # клиент до перезахода показывал неверное «Готово к сбору».
+        "last_claim": nest_last_claim_of(fresh, time.time()),
     }
 
 
@@ -6753,6 +6769,9 @@ async def resource_market_cancel(request: ResourceMarketCancelRequest, x_telegra
         "status": "success",
         "particles": float(fresh.get("nest_particles") or 0),
         "shard_count": nest_owned_shards(fresh),
+        # Момент отсчёта добычи сдвигается при смене числа Осколков — без него
+        # клиент до перезахода показывал неверное «Готово к сбору».
+        "last_claim": nest_last_claim_of(fresh, time.time()),
     }
 
 
