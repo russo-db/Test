@@ -2411,6 +2411,7 @@
                 'market.onlineOnly': 'Рынок работает только при подключении к серверу',
                 'market.loading': 'Загружаем лоты…',
                 'market.yourListing': 'Твой лот', 'market.seller': 'Продавец', 'market.myListings': 'Твои лоты',
+                'market.shownCheapest': 'Показаны {shown} самых дешёвых из {total} — купленные освобождают место следующим',
                 'market.noEligible': 'Нет прокачанных (7 ур.) орлов редкости зелёный и выше на продажу',
                 'market.sellTitle': 'Выставить орла на продажу',
                 'market.priceLabel': 'Цена, GRAM',
@@ -2897,6 +2898,7 @@
                 'market.onlineOnly': 'The market only works while connected to the server',
                 'market.loading': 'Loading listings…',
                 'market.yourListing': 'Your listing', 'market.seller': 'Seller', 'market.myListings': 'Your listings',
+                'market.shownCheapest': 'Showing the {shown} cheapest of {total} — as they sell, the next ones appear',
                 'market.noEligible': 'No fully-fed (level 7) eagles of uncommon rarity and above to sell',
                 'market.sellTitle': 'List an eagle for sale',
                 'market.priceLabel': 'Price, GRAM',
@@ -6017,6 +6019,13 @@
             });
         }
 
+        // Сервер отдаёт по вкладке только самые дешёвые лоты (100); если
+        // всего их больше — говорим об этом, чтобы не казалось, что это все.
+        function marketShownNote(counts, key, shown) {
+            const total = Number((counts || {})[key]) || 0;
+            return total > shown ? `<p class="market-min-price-line">${t('market.shownCheapest', { shown, total })}</p>` : '';
+        }
+
         function marketMinPrice(tierId) {
             return Number((CONFIG.market.min_price_by_tier || {})[tierId]) || 0;
         }
@@ -6090,6 +6099,7 @@
 
             body.innerHTML = `
                 <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(marketMinPrice(marketActiveTab)) })}</p>
+                ${marketShownNote(state.marketCounts, marketActiveTab, rows.length)}
                 ${rows.length ? rows.map((listing, idx) => {
                     const monster = MONSTERS[listing.monster_id];
                     return `
@@ -6113,6 +6123,7 @@
                 if (!response.ok) throw new Error('market fetch failed');
                 const data = await response.json();
                 state.marketListings = data.listings || [];
+                state.marketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
             }
@@ -6333,6 +6344,7 @@
 
             body.innerHTML = `
                 <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(equipMarketMinPrice(equipMarketActiveGrade)) })}</p>
+                ${marketShownNote(state.equipMarketCounts, equipMarketActiveGrade, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
                     <div class="card glass-panel market-card">
                         <div class="nest-equip-ic" style="background:${nestGradeColor(l.grade)}33">${nestItemIconMarkup(l.item_type, l.grade)}</div>
@@ -6353,6 +6365,7 @@
                 if (!response.ok) throw new Error('equip market fetch failed');
                 const data = await response.json();
                 state.equipMarketListings = data.listings || [];
+                state.equipMarketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
             }
@@ -6578,6 +6591,7 @@
 
             body.innerHTML = `
                 <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}</p>
+                ${marketShownNote(state.resourceMarketCounts, resourceMarketActiveTab, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
                     <div class="card glass-panel market-card">
                         ${resourceIconMarkup(l.resource)}
@@ -6598,6 +6612,7 @@
                 if (!response.ok) throw new Error('resource market fetch failed');
                 const data = await response.json();
                 state.resourceMarketListings = data.listings || [];
+                state.resourceMarketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
             }

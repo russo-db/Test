@@ -251,6 +251,9 @@ class MongoStore:
             (self.market, "seller_id", {}),
             (self.equip_market, "seller_id", {}),
             (self.resource_market, "seller_id", {}),
+            (self.market, [("monster_id", 1), ("price_gram", 1)], {}),
+            (self.equip_market, [("grade", 1), ("price_gram", 1)], {}),
+            (self.resource_market, [("resource", 1), ("price_gram", 1)], {}),
             (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
             (self.user_activity, "date", {}),
             (self.daily_claims, [("ts", -1)], {}),
@@ -546,6 +549,36 @@ class MongoStore:
             })
             return str(oid), None
         return None, "conflict"
+
+    # Витрина рынка для конкретного игрока. Раньше отдавались 200 самых
+    # НОВЫХ лотов общим списком: при >200 лотах старые пропадали — их нельзя
+    # было купить, а продавец не видел их в «Твоих лотах» и не мог снять
+    # (орёл так и стоял бы на ферме под замком). Теперь: ВСЕ свои лоты
+    # игрока + по каждой вкладке (редкость/грейд/ресурс) per_group самых
+    # ДЕШЁВЫХ чужих — именно их вкладка и показывает (сортировка по цене) —
+    # и сколько всего чужих лотов во вкладке.
+    OWN_LISTINGS_MAX = 1000
+
+    async def listings_view(self, collection, viewer_id: int, groups: dict, per_group: int = 100) -> tuple:
+        items, counts, seen = [], {}, set()
+
+        def add(doc):
+            key = str(doc["_id"])
+            if key in seen:
+                return
+            seen.add(key)
+            doc["id"] = str(doc.pop("_id"))
+            items.append(doc)
+
+        async for doc in collection.find({"seller_id": viewer_id}).sort("created_at", -1).limit(self.OWN_LISTINGS_MAX):
+            add(doc)
+        for key, flt in groups.items():
+            q = dict(flt)
+            q["seller_id"] = {"$ne": viewer_id}
+            counts[key] = await collection.count_documents(q)
+            async for doc in collection.find(q).sort([("price_gram", 1), ("created_at", 1)]).limit(per_group):
+                add(doc)
+        return items, counts
 
     async def list_listings(self, limit: int = 200) -> list:
         cursor = self.market.find().sort("created_at", -1).limit(limit)

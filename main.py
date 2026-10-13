@@ -6416,11 +6416,20 @@ def _market_min_price(monster_id: str) -> float:
     return MARKET_MIN_PRICE.get(tier, 0.0)
 
 
+MARKET_PER_GROUP = 100   # чужих лотов на вкладку — самые дешёвые (см. store.listings_view)
+
+
 @app.get("/api/market/listings")
 async def market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
-    """Список активных лотов рынка — P2P-торговля орлами между игроками."""
-    authenticate(x_telegram_init_data, user_id)
-    return {"listings": await store.list_listings()}
+    """Витрина рынка орлов: все свои лоты + по каждой редкости 100 самых
+    дешёвых чужих и сколько их всего (counts)."""
+    viewer = authenticate(x_telegram_init_data, user_id)
+    groups = {}
+    for monster_id, tier in MONSTER_TIER.items():
+        if TIER_INDEX.get(tier, -1) >= MARKET_MIN_TIER_INDEX:
+            groups.setdefault(tier, {"monster_id": {"$in": []}})["monster_id"]["$in"].append(monster_id)
+    items, counts = await store.listings_view(store.market, viewer, groups, MARKET_PER_GROUP)
+    return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP}
 
 
 @app.post("/api/market/list")
@@ -6516,8 +6525,10 @@ async def equip_market_listings(user_id: int, x_telegram_init_data: Optional[str
     """Список активных лотов рынка снаряжения — P2P-торговля предметами
     Кузницы (когти/броня/маска/кольцо) между игроками, отдельно от Топ-100
     орлов и обычного рынка орлов."""
-    authenticate(x_telegram_init_data, user_id)
-    return {"listings": await store.list_equip_listings()}
+    viewer = authenticate(x_telegram_init_data, user_id)
+    groups = {grade: {"grade": grade} for grade in NEST_GRADES}
+    items, counts = await store.listings_view(store.equip_market, viewer, groups, MARKET_PER_GROUP)
+    return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP}
 
 
 @app.post("/api/market/equip/list")
@@ -6634,8 +6645,10 @@ async def _adjust_user_resource(user_id: int, resource: str, delta: int) -> bool
 @app.get("/api/market/resources/listings")
 async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
     """Список активных лотов рынка ресурсов (Небесные Осколки/частички)."""
-    authenticate(x_telegram_init_data, user_id)
-    return {"listings": await store.list_resource_listings()}
+    viewer = authenticate(x_telegram_init_data, user_id)
+    groups = {res: {"resource": res} for res in ("shards", "particles")}
+    items, counts = await store.listings_view(store.resource_market, viewer, groups, MARKET_PER_GROUP)
+    return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP}
 
 
 def resource_market_min_lot_price(resource: str, amount: int) -> float:
