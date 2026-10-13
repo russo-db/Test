@@ -6575,9 +6575,13 @@ async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_dat
         raise HTTPException(status_code=400, detail=f"Минимальная цена для этого грейда — {min_price:g} GRAM")
 
     row = await fetch_user(user_id)
-    listing_id = await store.create_equip_listing(
-        user_id, row.get("name") or "", request.item_type, request.grade, request.price_gram, int(time.time()),
-    )
+    try:
+        listing_id = await store.create_equip_listing(
+            user_id, row.get("name") or "", request.item_type, request.grade, request.price_gram, int(time.time()),
+        )
+    except Exception as e:   # предмет уже возвращён в create_equip_listing
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
     if listing_id is None:
         raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
 
@@ -6716,15 +6720,20 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
     min_price = resource_market_min_lot_price(request.resource, amount)
     if request.price_gram < min_price - 1e-9:
         unit = RESOURCE_MARKET_MIN_UNIT_PRICE.get(request.resource, 0.0)
-        per_unit = f" ({unit:g} GRAM за штуку × {amount})" if unit * amount >= min_price else ""
+        per_unit = f" ({unit:g} GRAM за штуку × {amount})" if unit * amount >= min_price - 1e-9 else ""
         raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM{per_unit}")
 
     row = await fetch_user(user_id)
     if not await _adjust_user_resource(user_id, request.resource, -amount):
         raise HTTPException(status_code=400, detail="Недостаточно ресурса для выставления лота")
-    listing_id = await store.create_resource_listing(
-        user_id, row.get("name") or "", request.resource, amount, request.price_gram, int(time.time()),
-    )
+    try:
+        listing_id = await store.create_resource_listing(
+            user_id, row.get("name") or "", request.resource, amount, request.price_gram, int(time.time()),
+        )
+    except Exception as e:   # лот не записался — ресурс возвращаем, а не теряем
+        traceback.print_exception(type(e), e, e.__traceback__)
+        await _adjust_user_resource(user_id, request.resource, amount)
+        raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
 
     fresh = await store.get(user_id)
     return {

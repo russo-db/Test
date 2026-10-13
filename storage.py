@@ -663,6 +663,26 @@ class MongoStore:
             if result.modified_count:
                 return
 
+    async def _buy_precheck(self, collection, oid, buyer_id: int, queue_max: Optional[int] = None) -> Optional[str]:
+        """Отказы, которые видны и без захвата лота: свой лот, не хватает
+        GRAM, нет места для орла. Без этой проверки лот на время отказа
+        удалялся и вставлялся обратно — в это окно продавец при «Снять»
+        получал «Лот уже продан», а покупатель с деньгами — «продан», хотя
+        лот на месте (достаточно было жать «Купить» без GRAM). Атомарные
+        проверки при самой покупке остаются — это только фильтр."""
+        lot = await collection.find_one({"_id": oid}, {"seller_id": 1, "price_gram": 1})
+        if not lot:
+            return "not_found"
+        if int(lot["seller_id"]) == int(buyer_id):
+            return "own_listing"
+        doc = await self.users.find_one({"_id": buyer_id}, {"coins": 1, "slots": 1, "monsters": 1, "farm_queue": 1})
+        if not doc or float(doc.get("coins") or 0) < float(lot.get("price_gram") or 0):
+            return "insufficient_funds"
+        if queue_max is not None and len(doc.get("monsters") or []) >= int(doc.get("slots") or 0) \
+                and len(doc.get("farm_queue") or []) >= queue_max:
+            return "no_room"
+        return None
+
     async def buy_listing(self, buyer_id: int, listing_id: str, feed_levels: int,
                            commission: float, queue_max: int) -> str:
         """Покупка лота: лот атомарно забирается (find_one_and_delete — второй
@@ -678,6 +698,9 @@ class MongoStore:
         except InvalidId:
             return "not_found"
 
+        refused = await self._buy_precheck(self.market, oid, buyer_id, queue_max)
+        if refused:
+            return refused
         listing = await self.market.find_one_and_delete({"_id": oid})
         if not listing:
             return "not_found"
@@ -774,7 +797,12 @@ class MongoStore:
             "seller_id": seller_id, "seller_name": seller_name,
             "item_type": item_type, "grade": grade, "price_gram": price_gram, "created_at": ts,
         }
-        result = await self.equip_market.insert_one(listing)
+        try:
+            result = await self.equip_market.insert_one(listing)
+        except Exception:
+            # лот не записался — предмет не должен пропасть
+            await self.users.update_one({"_id": seller_id}, {"$inc": {field: 1, "ops": 1}})
+            raise
         return str(result.inserted_id)
 
     async def list_equip_listings(self, limit: int = 200) -> list:
@@ -797,6 +825,9 @@ class MongoStore:
         except InvalidId:
             return "not_found"
 
+        refused = await self._buy_precheck(self.equip_market, oid, buyer_id)
+        if refused:
+            return refused
         listing = await self.equip_market.find_one_and_delete({"_id": oid})
         if not listing:
             return "not_found"
@@ -888,6 +919,9 @@ class MongoStore:
         except InvalidId:
             return "not_found"
 
+        refused = await self._buy_precheck(self.resource_market, oid, buyer_id)
+        if refused:
+            return refused
         listing = await self.resource_market.find_one_and_delete({"_id": oid})
         if not listing:
             return "not_found"
