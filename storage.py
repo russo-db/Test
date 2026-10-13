@@ -238,6 +238,8 @@ class MongoStore:
         # Журнал наград ежедневного входа: {user_id, ts, date, day, first_lap,
         # gram, mnstr, monster, placed farm|queue|None} — одна запись на выдачу.
         self.daily_claims = client[db_name]["daily_claims"]
+        # Журнал сделок рынка: кто у кого что купил и за сколько (все 3 отдела).
+        self.market_trades = client[db_name]["market_trades"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -258,6 +260,10 @@ class MongoStore:
             (self.user_activity, "date", {}),
             (self.daily_claims, [("ts", -1)], {}),
             (self.daily_claims, "day", {}),
+            (self.market_trades, [("ts", -1)], {}),
+            (self.market_trades, "buyer_id", {}),
+            (self.market_trades, "seller_id", {}),
+            (self.balance_ledger, [("source", 1), ("ts", -1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -2042,6 +2048,33 @@ class MongoStore:
         async for row in self.users.find({"is_bot": {"$ne": True}}, {"daily_day": 1, "daily_cycles": 1}):
             out[row["_id"]] = (int(row.get("daily_day") or 0), int(row.get("daily_cycles") or 0))
         return out
+
+    async def add_market_trade(self, doc: dict) -> None:
+        await self.market_trades.insert_one(dict(doc))
+
+    async def list_market_trades(self, limit: int = 100, user_id: Optional[int] = None,
+                                 market: str = "") -> list:
+        q = {}
+        if user_id is not None:
+            q["$or"] = [{"buyer_id": user_id}, {"seller_id": user_id}]
+        if market:
+            q["market"] = market
+        out = []
+        async for doc in self.market_trades.find(q).sort("ts", -1).limit(limit):
+            doc["id"] = str(doc.pop("_id"))
+            out.append(doc)
+        return out
+
+    async def first_market_trade_ts(self) -> Optional[float]:
+        doc = await self.market_trades.find_one({}, sort=[("ts", 1)])
+        return float(doc["ts"]) if doc else None
+
+    async def ledger_entries_by_sources(self, sources: list, since: float, until: Optional[float] = None,
+                                        limit: int = 5000) -> list:
+        q = {"source": {"$in": sources}, "ts": {"$gte": since}}
+        if until is not None:
+            q["ts"]["$lt"] = until
+        return [doc async for doc in self.balance_ledger.find(q).sort("ts", -1).limit(limit)]
 
     async def names_by_ids(self, ids) -> dict:
         ids = list(ids)

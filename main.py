@@ -6400,6 +6400,31 @@ def _market_tier_ok(monster_id: str) -> bool:
 MARKET_MAX_PRICE_GRAM = 1_000_000.0
 
 
+def _market_oid(listing_id: str):
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    try:
+        return ObjectId(listing_id)
+    except (InvalidId, TypeError):
+        return None
+
+
+async def log_market_trade(market: str, lot: dict, buyer_id: int, commission: float,
+                           item: Optional[str] = None, item_name: Optional[str] = None, amount: int = 1) -> None:
+    """Журнал сделок рынка для админки («🛒 Сделки рынка»): кто у кого что
+    купил и за сколько. Сделка уже прошла — сбой записи её не отменяет."""
+    try:
+        price = float(lot.get("price_gram") or 0)
+        await store.add_market_trade({
+            "ts": time.time(), "market": market, "item": item, "item_name": item_name, "amount": amount,
+            "price_gram": price, "seller_credit": round(price * (1 - commission), 9),
+            "seller_id": lot.get("seller_id"), "seller_name": lot.get("seller_name") or "",
+            "buyer_id": buyer_id, "listed_at": lot.get("created_at"),
+        })
+    except Exception as e:
+        print(f"[market] trade log failed: {type(e).__name__}: {e}")
+
+
 def check_market_price(price: float):
     """Цена лота: конечное число больше нуля и не выше MARKET_MAX_PRICE_GRAM.
     Лот с ценой Infinity не сериализуется в JSON — список лотов падал с 500
@@ -6470,9 +6495,13 @@ async def market_buy(request: MarketBuyRequest, x_telegram_init_data: Optional[s
     """Покупает лот — сервер атомарно переводит GRAM и передаёт орла."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
+    lot = await store.market.find_one({"_id": _market_oid(request.listing_id)}) if _market_oid(request.listing_id) else None
     result = await store.buy_listing(
         user_id, request.listing_id, FEED_LEVELS, MARKET_COMMISSION, FARM_QUEUE_MAX,
     )
+    if result == "ok" and lot:
+        await log_market_trade("eagles", lot, user_id, MARKET_COMMISSION,
+                               item=lot.get("monster_id"), item_name=(MONSTERS.get(lot.get("monster_id")) or {}).get("name"))
     if result != "ok":
         messages = {
             "not_found": "Лот уже продан или снят с продажи",
@@ -6564,7 +6593,11 @@ async def equip_market_buy(request: EquipMarketBuyRequest, x_telegram_init_data:
     """Покупает лот снаряжения — сервер атомарно переводит GRAM и передаёт предмет."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
+    lot = await store.equip_market.find_one({"_id": _market_oid(request.listing_id)}) if _market_oid(request.listing_id) else None
     result = await store.buy_equip_listing(user_id, request.listing_id, EQUIP_MARKET_COMMISSION)
+    if result == "ok" and lot:
+        await log_market_trade("equip", lot, user_id, EQUIP_MARKET_COMMISSION,
+                               item=f"{lot.get('item_type')}:{lot.get('grade')}")
     if result != "ok":
         messages = {
             "not_found": "Лот уже продан или снят с продажи",
@@ -6731,6 +6764,8 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
         raise HTTPException(status_code=409, detail="Не удалось завершить покупку — попробуй ещё раз")
 
     await store.credit_resource_seller(listing["seller_id"], listing["price_gram"], RESOURCE_MARKET_COMMISSION)
+    await log_market_trade("resources", listing, user_id, RESOURCE_MARKET_COMMISSION,
+                           item=listing.get("resource"), amount=int(listing.get("amount") or 0))
 
     fresh = await store.get(user_id)
     return {
@@ -7524,6 +7559,92 @@ async def admin_simulate_new_day(user_id: int, _: None = Depends(require_admin))
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail=f"Не удалось имитировать новый день: {type(e).__name__}: {e}")
+
+
+# --- АДМИН: «🛒 Сделки рынка» — кто у кого что купил ---
+MARKET_BUY_SOURCES = {
+    "/api/market/buy": "eagles", "/api/market/equip/buy": "equip", "/api/market/resources/buy": "resources",
+}
+MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resources": "Ресурсы"}
+
+
+def _market_commission(market: str) -> float:
+    return {"eagles": MARKET_COMMISSION, "equip": EQUIP_MARKET_COMMISSION,
+            "resources": RESOURCE_MARKET_COMMISSION}.get(market, 0.1)
+
+
+def market_trade_item_label(t: dict) -> str:
+    market, item = t.get("market"), t.get("item") or ""
+    if market == "eagles":
+        return t.get("item_name") or (MONSTERS.get(item) or {}).get("name") or item
+    if market == "equip" and ":" in item:
+        item_type, grade = item.split(":", 1)
+        names = ((CONFIG.get("nest") or {}).get("item_types") or {}).get(item_type, {}).get("names") or {}
+        return names.get(grade) or item
+    if market == "resources":
+        return f"{int(t.get('amount') or 0)} × {'Небесные Осколки' if item == 'shards' else 'Частички'}"
+    return item
+
+
+def reconstruct_trades_from_ledger(entries: list) -> list:
+    """Сделки до появления журнала сделок — по журналу балансов: списание у
+    покупателя (−цена) + зачисление продавцу (+цена × (1 − комиссия)) в
+    пределах 10 с по тому же отделу. Возврат покупателю (неудачная покупка
+    ресурса) — не сделка."""
+    buyers = [e for e in entries if float((e.get("delta") or {}).get("coins") or 0) < 0]
+    credits = [e for e in entries if float((e.get("delta") or {}).get("coins") or 0) > 0]
+    used, trades = set(), []
+    for b in sorted(buyers, key=lambda e: e["ts"]):
+        price = -float(b["delta"]["coins"])
+        market = MARKET_BUY_SOURCES.get(b.get("source"), "")
+        refund = next((c for c in credits if id(c) not in used and c["user_id"] == b["user_id"]
+                       and c.get("source") == b.get("source") and abs(float(c["delta"]["coins"]) - price) < 1e-9
+                       and 0 <= c["ts"] - b["ts"] <= 10), None)
+        if refund is not None:
+            used.add(id(refund))
+            continue
+        expected = price * (1 - _market_commission(market))
+        seller = min((c for c in credits if id(c) not in used and c.get("source") == b.get("source")
+                      and c["user_id"] != b["user_id"] and abs(c["ts"] - b["ts"]) <= 10
+                      and abs(float(c["delta"]["coins"]) - expected) < 1e-6),
+                     key=lambda c: abs(c["ts"] - b["ts"]), default=None)
+        if seller is not None:
+            used.add(id(seller))
+        trades.append({"ts": b["ts"], "market": market, "price_gram": price, "buyer_id": b["user_id"],
+                       "seller_id": seller["user_id"] if seller else None,
+                       "seller_credit": float(seller["delta"]["coins"]) if seller else None,
+                       "from_ledger": True})
+    trades.sort(key=lambda t: -t["ts"])
+    return trades
+
+
+@app.get("/admin/api/market/trades")
+async def admin_market_trades(user_id: Optional[int] = None, market: str = "", limit: int = 200,
+                              _: None = Depends(require_admin)):
+    try:
+        limit = max(1, min(1000, int(limit)))
+        market = market if market in MARKET_LABELS else ""
+        logged = await store.list_market_trades(limit, user_id, market)
+        first_ts = await store.first_market_trade_ts()
+        sources = [src for src, m in MARKET_BUY_SOURCES.items() if not market or m == market]
+        entries = await store.ledger_entries_by_sources(sources, time.time() - 90 * 86400, first_ts)
+        old = reconstruct_trades_from_ledger(entries)
+        if user_id is not None:
+            old = [t for t in old if t["buyer_id"] == user_id or t["seller_id"] == user_id]
+        old = old[:limit]
+        ids = {t["buyer_id"] for t in logged + old} | {t["seller_id"] for t in logged + old if t.get("seller_id") is not None}
+        names = await store.names_by_ids(ids)
+        for t in logged + old:
+            t["market_label"] = MARKET_LABELS.get(t.get("market"), t.get("market") or "")
+            t["buyer_name"] = names.get(t["buyer_id"], "")
+            if t.get("seller_id") is not None:
+                t["seller_name"] = names.get(t["seller_id"], t.get("seller_name") or "")
+            if not t.get("from_ledger"):
+                t["item_label"] = market_trade_item_label(t)
+        return {"trades": logged, "ledger_trades": old, "log_since": first_ts}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить сделки: {type(e).__name__}: {e}")
 
 
 # --- АДМИН: УПРАВЛЕНИЕ КЛАНАМИ ---

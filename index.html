@@ -2449,6 +2449,10 @@
                 'resourcemarket.minPriceHint': 'Минимальная цена лота — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Минимум {unit} GRAM за штуку — за {amount} шт. от {price} GRAM',
                 'resourcemarket.belowMinPrice': 'Цена ниже минимальной — {price} GRAM',
+                'resourcemarket.priceLotLabel': 'Цена за ВЕСЬ лот ({amount} шт.), GRAM',
+                'resourcemarket.perUnit': '= {price} GRAM за 1 шт.',
+                'resourcemarket.perUnitShort': '{price} GRAM за шт.',
+                'resourcemarket.confirmList': 'Выставить {amount} шт. «{res}» за {price} GRAM за весь лот?\nЭто {unit} GRAM за штуку.',
                 'daily.toQueue': 'День {day}: +{reward} — свободных ячеек нет, орёл ждёт в очереди под фермой', 'farm.staleSlot': 'Ферма обновилась — в этой ячейке уже другой орёл. Ничего не сделано, проверь и повтори.', 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
                 'vip.hoursShort': 'ч', 'vip.daysShort': 'дн.',
@@ -2937,6 +2941,10 @@
                 'resourcemarket.minPriceHint': 'Minimum price for this listing — {price} GRAM',
                 'resourcemarket.minUnitPriceHint': 'Minimum {unit} GRAM per unit — {price} GRAM for {amount}',
                 'resourcemarket.belowMinPrice': 'Price is below the minimum — {price} GRAM',
+                'resourcemarket.priceLotLabel': 'Price for the WHOLE lot ({amount} pcs), GRAM',
+                'resourcemarket.perUnit': '= {price} GRAM per piece',
+                'resourcemarket.perUnitShort': '{price} GRAM each',
+                'resourcemarket.confirmList': 'List {amount} × «{res}» for {price} GRAM for the whole lot?\nThat is {unit} GRAM each.',
                 'daily.toQueue': 'Day {day}: +{reward} — no free slot, the eagle is waiting in the queue below the farm', 'farm.staleSlot': 'Your farm changed — that slot now holds a different eagle. Nothing was done; check and try again.', 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
                 'vip.hoursShort': 'h', 'vip.daysShort': 'd',
@@ -6586,6 +6594,30 @@
             priceEl.min = minPrice;
             if ((Number(priceEl.value) || 0) < minPrice) priceEl.value = minPrice;
             document.getElementById('resourceMarketSellMinHint').textContent = resourceMarketMinPriceHint(resource, amount);
+            updateResourceMarketPerUnit();
+        }
+
+        // Цена — за ВЕСЬ лот. Раньше поле называлось просто «Цена, GRAM», и
+        // при смене количества цена не пересчитывалась: игрок ввёл 0.2 «за
+        // штуку», поставил 20 шт. — и продал все 20 за 0.2 GRAM.
+        function resourceMarketPerUnitText(price, amount) {
+            const p = Number(price) || 0, a = Math.max(1, Math.floor(Number(amount) || 1));
+            return t('resourcemarket.perUnit', { price: fmtResourceUnitPrice(p / a) });
+        }
+
+        function fmtResourceUnitPrice(v) {
+            return v >= 0.01 ? fmtGram(v) : String(Math.round(v * 10000) / 10000);
+        }
+
+        function updateResourceMarketPerUnit() {
+            const amountEl = document.getElementById('resourceMarketSellAmount');
+            const priceEl = document.getElementById('resourceMarketSellPrice');
+            if (!amountEl || !priceEl) return;
+            const amount = Math.max(1, Math.floor(Number(amountEl.value) || 1));
+            const label = document.getElementById('resourceMarketPriceLabel');
+            if (label) label.textContent = t('resourcemarket.priceLotLabel', { amount });
+            const out = document.getElementById('resourceMarketPerUnit');
+            if (out) out.textContent = resourceMarketPerUnitText(priceEl.value, amount);
         }
 
         function renderResourceMarketTabs() {
@@ -6646,7 +6678,7 @@
                         ${resourceIconMarkup(l.resource)}
                         <div class="card-info">
                             <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')}</p>
+                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')} · ${t('resourcemarket.perUnitShort', { price: fmtResourceUnitPrice(l.price_gram / Math.max(1, l.amount)) })}</p>
                         </div>
                         <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                     </div>
@@ -6710,8 +6742,9 @@
                 </div>
                 <div class="pay-label">${t('resourcemarket.amountLabel')}</div>
                 <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}" oninput="onResourceMarketSellAmountInput()">
-                <div class="pay-label">${t('market.priceLabel')}</div>
-                <input class="pay-input" id="resourceMarketSellPrice" type="number" inputmode="decimal" min="${minPrice}" step="0.01" value="${price}">
+                <div class="pay-label" id="resourceMarketPriceLabel">${t('resourcemarket.priceLotLabel', { amount })}</div>
+                <input class="pay-input" id="resourceMarketSellPrice" type="number" inputmode="decimal" min="${minPrice}" step="0.01" value="${price}" oninput="updateResourceMarketPerUnit()">
+                <p class="pay-warning" id="resourceMarketPerUnit" style="color:var(--gold-lt)">${resourceMarketPerUnitText(price, amount)}</p>
                 <p class="pay-warning" id="resourceMarketSellMinHint">${resourceMarketMinPriceHint(resource, amount)}</p>
                 <p class="pay-warning">${t('resourcemarket.ownedHint', { amount: owned })}</p>
                 <p class="pay-warning">${t('market.commissionHint', { pct: Math.round((CONFIG.resource_market.commission || 0) * 100) })}</p>
@@ -6733,6 +6766,7 @@
             if (amount > owned) { toast(t('resourcemarket.notEnoughOwned')); return; }
             if (price <= 0) { toast(t('market.invalidPrice')); return; }
             if (price < minPrice - 1e-9) { toast(t('resourcemarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
+            if (!confirm(t('resourcemarket.confirmList', { amount, res: resourceLabel(resource), price: fmtGram(price), unit: fmtResourceUnitPrice(price / amount) }))) return;
             try {
                 const response = await fetch('api/market/resources/list', {
                     method: 'POST', headers: apiHeaders(),

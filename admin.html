@@ -248,6 +248,7 @@
             <button class="nav-btn" data-page="clans">🛡️ Кланы</button>
             <button class="nav-btn" data-page="hunt">🏹 Охота</button>
             <button class="nav-btn" data-page="shares">📈 Акции</button>
+            <button class="nav-btn" data-page="trades">🛒 Сделки рынка</button>
             <button class="nav-btn" data-page="tournament">🏆 Турнир</button>
             <button class="nav-btn" data-page="arena">⚔️ Арена</button>
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
@@ -405,6 +406,36 @@
                 <button class="primary" id="configSave">Сохранить</button>
             </div>
             <div id="configError" style="color:#ff6b6b; margin-top:8px; white-space:pre-wrap;"></div>
+        </div>
+
+        <div class="page" id="page-trades">
+            <h2>🛒 Сделки рынка</h2>
+            <div class="toolbar">
+                <input id="tradesUser" placeholder="ID игрока (покупатель или продавец)" style="min-width:260px;">
+                <select id="tradesMarket">
+                    <option value="">Все отделы</option>
+                    <option value="eagles">Орлы</option>
+                    <option value="equip">Снаряжение</option>
+                    <option value="resources">Ресурсы</option>
+                </select>
+                <button id="tradesLoadBtn" class="primary">Показать</button>
+                <span class="muted" id="tradesSince" style="font-size:12px;"></span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Время</th><th>Отдел</th><th>Товар</th><th>Цена</th><th>Продавец</th><th>Покупатель</th><th>Продавцу (−комиссия)</th></tr></thead>
+                    <tbody id="tradesBody"></tbody>
+                </table>
+            </div>
+            <h3 style="margin:20px 0 6px;">Ранее — по журналу балансов</h3>
+            <div class="muted" style="font-size:12px; margin-bottom:8px;">Сделки до включения журнала сделок (за последние 90 дней): покупатель найден по списанию GRAM,
+                продавец — по зачислению цены за вычетом комиссии в ту же секунду. Что именно купили, журнал балансов не хранит — смотрите отдел и цену.</div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Время</th><th>Отдел</th><th>Цена</th><th>Продавец</th><th>Покупатель</th><th>Продавцу</th></tr></thead>
+                    <tbody id="tradesLedgerBody"></tbody>
+                </table>
+            </div>
         </div>
 
         <div class="page" id="page-shares">
@@ -970,6 +1001,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'retention') { loadRetention(); loadDailyStats(); }
         if (btn.dataset.page === 'hunt') loadHuntAdmin();
         if (btn.dataset.page === 'shares') loadSharesAdmin();
+        if (btn.dataset.page === 'trades') loadTradesAdmin();
         else tournamentStopCountdowns();
     };
 });
@@ -2657,6 +2689,42 @@ document.getElementById('huntFlightSaveBtn').onclick = async e => {
         } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
     });
 };
+/* ---------- 🛒 Сделки рынка ---------- */
+function tradePerson(id, name) {
+    if (id === null || id === undefined) return '<span class="muted">не найден</span>';
+    return `${escHtml(name) || '<span class="muted">без имени</span>'}<br><code>${id}</code>`;
+}
+async function loadTradesAdmin() {
+    const uid = document.getElementById('tradesUser').value.trim();
+    const params = new URLSearchParams({ limit: 300, market: document.getElementById('tradesMarket').value });
+    if (uid) params.set('user_id', uid);
+    try {
+        const r = await api('/admin/api/market/trades?' + params);
+        document.getElementById('tradesSince').textContent = r.log_since ? `журнал сделок ведётся с ${fmtDate(r.log_since)}` : 'журнал сделок пока пуст — сделки ниже из журнала балансов';
+        document.getElementById('tradesBody').innerHTML = r.trades.map(t => `
+            <tr>
+                <td data-label="Время">${fmtDate(t.ts)}</td>
+                <td data-label="Отдел">${escHtml(t.market_label)}</td>
+                <td data-label="Товар">${escHtml(t.item_label)}</td>
+                <td data-label="Цена"><b>${fmtNum(t.price_gram)} GRAM</b>${t.market === 'resources' && t.amount ? `<br><span class="muted">${fmtNum(t.price_gram / t.amount)} за шт.</span>` : ''}</td>
+                <td data-label="Продавец">${tradePerson(t.seller_id, t.seller_name)}</td>
+                <td data-label="Покупатель">${tradePerson(t.buyer_id, t.buyer_name)}</td>
+                <td data-label="Продавцу">${fmtNum(t.seller_credit)} GRAM</td>
+            </tr>`).join('') || '<tr><td colspan="7" class="muted">Сделок нет</td></tr>';
+        document.getElementById('tradesLedgerBody').innerHTML = r.ledger_trades.map(t => `
+            <tr>
+                <td data-label="Время">${fmtDate(t.ts)}</td>
+                <td data-label="Отдел">${escHtml(t.market_label)}</td>
+                <td data-label="Цена"><b>${fmtNum(t.price_gram)} GRAM</b></td>
+                <td data-label="Продавец">${tradePerson(t.seller_id, t.seller_name)}</td>
+                <td data-label="Покупатель">${tradePerson(t.buyer_id, t.buyer_name)}</td>
+                <td data-label="Продавцу">${t.seller_credit != null ? fmtNum(t.seller_credit) + ' GRAM' : '—'}</td>
+            </tr>`).join('') || '<tr><td colspan="6" class="muted">Нет</td></tr>';
+    } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('tradesLoadBtn').onclick = loadTradesAdmin;
+document.getElementById('tradesUser').addEventListener('keydown', e => { if (e.key === 'Enter') loadTradesAdmin(); });
+
 /* ---------- 📈 Золотые Акции ---------- */
 function renderSharesAdmin(d) {
     const p = d.pool;
