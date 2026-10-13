@@ -421,6 +421,7 @@
         .market-sell-btn { width: 100%; justify-content: center; margin-bottom: 16px; }
         .lang-options .market-eagle { width: 32px; height: 32px; }
         .market-min-price-line { font-size: 11px; font-weight: 600; color: var(--text-muted); padding: 0 2px 10px; }
+        .market-own-card { border-color: rgba(255, 176, 32, 0.45); background: linear-gradient(160deg, rgba(255, 176, 32, 0.12), rgba(15, 9, 26, 0.55)); }
         .market-section-empty { font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 0 2px 10px; }
         .market-best-badge {
             font-size: 9px; font-weight: 800; text-transform: uppercase; color: #06210f;
@@ -2412,6 +2413,7 @@
                 'market.loading': 'Загружаем лоты…',
                 'market.yourListing': 'Твой лот', 'market.seller': 'Продавец', 'market.myListings': 'Твои лоты',
                 'market.shownCheapest': 'Показаны {shown} самых дешёвых из {total} — купленные освобождают место следующим',
+                'market.cancelBtn': '✕ Снять',
                 'market.noEligible': 'Нет прокачанных (7 ур.) орлов редкости зелёный и выше на продажу',
                 'market.sellTitle': 'Выставить орла на продажу',
                 'market.priceLabel': 'Цена, GRAM',
@@ -2899,6 +2901,7 @@
                 'market.loading': 'Loading listings…',
                 'market.yourListing': 'Your listing', 'market.seller': 'Seller', 'market.myListings': 'Your listings',
                 'market.shownCheapest': 'Showing the {shown} cheapest of {total} — as they sell, the next ones appear',
+                'market.cancelBtn': '✕ Remove',
                 'market.noEligible': 'No fully-fed (level 7) eagles of uncommon rarity and above to sell',
                 'market.sellTitle': 'List an eagle for sale',
                 'market.priceLabel': 'Price, GRAM',
@@ -6021,6 +6024,37 @@
 
         // Сервер отдаёт по вкладке только самые дешёвые лоты (100); если
         // всего их больше — говорим об этом, чтобы не казалось, что это все.
+        // «Твои лоты» — ПЕРВОЙ вкладкой и со счётчиком. Раньше она стояла
+        // последней в ряду, который на телефоне прокручивается вбок, — игроки
+        // её не находили и думали, что выставленную вещь снять нельзя.
+        function myListingsTab(active, listings, onclick) {
+            const n = (listings || []).filter(l => String(l.seller_id) === String(state.userId)).length;
+            return `<div class="market-tab-item ${active ? 'active' : ''}" style="color:var(--text-muted)" onclick="${onclick}">${t('market.myListings')}${n ? ` (${n})` : ''}</div>`;
+        }
+
+        // Свои лоты во вкладке редкости/грейда — сверху, с кнопкой «Снять»:
+        // игрок ищет выставленную вещь там, где её выставил.
+        function ownListingCard(iconHtml, titleHtml, listing, cancelFn) {
+            return `
+                <div class="card glass-panel market-card market-own-card">
+                    ${iconHtml}
+                    <div class="card-info">
+                        <h3>${titleHtml}</h3>
+                        <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')} · ${fmtGram(listing.price_gram)} GRAM</p>
+                    </div>
+                    <button class="btn-action" onclick="${cancelFn}('${listing.id}')">${t('market.cancelBtn')}</button>
+                </div>`;
+        }
+
+        // Ряд вкладок прокручивается вбок — держим активную вкладку на экране.
+        function keepActiveTabVisible(bar) {
+            const act = bar && bar.querySelector('.market-tab-item.active');
+            if (!act) return;
+            const br = bar.getBoundingClientRect(), r = act.getBoundingClientRect();
+            if (r.left < br.left) bar.scrollLeft += r.left - br.left - 12;
+            else if (r.right > br.right) bar.scrollLeft += r.right - br.right + 12;
+        }
+
         function marketShownNote(counts, key, shown) {
             const total = Number((counts || {})[key]) || 0;
             return total > shown ? `<p class="market-min-price-line">${t('market.shownCheapest', { shown, total })}</p>` : '';
@@ -6039,14 +6073,13 @@
             const bar = document.getElementById('marketTabBar');
             if (!bar) return;
             if (!marketActiveTab) marketActiveTab = marketTiers()[0].id;
-            bar.innerHTML = marketTiers().map(tier => {
+            bar.innerHTML = myListingsTab(marketActiveTab === 'mine', state.marketListings, "switchMarketTab('mine')") + marketTiers().map(tier => {
                 const level = CONFIG.tiers.indexOf(tier) + 1;
                 return `
                 <div class="market-tab-item rarity-name ${marketActiveTab === tier.id ? 'active' : ''}" style="color:${tier.color}" onclick="switchMarketTab('${tier.id}')">${eagleGlyph(level)}${tier.name}</div>
             `;
-            }).join('') + `
-                <div class="market-tab-item ${marketActiveTab === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchMarketTab('mine')">${t('market.myListings')}</div>
-            `;
+            }).join('');
+            keepActiveTabVisible(bar);
         }
 
         function switchMarketTab(tabId) {
@@ -6097,7 +6130,10 @@
                 .filter(listing => MONSTERS[listing.monster_id].tier === marketActiveTab && String(listing.seller_id) !== String(state.userId))
                 .sort((a, b) => a.price_gram - b.price_gram);
 
+            const ownRows = listings.filter(listing => MONSTERS[listing.monster_id].tier === marketActiveTab && String(listing.seller_id) === String(state.userId));
             body.innerHTML = `
+                ${ownRows.map(listing => ownListingCard(`<img class="market-eagle" src="${framePath(MONSTERS[listing.monster_id].sprite, 0)}" alt="">`,
+                    `<span class="rarity-name" style="color:${tier.color}">${MONSTERS[listing.monster_id].name}</span>`, listing, 'cancelMarketListing')).join('')}
                 <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(marketMinPrice(marketActiveTab)) })}</p>
                 ${marketShownNote(state.marketCounts, marketActiveTab, rows.length)}
                 ${rows.length ? rows.map((listing, idx) => {
@@ -6193,6 +6229,7 @@
                 closeMarketSell();
                 haptic.notify('success');
                 toast(t('market.listed'));
+                marketActiveTab = 'mine';       // выставленный лот — сразу перед глазами, с кнопкой «Снять»
                 renderAll();
                 loadMarketListings();
             } catch (e) {
@@ -6296,11 +6333,10 @@
             if (!bar) return;
             const grades = CONFIG.nest.grades || [];
             if (!equipMarketActiveGrade) equipMarketActiveGrade = grades[0];
-            bar.innerHTML = grades.map(grade => `
+            bar.innerHTML = myListingsTab(equipMarketActiveGrade === 'mine', state.equipMarketListings, "switchEquipMarketTab('mine')") + grades.map(grade => `
                 <div class="market-tab-item rarity-name ${equipMarketActiveGrade === grade ? 'active' : ''}" style="color:${nestGradeColor(grade)}" onclick="switchEquipMarketTab('${grade}')">${nestGradeLabel(grade)}</div>
-            `).join('') + `
-                <div class="market-tab-item ${equipMarketActiveGrade === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchEquipMarketTab('mine')">${t('market.myListings')}</div>
-            `;
+            `).join('');
+            keepActiveTabVisible(bar);
         }
 
         function switchEquipMarketTab(tabId) {
@@ -6342,7 +6378,10 @@
                 .filter(l => l.grade === equipMarketActiveGrade && String(l.seller_id) !== String(state.userId))
                 .sort((a, b) => a.price_gram - b.price_gram);
 
+            const ownRows = listings.filter(l => l.grade === equipMarketActiveGrade && String(l.seller_id) === String(state.userId));
             body.innerHTML = `
+                ${ownRows.map(l => ownListingCard(`<div class="nest-equip-ic" style="background:${nestGradeColor(l.grade)}33">${nestItemIconMarkup(l.item_type, l.grade)}</div>`,
+                    `<span class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)}</span>`, l, 'cancelEquipMarketListing')).join('')}
                 <p class="market-min-price-line">${t('market.minPriceLabel', { price: fmtGram(equipMarketMinPrice(equipMarketActiveGrade)) })}</p>
                 ${marketShownNote(state.equipMarketCounts, equipMarketActiveGrade, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
@@ -6443,6 +6482,7 @@
                 closeEquipMarketSell();
                 haptic.notify('success');
                 toast(t('equipmarket.listed'));
+                equipMarketActiveGrade = 'mine';
                 renderAll();
                 loadEquipMarketListings();
             } catch (e) {
@@ -6548,11 +6588,10 @@
                 { id: 'shards', label: t('resourcemarket.shardsCard') },
                 { id: 'particles', label: t('resourcemarket.particlesCard') },
             ];
-            bar.innerHTML = tabs.map(tab => `
+            bar.innerHTML = myListingsTab(resourceMarketActiveTab === 'mine', state.resourceMarketListings, "switchResourceMarketTab('mine')") + tabs.map(tab => `
                 <div class="market-tab-item ${resourceMarketActiveTab === tab.id ? 'active' : ''}" onclick="switchResourceMarketTab('${tab.id}')">${tab.label}</div>
-            `).join('') + `
-                <div class="market-tab-item ${resourceMarketActiveTab === 'mine' ? 'active' : ''}" style="color:var(--text-muted)" onclick="switchResourceMarketTab('mine')">${t('market.myListings')}</div>
-            `;
+            `).join('');
+            keepActiveTabVisible(bar);
         }
 
         function switchResourceMarketTab(tabId) {
@@ -6589,7 +6628,9 @@
                 .filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) !== String(state.userId))
                 .sort((a, b) => a.price_gram - b.price_gram);
 
+            const ownRows = listings.filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) === String(state.userId));
             body.innerHTML = `
+                ${ownRows.map(l => ownListingCard(resourceIconMarkup(l.resource), `${l.amount}× ${resourceLabel(l.resource)}`, l, 'cancelResourceMarketListing')).join('')}
                 <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}</p>
                 ${marketShownNote(state.resourceMarketCounts, resourceMarketActiveTab, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
@@ -6695,6 +6736,7 @@
                 closeResourceMarketSell();
                 haptic.notify('success');
                 toast(t('resourcemarket.listed'));
+                resourceMarketActiveTab = 'mine';
                 renderAll();
                 loadResourceMarketListings();
             } catch (e) {
