@@ -5963,6 +5963,12 @@
         }
 
         // Названия заданий задаются в админке — в разметку вставляем только как текст.
+        // Имена игроков, названия кланов и т.п. приходят от игроков (имя в
+        // Telegram, название при создании клана) — в разметку только так.
+        // Без экранирования имя вида <img onerror=…> выполнялось у каждого,
+        // кто открыл рынок/рейтинг/клан (XSS).
+        function escName(v) { return escapeMissionText(v); }
+
         function escapeMissionText(v) {
             return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         }
@@ -6143,7 +6149,7 @@
                             <img class="market-eagle" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                             <div class="card-info">
                                 <h3 class="rarity-name" style="color:${tier.color}">${monster.name} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                                <p style="font-size:12px; color:var(--text-muted)">${listing.seller_name || t('market.seller')}</p>
+                                <p style="font-size:12px; color:var(--text-muted)">${escName(listing.seller_name) || t('market.seller')}</p>
                             </div>
                             <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                         </div>
@@ -6390,7 +6396,7 @@
                         <div class="nest-equip-ic" style="background:${nestGradeColor(l.grade)}33">${nestItemIconMarkup(l.item_type, l.grade)}</div>
                         <div class="card-info">
                             <h3 class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                            <p style="font-size:12px; color:var(--text-muted)">${l.seller_name || t('market.seller')}</p>
+                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')}</p>
                         </div>
                         <button class="btn-action btn-buy" onclick="buyEquipMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                     </div>
@@ -6640,7 +6646,7 @@
                         ${resourceIconMarkup(l.resource)}
                         <div class="card-info">
                             <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                            <p style="font-size:12px; color:var(--text-muted)">${l.seller_name || t('market.seller')}</p>
+                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')}</p>
                         </div>
                         <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                     </div>
@@ -7378,7 +7384,7 @@
                 }
                 list.innerHTML = friends.map(f => `
                     <div class="stat-row">
-                        <span>${f.name || ('#' + f.user_id)}</span>
+                        <span>${escName(f.name) || ('#' + f.user_id)}</span>
                         <b style="text-align:right">
                             ${fmtGram(f.total_deposit)} GRAM
                             ${f.bonus_earned ? `<br><span style="font-size:11px; font-weight:500; color:var(--text-muted)">${t('friends.bonusFromFriend', { amount: fmtGram(f.bonus_earned) })}</span>` : ''}
@@ -8920,13 +8926,13 @@
                 const crown = rank === 1 ? '👑' : (rank === 2 ? '🥈' : '🥉');
                 return `<div class="lb-podium-row lb-rank-${rank} ${entry.isMe ? 'lb-me' : ''}">
                     <span class="lb-crown">${crown}</span>
-                    <span class="lb-name">${entry.name}</span>
+                    <span class="lb-name">${escName(entry.name)}</span>
                     <span class="lb-rating">${entry.rating}</span>
                 </div>`;
             }
             return `<div class="lb-row ${entry.isMe ? 'lb-me' : ''}">
                 <span class="lb-rank">#${rank}</span>
-                <span class="lb-name">${entry.name}</span>
+                <span class="lb-name">${escName(entry.name)}</span>
                 <span class="lb-rating">${entry.rating}</span>
             </div>`;
         }
@@ -11378,7 +11384,7 @@
             box.innerHTML = clanTopCache.map((clan, i) => {
                 return `<div class="clan-top-row">
                     <span class="clan-top-rank">#${i + 1}</span>
-                    <span class="clan-top-name">${clan.name}</span>
+                    <span class="clan-top-name">${escName(clan.name)}</span>
                     <span class="clan-top-power">💪 ${fmt(clan.clan_power)}</span>
                     <span style="font-size:11px;color:var(--text-muted);">${clan.member_count}/${clan.open_slots}</span>
                     <button class="clan-top-join" ${clan.applied ? 'disabled' : ''} onclick="applyToClan('${clan.id}')">
@@ -11414,7 +11420,7 @@
             list.innerHTML = clans.map((clan, i) => `
                 <div class="clan-rank-row ${clanData && clan.id === clanData.id ? 'is-mine' : ''}">
                     <span class="clan-top-rank">#${i + 1}</span>
-                    <span class="clan-top-name">${clan.name}</span>
+                    <span class="clan-top-name">${escName(clan.name)}</span>
                     <span class="clan-top-power">💪 ${fmt(clan.clan_power)}</span>
                     <span style="font-size:11px;color:var(--text-muted);">${clan.member_count}/${clan.member_limit}</span>
                 </div>
@@ -11556,7 +11562,7 @@
                 return `<div class="clan-member-row ${isLeader ? 'is-leader' : ''}">
                     <span class="clan-member-rank">#${i + 1}</span>
                     <span class="clan-member-crown">${isLeader ? '👑' : '🦅'}</span>
-                    <span class="clan-member-name">${name}</span>
+                    <span class="clan-member-name">${escName(name)}</span>
                     ${submission ? `<span class="clan-member-tier" style="color:${clanTierColor(submission.tier_id)}">${clanTierLabel(submission.tier_id)}</span>` : ''}
                     <span class="clan-member-power">🔥 ${clanPowerLabel(power)}</span>
                     ${canKick ? `<button class="clan-member-kick-btn" onclick="kickClanMember(${uid})">${t('clan.kickBtn')}</button>` : ''}
@@ -11661,7 +11667,7 @@
                     : t('clan.noEaglesForLineup');
                 return `<div class="clan-app-card">
                     <div class="clan-app-info">
-                        <div class="clan-app-name">${app.name || ('#' + app.user_id)}</div>
+                        <div class="clan-app-name">${escName(app.name) || ('#' + app.user_id)}</div>
                         <div class="clan-app-eagle">${eagleHtml}</div>
                     </div>
                     <div class="clan-app-actions">
@@ -11791,7 +11797,7 @@
                         return `<label class="clan-lineup-row">
                             <input class="clan-lineup-check" type="checkbox" ${checked ? 'checked' : ''}
                                 onchange="clanToggleLineupPick('${uidStr}', this.checked)">
-                            <span class="clan-lineup-name">${name}</span>
+                            <span class="clan-lineup-name">${escName(name)}</span>
                             <span class="clan-lineup-tier-tag" style="color:${clanTierColor(sub.tier_id)}">${clanTierLabel(sub.tier_id)}</span>
                         </label>`;
                     }).join('')
@@ -11890,7 +11896,7 @@
             const id = match[`clan_${side}_id`], name = match[`clan_${side}_name`];
             if (!id) return `<div class="clan-match-side is-empty">${t('clan.tbd')}</div>`;
             const isWinner = match.resolved && match.winner_id === id;
-            return `<div class="clan-match-side ${isWinner ? 'is-winner' : ''}"><span>${name}</span></div>`;
+            return `<div class="clan-match-side ${isWinner ? 'is-winner' : ''}"><span>${escName(name)}</span></div>`;
         }
 
         function clanFmtCountdown(seconds) {
@@ -12068,12 +12074,12 @@
             const row = ({ m, i }, badge, extra) => `
                 <button class="clan-replay-pick-btn ${clanLive && clanLive.index === i ? 'is-current' : ''} ${clanIsOwnMatch(m) ? 'is-own' : ''}" onclick="openClanLive(${i})">
                     <span class="clan-pick-badge">${badge}</span>
-                    ${t(CLAN_ROUND_LABELS[m.round])} · ${m.clan_a_name} vs ${m.clan_b_name}${extra || ''}
+                    ${t(CLAN_ROUND_LABELS[m.round])} · ${escName(m.clan_a_name)} vs ${escName(m.clan_b_name)}${extra || ''}
                 </button>`;
             box.innerHTML =
                 live.map(x => row(x, t('clan.pickLive'))).join('') +
                 upcoming.map(x => row(x, '⏳', ` · ${clanFmtCountdown(Math.max(0, x.m.start_time - now))}`)).join('') +
-                replays.map(x => row(x, '⏪', x.m.winner_id ? ` — 🏆 ${x.m.winner_name}` : '')).join('');
+                replays.map(x => row(x, '⏪', x.m.winner_id ? ` — 🏆 ${escName(x.m.winner_name)}` : '')).join('');
         }
 
         // ---- загрузка матча и режимы ----

@@ -549,7 +549,7 @@ async def notify_referrer(referrer: int, friend_name: str):
     pct = round(REFERRAL_SHARE * 100)
     await tg_send(
         referrer,
-        f"🎉 К тебе присоединился <b>{friend_name}</b>!\n\n"
+        f"🎉 К тебе присоединился <b>{html.escape(friend_name or '')}</b>!\n\n"
         f"Теперь ты будешь получать {pct}% GRAM с каждого его пополнения.",
     )
 

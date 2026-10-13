@@ -2210,7 +2210,7 @@ async function loadPlayers() {
             <tr>
                 <td data-label="Онлайн"><span class="online-dot ${p.online ? 'is-online' : ''}" title="${p.online ? 'Онлайн' : 'Офлайн'}"></span></td>
                 <td data-label="ID">${p.user_id}</td>
-                <td data-label="Имя">${p.name || '—'}</td>
+                <td data-label="Имя">${escHtml(p.name) || '—'}</td>
                 <td data-label="GRAM">${fmtNum(p.coins)}</td>
                 <td data-label="Meat">${fmtNum(p.mnstr)}</td>
                 <td data-label="Золото">${fmtNum(p.gold)}</td>
@@ -2292,8 +2292,8 @@ async function openPlayerModal(userId) {
                 <h3>Игрок ${doc.user_id} <button id="playerLedgerBtn" style="margin-left:10px; font-size:12px; padding:4px 10px;">📜 История балансов</button>
                     <button id="playerEggLogBtn" style="margin-left:6px; font-size:12px; padding:4px 10px;">🥚 Журнал яиц</button></h3>
                 <div class="field-row">
-                    <label>Имя <input id="fName" value="${(doc.name || '').replace(/"/g, '&quot;')}"></label>
-                    <label>Кошелёк <input id="fWallet" value="${(doc.wallet || '').replace(/"/g, '&quot;')}"></label>
+                    <label>Имя <input id="fName" value="${escHtml(doc.name || '')}"></label>
+                    <label>Кошелёк <input id="fWallet" value="${escHtml(doc.wallet || '')}"></label>
                 </div>
                 <div class="field-row">
                     <label>GRAM <input id="fCoins" type="number" step="0.01" value="${doc.coins || 0}"></label>
@@ -2794,7 +2794,7 @@ async function loadClans() {
         state.clansTotal = data.total;
         document.getElementById('clansBody').innerHTML = data.items.map(c => `
             <tr>
-                <td data-label="Название">${c.name || '—'}</td>
+                <td data-label="Название">${escHtml(c.name) || '—'}</td>
                 <td data-label="Лидер">#${c.leader_id}</td>
                 <td data-label="Участников">${c.member_count}/${c.member_limit}</td>
                 <td data-label="Сила (clan_power)">${fmtNum(c.clan_power)}</td>
@@ -2924,9 +2924,9 @@ function renderClanModal(clan) {
         <div class="modal-backdrop" id="clanModalBackdrop">
             <div class="modal">
                 <button class="close-x" id="clanModalClose">✕</button>
-                <h3>Клан: ${clan.name}</h3>
+                <h3>Клан: ${escHtml(clan.name)}</h3>
                 <div class="field-row">
-                    <label>Название <input id="cfName" value="${(clan.name || '').replace(/"/g, '&quot;')}"></label>
+                    <label>Название <input id="cfName" value="${escHtml(clan.name || '')}"></label>
                     <label>Открыто мест (0–${clan.member_limit}) <input id="cfSlots" type="number" min="0" max="${clan.member_limit}" value="${clan.open_slots}"></label>
                     <button id="clanSaveBtn" style="align-self:flex-end;">Сохранить</button>
                 </div>
@@ -2938,7 +2938,7 @@ function renderClanModal(clan) {
                 <b style="display:block; margin-top:14px;">Заявки на вступление (${clan.applications.length})</b>
                 <div class="app-list">
                     ${clan.applications.length ? clan.applications.map(a => `
-                        <div class="app-row"><span class="grow">${a.name || ('#' + a.user_id)}</span>
+                        <div class="app-row"><span class="grow">${escHtml(a.name) || ('#' + a.user_id)}</span>
                         <span class="muted">${a.strongest_eagle ? (a.strongest_eagle.tier_id + ' · ур. ' + a.strongest_eagle.feed_level) : 'нет орлов'}</span></div>
                     `).join('') : '<div class="muted" style="padding:4px 0;">Заявок нет</div>'}
                 </div>
@@ -2968,7 +2968,7 @@ function renderClanMemberList(clan) {
         const isLeader = uid === clan.leader_id;
         return `
             <div class="member-row">
-                <span class="grow">${isLeader ? '👑 ' : ''}${name}${isLeader ? ' (лидер)' : ''}</span>
+                <span class="grow">${isLeader ? '👑 ' : ''}${escHtml(name)}${isLeader ? ' (лидер)' : ''}</span>
                 <span class="power">🔥 ${fmtNum(power)}</span>
                 <button data-kick="${uid}">Исключить</button>
             </div>`;
@@ -3156,9 +3156,9 @@ function renderTournamentBracket(t) {
             ${group.matches.map(m => `
                 <div class="tourney-match ${m.resolved ? 'resolved' : ''}" data-start="${m.start_time}" data-resolved="${m.resolved}">
                     <span class="day">День ${m.day}</span>
-                    <span class="side ${m.resolved && m.winner_id === m.clan_a_id ? 'win' : ''} ${!m.clan_a_id ? 'empty' : ''}">${m.clan_a_name || 'TBD'}</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_a_id ? 'win' : ''} ${!m.clan_a_id ? 'empty' : ''}">${escHtml(m.clan_a_name) || 'TBD'}</span>
                     <span class="vs">vs</span>
-                    <span class="side ${m.resolved && m.winner_id === m.clan_b_id ? 'win' : ''} ${!m.clan_b_id ? 'empty' : ''}">${m.clan_b_name || 'TBD'}</span>
+                    <span class="side ${m.resolved && m.winner_id === m.clan_b_id ? 'win' : ''} ${!m.clan_b_id ? 'empty' : ''}">${escHtml(m.clan_b_name) || 'TBD'}</span>
                     <span class="when ${m.start_time_override != null ? 'moved' : ''}" title="${m.start_time_override != null ? 'Перенесён вручную' : 'По расписанию турнира'}">${fmtLocalDateTime(m.start_time)}${m.start_time_override != null ? ' ✎' : ''}</span>
                     <span class="countdown" data-countdown></span>
                     ${m.resolved ? '' : `<button class="time-btn" data-match-time="${t.bracket.indexOf(m)}" title="Изменить время матча">🕒</button>`}
@@ -3184,7 +3184,7 @@ function openMatchTimeModal(idx) {
                 <button class="close-x" id="matchTimeClose">✕</button>
                 <h3>Время матча</h3>
                 <p class="muted">${TOURNEY_ROUND_LABELS[m.round] || m.round} · День ${m.day}<br>
-                    ${m.clan_a_name || 'TBD'} vs ${m.clan_b_name || 'TBD'}<br>
+                    ${escHtml(m.clan_a_name) || 'TBD'} vs ${escHtml(m.clan_b_name) || 'TBD'}<br>
                     Сейчас: ${fmtLocalDateTime(m.start_time)} ${moved ? '(перенесён вручную)' : '(по расписанию)'}</p>
                 <div class="field-row">
                     <label>Новое время (ваше местное) <input type="datetime-local" id="matchTimeInput" value="${toDatetimeLocalValue(m.start_time)}"></label>

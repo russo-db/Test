@@ -670,6 +670,16 @@ class MongoStore:
             await self.market.insert_one(listing)
             return "own_listing"
 
+        # Лот «на месте»: запертый орёл должен быть у продавца. Если его нет
+        # (например, админ удалил его из фермы), лот висячий — продать его
+        # значило бы выдать покупателю орла из воздуха, а продавцу ещё и
+        # деньги. Такой лот просто убираем с рынка.
+        if listing.get("in_place"):
+            holder = await self.users.find_one({"_id": listing["seller_id"], "monsters.listing_id": str(oid)}, {"_id": 1})
+            if not holder:
+                print(f"[market] висячий лот {oid}: орла у продавца {listing['seller_id']} нет — лот снят")
+                return "not_found"
+
         price = float(listing["price_gram"])
         slot = {"id": listing["monster_id"], "next_egg_at": 0, "feed_level": feed_levels,
                 "feed_taps": 0, "expedition_until": 0}
@@ -718,8 +728,9 @@ class MongoStore:
                 {"_id": seller_id, "monsters.listing_id": str(oid)},
                 {"$unset": {"monsters.$.listing_id": ""}, "$inc": {"ops": 1}},
             )
-            if unlocked.modified_count:
-                return "ok"
+            # Орёл «на месте» снят с замка — или его уже нет на ферме (висячий
+            # лот): тогда лот просто убран, нового орла взамен не выдаём.
+            return "ok"
         slot = {"id": deleted["monster_id"], "next_egg_at": 0, "feed_level": feed_levels,
                 "feed_taps": 0, "expedition_until": 0}
         placed = await self._place_eagle(seller_id, slot, queue_max)
