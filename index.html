@@ -6666,7 +6666,8 @@
 
             const rows = listings
                 .filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) !== String(state.userId))
-                .sort((a, b) => a.price_gram - b.price_gram);
+                // по цене ЗА ШТУКУ: «20 шт. за 0.2» выгоднее «1 шт. за 0.1»
+                .sort((a, b) => (a.price_gram / Math.max(1, a.amount)) - (b.price_gram / Math.max(1, b.amount)) || a.price_gram - b.price_gram);
 
             const ownRows = listings.filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) === String(state.userId));
             body.innerHTML = `

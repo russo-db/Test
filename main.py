@@ -6690,7 +6690,8 @@ async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[
     """Список активных лотов рынка ресурсов (Небесные Осколки/частички)."""
     viewer = authenticate(x_telegram_init_data, user_id)
     groups = {res: {"resource": res} for res in ("shards", "particles")}
-    items, counts = await store.listings_view(store.resource_market, viewer, groups, MARKET_PER_GROUP)
+    items, counts = await store.listings_view(store.resource_market, viewer, groups, MARKET_PER_GROUP,
+                                              sort_field="unit_price")
     return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP}
 
 

@@ -256,6 +256,7 @@ class MongoStore:
             (self.market, [("monster_id", 1), ("price_gram", 1)], {}),
             (self.equip_market, [("grade", 1), ("price_gram", 1)], {}),
             (self.resource_market, [("resource", 1), ("price_gram", 1)], {}),
+            (self.resource_market, [("resource", 1), ("unit_price", 1)], {}),
             (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
             (self.user_activity, "date", {}),
             (self.daily_claims, [("ts", -1)], {}),
@@ -269,6 +270,13 @@ class MongoStore:
                 await collection.create_index(keys, **kwargs)
             except Exception as e:
                 print(f"[storage] index {collection.name}.{keys} not created: {type(e).__name__}: {e}")
+        # Лоты ресурсов, выставленные до появления unit_price, — досчитываем.
+        try:
+            async for doc in self.resource_market.find({"unit_price": {"$exists": False}}, {"price_gram": 1, "amount": 1}).limit(20000):
+                unit = float(doc.get("price_gram") or 0) / max(1, int(doc.get("amount") or 1))
+                await self.resource_market.update_one({"_id": doc["_id"]}, {"$set": {"unit_price": unit}})
+        except Exception as e:
+            print(f"[storage] unit_price backfill failed: {type(e).__name__}: {e}")
         # Купец — общая на всех игроков лавка с разовыми лимитами; документ один
         # (_id = "global"), никак не привязан к конкретному user_id.
         await self.merchant.update_one(
@@ -565,7 +573,8 @@ class MongoStore:
     # и сколько всего чужих лотов во вкладке.
     OWN_LISTINGS_MAX = 1000
 
-    async def listings_view(self, collection, viewer_id: int, groups: dict, per_group: int = 100) -> tuple:
+    async def listings_view(self, collection, viewer_id: int, groups: dict, per_group: int = 100,
+                            sort_field: str = "price_gram") -> tuple:
         items, counts, seen = [], {}, set()
 
         def add(doc):
@@ -582,7 +591,7 @@ class MongoStore:
             q = dict(flt)
             q["seller_id"] = {"$ne": viewer_id}
             counts[key] = await collection.count_documents(q)
-            async for doc in collection.find(q).sort([("price_gram", 1), ("created_at", 1)]).limit(per_group):
+            async for doc in collection.find(q).sort([(sort_field, 1), ("price_gram", 1), ("created_at", 1)]).limit(per_group):
                 add(doc)
         return items, counts
 
@@ -850,6 +859,9 @@ class MongoStore:
         listing = {
             "seller_id": seller_id, "seller_name": seller_name, "resource": resource,
             "amount": amount, "price_gram": price_gram, "created_at": ts,
+            # Цена за штуку — по ней вкладка сортирует лоты и выбирает «лучшую
+            # цену»: лот «20 шт. за 0.2» выгоднее, чем «1 шт. за 0.1».
+            "unit_price": price_gram / max(1, int(amount)),
         }
         result = await self.resource_market.insert_one(listing)
         return str(result.inserted_id)
