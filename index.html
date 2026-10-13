@@ -2454,6 +2454,7 @@
                 'resourcemarket.amountLabel': 'Количество, шт.',
                 'resourcemarket.ownedHint': 'У тебя есть: {amount} шт.',
                 'resourcemarket.minAmountLabel': 'от {amount} шт.',
+                'resourcemarket.minUnitLabel': 'мин. {price} GRAM за шт.',
                 'resourcemarket.invalidAmount': 'Минимальное количество — {amount} шт.',
                 'resourcemarket.notEnoughOwned': 'Недостаточно ресурса для этого количества',
                 'resourcemarket.listed': 'Ресурс выставлен на продажу', 'resourcemarket.bought': 'Ресурс куплен!',
@@ -2946,6 +2947,7 @@
                 'resourcemarket.amountLabel': 'Amount',
                 'resourcemarket.ownedHint': 'You have: {amount}',
                 'resourcemarket.minAmountLabel': 'from {amount}',
+                'resourcemarket.minUnitLabel': 'min {price} GRAM each',
                 'resourcemarket.invalidAmount': 'Minimum amount is {amount}',
                 'resourcemarket.notEnoughOwned': 'Not enough of this resource for that amount',
                 'resourcemarket.listed': 'Resource listed for sale', 'resourcemarket.bought': 'Resource purchased!',
@@ -6585,7 +6587,12 @@
         function resourceMarketMinPrice(resource, amount) {
             const perLot = Number((CONFIG.resource_market.min_price || {})[resource]) || 0;
             const perUnit = Number((CONFIG.resource_market.min_price_per_unit || {})[resource]) || 0;
-            return Math.max(perLot, perUnit * (amount || 1));
+            // округление: 0.1 × 3 = 0.30000000000000004 → 0.3
+            return Math.round(Math.max(perLot, perUnit * (amount || 1)) * 1e9) / 1e9;
+        }
+
+        function resourceMarketMinUnitPrice(resource) {
+            return Number((CONFIG.resource_market.min_price_per_unit || {})[resource]) || 0;
         }
 
         function resourceMarketMinPriceHint(resource, amount) {
@@ -6683,7 +6690,7 @@
             const ownRows = listings.filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) === String(state.userId));
             body.innerHTML = `
                 ${ownRows.map(l => ownListingCard(resourceIconMarkup(l.resource), `${l.amount}× ${resourceLabel(l.resource)}`, l, 'cancelResourceMarketListing')).join('')}
-                <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}</p>
+                <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}${resourceMarketMinUnitPrice(resourceMarketActiveTab) ? ` · ${t('resourcemarket.minUnitLabel', { price: fmtResourceUnitPrice(resourceMarketMinUnitPrice(resourceMarketActiveTab)) })}` : ''}</p>
                 ${marketShownNote(state.resourceMarketCounts, resourceMarketActiveTab, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
                     <div class="card glass-panel market-card">
@@ -10641,7 +10648,7 @@
                 cfg.equip_market.min_price_by_grade = DEFAULT_EQUIP_MARKET_MIN_PRICE;
             }
             cfg.resource_market = Object.assign(
-                { commission: 0.10, min_price: { shards: 1, particles: 0.1 }, min_price_per_unit: { shards: 3 }, min_amount: { shards: 1, particles: 1 } },
+                { commission: 0.10, min_price: { shards: 3, particles: 0.1 }, min_price_per_unit: { shards: 3, particles: 0.1 }, min_amount: { shards: 1, particles: 1 } },
                 cfg.resource_market
             );
             cfg.arena_season = Object.assign({ days: 20, rewards: DEFAULT_ARENA_SEASON_REWARDS }, cfg.arena_season);

@@ -6696,8 +6696,9 @@ async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[
 
 
 def resource_market_min_lot_price(resource: str, amount: int) -> float:
-    return max(RESOURCE_MARKET_MIN_PRICE.get(resource, 0.0),
-               RESOURCE_MARKET_MIN_UNIT_PRICE.get(resource, 0.0) * amount)
+    # round: 0.1 × 3 = 0.30000000000000004 → 0.3 (так же на клиенте)
+    return round(max(RESOURCE_MARKET_MIN_PRICE.get(resource, 0.0),
+                     RESOURCE_MARKET_MIN_UNIT_PRICE.get(resource, 0.0) * amount), 9)
 
 
 @app.post("/api/market/resources/list")
