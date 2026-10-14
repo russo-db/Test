@@ -3397,6 +3397,13 @@
             return value.toFixed(2);
         }
 
+        // Цена лота на рынке — всегда полностью, до копеек: fmtGram сокращал
+        // от 1000 («1.23K», «1.00M»), и лот за 1 004 999 GRAM выглядел как
+        // «1.00M» — покупатель не видел до ~5000 GRAM реальной цены.
+        function fmtLotPrice(value) {
+            return (Number(value) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+        }
+
         function fmt(value) {
             if (value < 1) return value.toFixed(value < 0.1 ? 3 : 2);
             if (value < 1000) return value < 10 ? value.toFixed(1) : String(Math.floor(value));
@@ -6067,7 +6074,7 @@
                     ${iconHtml}
                     <div class="card-info">
                         <h3>${titleHtml}</h3>
-                        <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')} · ${fmtGram(listing.price_gram)} GRAM</p>
+                        <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')} · ${fmtLotPrice(listing.price_gram)} GRAM</p>
                     </div>
                     <button class="btn-action" onclick="${cancelFn}('${listing.id}')">${t('market.cancelBtn')}</button>
                 </div>`;
@@ -6145,7 +6152,7 @@
                                 <h3 class="rarity-name" style="color:${tier.color}">${monster.name}</h3>
                                 <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
                             </div>
-                            <button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                            <button class="btn-action" onclick="cancelMarketListing('${listing.id}')">${fmtLotPrice(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
                         </div>
                     `;
                 }).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
@@ -6172,7 +6179,7 @@
                                 <h3 class="rarity-name" style="color:${tier.color}">${monster.name} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
                                 <p style="font-size:12px; color:var(--text-muted)">${escName(listing.seller_name) || t('market.seller')}</p>
                             </div>
-                            <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtGram(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                            <button class="btn-action btn-buy" onclick="buyMarketListing('${listing.id}')">${fmtLotPrice(listing.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                         </div>
                     `;
                 }).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
@@ -6426,7 +6433,7 @@
                             <h3 class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
                         </div>
-                        <button class="btn-action" onclick="cancelEquipMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                        <button class="btn-action" onclick="cancelEquipMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
                 return;
@@ -6449,7 +6456,7 @@
                             <h3 class="rarity-name" style="color:${nestGradeColor(l.grade)}">${equipListingLabel(l)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')}</p>
                         </div>
-                        <button class="btn-action btn-buy" onclick="buyEquipMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                        <button class="btn-action btn-buy" onclick="buyEquipMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
             `;
@@ -6710,7 +6717,7 @@
                             <h3>${l.amount}× ${resourceLabel(l.resource)}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
                         </div>
-                        <button class="btn-action" onclick="cancelResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                        <button class="btn-action" onclick="cancelResourceMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
                 return;
@@ -6733,7 +6740,7 @@
                             <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')} · ${t('resourcemarket.perUnitShort', { price: fmtResourceUnitPrice(l.price_gram / Math.max(1, l.amount)) })}</p>
                         </div>
-                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtGram(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
             `;
@@ -6822,7 +6829,7 @@
             if (amount > owned) { toast(t('resourcemarket.notEnoughOwned')); return; }
             if (price <= 0) { toast(t('market.invalidPrice')); return; }
             if (price < minPrice - 1e-9) { toast(t('resourcemarket.belowMinPrice', { price: fmtGram(minPrice) })); return; }
-            if (!confirm(t('resourcemarket.confirmList', { amount, res: resourceLabel(resource), price: fmtGram(price), unit: fmtResourceUnitPrice(price / amount) }))) return;
+            if (!confirm(t('resourcemarket.confirmList', { amount, res: resourceLabel(resource), price: fmtLotPrice(price), unit: fmtResourceUnitPrice(price / amount) }))) return;
             try {
                 const response = await fetch('api/market/resources/list', {
                     method: 'POST', headers: apiHeaders(),

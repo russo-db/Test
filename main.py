@@ -6425,6 +6425,13 @@ async def log_market_trade(market: str, lot: dict, buyer_id: int, commission: fl
         print(f"[market] trade log failed: {type(e).__name__}: {e}")
 
 
+def market_price(price: float) -> float:
+    """Цена лота до копеек — как в поле ввода (шаг 0.01) и на кнопке
+    лота: «2.005» показывалось бы как 2.01, а списывалось 2.005."""
+    price = float(price)
+    return round(price, 2) if math.isfinite(price) else price
+
+
 def check_market_price(price: float):
     """Цена лота: конечное число больше нуля и не выше MARKET_MAX_PRICE_GRAM.
     Лот с ценой Infinity не сериализуется в JSON — список лотов падал с 500
@@ -6464,6 +6471,7 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
 
     if request.monster_id not in MONSTERS or not _market_tier_ok(request.monster_id):
         raise HTTPException(status_code=400, detail="Этот орёл не продаётся на рынке")
+    request.price_gram = market_price(request.price_gram)
     check_market_price(request.price_gram)
     min_price = _market_min_price(request.monster_id)
     if request.price_gram < min_price:
@@ -6573,6 +6581,7 @@ async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_dat
         raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
     if request.grade not in NEST_GRADES:
         raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
+    request.price_gram = market_price(request.price_gram)
     check_market_price(request.price_gram)
     min_price = EQUIP_MARKET_MIN_PRICE.get(request.grade, 0.0)
     if request.price_gram < min_price:
@@ -6720,6 +6729,7 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
     min_amount = RESOURCE_MARKET_MIN_AMOUNT.get(request.resource, 1)
     if amount < min_amount:
         raise HTTPException(status_code=400, detail=f"Минимум {min_amount} шт.")
+    request.price_gram = market_price(request.price_gram)
     check_market_price(request.price_gram)
     min_price = resource_market_min_lot_price(request.resource, amount)
     if request.price_gram < min_price - 1e-9:
