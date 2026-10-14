@@ -2800,6 +2800,14 @@
                 'autoexp.cycle': ' · собрано {gold} 🪙, отправлено {sent}',
                 'autoexp.notEnough': 'Не хватает GRAM: нужно {price}',
                 'autoexp.restStatus': '😴 Отдыхает — нет мяса на авто-экспедицию',
+                'autoexp.onNote': '🤖 В авто-экспедициях: вернётся, отдаст золото и сразу улетит снова.',
+                'autoexp.offNote': '⏸ Выведен из авто: вернётся, отдаст золото и останется на ферме (можно скрестить или продать).',
+                'autoexp.offBtn': '⏸ Вывести из авто-экспедиций',
+                'autoexp.backBtn': '▶️ Вернуть в авто-экспедиции',
+                'autoexp.offDone': '⏸ Орёл выведен из авто-экспедиций',
+                'autoexp.backDone': '▶️ Орёл снова в авто-экспедициях',
+                'autoexp.collected': '🤖 +{gold} 🪙 · снова в экспедиции: {sent}',
+                'autoexp.alreadyDone': '🤖 Авто-экспедиция уже забрала золото',
                 'hunt.nav': 'Охота',
                 'hunt.heading': '🏹 Охота',
                 'hunt.subheading': 'Шахта, Дальние Экспедиции и Алхимия',
@@ -3349,6 +3357,14 @@
                 'autoexp.cycle': ' · collected {gold} 🪙, sent {sent}',
                 'autoexp.notEnough': 'Not enough GRAM: need {price}',
                 'autoexp.restStatus': '😴 Resting — no meat for the auto-expedition',
+                'autoexp.onNote': '🤖 On auto-expeditions: returns, hands over gold and flies again right away.',
+                'autoexp.offNote': '⏸ Taken off auto: returns, hands over gold and stays on the farm (you can fuse or sell it).',
+                'autoexp.offBtn': '⏸ Take off auto-expeditions',
+                'autoexp.backBtn': '▶️ Back to auto-expeditions',
+                'autoexp.offDone': '⏸ Eagle taken off auto-expeditions',
+                'autoexp.backDone': '▶️ Eagle is back on auto-expeditions',
+                'autoexp.collected': '🤖 +{gold} 🪙 · flying again: {sent}',
+                'autoexp.alreadyDone': '🤖 Auto-expedition already collected the gold',
                 'hunt.nav': 'Hunt',
                 'hunt.heading': '🏹 Hunt',
                 'hunt.subheading': 'Mine, Far Expeditions and Alchemy',
@@ -5132,6 +5148,18 @@
                     toast(data.detail || 'Экспедиция ещё не вернулась');
                     return;
                 }
+                if (data.auto) {
+                    // 🤖 Сбор сделал авто-цикл: золото на балансе, орёл снова в полёте (или отдыхает)
+                    if (data.monsters) state.farm = readFarm(data.monsters);
+                    if (typeof data.gold === 'number') state.gold = data.gold;
+                    if (typeof data.mnstr === 'number') state.mnstr = data.mnstr;
+                    if (typeof data.ops === 'number') state.ops = data.ops;
+                    haptic.notify('success');
+                    toast(data.reward > 0 ? t('autoexp.collected', { gold: fmtGram(data.reward), sent: data.sent }) : t('autoexp.alreadyDone'));
+                    renderAll();
+                    saveLocally();
+                    return;
+                }
                 state.gold = data.gold;
                 state.farm[i] = Object.assign({}, state.farm[i], readFarm([data.slot])[0]);
                 if (typeof data.ops === 'number') state.ops = data.ops;
@@ -5243,10 +5271,37 @@
         function maybeSyncAutoExp() {
             if (!autoExpActive() || offlineOnly || !state.userId) return;
             const meat = Number(CONFIG.expeditions && CONFIG.expeditions.cost_meat) || 1;
-            const due = state.farm.some(s => (isOnExpedition(s) && expeditionReady(s)) || (s.autoRest && state.mnstr >= meat));
+            const due = state.farm.some(s => (isOnExpedition(s) && expeditionReady(s) && !s.autoOff) || (s.autoRest && state.mnstr >= meat));
             if (!due || Date.now() - autoExpLastSync < 15000) return;
             autoExpLastSync = Date.now();
             syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+        }
+
+        async function toggleAutoExpEagle(i, enabled) {
+            const slot = state.farm[i];
+            if (!slot || offlineOnly || !state.userId) return;
+            const key = 'auto-exp-eagle:' + i;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                const response = await fetch('api/farm/auto_expedition/eagle', { method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, slot_index: i, monster_id: slot.id, enabled }) });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.serverError')); syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {}); return; }
+                ok = true;
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                toast(t(enabled ? 'autoexp.backDone' : 'autoexp.offDone'));
+                renderAll();
+                if (document.getElementById('slotModal').classList.contains('open')) renderSlotModal();
+                saveLocally();
+            } catch (e) {
+                toast(t('market.serverError'));
+            } finally {
+                if (ok) setTimeout(() => farmActionBusy.delete(key), LIST_ACTION_HOLD_MS); else farmActionBusy.delete(key);
+            }
         }
 
         async function buyAutoExpedition() {
@@ -7717,6 +7772,7 @@
                 modalSlot, slot.id, slotDeleteConfirm, slot.listingId || '', slot.huntUntil || 0,
                 isOnExpedition(slot), expeditionReady(slot), eggReady(slot),
                 isFullyFed(slot), isFarmingEgg(slot), slot.feedLevel, slot.feedTaps,
+                !!slot.autoOff, !!slot.autoRest, autoExpActive(),
             ].join('|');
         }
 
@@ -7837,6 +7893,9 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
+                ${autoExpActive() && (onExpedition || slot.autoRest) ? `
+                    <p class="slot-modal-sub" style="margin-top:8px">${onExpedition ? t(slot.autoOff ? 'autoexp.offNote' : 'autoexp.onNote') : t('autoexp.restStatus')}</p>
+                    <button class="btn-action" style="margin-top:6px; width:100%" onclick="toggleAutoExpEagle(modalSlot, ${onExpedition && slot.autoOff ? 'true' : 'false'})">${t(onExpedition && slot.autoOff ? 'autoexp.backBtn' : 'autoexp.offBtn')}</button>` : ''}
                 ${onExpedition
                     ? `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" disabled>🗑 ${t('slot.deleteOnExpedition')}</button>`
                     : `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" onclick="askDeleteEagle()">🗑 ${t('slot.deleteBtn')}</button>`}
@@ -11084,7 +11143,8 @@
                     ? { huntUntil, huntStartedAt: Number(slot.hunt_started_at) || 0, huntZone: slot.hunt_zone || '', huntSlot: Number(slot.hunt_slot) || 0 }
                     : { huntUntil: 0 };
                 const autoRest = !!slot.auto_rest && expeditionUntil <= 0;   // 🤖 авто-экспедиция ждёт мяса
-                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, autoRest, ...hunt });
+                const autoOff = !!slot.auto_off && expeditionUntil > 0;      // 🤖 выведен из авто: вернётся и останется
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, autoRest, autoOff, ...hunt });
                 return farm;
             }, []);
         }

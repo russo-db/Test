@@ -664,6 +664,10 @@ def read_farm(raw) -> List[dict]:
         # «Отдыхает», пока мясо не появится (см. auto_expedition_compute).
         if entry.get("auto_rest") and expedition_until <= 0:
             slot["auto_rest"] = True
+        # «Вывести из авто»: летящий орёл вернётся, отдаст золото и останется
+        # на ферме свободным (для скрещивания, продажи, Охоты).
+        if entry.get("auto_off") and expedition_until > 0:
+            slot["auto_off"] = True
         # Охота: орёл в Дальней Экспедиции (hunt_slot — какой из 3 слотов
         # Охоты он занимает). Отметку сохраняем при любой перезаписи фермы.
         try:
@@ -2844,6 +2848,21 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
 async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Забирает золото у вернувшегося из экспедиции орла."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    # 🤖 Авто-экспедиции активны — сбор идёт тем же циклом: золото на баланс
+    # и сразу новый вылет (или «Отдыхает»), а не выход орла из авто.
+    row = await fetch_user(user_id)
+    if auto_expedition_until_of(row) > time.time():
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if 0 <= i < len(farm) and not farm[i].get("auto_off") and (request.monster_id is None or farm[i]["id"] == request.monster_id) \
+                and 0 < farm[i]["expedition_until"] <= time.time():
+            try:
+                return await auto_collect_response(user_id)
+            except HTTPException:
+                raise
+            except Exception as e:
+                traceback.print_exception(type(e), e, e.__traceback__)
+                raise HTTPException(status_code=500, detail="Не удалось собрать золото — попробуй ещё раз")
 
     def compute(row):
         farm = read_farm(row.get("monsters"))
@@ -2895,8 +2914,11 @@ def ensure_gold_eagle_vip(row: dict) -> None:
 # начинается в момент возвращения прошлого, поэтому после простоя сервера
 # пропущенные круги досчитываются точно так же, как если бы он не стоял.
 # Орлы, вернувшиеся ДО покупки подписки, отправляются с момента покупки
-# (auto_expedition_since), не задним числом. Ручной «Забрать» у орла выводит
-# его из цикла (дальше он свободен — например, для продажи).
+# (auto_expedition_since), не задним числом. Ручной «Забрать» / «Собрать со
+# всех» при активной подписке идут тем же циклом (собрал → снова в полёт).
+# Чтобы вывести орла из цикла (скрестить, продать, отправить на Охоту), игрок
+# ставит ему auto_off (/api/farm/auto_expedition/eagle): вернувшись, он
+# отдаст золото и останется на ферме свободным.
 # Где запускается: фоновый auto_expedition_worker (раз в AUTO_EXP_TICK_SECONDS)
 # и /api/load — оба через run_farm_action (CAS по ops), так что параллельные
 # действия игрока не теряются и золото не задваивается.
@@ -2967,8 +2989,8 @@ def auto_expedition_compute(row: dict, now: float):
         slot["expedition_started_at"] = 0
         slot.pop("auto_rest", None)
         changed = True
-        if not auto_exp_eligible(slot):
-            continue
+        if slot.pop("auto_off", None) or not auto_exp_eligible(slot):
+            continue   # выведен из авто игроком — золото собрано, орёл свободен
         # ШАГ 2–3: мясо есть — новый вылет с момента возвращения; нет — «Отдыхает»
         if mnstr + 1e-9 >= cost:
             mnstr -= cost
@@ -3057,6 +3079,53 @@ async def auto_expedition_worker():
         except Exception as e:
             print(f"[auto-exp] worker error: {type(e).__name__}: {e}")
         await asyncio.sleep(AUTO_EXP_TICK_SECONDS)
+
+
+class AutoExpEagleToggle(BaseModel):
+    user_id: int
+    slot_index: int
+    monster_id: Optional[str] = None
+    enabled: bool   # True — орёл в авто-цикле, False — вывести из него
+
+
+@app.post("/api/farm/auto_expedition/eagle")
+async def farm_auto_expedition_eagle(request: AutoExpEagleToggle, x_telegram_init_data: Optional[str] = Header(None)):
+    """Вывести орла из авто-экспедиций или вернуть его обратно. Летящий орёл
+    с auto_off вернётся, отдаст золото и останется на ферме; «Отдыхающий»
+    при выводе просто перестаёт ждать мяса."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        farm = read_farm(row.get("monsters"))
+        i = request.slot_index
+        if not (0 <= i < len(farm)):
+            raise HTTPException(status_code=404, detail="Слот не найден")
+        slot = farm[i]
+        ensure_expected_monster(slot, request.monster_id)
+        if slot["expedition_until"] > 0:
+            if request.enabled:
+                slot.pop("auto_off", None)
+            else:
+                slot["auto_off"] = True
+        elif slot.get("auto_rest") and not request.enabled:
+            slot.pop("auto_rest", None)
+        else:
+            raise HTTPException(status_code=400, detail="Орёл не в авто-экспедиции")
+        return {"monsters": farm}, {"slot_index": i, "slot": slot, "monsters": farm}
+
+    return await run_farm_action(user_id, compute)
+
+
+async def auto_collect_response(user_id: int) -> dict:
+    """Ответ ручного сбора, когда его выполнил авто-цикл (собрал → снова в полёт)."""
+    cycle = await run_auto_expeditions(user_id)
+    fresh = await fetch_user(user_id)
+    farm = read_farm(fresh.get("monsters"))
+    return {"status": "success", "auto": True, "reward": cycle["reward"] if cycle else 0.0,
+            "collected": cycle["collected"] if cycle else 0, "sent": cycle["sent"] if cycle else 0,
+            "rested": sum(1 for s_ in farm if s_.get("auto_rest")), "monsters": farm,
+            "gold": float(fresh.get("gold") or 0), "mnstr": float(fresh.get("mnstr") or 0),
+            "ops": int(fresh.get("ops") or 0)}
 
 
 @app.post("/api/farm/auto_expedition/buy")
@@ -3494,6 +3563,15 @@ async def farm_expedition_vip_collect_all(request: NestAction, x_telegram_init_d
     """💰 VIP: собрать золото СТРОГО с вернувшихся орлов. Те, у кого таймер ещё
     идёт, продолжают лететь — их экспедиция не прерывается."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    # 🤖 Авто-экспедиции: вернувшиеся орлы из цикла собираются и снова улетают;
+    # обычным сбором ниже — только выведенные из авто (auto_off).
+    pre = None
+    try:
+        row = await fetch_user(user_id)
+        if gold_eagle_vip(row) and auto_expedition_until_of(row) > time.time():
+            pre = await run_auto_expeditions(user_id)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
 
     def compute(row):
         ensure_gold_eagle_vip(row)
@@ -3515,12 +3593,22 @@ async def farm_expedition_vip_collect_all(request: NestAction, x_telegram_init_d
 
     try:
         result = await run_farm_action(user_id, compute)
-    except HTTPException:
+    except HTTPException as e:
+        if pre and pre.get("collected") and e.status_code == 400:
+            fresh = await fetch_user(user_id)
+            farm = read_farm(fresh.get("monsters"))
+            return {"status": "success", "auto": True, "collected": pre["collected"], "reward": pre["reward"],
+                    "sent": pre["sent"], "still_flying": sum(1 for s_ in farm if slot_on_expedition(s_)),
+                    "monsters": farm, "gold": float(fresh.get("gold") or 0), "mnstr": float(fresh.get("mnstr") or 0),
+                    "ops": int(fresh.get("ops") or 0)}
         raise
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось собрать золото — попробуй ещё раз")
     await record_economy(gold_expeditions=result["reward"], expeditions=result["collected"])
+    if pre and pre.get("collected"):
+        result.update({"collected": result["collected"] + pre["collected"], "reward": result["reward"] + pre["reward"],
+                       "sent": pre["sent"], "auto": True})
     return result
 
 
