@@ -2539,6 +2539,7 @@
                 'alchmarket.confirm': 'Выставить {qty} × {name} за {total} 🪙? Ресурсы сразу уйдут со Склада в лот.',
                 'alchmarket.listed': '✅ Лот выставлен', 'alchmarket.bought': '✅ Куплено: {qty} × {name}', 'alchmarket.cancelled': 'Лот снят — ресурсы вернулись на Склад',
                 'alchmarket.shown': 'показаны первые {shown} из {total}',
+                'alchmarket.retry': '🔄 Повторить',
                 'resourcemarket.sellTitle': 'Выставить ресурс на продажу',
                 'resourcemarket.shardsCard': 'Небесные Осколки', 'resourcemarket.particlesCard': 'Частички',
                 'resourcemarket.amountLabel': 'Количество, шт.',
@@ -3068,6 +3069,7 @@
                 'alchmarket.confirm': 'List {qty} × {name} for {total} 🪙? The resources leave your Storage right away.',
                 'alchmarket.listed': '✅ Lot listed', 'alchmarket.bought': '✅ Bought: {qty} × {name}', 'alchmarket.cancelled': 'Lot cancelled — resources returned to Storage',
                 'alchmarket.shown': 'showing first {shown} of {total}',
+                'alchmarket.retry': '🔄 Retry',
                 'resourcemarket.sellTitle': 'List a resource for sale',
                 'resourcemarket.shardsCard': 'Sky Shards', 'resourcemarket.particlesCard': 'Particles',
                 'resourcemarket.amountLabel': 'Amount',
@@ -7108,8 +7110,11 @@
                 applyAlchemyWallet(data);
                 noteOwnLots('alchemy', alch.listings);
                 alch.loaded = true;
+                alch.error = false;
             } catch (e) {
-                // офлайн — оставляем то, что уже знаем
+                // сбой — показываем то, что уже знаем; если не знаем ничего,
+                // не «Загрузка…» навсегда, а ошибку с повтором
+                if (seq === marketLoadSeq['alchemy']) alch.error = true;
             }
             renderAlchemyMarket();
             renderHeader();
@@ -7127,7 +7132,12 @@
             const stock = document.getElementById('alchStock');
             if (!stock) return;
             if (offlineOnly) { stock.innerHTML = `<p class="alch-empty">${t('market.onlineOnly')}</p>`; return; }
-            if (!alch.loaded) { stock.innerHTML = `<p class="alch-empty">${t('market.loading')}</p>`; return; }
+            if (!alch.loaded) {
+                stock.innerHTML = alch.error
+                    ? `<p class="alch-empty">${t('market.serverError')}</p><button class="btn-action" onclick="loadAlchemyMarket()">${t('alchmarket.retry')}</button>`
+                    : `<p class="alch-empty">${t('market.loading')}</p>`;
+                return;
+            }
             stock.innerHTML = ALCH_ITEMS.map(item => {
                 const meta = alchMeta(item);
                 const have = Number(alch.items[item]) || 0;

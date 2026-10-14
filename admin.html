@@ -2858,6 +2858,10 @@ async function loadHuntAdmin() {
             card('Кристаллы / Корни / Грибы', `${fmtNum(tt.rock_crystal)} / ${fmtNum(tt.mountain_root)} / ${fmtNum(tt.shimmer_mushroom)}`, 'на Складах всех игроков'),
             card('Свитки / Ярость / Ст. Кожа', `${fmtNum(tt.craft_scroll)} / ${fmtNum(tt.potion_rage)} / ${fmtNum(tt.potion_skin)}`, 'неиспользованные предметы'),
             card('Свитки заточки: пустые / готовые', `${fmtNum(tt.blank_enchant_scroll || 0)} / ${fmtNum(tt.enchant_scroll || 0)}`, 'на Складах всех игроков'),
+            (() => { const al = data.totals.in_alchemy_lots || {}; const q = k => (al[k] || {}).quantity || 0;
+                const lots = Object.values(al).reduce((n, v) => n + (v.lots || 0), 0);
+                return card('В лотах рынка «Алхимия»', `💎 ${fmtNum(q('rock_crystal'))} · 🌿 ${fmtNum(q('mountain_root'))} · 🍄 ${fmtNum(q('shimmer_mushroom'))} · 📃 ${fmtNum(q('blank_enchant_scroll'))}`,
+                    `заморожено в ${fmtNum(lots)} лотах — не входит в итоги Складов`); })(),
         ].join('');
         const buffs = b => [b.rage ? '🔥' : '', b.skin ? '🛡️' : '', b.craft_discount ? '📜' : ''].filter(Boolean).join(' ') || '—';
         document.getElementById('huntBody').innerHTML = data.items.map(p => `

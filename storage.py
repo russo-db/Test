@@ -2178,6 +2178,13 @@ class MongoStore:
                 totals[k] += int(items.get(k) or 0)
         return {"players": players, "items": totals}
 
+    async def alchemy_lot_totals(self) -> dict:
+        """Сколько ресурсов Охоты сейчас «заморожено» в лотах рынка Алхимии."""
+        totals = {}
+        async for row in self.alchemy_market.aggregate([{"$group": {"_id": "$item", "qty": {"$sum": "$quantity"}, "lots": {"$sum": 1}}}]):
+            totals[row["_id"]] = {"quantity": int(row.get("qty") or 0), "lots": int(row.get("lots") or 0)}
+        return totals
+
     async def economy_total(self) -> dict:
         return await self.economy.find_one({"_id": "total"}) or {}
 

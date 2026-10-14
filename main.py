@@ -5954,6 +5954,7 @@ async def admin_hunt(search: str = "", limit: int = 50, offset: int = 0, _: None
                           "craft_discount": bool(row.get("buff_craft_discount"))},
             })
         totals = await store.hunt_totals()
+        totals["in_alchemy_lots"] = await store.alchemy_lot_totals()
         economy = await store.economy_total()
         return {"enabled": _hunt_enabled, "items": items, "total": total, "totals": totals,
                 "buyback_pool": float(economy.get("gram_buyback_pool") or 0),
