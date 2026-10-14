@@ -9032,6 +9032,7 @@ LEDGER_LABELS = [
     ("/api/merchant/sell_eagle", "Купец: продажа орла"),
     ("/api/market/equip/", "Рынок снаряжения"),
     ("/api/market/resources/", "Рынок ресурсов"),
+    ("/api/market/alchemy/", "Рынок → Алхимия (за золото)"),
     ("/api/market/", "Рынок орлов"),
     ("/api/ton/withdraw", "Вывод TON"),
     ("/api/ton/check", "Пополнение TON"),

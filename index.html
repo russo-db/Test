@@ -422,8 +422,9 @@
         .lang-options .market-eagle { width: 32px; height: 32px; }
         .market-min-price-line { font-size: 11px; font-weight: 600; color: var(--text-muted); padding: 0 2px 10px; }
         /* 🧪 Алхимия на рынке */
-        .market-dept-bar { overflow-x: auto; scrollbar-width: none; }
-        .market-dept-bar::-webkit-scrollbar { display: none; }
+        /* 4 отдела: не помещаются в строку (узкий телефон) — переносятся на
+           вторую, а не прячутся за край без намёка на прокрутку */
+        .market-dept-bar { flex-wrap: wrap; row-gap: 2px; }
         .market-dept-bar .subtab-item { flex: 1 0 auto; padding-left: 8px; padding-right: 8px; }
         .alch-panel { padding: 12px; margin-bottom: 12px; }
         .alch-title { font-size: 14px; font-weight: 800; margin-bottom: 8px; }
