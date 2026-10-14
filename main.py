@@ -3128,13 +3128,26 @@ async def auto_collect_response(user_id: int) -> dict:
             "ops": int(fresh.get("ops") or 0)}
 
 
+class AutoExpBuyRequest(BaseModel):
+    user_id: int
+    # Срок подписки, который игрок видел на кнопке, когда нажимал. Двойной клик
+    # шлёт два запроса с ОДНИМ И ТЕМ ЖЕ значением: первый сдвигает срок, второй
+    # видит расхождение и получает 409 без списания. Намеренное продление
+    # приходит уже с новым сроком и проходит. None — старый клиент без защиты.
+    expected_until: Optional[float] = None
+
+
 @app.post("/api/farm/auto_expedition/buy")
-async def farm_auto_expedition_buy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+async def farm_auto_expedition_buy(request: AutoExpBuyRequest, x_telegram_init_data: Optional[str] = Header(None)):
     """🤖 Авто-экспедиции на AUTO_EXP_DAYS дней за AUTO_EXP_PRICE_GRAM GRAM.
     Подписка активна — новые дни прибавляются к остатку, ничего не сгорает."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.expected_until is not None and not math.isfinite(float(request.expected_until)):
+        raise HTTPException(status_code=400, detail="Некорректный запрос")
 
     def compute(row):
+        if request.expected_until is not None and abs(auto_expedition_until_of(row) - max(0.0, float(request.expected_until))) > 1e-3:
+            raise HTTPException(status_code=409, detail="Авто-экспедиции уже продлены — срок на экране обновлён, списания не было")
         coins = float(row.get("coins") or 0)
         if coins + 1e-9 < AUTO_EXP_PRICE_GRAM:
             raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {AUTO_EXP_PRICE_GRAM:g}")

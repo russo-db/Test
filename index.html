@@ -5315,9 +5315,16 @@
             farmActionBusy.add(key);
             let ok = false;
             try {
-                const response = await fetch('api/farm/auto_expedition/buy', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ user_id: state.userId }) });
+                // expected_until — срок, который игрок видит: второй запрос двойного
+                // клика придёт с тем же сроком и сервер его отклонит без списания
+                const response = await fetch('api/farm/auto_expedition/buy', { method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, expected_until: autoExp.until }) });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); return; }
+                if (!response.ok) {
+                    toast(data.detail || t('market.serverError')); haptic.notify('warning');
+                    if (response.status === 409) syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+                    return;
+                }
                 ok = true;
                 applyAutoExp(data.auto_expedition);
                 if (typeof data.coins === 'number') state.coins = data.coins;
