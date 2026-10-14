@@ -1997,7 +1997,8 @@ class MongoStore:
 
     # --- ОХОТА: мониторинг ресурсов игроков (админка) ---
 
-    HUNT_ITEM_KEYS = ("rock_crystal", "mountain_root", "shimmer_mushroom", "craft_scroll", "potion_rage", "potion_skin")
+    HUNT_ITEM_KEYS = ("rock_crystal", "mountain_root", "shimmer_mushroom", "craft_scroll", "potion_rage", "potion_skin",
+                      "blank_enchant_scroll", "enchant_scroll")
     HUNT_TOUCHED = {"$or": [{"hunt_items": {"$exists": True}}, {"mine_last": {"$gt": 0}},
                             {"hunt_slots_open": {"$gt": 0}}]}
 

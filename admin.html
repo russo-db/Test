@@ -512,7 +512,7 @@
                 <table>
                     <thead><tr>
                         <th>Игрок</th><th>💎 Кристаллы</th><th>🌿 Корни</th><th>🍄 Грибы</th><th>📜 Свитки</th>
-                        <th>🔥 Ярость</th><th>🛡️ Ст. Кожа</th><th>Шахта</th><th>Слоты / в полёте</th><th>Баффы</th>
+                        <th>🔥 Ярость</th><th>🛡️ Ст. Кожа</th><th>📃/✨ Заточка</th><th>Шахта</th><th>Слоты / в полёте</th><th>Баффы</th>
                     </tr></thead>
                     <tbody id="huntBody"></tbody>
                 </table>
@@ -2854,6 +2854,7 @@ async function loadHuntAdmin() {
             card('Игроков в Охоте', fmtNum(data.totals.players), 'открывали раздел хотя бы раз'),
             card('Кристаллы / Корни / Грибы', `${fmtNum(tt.rock_crystal)} / ${fmtNum(tt.mountain_root)} / ${fmtNum(tt.shimmer_mushroom)}`, 'на Складах всех игроков'),
             card('Свитки / Ярость / Ст. Кожа', `${fmtNum(tt.craft_scroll)} / ${fmtNum(tt.potion_rage)} / ${fmtNum(tt.potion_skin)}`, 'неиспользованные предметы'),
+            card('Свитки заточки: пустые / готовые', `${fmtNum(tt.blank_enchant_scroll || 0)} / ${fmtNum(tt.enchant_scroll || 0)}`, 'на Складах всех игроков'),
         ].join('');
         const buffs = b => [b.rage ? '🔥' : '', b.skin ? '🛡️' : '', b.craft_discount ? '📜' : ''].filter(Boolean).join(' ') || '—';
         document.getElementById('huntBody').innerHTML = data.items.map(p => `
@@ -2865,10 +2866,11 @@ async function loadHuntAdmin() {
                 <td data-label="📜 Свитки">${p.items.craft_scroll}</td>
                 <td data-label="🔥 Ярость">${p.items.potion_rage}</td>
                 <td data-label="🛡️ Ст. Кожа">${p.items.potion_skin}</td>
+                <td data-label="📃/✨ Заточка">${p.items.blank_enchant_scroll || 0} / ${p.items.enchant_scroll || 0}</td>
                 <td data-label="Шахта">${p.mine_level} ур.</td>
                 <td data-label="Слоты / в полёте">${p.slots_open}/3 · ${p.flying}</td>
                 <td data-label="Баффы">${buffs(p.buffs)}</td>
-            </tr>`).join('') || '<tr><td colspan="10" class="muted">Никто ещё не заходил в Охоту</td></tr>';
+            </tr>`).join('') || '<tr><td colspan="11" class="muted">Никто ещё не заходил в Охоту</td></tr>';
         const from = data.total ? huntAdmin.offset + 1 : 0;
         const to = Math.min(huntAdmin.offset + huntAdmin.limit, data.total);
         document.getElementById('huntPageInfo').textContent = `${from}–${to} из ${data.total}`;

@@ -1067,9 +1067,16 @@ def normalize_nest_equipped(raw) -> dict:
 # (там по-прежнему только грейд). Клиент собирает из этого один список
 # «Склад Снаряжения Армии» (player.equipment из ТЗ).
 
+# Потолок для ХРАНИМОГО уровня — не max_level из конфига: если в админке
+# снизить max_level (5 → 3 или 0), уже заточенные вещи не должны терять
+# уровни при следующей записи. max_level ограничивает только новые попытки
+# заточки (см. nest_enchant).
+NEST_ENCHANT_STORE_CAP = 50
+
+
 def nest_enchant_level(raw) -> int:
     try:
-        return max(0, min(NEST_ENCHANT_MAX, int(raw or 0)))
+        return max(0, min(NEST_ENCHANT_STORE_CAP, int(raw or 0)))
     except (TypeError, ValueError):
         return 0
 
