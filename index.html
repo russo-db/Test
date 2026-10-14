@@ -2383,6 +2383,7 @@
                 'nest.enchant.fail': '💨 Неудача — свиток сгорел, вещь осталась на [+{lvl}]',
                 'nest.upgradedRefund': '🎉 Ранг повышен! Новая вещь получила ранг [+0], а вам на Склад Охоты возвращено [{n}] свитков заточки!',
                 'nest.ladderEnchanted': '(из них заточенных: {n})',
+                'nest.upgradeConfirmEnchanted': 'В улучшение уйдут заточенные вещи: {levels}. Их заточка вернётся на Склад Охоты свитками заточки: {n} шт. Новая вещь будет +0. Продолжить?',
                 'nest.emptyInventoryNote': 'В инвентаре нет предметов этого типа. Скрафти или улучши снаряжение в Кузнице.',
                 'nest.statHp': 'ХП', 'nest.statAtk': 'Атака', 'nest.statDef': 'Защита',
                 'nest.statCrit': 'Крит', 'nest.statSpd': 'Скор.',
@@ -2898,6 +2899,7 @@
                 'nest.enchant.fail': '💨 Failed — the scroll burned, the item stays at [+{lvl}]',
                 'nest.upgradedRefund': '🎉 Rank up! The new item is [+0], and [{n}] enchant scrolls were returned to your Hunt Storage!',
                 'nest.ladderEnchanted': '({n} of them enchanted)',
+                'nest.upgradeConfirmEnchanted': 'Enchanted items will be consumed: {levels}. Their enchant returns to Hunt Storage as {n} enchant scroll(s). The new item will be +0. Continue?',
                 'nest.emptyInventoryNote': 'No items of this type yet. Craft or upgrade gear in the Forge.',
                 'nest.statHp': 'HP', 'nest.statAtk': 'ATK', 'nest.statDef': 'DEF',
                 'nest.statCrit': 'Crit', 'nest.statSpd': 'SPD',
@@ -8202,6 +8204,9 @@
             if (!box) return;
             const items = nestArmyItems();
             if (nestEnchantSel && !items.some(it => it.key === nestEnchantSel)) nestEnchantSel = null;
+            // перерисовка после заточки не должна уносить список наверх
+            const prevList = box.querySelector('.nest-army-list');
+            const prevScroll = prevList ? prevList.scrollTop : 0;
             box.innerHTML = items.length ? `<div class="nest-army-list">${items.map(it => {
                 const meta = CONFIG.nest.item_types[it.type] || {};
                 const color = nestGradeColor(it.grade);
@@ -8219,6 +8224,8 @@
                     </div>
                 </div>`;
             }).join('')}</div>` : `<p class="nest-enchant-empty">${t('nest.army.empty')}</p>`;
+            const list = box.querySelector('.nest-army-list');
+            if (list) list.scrollTop = prevScroll;
             renderNestEnchantPanel();
         }
 
@@ -9531,6 +9538,16 @@
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'nest-upgrade:' + type + ':' + grade;
             if (farmActionBusy.has(key)) return;
+            // Сначала уходят +0, потом заточенные от меньшего уровня (как на
+            // сервере). Заточенную вещь игрок мог не заметить в стопке —
+            // спрашиваем, какие уровни сгорят и сколько свитков вернётся.
+            const group = CONFIG.nest.upgrade_group || 4;
+            const burnEnch = (state.nest.enchanted || []).filter(it => it.type === type && it.grade === grade)
+                .sort((a, b) => a.enchant - b.enchant).slice(0, Math.max(0, group - nestInventoryCount(type, grade)));
+            if (burnEnch.length && !confirm(t('nest.upgradeConfirmEnchanted', {
+                levels: burnEnch.map(it => '+' + it.enchant).join(', '),
+                n: burnEnch.reduce((a, it) => a + it.enchant, 0),
+            }))) return;
             farmActionBusy.add(key);
             try {
                 const response = await fetch('api/nest/upgrade', {
@@ -11204,6 +11221,10 @@
             state.gold = h.gold;
             state.mnstr = h.mnstr;
             state.nest.particles = h.particles;
+            // готовые свитки заточки лежат на Складе Охоты, а тратятся в Гнезде
+            // Воинов — без этого после крафта в Алхимии блок «✨ Заточка» до
+            // перезахода показывал старое число, и «Точить» было заблокировано
+            if (h.items && typeof h.items.enchant_scroll === 'number') state.nest.enchantScrolls = h.items.enchant_scroll;
             if (typeof h.ops === 'number') state.ops = h.ops;
             if (h.buffs) state.huntBuffs = Object.assign({}, h.buffs);
             if (h.monsters) {
