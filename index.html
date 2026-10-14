@@ -1161,9 +1161,12 @@
         .gold-vip-block .gvip-note { font-size: 11px; color: #cdb99a; margin-top: 4px; }
         /* ---------- 🤖 Авто-экспедиции (премиум) ---------- */
         .auto-exp-block { margin: 10px 0 4px; text-align: center; }
-        .auto-exp-block .autoexp-btn { width: 100%; padding: 13px 10px; font-size: 13.5px; text-transform: none; letter-spacing: 0; line-height: 1.3; }
+        .auto-exp-block .autoexp-btn { display: block; width: 100%; padding: 13px 10px; font-size: 13.5px; text-transform: none; letter-spacing: 0; line-height: 1.3; text-align: center; }
         .auto-exp-block .autoexp-btn.active { background: linear-gradient(135deg, #34d399, #059669); border-color: rgba(167, 243, 208, 0.6);
             box-shadow: 0 0 18px rgba(52, 211, 153, 0.45); color: #fff; }
+        .auto-exp-block .autoexp-btn.paused { background: linear-gradient(135deg, #fcd34d, #d97706); border-color: rgba(253, 230, 138, 0.6);
+            box-shadow: 0 0 14px rgba(245, 158, 11, 0.35); color: #2a1404; }
+        .auto-exp-block .autoexp-extend { width: 100%; justify-content: center; margin-top: 8px; padding: 9px 10px; font-size: 12.5px; white-space: normal; }
         .auto-exp-block .autoexp-note { font-size: 11px; color: var(--text-muted); margin-top: 5px; line-height: 1.35; padding: 0 4px; }
         .auto-exp-block .autoexp-note b { color: #6ee7b7; }
 
@@ -2788,10 +2791,15 @@
                 'gvip.collected': '💰 +{gold} 🪙 с {n} орл.{rest}',
                 'gvip.restFlying': ' · ещё в пути: {n}',
                 'autoexp.buy': '🤖 Включить Авто-экспедиции на {days} дней за {price} Gram 💎',
-                'autoexp.active': '🤖 Авто-экспедиция активна: еще {left}',
+                'autoexp.onBtn': '🟢 Авто-экспедиции: ВКЛ (Осталось {left}) | ⏸️ Пауза',
+                'autoexp.pausedBtn': '🟡 Авто-экспедиции: ПАУЗА | ▶️ Запустить',
+                'autoexp.onHint': 'Сервер сам собирает золото и отправляет орлов снова. Тапни, чтобы поставить на паузу.',
+                'autoexp.pausedHint': 'Бот спит: орлы вернутся с золотом и будут ждать тебя. Подписка идёт — осталось {left}.',
+                'autoexp.extendBtn': '➕ Продлить на {days} дней за {price} Gram 💎',
+                'autoexp.paused': '⏸️ Авто-экспедиции на паузе',
+                'autoexp.resumed': '▶️ Авто-экспедиции снова работают',
                 'autoexp.left': '{d} дн. {h} ч', 'autoexp.leftHours': '{h} ч {m} мин',
                 'autoexp.noteOff': 'Сервер сам собирает золото у вернувшихся орлов и отправляет их снова (−{meat} 🥩 за вылет) — даже когда ты не в игре.',
-                'autoexp.noteOn': 'Тапни, чтобы продлить ещё на {days} дней за {price} Gram — дни прибавятся к остатку.',
                 'autoexp.resting': '😴 Отдыхают без мяса: <b>{n}</b> — полетят, как только пополнишь мясо.',
                 'autoexp.confirmBuy': 'Включить Авто-экспедиции на {days} дней за {price} GRAM?',
                 'autoexp.confirmExtend': 'Продлить Авто-экспедиции ещё на {days} дней за {price} GRAM? Дни прибавятся к оставшемуся времени.',
@@ -3345,10 +3353,15 @@
                 'gvip.collected': '💰 +{gold} 🪙 from {n} eagle(s){rest}',
                 'gvip.restFlying': ' · still flying: {n}',
                 'autoexp.buy': '🤖 Enable Auto-expeditions for {days} days for {price} Gram 💎',
-                'autoexp.active': '🤖 Auto-expedition active: {left} left',
+                'autoexp.onBtn': '🟢 Auto-expeditions: ON ({left} left) | ⏸️ Pause',
+                'autoexp.pausedBtn': '🟡 Auto-expeditions: PAUSED | ▶️ Resume',
+                'autoexp.onHint': 'The server collects gold and sends eagles again. Tap to pause.',
+                'autoexp.pausedHint': 'The bot is asleep: eagles return with gold and wait for you. The subscription keeps running — {left} left.',
+                'autoexp.extendBtn': '➕ Extend by {days} days for {price} Gram 💎',
+                'autoexp.paused': '⏸️ Auto-expeditions paused',
+                'autoexp.resumed': '▶️ Auto-expeditions running again',
                 'autoexp.left': '{d}d {h}h', 'autoexp.leftHours': '{h}h {m}m',
                 'autoexp.noteOff': 'The server collects gold from returned eagles and sends them again (−{meat} 🥩 per flight) — even while you are offline.',
-                'autoexp.noteOn': 'Tap to extend by {days} more days for {price} Gram — days add to the time left.',
                 'autoexp.resting': '😴 Resting without meat: <b>{n}</b> — they fly as soon as you top up meat.',
                 'autoexp.confirmBuy': 'Enable Auto-expeditions for {days} days for {price} GRAM?',
                 'autoexp.confirmExtend': 'Extend Auto-expeditions by {days} more days for {price} GRAM? Days add to the time left.',
@@ -3798,7 +3811,7 @@
         function slotBadge(slot) {
             if (isOnHunt(slot)) return huntNow() >= slot.huntUntil ? '🏹!' : '🏹';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
-            if (slot.autoRest && autoExpActive()) return '😴';
+            if (slot.autoRest && autoExpRunning()) return '😴';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
             return `${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels}`;
@@ -3945,7 +3958,7 @@
             if (isOnHunt(slot)) status = huntNow() >= slot.huntUntil ? t('hunt.farm.backStatus')
                 : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - huntNow()) });
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
-            else if (slot.autoRest && autoExpActive()) status = t('autoexp.restStatus');
+            else if (slot.autoRest && autoExpRunning()) status = t('autoexp.restStatus');
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
             else if (isFarmingEgg(slot)) status = t('farm.eggIn', { time: formatCountdown(slot.nextEggAt - nowSeconds()) });
@@ -5226,15 +5239,19 @@
         // у вернувшихся орлов и отправляет их снова, без мяса — «Отдыхает».
         // Клиент только показывает кнопку/таймер, покупает подписку и
         // подтягивает свежую ферму, когда кто-то вернулся.
-        let autoExp = { until: 0, price_gram: 10, days: 15 };
+        let autoExp = { until: 0, active: true, price_gram: 10, days: 15 };
         let autoExpLastSync = 0;
+        const AUTO_EXP_BUSY_KEY = 'auto-exp';   // одна блокировка на «Включить», «Пауза/Запустить» и «Продлить»
 
         function applyAutoExp(v) {
             if (!v || typeof v !== 'object') return;
-            autoExp = { until: Number(v.until) || 0, price_gram: Number(v.price_gram) || 0, days: Number(v.days) || 15 };
+            autoExp = { until: Number(v.until) || 0, active: v.active !== false, price_gram: Number(v.price_gram) || 0, days: Number(v.days) || 15 };
         }
 
+        // Подписка куплена и не истекла (время идёт и на паузе)
         function autoExpActive() { return autoExp.until > nowSeconds(); }
+        // Подписка есть И автоматизация ВКЛ (не на паузе) — сервер крутит цикл
+        function autoExpRunning() { return autoExpActive() && autoExp.active; }
         // «10 Gram», а не «10.00 Gram» — цена подписки обычно целая
         function autoExpPriceText() { const p = autoExp.price_gram; return Number.isInteger(p) ? String(p) : fmtGram(p); }
 
@@ -5249,27 +5266,74 @@
             if (!el) return;
             const price = autoExpPriceText();
             const active = autoExpActive();
-            const resting = active ? state.farm.filter(s => s.autoRest).length : 0;
+            const running = autoExpRunning();
+            const resting = running ? state.farm.filter(s => s.autoRest).length : 0;
             const meat = Number(CONFIG.expeditions && CONFIG.expeditions.cost_meat) || 1;
             // Остаток — в отдельном span (обновляется текстом каждую секунду), чтобы
             // кнопка не пересобиралась и нажатие в момент тика не терялось.
-            const html = active
-                ? `<button class="btn-primary autoexp-btn active" id="autoExpBtn" onclick="buyAutoExpedition()">${t('autoexp.active', { left: '<span id="autoExpLeft"></span>' })}</button>
-                   ${resting ? `<div class="autoexp-note">${t('autoexp.resting', { n: resting })}</div>` : ''}
-                   <div class="autoexp-note">${t('autoexp.noteOn', { days: autoExp.days, price })}</div>`
-                : `<button class="btn-primary autoexp-btn" id="autoExpBtn" onclick="buyAutoExpedition()">${t('autoexp.buy', { days: autoExp.days, price })}</button>
+            let html;
+            if (!active) {
+                html = `<button class="btn-primary autoexp-btn" id="autoExpBtn" onclick="buyAutoExpedition()">${t('autoexp.buy', { days: autoExp.days, price })}</button>
                    <div class="autoexp-note">${t('autoexp.noteOff', { meat })}</div>`;
+            } else if (running) {
+                html = `<button class="btn-primary autoexp-btn active" id="autoExpBtn" onclick="setAutoExpActive(false)">${t('autoexp.onBtn', { left: '<span id="autoExpLeft"></span>' })}</button>
+                   ${resting ? `<div class="autoexp-note">${t('autoexp.resting', { n: resting })}</div>` : ''}
+                   <div class="autoexp-note">${t('autoexp.onHint')}</div>
+                   <button class="btn-action autoexp-extend" id="autoExpExtendBtn" onclick="buyAutoExpedition()">${t('autoexp.extendBtn', { days: autoExp.days, price })}</button>`;
+            } else {
+                html = `<button class="btn-primary autoexp-btn paused" id="autoExpBtn" onclick="setAutoExpActive(true)">${t('autoexp.pausedBtn')}</button>
+                   <div class="autoexp-note">${t('autoexp.pausedHint', { left: '<span id="autoExpLeft"></span>' })}</div>
+                   <button class="btn-action autoexp-extend" id="autoExpExtendBtn" onclick="buyAutoExpedition()">${t('autoexp.extendBtn', { days: autoExp.days, price })}</button>`;
+            }
             setHTMLIfChanged(el, html, { allowInnerUpdates: true });
             const left = document.getElementById('autoExpLeft');
             if (left) { const txt = autoExpLeftText(); if (left.textContent !== txt) left.textContent = txt; }
             maybeSyncAutoExp();
         }
 
+        // ВКЛ / ПАУЗА. Шлём нужное состояние (а не «переключить»): второй тап
+        // двойного клика не вернёт всё обратно.
+        async function setAutoExpActive(active) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            // общий ключ с покупкой/продлением: после «Включить» на этом месте
+            // появляется «⏸️ Пауза», и второй тап двойного клика не должен её нажать
+            const key = AUTO_EXP_BUSY_KEY;
+            if (farmActionBusy.has(key)) return;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                const response = await fetch('api/farm/auto_expedition/active', { method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, active }) });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || t('market.serverError')); haptic.notify('warning');
+                    syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+                    return;
+                }
+                ok = true;
+                applyAutoExp(data.auto_expedition);
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (typeof data.gold === 'number') state.gold = data.gold;
+                if (typeof data.mnstr === 'number') state.mnstr = data.mnstr;
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                const c = data.cycle;
+                toast(t(active ? 'autoexp.resumed' : 'autoexp.paused')
+                    + (c && (c.collected || c.sent) ? t('autoexp.cycle', { gold: fmtGram(c.reward), sent: c.sent }) : ''));
+                renderAll();
+                saveLocally();
+            } catch (e) {
+                toast(t('market.serverError'));
+            } finally {
+                if (ok) setTimeout(() => farmActionBusy.delete(key), LIST_ACTION_HOLD_MS); else farmActionBusy.delete(key);
+            }
+        }
+
         // Сервер обрабатывает вернувшихся орлов раз в ~30 с; если на экране
         // кто-то уже вернулся (или «отдыхающему» хватает мяса) — подтягиваем
         // свежую ферму, не чаще раза в 15 с.
         function maybeSyncAutoExp() {
-            if (!autoExpActive() || offlineOnly || !state.userId) return;
+            if (!autoExpRunning() || offlineOnly || !state.userId) return;
             const meat = Number(CONFIG.expeditions && CONFIG.expeditions.cost_meat) || 1;
             const due = state.farm.some(s => (isOnExpedition(s) && expeditionReady(s) && !s.autoOff) || (s.autoRest && state.mnstr >= meat));
             if (!due || Date.now() - autoExpLastSync < 15000) return;
@@ -5306,7 +5370,7 @@
 
         async function buyAutoExpedition() {
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
-            const key = 'auto-exp-buy';
+            const key = AUTO_EXP_BUSY_KEY;
             if (farmActionBusy.has(key)) return;
             const price = autoExp.price_gram;
             const extending = autoExpActive();
@@ -7779,7 +7843,7 @@
                 modalSlot, slot.id, slotDeleteConfirm, slot.listingId || '', slot.huntUntil || 0,
                 isOnExpedition(slot), expeditionReady(slot), eggReady(slot),
                 isFullyFed(slot), isFarmingEgg(slot), slot.feedLevel, slot.feedTaps,
-                !!slot.autoOff, !!slot.autoRest, autoExpActive(),
+                !!slot.autoOff, !!slot.autoRest, autoExpActive(), autoExpRunning(),
             ].join('|');
         }
 
@@ -7900,7 +7964,7 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
-                ${autoExpActive() && (onExpedition || slot.autoRest) ? `
+                ${autoExpRunning() && (onExpedition || slot.autoRest) ? `
                     <p class="slot-modal-sub" style="margin-top:8px">${onExpedition ? t(slot.autoOff ? 'autoexp.offNote' : 'autoexp.onNote') : t('autoexp.restStatus')}</p>
                     <button class="btn-action" style="margin-top:6px; width:100%" onclick="toggleAutoExpEagle(modalSlot, ${onExpedition && slot.autoOff ? 'true' : 'false'})">${t(onExpedition && slot.autoOff ? 'autoexp.backBtn' : 'autoexp.offBtn')}</button>` : ''}
                 ${onExpedition

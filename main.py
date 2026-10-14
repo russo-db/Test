@@ -2851,7 +2851,7 @@ async def farm_expedition_collect(request: FarmSlotAction, x_telegram_init_data:
     # 🤖 Авто-экспедиции активны — сбор идёт тем же циклом: золото на баланс
     # и сразу новый вылет (или «Отдыхает»), а не выход орла из авто.
     row = await fetch_user(user_id)
-    if auto_expedition_until_of(row) > time.time():
+    if auto_expedition_until_of(row) > time.time() and auto_expedition_on(row):
         farm = read_farm(row.get("monsters"))
         i = request.slot_index
         if 0 <= i < len(farm) and not farm[i].get("auto_off") and (request.monster_id is None or farm[i]["id"] == request.monster_id) \
@@ -2933,8 +2933,15 @@ def auto_expedition_until_of(row: dict) -> float:
         return 0.0
 
 
+def auto_expedition_on(row: dict) -> bool:
+    """Флаг ВКЛ/ПАУЗА (auto_expedition_active). Нет поля — ВКЛ: так работали
+    подписки, купленные до появления паузы."""
+    return row.get("auto_expedition_active") is not False
+
+
 def auto_expedition_view(row: dict) -> dict:
-    return {"until": auto_expedition_until_of(row), "price_gram": AUTO_EXP_PRICE_GRAM, "days": AUTO_EXP_DAYS}
+    return {"until": auto_expedition_until_of(row), "active": auto_expedition_on(row),
+            "price_gram": AUTO_EXP_PRICE_GRAM, "days": AUTO_EXP_DAYS}
 
 
 def auto_exp_eligible(slot: dict) -> bool:
@@ -2944,6 +2951,8 @@ def auto_exp_eligible(slot: dict) -> bool:
 
 def auto_expedition_due(row: dict, now: float) -> bool:
     """Есть ли что делать — дешёвая проверка до CAS (фоновый проход по игрокам)."""
+    if not auto_expedition_on(row):
+        return False   # ⏸ пауза: игрока полностью игнорируем
     until = auto_expedition_until_of(row)
     if until <= 0:
         return False
@@ -2961,6 +2970,8 @@ def auto_expedition_compute(row: dict, now: float):
     если делать нечего. События обрабатываются по времени возвращения, общий
     запас мяса тратится в том же порядке, в каком орлы прилетали."""
     import heapq
+    if not auto_expedition_on(row):
+        return None    # ⏸ пауза: орлы вернутся с золотом и будут ждать ручного сбора
     until = auto_expedition_until_of(row)
     if until <= 0:
         return None
@@ -3069,7 +3080,7 @@ async def auto_expedition_worker():
             now = time.time()
             async for row in store.users.find(
                 {"auto_expedition_until": {"$gt": now - (EXPEDITION_DURATION_HOURS + 1) * 3600 - 7 * 86400}},
-                {"_id": 1, "monsters": 1, "auto_expedition_until": 1},
+                {"_id": 1, "monsters": 1, "auto_expedition_until": 1, "auto_expedition_active": 1},
             ):
                 if auto_expedition_due(row, now):
                     try:
@@ -3128,6 +3139,48 @@ async def auto_collect_response(user_id: int) -> dict:
             "ops": int(fresh.get("ops") or 0)}
 
 
+class AutoExpActiveRequest(BaseModel):
+    user_id: int
+    active: bool   # нужное состояние, а не «переключить»: двойной клик не включит и не выключит обратно
+
+
+@app.post("/api/farm/auto_expedition/active")
+async def farm_auto_expedition_active(request: AutoExpActiveRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """🟢 ВКЛ / 🟡 ПАУЗА купленной подписки. Время подписки идёт и на паузе.
+    На паузе сервер игрока не трогает: орлы возвращаются с золотом и ждут
+    ручного сбора. При запуске вернувшиеся за паузу (и не собранные) орлы
+    уходят в цикл с момента запуска (auto_expedition_since), не задним числом."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        now = time.time()
+        if auto_expedition_until_of(row) <= now:
+            raise HTTPException(status_code=400, detail="Подписка на авто-экспедиции не активна")
+        fields = {"auto_expedition_active": bool(request.active)}
+        if request.active and not auto_expedition_on(row):
+            fields["auto_expedition_since"] = now
+        return fields, {"auto_expedition": auto_expedition_view({**row, **fields})}
+
+    try:
+        result = await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось переключить авто-экспедиции — попробуй ещё раз")
+    cycle = None
+    if request.active:   # запуск — вернувшиеся орлы обрабатываются сразу
+        try:
+            cycle = await run_auto_expeditions(user_id)
+        except Exception as e:
+            traceback.print_exception(type(e), e, e.__traceback__)
+    fresh = await fetch_user(user_id)
+    result.update({"monsters": read_farm(fresh.get("monsters")), "gold": float(fresh.get("gold") or 0),
+                   "mnstr": float(fresh.get("mnstr") or 0), "ops": int(fresh.get("ops") or 0),
+                   "cycle": {k: cycle[k] for k in ("collected", "reward", "sent", "rested")} if cycle else None})
+    return result
+
+
 class AutoExpBuyRequest(BaseModel):
     user_id: int
     # Срок подписки, который игрок видел на кнопке, когда нажимал. Двойной клик
@@ -3159,8 +3212,9 @@ async def farm_auto_expedition_buy(request: AutoExpBuyRequest, x_telegram_init_d
         else:
             until = now + AUTO_EXP_DAYS * 86400
             fields["auto_expedition_since"] = now           # новый период — отсчёт с покупки
+            fields["auto_expedition_active"] = True         # только что купил — автоматизация ВКЛ
         fields["auto_expedition_until"] = until
-        return fields, {"coins": fields["coins"], "auto_expedition": {**auto_expedition_view(row), "until": until},
+        return fields, {"coins": fields["coins"], "auto_expedition": {**auto_expedition_view({**row, **fields}), "until": until},
                         "extended": current > now}
 
     try:
@@ -3581,7 +3635,7 @@ async def farm_expedition_vip_collect_all(request: NestAction, x_telegram_init_d
     pre = None
     try:
         row = await fetch_user(user_id)
-        if gold_eagle_vip(row) and auto_expedition_until_of(row) > time.time():
+        if gold_eagle_vip(row) and auto_expedition_until_of(row) > time.time() and auto_expedition_on(row):
             pre = await run_auto_expeditions(user_id)
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
