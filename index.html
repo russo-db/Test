@@ -2535,6 +2535,7 @@
                 'alchmarket.listed': '✅ Лот выставлен', 'alchmarket.bought': '✅ Куплено: {qty} × {name}', 'alchmarket.cancelled': 'Лот снят — ресурсы вернулись на Склад',
                 'alchmarket.shown': 'показаны первые {shown} из {total}',
                 'alchmarket.retry': '🔄 Повторить',
+                'alchmarket.closed': 'Этот ресурс сейчас нельзя выставить — тариф не задан. Свои лоты можно снять.',
                 'alchmarket.tab.rock_crystal': '💎 Кристаллы', 'alchmarket.tab.mountain_root': '🌿 Корни',
                 'alchmarket.tab.shimmer_mushroom': '🍄 Грибы', 'alchmarket.tab.blank_enchant_scroll': '📜 Свитки Заточки',
                 'alchmarket.icon.rock_crystal': '💎', 'alchmarket.icon.mountain_root': '🌿', 'alchmarket.icon.shimmer_mushroom': '🍄', 'alchmarket.icon.blank_enchant_scroll': '📜',
@@ -3069,6 +3070,7 @@
                 'alchmarket.listed': '✅ Lot listed', 'alchmarket.bought': '✅ Bought: {qty} × {name}', 'alchmarket.cancelled': 'Lot cancelled — resources returned to Storage',
                 'alchmarket.shown': 'showing first {shown} of {total}',
                 'alchmarket.retry': '🔄 Retry',
+                'alchmarket.closed': 'This resource cannot be listed right now — no rate is set. You can still cancel your lots.',
                 'alchmarket.tab.rock_crystal': '💎 Crystals', 'alchmarket.tab.mountain_root': '🌿 Roots',
                 'alchmarket.tab.shimmer_mushroom': '🍄 Mushrooms', 'alchmarket.tab.blank_enchant_scroll': '📜 Enchant Scrolls',
                 'alchmarket.icon.rock_crystal': '💎', 'alchmarket.icon.mountain_root': '🌿', 'alchmarket.icon.shimmer_mushroom': '🍄', 'alchmarket.icon.blank_enchant_scroll': '📜',
@@ -7169,8 +7171,11 @@
             const mine = alch.listings.filter(l => l.own && l.item === item);
             const others = alch.listings.filter(l => !l.own && l.item === item);
             const total = Number(alch.counts[item]) || others.length;
+            // тариф убрали из конфига — сервер такой ресурс не примет; честно
+            // говорим об этом вместо «0 🪙» с активной кнопкой
+            const closed = price <= 0;
             body.innerHTML = `
-                <p class="market-min-price-line">${t('alchmarket.fixedPrice', { price: fmtGold(price) })}</p>
+                <p class="market-min-price-line">${closed ? t('alchmarket.closed') : t('alchmarket.fixedPrice', { price: fmtGold(price) })}</p>
                 <div class="card glass-panel market-card alch-form">
                     <div class="alch-form-head">
                         <div class="alch-ic">${icon}</div>
@@ -7183,7 +7188,7 @@
                         <input class="pay-input" id="alchQty" type="number" inputmode="numeric" min="1" max="${Math.max(1, have)}" step="1" value="${qty}" aria-label="${t('alchmarket.qty')}" oninput="alchUpdateTotal('${item}')">
                         <span class="alch-total" id="alchTotal">${t('alchmarket.total', { qty, price: fmtGold(price), total: fmtGold(qty * price) })}</span>
                     </div>
-                    <button class="btn-primary" id="alchListBtn" ${have < 1 ? 'disabled' : ''} onclick="alchemyList('${item}')">${t('alchmarket.listBtn')}</button>
+                    <button class="btn-primary" id="alchListBtn" ${have < 1 || closed ? 'disabled' : ''} onclick="alchemyList('${item}')">${t('alchmarket.listBtn')}</button>
                 </div>
                 ${mine.map(l => `
                     <div class="card glass-panel market-card market-own-card">
