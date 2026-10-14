@@ -587,7 +587,9 @@
         .tier-heading b { color: var(--text-muted); font-size: 12px; }
 
         /* ---------- Meat ---------- */
-        .balance-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 13px; }
+        /* minmax(0, 1fr): колонка не шире трети — иначе на экране 320px крупное
+           «5.00K» распирало третью карточку («Золото») за край экрана. */
+        .balance-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 13px; }
         .balance-card { padding: 15px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease; }
         .balance-card img { width: 40px; height: 40px; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.35)); }
         .balance-card .balance-icon-svg { width: 40px; height: 40px; margin-bottom: 4px; filter: drop-shadow(0 0 8px rgba(255, 176, 32, 0.4)); }
@@ -597,6 +599,13 @@
         .balance-card.token { cursor: pointer; }
         .balance-card.token .balance-label, .balance-card.token .balance-rate { color: var(--accent-token); }
         .balance-card.token:active { transform: scale(0.95); }
+        .balance-card { min-width: 0; }
+        @media (max-width: 359px) {
+            .balance-cards { gap: 8px; }
+            .balance-card { padding: 12px 6px; }
+            .balance-card img, .balance-card .balance-icon-svg { width: 34px; height: 34px; }
+            .balance-card b { font-size: 16px; }
+        }
         .balance-hint { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-top: 3px; }
 
         .token-box { max-height: 84vh; overflow-y: auto; }
@@ -941,7 +950,8 @@
         }
         .nest-miner .nest-miner-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, rgba(251, 191, 36, 0.55), rgba(251, 191, 36, 0.05)); transition: height 0.3s ease; }
         .nest-miner span { position: relative; z-index: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
-        .nest-miner-empty { border-style: dashed; opacity: 0.55; font-size: 10px; color: var(--text-muted); text-align: center; padding: 0 4px; }
+        /* «нет осколков» — надпись, а не плитка осколка: ширина по тексту, иначе слово обрезалось в квадрате 44px */
+        .nest-miner-empty { border-style: dashed; opacity: 0.55; font-size: 11px; color: var(--text-muted); text-align: center; width: auto; padding: 0 14px; white-space: nowrap; }
 
         .nest-ladder { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; margin-bottom: 4px; }
         .nest-ladder-row { display: flex; align-items: center; gap: 10px; background: var(--panel-soft); border: 1px solid var(--glass-border); border-radius: 14px; padding: 9px 11px; }
