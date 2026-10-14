@@ -2531,7 +2531,7 @@
                 'alchmarket.lotLine': '{name} — {qty} шт.', 'alchmarket.lotPrice': 'Итоговая цена: {total} Золота 🪙',
                 'alchmarket.noOwnLots': 'У тебя нет лотов на продаже.', 'alchmarket.empty': 'Пока никто ничего не продаёт — загляни позже.',
                 'alchmarket.badQty': 'Укажи количество от 1 до {max}', 'alchmarket.notEnough': 'На складе не хватает',
-                'alchmarket.confirm': 'Выставить {qty} × {name} за {total} 🪙? Ресурсы сразу уйдут со Склада в лот.',
+                'alchmarket.confirm': 'Выставить {qty} × {name} за {total} золота? Ресурсы сразу уйдут со Склада в лот.',
                 'alchmarket.listed': '✅ Лот выставлен', 'alchmarket.bought': '✅ Куплено: {qty} × {name}', 'alchmarket.cancelled': 'Лот снят — ресурсы вернулись на Склад',
                 'alchmarket.shown': 'показаны первые {shown} из {total}',
                 'alchmarket.retry': '🔄 Повторить',
@@ -3066,7 +3066,7 @@
                 'alchmarket.lotLine': '{name} — {qty} pcs', 'alchmarket.lotPrice': 'Total price: {total} Gold 🪙',
                 'alchmarket.noOwnLots': 'You have no lots for sale.', 'alchmarket.empty': 'Nothing for sale yet — check back later.',
                 'alchmarket.badQty': 'Enter a quantity from 1 to {max}', 'alchmarket.notEnough': 'Not enough in storage',
-                'alchmarket.confirm': 'List {qty} × {name} for {total} 🪙? The resources leave your Storage right away.',
+                'alchmarket.confirm': 'List {qty} × {name} for {total} gold? The resources leave your Storage right away.',
                 'alchmarket.listed': '✅ Lot listed', 'alchmarket.bought': '✅ Bought: {qty} × {name}', 'alchmarket.cancelled': 'Lot cancelled — resources returned to Storage',
                 'alchmarket.shown': 'showing first {shown} of {total}',
                 'alchmarket.retry': '🔄 Retry',
@@ -3901,6 +3901,51 @@
         function goldify(html) {
             return String(html == null ? '' : html).split('🪙').join(GOLD_ICON_HTML);
         }
+
+        // Эмодзи 🪙 каждая система рисует по-своему: на части телефонов и в
+        // Telegram Desktop — серой/серебряной монетой, где-то квадратиком.
+        // goldify() вызывали не везде (Алхимия на рынке, Заточка, окна…), и у
+        // части игроков золото выглядело серым. Теперь любой 🪙, попавший в
+        // интерфейс любым путём (innerHTML, textContent), сразу заменяется той
+        // же золотой SVG-монетой, что в шапке.
+        (function goldifyWholeDom() {
+            const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'OPTION', 'TITLE', 'NOSCRIPT']);
+            function fixText(node) {
+                const v = node.nodeValue;
+                const parent = node.parentNode;
+                if (!v || v.indexOf('🪙') === -1 || !parent || SKIP.has(parent.nodeName)) return;
+                const frag = document.createDocumentFragment();
+                v.split('🪙').forEach((part, i) => {
+                    if (i) {
+                        const tpl = document.createElement('template');
+                        tpl.innerHTML = GOLD_ICON_HTML;
+                        frag.appendChild(tpl.content.firstChild);
+                    }
+                    if (part) frag.appendChild(document.createTextNode(part));
+                });
+                parent.replaceChild(frag, node);
+            }
+            function scan(root) {
+                if (!root) return;
+                if (root.nodeType === 3) { fixText(root); return; }
+                if (root.nodeType !== 1 || SKIP.has(root.nodeName)) return;
+                const found = [];
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                let n;
+                while ((n = walker.nextNode())) if (n.nodeValue.indexOf('🪙') !== -1) found.push(n);
+                found.forEach(fixText);
+            }
+            function start() {
+                new MutationObserver(muts => {
+                    for (const m of muts) {
+                        if (m.type === 'characterData') fixText(m.target);
+                        else m.addedNodes.forEach(scan);
+                    }
+                }).observe(document.body, { childList: true, characterData: true, subtree: true });
+                scan(document.body);
+            }
+            if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+        })();
 
         function setHTMLIfChanged(el, html, opts) {
             if (!el) return false;
