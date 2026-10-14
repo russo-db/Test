@@ -7323,6 +7323,11 @@
             }
         }
 
+        // Повторяемые покупки (их законно делают несколько раз подряд): защита
+        // снималась сразу после ответа, и второй тап через ~0.3 с покупал ещё
+        // раз — мясо у Купца вдвое, энергию Арены дважды. Держим 0.7 с.
+        buyMeatFromMerchant = guardMarketAction(buyMeatFromMerchant, () => 'merchant-meat-hold', LIST_ACTION_HOLD_MS);
+        arenaBuyEnergy = guardMarketAction(arenaBuyEnergy, () => 'arena-energy-hold', LIST_ACTION_HOLD_MS);
         alchemyList = guardMarketAction(alchemyList, () => 'alchemy-trade', LIST_ACTION_HOLD_MS);
         alchemyBuy = guardMarketAction(alchemyBuy, () => 'alchemy-trade', LIST_ACTION_HOLD_MS);
         alchemyCancel = guardMarketAction(alchemyCancel, () => 'alchemy-trade', LIST_ACTION_HOLD_MS);
