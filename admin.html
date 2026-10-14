@@ -772,7 +772,7 @@
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>День (UTC)</th><th>Золото добыто</th><th>→ крафт</th><th>→ мясо</th><th>Мяса получено</th>
+                        <th>День (UTC)</th><th>Золото добыто</th><th title="Золото, которое игроки забрали кнопкой «Забрать дивиденды» в этот день">← дивиденды</th><th>→ крафт</th><th>→ мясо</th><th>Мяса получено</th>
                         <th>→ кланы</th><th>→ Арена</th><th>→ Охота</th><th>Скрещ. за мясо</th><th>Скрещ. за GRAM</th>
                     </tr></thead>
                     <tbody id="economyDaily"></tbody>
@@ -2191,10 +2191,10 @@ async function loadEconomy() {
     const d = (r, k) => fmtNum(Number(r[k]) || 0);
     document.getElementById('economyDaily').innerHTML = rows.length ? rows.map(r => `
         <tr>
-            <td>${r.day}</td><td>${d(r, 'gold_expeditions')}</td><td>${d(r, 'gold_craft')}</td><td>${d(r, 'gold_to_meat')}</td>
+            <td>${r.day}</td><td>${d(r, 'gold_expeditions')}</td><td>${d(r, 'gold_shares')}</td><td>${d(r, 'gold_craft')}</td><td>${d(r, 'gold_to_meat')}</td>
             <td>${d(r, 'meat_from_gold')}</td><td>${d(r, 'gold_clans')}</td><td>${d(r, 'gold_arena')}</td><td>${d(r, 'gold_hunt')}</td>
             <td>${d(r, 'fusion_tries_meat')}</td><td>${d(r, 'fusion_tries_gram')}</td>
-        </tr>`).join('') : '<tr><td colspan="10" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="11" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
 }
 document.getElementById('economyRefreshBtn').onclick = loadEconomy;
 
