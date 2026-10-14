@@ -417,6 +417,7 @@
                     <option value="eagles">Орлы</option>
                     <option value="equip">Снаряжение</option>
                     <option value="resources">Ресурсы</option>
+                    <option value="alchemy">Алхимия (за золото)</option>
                 </select>
                 <button id="tradesLoadBtn" class="primary">Показать</button>
                 <span class="muted" id="tradesSince" style="font-size:12px;"></span>
@@ -2736,6 +2737,8 @@ document.getElementById('huntFlightSaveBtn').onclick = async e => {
     });
 };
 /* ---------- 🛒 Сделки рынка ---------- */
+// Алхимия торгует за золото, остальные отделы — за GRAM
+function tradeCur(t) { return t.currency === 'gold' ? '🪙' : 'GRAM'; }
 function tradePerson(id, name) {
     if (id === null || id === undefined) return '<span class="muted">не найден</span>';
     return `<span>${escHtml(name) || '<span class="muted">без имени</span>'} <code>${id}</code></span>`;
@@ -2761,10 +2764,10 @@ async function loadTradesAdmin() {
                 <td data-label="Время">${fmtDate(t.ts)}</td>
                 <td data-label="Отдел">${escHtml(t.market_label)}</td>
                 <td data-label="Товар">${escHtml(t.item_label)}</td>
-                <td data-label="Цена"><div><b>${fmtNum(t.price_gram)} GRAM</b>${t.market === 'resources' && t.amount ? `<br><span class="muted">${fmtNum(t.price_gram / t.amount)} за шт.</span>` : ''}</div></td>
+                <td data-label="Цена"><div><b>${fmtNum(t.price_gram)} ${tradeCur(t)}</b>${(t.market === 'resources' || t.market === 'alchemy') && t.amount ? `<br><span class="muted">${fmtNum(t.price_gram / t.amount)} за шт.</span>` : ''}</div></td>
                 <td data-label="Продавец">${tradePerson(t.seller_id, t.seller_name)}</td>
                 <td data-label="Покупатель">${tradePerson(t.buyer_id, t.buyer_name)}</td>
-                <td data-label="Продавцу">${fmtNum(t.seller_credit)} GRAM</td>
+                <td data-label="Продавцу">${fmtNum(t.seller_credit)} ${tradeCur(t)}</td>
             </tr>`).join('') || '<tr><td colspan="7" class="muted">Сделок нет</td></tr>';
         document.getElementById('tradesLedgerBody').innerHTML = r.ledger_trades.map(t => `
             <tr>

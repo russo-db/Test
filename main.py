@@ -119,6 +119,7 @@ def apply_config(cfg: dict):
     global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
     global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
     global RESOURCE_MARKET_MIN_UNIT_PRICE
+    global ALCHEMY_MARKET_CFG, ALCHEMY_MARKET_PRICES, ALCHEMY_MARKET_MAX_QTY
     global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
@@ -192,6 +193,12 @@ def apply_config(cfg: dict):
         k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price_per_unit") or {}).items()
     }
     RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
+    # Рынок → «Алхимия»: ресурсы Охоты за ЗОЛОТО по жёсткому тарифу системы за
+    # 1 шт. (игрок цену не вводит), без комиссии — продавцу вся сумма.
+    ALCHEMY_MARKET_CFG = CONFIG.get("alchemy_market") or {}
+    ALCHEMY_MARKET_PRICES = {k: float(v) for k, v in (ALCHEMY_MARKET_CFG.get("unit_price_gold") or {}).items()
+                             if float(v) > 0}
+    ALCHEMY_MARKET_MAX_QTY = max(1, int(_cfg_num(ALCHEMY_MARKET_CFG, "max_quantity", 100000)))
     ARENA_SEASON_CFG = CONFIG.get("arena_season") or {}
     ARENA_SEASON_DAYS = int(ARENA_SEASON_CFG.get("days", 20))
     ARENA_SEASON_REWARDS = ARENA_SEASON_CFG.get("rewards") or [
@@ -7078,6 +7085,136 @@ async def resource_market_cancel(request: ResourceMarketCancelRequest, x_telegra
     }
 
 
+# --- РЫНОК → «АЛХИМИЯ»: P2P-торговля ресурсами Охоты (Кристаллы, Корни,
+# Грибы, Пустые свитки заточки) за ЗОЛОТО. Цена — только тариф системы за
+# 1 шт. × количество (игрок вводит лишь количество), комиссии нет. Ресурсы
+# списываются со Склада Охоты в момент выставления и хранятся в лоте;
+# снятие возвращает их, покупка зачисляет покупателю. Витрина анонимна:
+# чужие лоты уходят клиенту без seller_id/имени. ---
+
+class AlchemyMarketListRequest(BaseModel):
+    user_id: int
+    item: str
+    quantity: int
+
+
+class AlchemyMarketLotRequest(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+def alchemy_market_view(doc: dict, viewer_id: int) -> dict:
+    own = int(doc.get("seller_id") or 0) == int(viewer_id)
+    out = {"id": doc["id"], "item": doc.get("item"), "quantity": int(doc.get("quantity") or 0),
+           "unit_price_gold": float(doc.get("unit_price_gold") or 0),
+           "total_price_gold": float(doc.get("total_price_gold") or 0),
+           "created_at": doc.get("created_at"), "own": own}
+    if own:
+        out["seller_id"] = viewer_id   # только своим лотам — для «Мои лоты»
+    return out
+
+
+async def alchemy_market_wallet(user_id: int) -> dict:
+    fresh = await store.get(user_id)
+    return {"hunt_items": hunt_items_of(fresh), "gold": float(fresh.get("gold") or 0), "ops": int(fresh.get("ops") or 0)}
+
+
+@app.get("/api/market/alchemy/listings")
+async def alchemy_market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    viewer = authenticate(x_telegram_init_data, user_id)
+    try:
+        groups = {item: {"item": item} for item in ALCHEMY_MARKET_PRICES}
+        # тариф фиксированный — внутри предмета лоты идут по очереди (старые первыми)
+        items, counts = await store.listings_view(store.alchemy_market, viewer, groups, MARKET_PER_GROUP,
+                                                  sort_field="created_at")
+        return {"listings": [alchemy_market_view(d, viewer) for d in items], "counts": counts,
+                "per_group": MARKET_PER_GROUP, "prices": ALCHEMY_MARKET_PRICES,
+                "max_quantity": ALCHEMY_MARKET_MAX_QTY, **(await alchemy_market_wallet(viewer))}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить лоты Алхимии — попробуй ещё раз")
+
+
+@app.post("/api/market/alchemy/list")
+async def alchemy_market_list(request: AlchemyMarketListRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    unit = ALCHEMY_MARKET_PRICES.get(request.item)
+    if not unit:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя выставить в Алхимии")
+    qty = int(request.quantity)
+    if qty < 1:
+        raise HTTPException(status_code=400, detail="Количество — от 1 шт.")
+    if qty > ALCHEMY_MARKET_MAX_QTY:
+        raise HTTPException(status_code=400, detail=f"Не больше {ALCHEMY_MARKET_MAX_QTY} шт. в одном лоте")
+
+    def compute(row):
+        items = hunt_items_of(row)
+        if items.get(request.item, 0) < qty:
+            raise HTTPException(status_code=400, detail=f"На Складе не хватает: {HUNT_ITEM_NAMES.get(request.item, request.item)}")
+        items[request.item] -= qty   # заморозка: ресурс уходит в лот сразу
+        return {"hunt_items": items}, {}
+
+    try:
+        await run_farm_action(user_id, compute)
+        try:
+            listing_id = await store.create_alchemy_listing(user_id, request.item, qty, unit, int(time.time()))
+        except Exception as e:   # лот не записался — ресурс возвращается, а не теряется
+            traceback.print_exception(type(e), e, e.__traceback__)
+            await store._give_hunt_item(user_id, request.item, qty)
+            raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
+        return {"status": "success", "listing_id": listing_id, "total_price_gold": round(unit * qty, 6),
+                **(await alchemy_market_wallet(user_id))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
+
+
+@app.post("/api/market/alchemy/buy")
+async def alchemy_market_buy(request: AlchemyMarketLotRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        result = await store.buy_alchemy_listing(user_id, request.listing_id)
+        if isinstance(result, str):
+            messages = {"not_found": "Лот уже продан или снят с продажи", "own_listing": "Нельзя купить свой же лот",
+                        "insufficient_funds": "Не хватает золота"}
+            raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось купить"))
+        try:
+            total = float(result.get("total_price_gold") or 0)
+            await store.add_market_trade({
+                "ts": time.time(), "market": "alchemy", "item": result.get("item"), "amount": int(result.get("quantity") or 0),
+                "price_gram": total, "seller_credit": total, "currency": "gold",
+                "seller_id": result.get("seller_id"), "seller_name": "", "buyer_id": user_id,
+                "listed_at": result.get("created_at"),
+            })
+        except Exception as e:
+            print(f"[market] alchemy trade log failed: {type(e).__name__}: {e}")
+        return {"status": "success", "item": result.get("item"), "quantity": result.get("quantity"),
+                **(await alchemy_market_wallet(user_id))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось купить — попробуй ещё раз")
+
+
+@app.post("/api/market/alchemy/cancel")
+async def alchemy_market_cancel(request: AlchemyMarketLotRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        result = await store.cancel_alchemy_listing(user_id, request.listing_id)
+        if result != "ok":
+            messages = {"not_found": "Лот уже продан или снят с продажи", "not_owner": "Это не твой лот"}
+            raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось снять лот"))
+        return {"status": "success", **(await alchemy_market_wallet(user_id))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось снять лот — попробуй ещё раз")
+
+
 @app.get("/tonconnect-manifest.json")
 async def tonconnect_manifest():
     """Манифест для TON Connect. Адрес берётся из WEB_APP_URL, чтобы не хардкодить домен."""
@@ -7887,7 +8024,7 @@ async def admin_simulate_new_day(user_id: int, _: None = Depends(require_admin))
 MARKET_BUY_SOURCES = {
     "/api/market/buy": "eagles", "/api/market/equip/buy": "equip", "/api/market/resources/buy": "resources",
 }
-MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resources": "Ресурсы"}
+MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resources": "Ресурсы", "alchemy": "Алхимия"}
 
 
 def _market_commission(market: str) -> float:
@@ -7905,6 +8042,8 @@ def market_trade_item_label(t: dict) -> str:
         return (names.get(grade) or item) + (f" [+{rest[0]}]" if rest else "")
     if market == "resources":
         return f"{int(t.get('amount') or 0)} × {'Небесные Осколки' if item == 'shards' else 'Частички'}"
+    if market == "alchemy":
+        return f"{int(t.get('amount') or 0)} × {HUNT_ITEM_NAMES.get(item, item)}"
     return item
 
 

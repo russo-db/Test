@@ -207,6 +207,7 @@ class MongoStore:
         self.market = client[db_name]["market_listings"]
         self.equip_market = client[db_name]["equip_listings"]
         self.resource_market = client[db_name]["resource_listings"]
+        self.alchemy_market = client[db_name]["alchemy_listings"]
         self.merchant = client[db_name]["merchant_state"]
         self.nest_global = client[db_name]["nest_state"]
         self.arena_season = client[db_name]["arena_season"]
@@ -257,6 +258,8 @@ class MongoStore:
             (self.equip_market, [("grade", 1), ("price_gram", 1)], {}),
             (self.resource_market, [("resource", 1), ("price_gram", 1)], {}),
             (self.resource_market, [("resource", 1), ("unit_price", 1)], {}),
+            (self.alchemy_market, "seller_id", {}),
+            (self.alchemy_market, [("item", 1), ("created_at", 1)], {}),
             (self.egg_log, [("user_id", 1), ("ts", -1)], {}),
             (self.user_activity, "date", {}),
             (self.daily_claims, [("ts", -1)], {}),
@@ -917,6 +920,81 @@ class MongoStore:
             return "not_owner" if exists else "not_found"
 
         await self._give_equip_item(seller_id, listing)   # вместе с уровнем заточки
+        return "ok"
+
+    # --- РЫНОК → «АЛХИМИЯ»: ресурсы Охоты за ЗОЛОТО по фиксированному тарифу.
+    # Ресурсы продавца списываются в main.py (CAS по ops вместе с проверкой
+    # остатка) ДО создания лота и лежат в самом лоте; при снятии — обратно
+    # на Склад Охоты. Золото покупателя списывается атомарно ($gte), продавцу
+    # зачисляется вся сумма (комиссии нет). Порядок «проверка → захват лота →
+    # списание → откат при отказе» — как у остальных отделов рынка. ---
+
+    async def create_alchemy_listing(self, seller_id: int, item: str, quantity: int,
+                                     unit_price: float, ts: int) -> str:
+        listing = {
+            "seller_id": seller_id, "item": item, "quantity": int(quantity),
+            "unit_price_gold": float(unit_price), "total_price_gold": round(float(unit_price) * int(quantity), 6),
+            "created_at": ts,
+        }
+        result = await self.alchemy_market.insert_one(listing)
+        return str(result.inserted_id)
+
+    async def _give_hunt_item(self, user_id: int, item: str, quantity: int) -> None:
+        # ops: 1 — иначе параллельное действие Охоты (CAS по ops с $set всего
+        # hunt_items) затёрло бы зачисление
+        await self.users.update_one({"_id": user_id}, {"$inc": {f"hunt_items.{item}": int(quantity), "ops": 1}})
+
+    async def buy_alchemy_listing(self, buyer_id: int, listing_id: str):
+        """Словарь лота при успехе или код отказа: not_found / own_listing /
+        insufficient_funds."""
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+        lot = await self.alchemy_market.find_one({"_id": oid}, {"seller_id": 1, "total_price_gold": 1})
+        if not lot:
+            return "not_found"
+        if int(lot["seller_id"]) == int(buyer_id):
+            return "own_listing"
+        doc = await self.users.find_one({"_id": buyer_id}, {"gold": 1})
+        if not doc or float(doc.get("gold") or 0) < float(lot.get("total_price_gold") or 0):
+            return "insufficient_funds"
+
+        listing = await self.alchemy_market.find_one_and_delete({"_id": oid})
+        if not listing:
+            return "not_found"
+        price = float(listing["total_price_gold"])
+        result = await self.users.update_one(
+            {"_id": buyer_id, "gold": {"$gte": price}},
+            {"$inc": {"gold": -price, "ops": 1}},
+        )
+        if result.modified_count == 0:
+            await self.alchemy_market.insert_one(listing)
+            return "insufficient_funds"
+        await self._give_hunt_item(buyer_id, listing["item"], listing["quantity"])
+        await self.users.update_one(
+            {"_id": listing["seller_id"]},
+            {"$inc": {"gold": price, "ops": 1}},
+        )
+        listing["id"] = str(listing.pop("_id"))
+        return listing
+
+    async def cancel_alchemy_listing(self, seller_id: int, listing_id: str) -> str:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        try:
+            oid = ObjectId(listing_id)
+        except InvalidId:
+            return "not_found"
+        listing = await self.alchemy_market.find_one_and_delete({"_id": oid, "seller_id": seller_id})
+        if not listing:
+            exists = await self.alchemy_market.find_one({"_id": oid})
+            return "not_owner" if exists else "not_found"
+        await self._give_hunt_item(seller_id, listing["item"], listing["quantity"])
         return "ok"
 
     # --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
