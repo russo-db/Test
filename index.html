@@ -441,6 +441,28 @@
         .alch-row .alch-list-btn { width: 100%; margin-top: 8px; padding: 9px 12px; font-size: 13px; }
         .alch-row { align-items: flex-start; }
         .alch-empty { font-size: 12px; color: var(--text-muted); padding: 4px 0; }
+        /* Плотные тёмные подложки: общее правило #market .glass-panel почти
+           прозрачное — текст Алхимии сливался с фоновой картинкой рынка */
+        #market .alch-panel {
+            background: rgba(6, 3, 16, 0.82); border-color: rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        #marketDeptAlchemy > .market-min-price-line {
+            background: rgba(6, 3, 16, 0.78); border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px; padding: 9px 11px; margin-bottom: 12px; color: #e9e2f5; line-height: 1.4;
+        }
+        #market .alch-panel .alch-sub { color: #c9bfdc; }
+        #market .alch-sell .pay-input { background: rgba(0, 0, 0, 0.5); border-color: rgba(255, 255, 255, 0.2); color: #fff; }
+        /* «Купить» — зелёная, как на других отделах (общее #market .btn-action
+           делало её полупрозрачной с тёмным текстом — выглядела выключенной) */
+        #market .alch-row .btn-action.btn-buy {
+            background: linear-gradient(135deg, var(--accent-slime), #22a559); color: #06210f;
+            border-color: rgba(255, 255, 255, 0.25); backdrop-filter: none; -webkit-backdrop-filter: none;
+        }
+        #market .alch-row .btn-action.btn-buy:disabled { filter: grayscale(0.6) brightness(0.7); }
+        #market .alch-row .btn-action:not(.btn-buy) {
+            background: rgba(6, 3, 16, 0.9); border-color: rgba(255, 255, 255, 0.22); color: #fff;
+        }
         .market-own-card { border-color: rgba(255, 176, 32, 0.45); background: linear-gradient(160deg, rgba(255, 176, 32, 0.12), rgba(15, 9, 26, 0.55)); }
         .market-section-empty { font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 0 2px 10px; }
         .market-best-badge {
