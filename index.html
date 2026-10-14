@@ -6185,6 +6185,10 @@
         // баланс не менялся до перезахода. То же после отказа покупки/снятия:
         // сервер знает больше, чем клиент (лот продан, GRAM потрачены и т. п.).
         const ownLotIds = {};
+        // Номер последней загрузки витрины по отделу: две загрузки подряд (после
+        // снятия + переключение вкладки) могли прийти в обратном порядке, и
+        // старый ответ возвращал на экран уже снятый или проданный лот.
+        const marketLoadSeq = { eagles: 0, equip: 0, resources: 0 };
         let marketResyncAt = 0;
         function resyncAfterMarketChange() {
             if (offlineOnly || !state.userId || Date.now() - marketResyncAt < 3000) return;
@@ -6203,10 +6207,12 @@
 
         async function loadMarketListings() {
             if (offlineOnly || !state.userId) { renderMarket(); return; }
+            const seq = ++marketLoadSeq['eagles'];
             try {
                 const response = await fetch(`api/market/listings?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('market fetch failed');
                 const data = await response.json();
+                if (seq !== marketLoadSeq['eagles']) return;   // пришёл ответ старее последнего запроса
                 state.marketListings = data.listings || [];
                 noteOwnLots('eagles', state.marketListings);
                 state.marketCounts = data.counts || {};
@@ -6451,10 +6457,12 @@
 
         async function loadEquipMarketListings() {
             if (offlineOnly || !state.userId) { renderEquipMarket(); return; }
+            const seq = ++marketLoadSeq['equip'];
             try {
                 const response = await fetch(`api/market/equip/listings?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('equip market fetch failed');
                 const data = await response.json();
+                if (seq !== marketLoadSeq['equip']) return;   // пришёл ответ старее последнего запроса
                 state.equipMarketListings = data.listings || [];
                 noteOwnLots('equip', state.equipMarketListings);
                 state.equipMarketCounts = data.counts || {};
@@ -6733,10 +6741,12 @@
 
         async function loadResourceMarketListings() {
             if (offlineOnly || !state.userId) { renderResourceMarket(); return; }
+            const seq = ++marketLoadSeq['resources'];
             try {
                 const response = await fetch(`api/market/resources/listings?user_id=${state.userId}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('resource market fetch failed');
                 const data = await response.json();
+                if (seq !== marketLoadSeq['resources']) return;   // пришёл ответ старее последнего запроса
                 state.resourceMarketListings = data.listings || [];
                 noteOwnLots('resources', state.resourceMarketListings);
                 state.resourceMarketCounts = data.counts || {};
