@@ -119,7 +119,7 @@ def apply_config(cfg: dict):
     global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
     global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
     global RESOURCE_MARKET_MIN_UNIT_PRICE
-    global ALCHEMY_MARKET_CFG, ALCHEMY_MARKET_PRICES, ALCHEMY_MARKET_MAX_QTY
+    global ALCHEMY_MARKET_CFG, ALCHEMY_MARKET_PRICES, ALCHEMY_MARKET_MAX_QTY, ALCHEMY_MARKET_COMMISSION
     global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
@@ -194,8 +194,9 @@ def apply_config(cfg: dict):
     }
     RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
     # Рынок → «Алхимия»: ресурсы Охоты за ЗОЛОТО по жёсткому тарифу системы за
-    # 1 шт. (игрок цену не вводит), без комиссии — продавцу вся сумма.
+    # 1 шт. (игрок цену не вводит); комиссия рынка — как у остальных отделов.
     ALCHEMY_MARKET_CFG = CONFIG.get("alchemy_market") or {}
+    ALCHEMY_MARKET_COMMISSION = min(max(float(ALCHEMY_MARKET_CFG.get("commission", 0.10)), 0.0), 1.0)
     ALCHEMY_MARKET_PRICES = {k: float(v) for k, v in (ALCHEMY_MARKET_CFG.get("unit_price_gold") or {}).items()
                              if float(v) > 0}
     ALCHEMY_MARKET_MAX_QTY = max(1, int(_cfg_num(ALCHEMY_MARKET_CFG, "max_quantity", 100000)))
@@ -7088,7 +7089,7 @@ async def resource_market_cancel(request: ResourceMarketCancelRequest, x_telegra
 
 # --- РЫНОК → «АЛХИМИЯ»: P2P-торговля ресурсами Охоты (Кристаллы, Корни,
 # Грибы, Пустые свитки заточки) за ЗОЛОТО. Цена — только тариф системы за
-# 1 шт. × количество (игрок вводит лишь количество), комиссии нет. Ресурсы
+# 1 шт. × количество (игрок вводит лишь количество), комиссия рынка 10% (alchemy_market.commission). Ресурсы
 # списываются со Склада Охоты в момент выставления и хранятся в лоте;
 # снятие возвращает их, покупка зачисляет покупателю. Витрина анонимна:
 # чужие лоты уходят клиенту без seller_id/имени. ---
@@ -7133,7 +7134,7 @@ async def alchemy_market_listings(user_id: int, x_telegram_init_data: Optional[s
                                                   sort_field="created_at")
         return {"listings": [alchemy_market_view(d, viewer) for d in items], "counts": counts,
                 "per_group": MARKET_PER_GROUP, "prices": ALCHEMY_MARKET_PRICES,
-                "max_quantity": ALCHEMY_MARKET_MAX_QTY, **(await alchemy_market_wallet(viewer))}
+                "commission": ALCHEMY_MARKET_COMMISSION, "max_quantity": ALCHEMY_MARKET_MAX_QTY, **(await alchemy_market_wallet(viewer))}
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось загрузить лоты Алхимии — попробуй ещё раз")
@@ -7181,7 +7182,7 @@ async def alchemy_market_list(request: AlchemyMarketListRequest, x_telegram_init
 async def alchemy_market_buy(request: AlchemyMarketLotRequest, x_telegram_init_data: Optional[str] = Header(None)):
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        result = await store.buy_alchemy_listing(user_id, request.listing_id)
+        result = await store.buy_alchemy_listing(user_id, request.listing_id, ALCHEMY_MARKET_COMMISSION)
         if isinstance(result, str):
             messages = {"not_found": "Лот уже продан или снят с продажи", "own_listing": "Нельзя купить свой же лот",
                         "insufficient_funds": "Не хватает золота"}
@@ -7190,7 +7191,7 @@ async def alchemy_market_buy(request: AlchemyMarketLotRequest, x_telegram_init_d
             total = float(result.get("total_price_gold") or 0)
             await store.add_market_trade({
                 "ts": time.time(), "market": "alchemy", "item": result.get("item"), "amount": int(result.get("quantity") or 0),
-                "price_gram": total, "seller_credit": total, "currency": "gold",
+                "price_gram": total, "seller_credit": float(result.get("seller_credit") or 0), "currency": "gold",
                 "seller_id": result.get("seller_id"), "seller_name": "", "buyer_id": user_id,
                 "listed_at": result.get("created_at"),
             })
@@ -8035,7 +8036,7 @@ MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resourc
 
 def _market_commission(market: str) -> float:
     return {"eagles": MARKET_COMMISSION, "equip": EQUIP_MARKET_COMMISSION,
-            "resources": RESOURCE_MARKET_COMMISSION}.get(market, 0.1)
+            "resources": RESOURCE_MARKET_COMMISSION, "alchemy": ALCHEMY_MARKET_COMMISSION}.get(market, 0.1)
 
 
 def market_trade_item_label(t: dict) -> str:

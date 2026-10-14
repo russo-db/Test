@@ -465,6 +465,7 @@
     "min_amount": { "shards": 1, "particles": 1 }
   },
   "alchemy_market": {
+    "commission": 0.10,
     "unit_price_gold": { "rock_crystal": 1, "mountain_root": 4, "shimmer_mushroom": 5, "blank_enchant_scroll": 10 },
     "max_quantity": 100000
   },

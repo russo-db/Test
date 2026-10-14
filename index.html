@@ -2523,7 +2523,7 @@
                 'equipmarket.belowMinPrice': 'Цена ниже минимальной для этого грейда — {price} GRAM',
                 'resourcemarket.sellBtn': 'Выставить ресурс на продажу',
                 'market.deptAlchemy': '🧪 Алхимия',
-                'alchmarket.note': 'Цена — только тариф системы за 1 шт.: укажи количество, итог посчитается сам. Ресурсы уходят в лот сразу, при снятии — возвращаются. Комиссии нет.',
+                'alchmarket.note': 'Цена — только тариф системы за 1 шт.: укажи количество, итог посчитается сам. Ресурсы уходят в лот сразу, при снятии — возвращаются. Рынок удержит комиссию {pct}% с продажи.',
                 'alchmarket.stockTitle': '📦 Мой Склад', 'alchmarket.myLotsTitle': '🏷️ Мои лоты на продаже', 'alchmarket.showcaseTitle': '🛒 Витрина рынка ресурсов',
                 'alchmarket.balance': 'На складе: {n}', 'alchmarket.tariff': 'Тариф: 1 шт. = {price} 🪙',
                 'alchmarket.qty': 'Количество', 'alchmarket.total': 'Итого: {qty} × {price} = {total} 🪙',
@@ -2531,7 +2531,7 @@
                 'alchmarket.lotLine': '{name} — {qty} шт.', 'alchmarket.lotPrice': 'Итоговая цена: {total} Золота 🪙',
                 'alchmarket.noOwnLots': 'У тебя нет лотов на продаже.', 'alchmarket.empty': 'Пока никто ничего не продаёт — загляни позже.',
                 'alchmarket.badQty': 'Укажи количество от 1 до {max}', 'alchmarket.notEnough': 'На складе не хватает',
-                'alchmarket.confirm': 'Выставить {qty} × {name} за {total} золота? Ресурсы сразу уйдут со Склада в лот.',
+                'alchmarket.confirm': 'Выставить {qty} × {name} за {total} золота? После продажи тебе придёт {net} (комиссия рынка {pct}%). Ресурсы сразу уйдут со Склада в лот.',
                 'alchmarket.listed': '✅ Лот выставлен', 'alchmarket.bought': '✅ Куплено: {qty} × {name}', 'alchmarket.cancelled': 'Лот снят — ресурсы вернулись на Склад',
                 'alchmarket.shown': 'показаны первые {shown} из {total}',
                 'alchmarket.retry': '🔄 Повторить',
@@ -2539,7 +2539,8 @@
                 'alchmarket.tab.rock_crystal': '💎 Кристаллы', 'alchmarket.tab.mountain_root': '🌿 Корни',
                 'alchmarket.tab.shimmer_mushroom': '🍄 Грибы', 'alchmarket.tab.blank_enchant_scroll': '📜 Свитки Заточки',
                 'alchmarket.icon.rock_crystal': '💎', 'alchmarket.icon.mountain_root': '🌿', 'alchmarket.icon.shimmer_mushroom': '🍄', 'alchmarket.icon.blank_enchant_scroll': '📜',
-                'alchmarket.fixedPrice': 'Фикс. цена: {price} 🪙 за 1 шт. · вводишь только количество · комиссии нет',
+                'alchmarket.fixedPrice': 'Фикс. цена: {price} 🪙 за 1 шт. · вводишь только количество · комиссия рынка {pct}%',
+                'alchmarket.net': 'Тебе придёт: {net} 🪙 (комиссия {pct}%)',
                 'resourcemarket.sellTitle': 'Выставить ресурс на продажу',
                 'resourcemarket.shardsCard': 'Небесные Осколки', 'resourcemarket.particlesCard': 'Частички',
                 'resourcemarket.amountLabel': 'Количество, шт.',
@@ -3058,7 +3059,7 @@
                 'equipmarket.belowMinPrice': 'Price is below the minimum for this grade — {price} GRAM',
                 'resourcemarket.sellBtn': 'List a resource for sale',
                 'market.deptAlchemy': '🧪 Alchemy',
-                'alchmarket.note': 'Price is the fixed system rate per unit: enter a quantity and the total is calculated. Resources move into the lot at once and come back if you cancel. No fee.',
+                'alchmarket.note': 'Price is the fixed system rate per unit: enter a quantity and the total is calculated. Resources move into the lot at once and come back if you cancel. The market keeps a {pct}% fee from the sale.',
                 'alchmarket.stockTitle': '📦 My Storage', 'alchmarket.myLotsTitle': '🏷️ My lots for sale', 'alchmarket.showcaseTitle': '🛒 Resource market',
                 'alchmarket.balance': 'In storage: {n}', 'alchmarket.tariff': 'Rate: 1 pc = {price} 🪙',
                 'alchmarket.qty': 'Quantity', 'alchmarket.total': 'Total: {qty} × {price} = {total} 🪙',
@@ -3066,7 +3067,7 @@
                 'alchmarket.lotLine': '{name} — {qty} pcs', 'alchmarket.lotPrice': 'Total price: {total} Gold 🪙',
                 'alchmarket.noOwnLots': 'You have no lots for sale.', 'alchmarket.empty': 'Nothing for sale yet — check back later.',
                 'alchmarket.badQty': 'Enter a quantity from 1 to {max}', 'alchmarket.notEnough': 'Not enough in storage',
-                'alchmarket.confirm': 'List {qty} × {name} for {total} gold? The resources leave your Storage right away.',
+                'alchmarket.confirm': 'List {qty} × {name} for {total} gold? After the sale you will get {net} ({pct}% market fee). The resources leave your Storage right away.',
                 'alchmarket.listed': '✅ Lot listed', 'alchmarket.bought': '✅ Bought: {qty} × {name}', 'alchmarket.cancelled': 'Lot cancelled — resources returned to Storage',
                 'alchmarket.shown': 'showing first {shown} of {total}',
                 'alchmarket.retry': '🔄 Retry',
@@ -3074,7 +3075,8 @@
                 'alchmarket.tab.rock_crystal': '💎 Crystals', 'alchmarket.tab.mountain_root': '🌿 Roots',
                 'alchmarket.tab.shimmer_mushroom': '🍄 Mushrooms', 'alchmarket.tab.blank_enchant_scroll': '📜 Enchant Scrolls',
                 'alchmarket.icon.rock_crystal': '💎', 'alchmarket.icon.mountain_root': '🌿', 'alchmarket.icon.shimmer_mushroom': '🍄', 'alchmarket.icon.blank_enchant_scroll': '📜',
-                'alchmarket.fixedPrice': 'Fixed price: {price} 🪙 per unit · enter quantity only · no fee',
+                'alchmarket.fixedPrice': 'Fixed price: {price} 🪙 per unit · enter quantity only · market fee {pct}%',
+                'alchmarket.net': 'You will get: {net} 🪙 ({pct}% fee)',
                 'resourcemarket.sellTitle': 'List a resource for sale',
                 'resourcemarket.shardsCard': 'Sky Shards', 'resourcemarket.particlesCard': 'Particles',
                 'resourcemarket.amountLabel': 'Amount',
@@ -7124,13 +7126,21 @@
         // возвращает их. Витрина анонимна — сервер не присылает продавцов.
         const ALCH_ITEMS = ['rock_crystal', 'mountain_root', 'shimmer_mushroom', 'blank_enchant_scroll'];
         const ALCH_DEFAULT_PRICES = { rock_crystal: 1, mountain_root: 4, shimmer_mushroom: 5, blank_enchant_scroll: 10 };
-        const alch = { loaded: false, listings: [], counts: {}, items: {}, prices: null, maxQty: 100000 };
+        const alch = { loaded: false, listings: [], counts: {}, items: {}, prices: null, commission: null, maxQty: 100000 };
         const alchDraft = {};   // введённое количество по предмету — переживает перерисовку
 
         function alchPrice(item) {
             const p = alch.prices || ((CONFIG.alchemy_market || {}).unit_price_gold) || ALCH_DEFAULT_PRICES;
             return Number(p[item]) || 0;
         }
+        // Комиссия рынка с продажи — сервер присылает её вместе с лотами.
+        function alchCommission() {
+            const c = alch.commission != null ? alch.commission : (CONFIG.alchemy_market || {}).commission;
+            const n = Number(c);
+            return Number.isFinite(n) ? Math.min(Math.max(n, 0), 1) : 0.10;
+        }
+        function alchPct() { return Math.round(alchCommission() * 100); }
+        function alchNet(total) { return Math.round(total * (1 - alchCommission()) * 100) / 100; }
         function alchMeta(item) { return HUNT_ITEM_META[item] || { icon: '❔', name: item }; }
         function fmtGold(v) { const n = Number(v) || 0; return Number.isInteger(n) ? String(n) : n.toFixed(2); }
 
@@ -7156,6 +7166,7 @@
                 alch.listings = data.listings || [];
                 alch.counts = data.counts || {};
                 alch.prices = data.prices || alch.prices;
+                if (data.commission != null) alch.commission = Number(data.commission);
                 alch.maxQty = Number(data.max_quantity) || alch.maxQty;
                 applyAlchemyWallet(data);
                 noteOwnLots('alchemy', alch.listings);
@@ -7184,6 +7195,8 @@
             alchDraft[item] = qty;
             const out = document.getElementById('alchTotal');
             if (out) out.textContent = t('alchmarket.total', { qty, price: fmtGold(alchPrice(item)), total: fmtGold(qty * alchPrice(item)) });
+            const net = document.getElementById('alchNet');
+            if (net) net.textContent = t('alchmarket.net', { net: fmtGold(alchNet(qty * alchPrice(item))), pct: alchPct() });
         }
 
         function renderAlchTabs() {
@@ -7220,7 +7233,7 @@
             // говорим об этом вместо «0 🪙» с активной кнопкой
             const closed = price <= 0;
             body.innerHTML = `
-                <p class="market-min-price-line">${closed ? t('alchmarket.closed') : t('alchmarket.fixedPrice', { price: fmtGold(price) })}</p>
+                <p class="market-min-price-line">${closed ? t('alchmarket.closed') : t('alchmarket.fixedPrice', { price: fmtGold(price), pct: alchPct() })}</p>
                 <div class="card glass-panel market-card alch-form">
                     <div class="alch-form-head">
                         <div class="alch-ic">${icon}</div>
@@ -7233,6 +7246,7 @@
                         <input class="pay-input" id="alchQty" type="number" inputmode="numeric" min="1" max="${Math.max(1, have)}" step="1" value="${qty}" aria-label="${t('alchmarket.qty')}" oninput="alchUpdateTotal('${item}')">
                         <span class="alch-total" id="alchTotal">${t('alchmarket.total', { qty, price: fmtGold(price), total: fmtGold(qty * price) })}</span>
                     </div>
+                    ${closed ? '' : `<p class="pay-warning" id="alchNet" style="margin:0">${t('alchmarket.net', { net: fmtGold(alchNet(qty * price)), pct: alchPct() })}</p>`}
                     <button class="btn-primary" id="alchListBtn" ${have < 1 || closed ? 'disabled' : ''} onclick="alchemyList('${item}')">${t('alchmarket.listBtn')}</button>
                 </div>
                 ${mine.map(l => `
@@ -7265,7 +7279,7 @@
             if (qty < 1 || qty > alch.maxQty) { toast(t('alchmarket.badQty', { max: Math.min(alch.maxQty, Math.max(1, have)) })); return; }
             if (qty > have) { toast(t('alchmarket.notEnough')); haptic.notify('warning'); return; }
             const total = qty * alchPrice(item);
-            if (!confirm(t('alchmarket.confirm', { qty, name: alchMeta(item).name, total: fmtGold(total) }))) return;
+            if (!confirm(t('alchmarket.confirm', { qty, name: alchMeta(item).name, total: fmtGold(total), net: fmtGold(alchNet(total)), pct: alchPct() }))) return;
             try {
                 // цену не отправляем — её считает сервер по тарифу
                 const response = await fetch('api/market/alchemy/list', {

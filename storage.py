@@ -926,7 +926,7 @@ class MongoStore:
     # Ресурсы продавца списываются в main.py (CAS по ops вместе с проверкой
     # остатка) ДО создания лота и лежат в самом лоте; при снятии — обратно
     # на Склад Охоты. Золото покупателя списывается атомарно ($gte), продавцу
-    # зачисляется вся сумма (комиссии нет). Порядок «проверка → захват лота →
+    # зачисляется цена минус комиссия рынка. Порядок «проверка → захват лота →
     # списание → откат при отказе» — как у остальных отделов рынка. ---
 
     async def create_alchemy_listing(self, seller_id: int, item: str, quantity: int,
@@ -944,8 +944,9 @@ class MongoStore:
         # hunt_items) затёрло бы зачисление
         await self.users.update_one({"_id": user_id}, {"$inc": {f"hunt_items.{item}": int(quantity), "ops": 1}})
 
-    async def buy_alchemy_listing(self, buyer_id: int, listing_id: str):
-        """Словарь лота при успехе или код отказа: not_found / own_listing /
+    async def buy_alchemy_listing(self, buyer_id: int, listing_id: str, commission: float = 0.0):
+        """Словарь лота (с seller_credit — сколько золота ушло продавцу после
+        комиссии) при успехе или код отказа: not_found / own_listing /
         insufficient_funds."""
         from bson import ObjectId
         from bson.errors import InvalidId
@@ -975,11 +976,13 @@ class MongoStore:
             await self.alchemy_market.insert_one(listing)
             return "insufficient_funds"
         await self._give_hunt_item(buyer_id, listing["item"], listing["quantity"])
+        seller_credit = round(price * (1 - commission), 9)
         await self.users.update_one(
             {"_id": listing["seller_id"]},
-            {"$inc": {"gold": price, "ops": 1}},
+            {"$inc": {"gold": seller_credit, "ops": 1}},
         )
         listing["id"] = str(listing.pop("_id"))
+        listing["seller_credit"] = seller_credit
         return listing
 
     async def cancel_alchemy_listing(self, seller_id: int, listing_id: str) -> str:
