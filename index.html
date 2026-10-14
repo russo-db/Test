@@ -9511,6 +9511,7 @@
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             if (farmActionBusy.has('nest-craft')) return;
             farmActionBusy.add('nest-craft');
+            let ok = false;
             try {
                 const response = await fetch('api/nest/craft', {
                     method: 'POST', headers: apiHeaders(),
@@ -9520,6 +9521,7 @@
                 if (!response.ok) { toast(data.detail || t('nest.craftNeedMore', { cost: CONFIG.nest.craft_cost_particles })); return; }
                 state.nest.particles = data.particles;
                 state.gold = data.gold;
+                ok = true;
                 applyNestItems(data);
                 if (data.craft_discount_used && state.huntBuffs) state.huntBuffs.craft_discount = false;
                 if (typeof data.ops === 'number') state.ops = data.ops;
@@ -9530,7 +9532,10 @@
             } catch (error) {
                 toast('Сервер недоступен');
             } finally {
-                farmActionBusy.delete('nest-craft');
+                // второй тап через ~0.3 с после ответа (кнопка уже снова активна)
+                // ковал вторую вещь — держим блокировку ещё LIST_ACTION_HOLD_MS
+                if (ok) setTimeout(() => farmActionBusy.delete('nest-craft'), LIST_ACTION_HOLD_MS);
+                else farmActionBusy.delete('nest-craft');
             }
         }
 
@@ -9549,13 +9554,22 @@
                 n: burnEnch.reduce((a, it) => a + it.enchant, 0),
             }))) return;
             farmActionBusy.add(key);
+            let ok = false;
             try {
+                // сколько вещей этого грейда игрок видел — повтор (двойной тап,
+                // второе окно) сервер отклонит, а не сольёт ещё четыре
+                const expectedCount = nestInventoryCount(type, grade) + nestEnchantedCount(type, grade);
                 const response = await fetch('api/nest/upgrade', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, item_type: type, grade })
+                    body: JSON.stringify({ user_id: state.userId, item_type: type, grade, expected_count: expectedCount })
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('nest.upgradeNeedMore')); return; }
+                if (!response.ok) {
+                    toast(data.detail || t('nest.upgradeNeedMore'));
+                    if (response.status === 409) syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+                    return;
+                }
+                ok = true;
                 applyNestItems(data);
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
@@ -9566,7 +9580,8 @@
             } catch (error) {
                 toast('Сервер недоступен');
             } finally {
-                farmActionBusy.delete(key);
+                if (ok) setTimeout(() => farmActionBusy.delete(key), LIST_ACTION_HOLD_MS);
+                else farmActionBusy.delete(key);
             }
         }
 

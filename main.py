@@ -1852,6 +1852,9 @@ class NestUpgradeAction(BaseModel):
     user_id: int
     item_type: str
     grade: str
+    # сколько вещей этого типа и грейда игрок видел на экране; не совпало —
+    # повтор (двойной тап, второе окно): не сливаем ещё четыре
+    expected_count: Optional[int] = None
 
 
 class NestEquipAction(BaseModel):
@@ -5033,6 +5036,8 @@ async def nest_upgrade(request: NestUpgradeAction, x_telegram_init_data: Optiona
         same = sorted((it for it in enchanted if it["type"] == request.item_type and it["grade"] == request.grade),
                       key=lambda it: it["enchant"])
         plain = inventory[request.item_type][request.grade]
+        if request.expected_count is not None and int(request.expected_count) != plain + len(same):
+            raise HTTPException(status_code=409, detail="Количество вещей уже изменилось — обнови экран")
         if plain + len(same) < NEST_UPGRADE_GROUP:
             raise HTTPException(status_code=400, detail=f"Нужно {NEST_UPGRADE_GROUP} предмета этого грейда")
         take_plain = min(plain, NEST_UPGRADE_GROUP)
