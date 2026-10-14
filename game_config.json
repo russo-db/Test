@@ -503,6 +503,17 @@
     "upgrade_group": 4,
     "grades": ["grey", "green", "blue", "purple", "gold", "mythic"],
     "grade_bonus_pct": { "grey": 10, "green": 20, "blue": 35, "purple": 50, "gold": 70, "mythic": 90 },
+    "enchant": {
+      "max_level": 5,
+      "chances_pct": {
+        "grey": [60, 50, 40, 30, 20], "green": [50, 40, 30, 20, 15], "blue": [40, 30, 20, 15, 10],
+        "purple": [30, 25, 15, 10, 5], "gold": [20, 15, 10, 7, 3], "mythic": [10, 7, 5, 3, 1]
+      },
+      "bonus_pct": {
+        "grey": [1.0, 1.5, 2.0, 2.5, 3.0], "green": [2.0, 2.5, 3.5, 4.5, 5.5], "blue": [3.0, 4.0, 5.0, 6.5, 8.5],
+        "purple": [4.0, 5.5, 7.5, 10.0, 13.0], "gold": [6.0, 8.0, 11.0, 15.0, 20.0], "mythic": [8.0, 11.0, 16.0, 22.0, 31.0]
+      }
+    },
     "item_types": {
       "claws": {
         "label": "Когти", "sub": "Атака", "icon": "🗡️", "stat": "atk",
@@ -612,22 +623,26 @@
     "zones": [
       {"id": "forest", "name": "Ближний Бор", "icon": "🌲", "min_tier": "uncommon", "rewards": [
         {"item": "mountain_root", "min": 1, "max": 3, "chance": 1.0},
-        {"item": "shimmer_mushroom", "min": 1, "max": 1, "chance": 0.2}
+        {"item": "shimmer_mushroom", "min": 1, "max": 1, "chance": 0.2},
+        {"item": "blank_enchant_scroll", "min": 1, "max": 1, "chance": 1.0}
       ]},
       {"id": "mountains", "name": "Древние Горы", "icon": "⛰️", "min_tier": "rare", "rewards": [
         {"item": "mountain_root", "min": 3, "max": 5, "chance": 1.0},
         {"item": "shimmer_mushroom", "min": 2, "max": 3, "chance": 1.0},
-        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.01, "hidden": true}
+        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.01, "hidden": true},
+        {"item": "blank_enchant_scroll", "min": 2, "max": 2, "chance": 1.0}
       ]},
       {"id": "canyon", "name": "Затерянный Каньон", "icon": "🏜️", "min_tier": "epic", "rewards": [
         {"item": "shimmer_mushroom", "min": 4, "max": 6, "chance": 1.0},
         {"item": "mountain_root", "min": 2, "max": 4, "chance": 1.0},
-        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.03, "hidden": true}
+        {"item": "craft_scroll", "min": 1, "max": 1, "chance": 0.03, "hidden": true},
+        {"item": "blank_enchant_scroll", "min": 3, "max": 3, "chance": 1.0}
       ]}
     ],
     "recipes": [
       {"id": "potion_rage", "name": "Зелье Ярости", "cost": {"mountain_root": 5, "rock_crystal": 3}},
-      {"id": "potion_skin", "name": "Отвар Стальной Кожи", "cost": {"shimmer_mushroom": 4, "rock_crystal": 5}}
+      {"id": "potion_skin", "name": "Отвар Стальной Кожи", "cost": {"shimmer_mushroom": 4, "rock_crystal": 5}},
+      {"id": "enchant_scroll", "name": "Свиток Заточки", "cost": {"blank_enchant_scroll": 1, "rock_crystal": 10}, "cost_particles": 5}
     ]
   }
 }

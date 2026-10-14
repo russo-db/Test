@@ -131,6 +131,7 @@ def apply_config(cfg: dict):
     global SLOTS_PRICES, VIP_TIERS
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
     global NEST_CRAFT_COST_PARTICLES, NEST_CRAFT_COST_GOLD, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
+    global NEST_ENCHANT_CFG, NEST_ENCHANT_MAX, NEST_ENCHANT_CHANCES, NEST_ENCHANT_BONUS
     global NEST_ITEM_TYPES, NEST_TYPE_ORDER, NEST_SHARD_DAILY_LIMIT
     global COMBAT_BASE_STATS, CLAN_CFG, CLAN_CREATE_COST_GRAM, CLAN_CREATE_COST_GOLD, CLAN_CREATE_COST_MEAT
     global CLAN_MEMBER_LIMIT, CLAN_INITIAL_OPEN_SLOTS, CLAN_SLOT_PRICE_GRAM, CLAN_BURN_POWER_BY_TIER
@@ -244,6 +245,13 @@ def apply_config(cfg: dict):
     NEST_GRADE_BONUS = {k: float(v) for k, v in (NEST_CFG.get("grade_bonus_pct") or {}).items()}
     NEST_ITEM_TYPES = NEST_CFG.get("item_types") or {}
     NEST_TYPE_ORDER = list(NEST_ITEM_TYPES.keys()) or ["claws", "armor", "mask", "ring"]
+    # Заточка снаряжения (безопасная: при неудаче сгорает только свиток,
+    # уровень вещи не падает). chances_pct/bonus_pct — по грейду, i-й
+    # элемент = переход на +(i+1); бонус уровня копится (+5 = сумма всех).
+    NEST_ENCHANT_CFG = NEST_CFG.get("enchant") or {}
+    NEST_ENCHANT_MAX = max(0, int(_cfg_num(NEST_ENCHANT_CFG, "max_level", 5)))
+    NEST_ENCHANT_CHANCES = {g: [float(x) for x in (NEST_ENCHANT_CFG.get("chances_pct") or {}).get(g, [])] for g in NEST_GRADES}
+    NEST_ENCHANT_BONUS = {g: [float(x) for x in (NEST_ENCHANT_CFG.get("bonus_pct") or {}).get(g, [])] for g in NEST_GRADES}
 
     # Кланы: боевые статы орлов (та же таблица, что и клиентский
     # NEST_EAGLE_BASE_STATS, теперь и на сервере — нужна для авторитетной
@@ -1051,6 +1059,86 @@ def normalize_nest_equipped(raw) -> dict:
     return equipped
 
 
+# --- ЗАТОЧКА СНАРЯЖЕНИЯ ---
+# Незаточенные вещи (+0) по-прежнему лежат счётчиками в nest_inventory — на
+# них работают крафт, рынок, выдача из админки. Заточенные (+1…+5) — отдельные
+# вещи со своим id в nest_enchanted: [{id, type, grade, enchant}]. Уровень
+# надетой вещи — в nest_equipped_enchant[тир][тип] рядом с nest_equipped
+# (там по-прежнему только грейд). Клиент собирает из этого один список
+# «Склад Снаряжения Армии» (player.equipment из ТЗ).
+
+def nest_enchant_level(raw) -> int:
+    try:
+        return max(0, min(NEST_ENCHANT_MAX, int(raw or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalize_nest_enchanted(raw) -> List[dict]:
+    items, seen = [], set()
+    if isinstance(raw, list):
+        for it in raw:
+            if not isinstance(it, dict):
+                continue
+            item_id = str(it.get("id") or "")
+            level = nest_enchant_level(it.get("enchant"))
+            if (not item_id or item_id in seen or it.get("type") not in NEST_TYPE_ORDER
+                    or it.get("grade") not in NEST_GRADES or level < 1):
+                continue
+            seen.add(item_id)
+            items.append({"id": item_id, "type": it["type"], "grade": it["grade"], "enchant": level})
+    return items
+
+
+def normalize_nest_equipped_enchant(raw, equipped: dict) -> dict:
+    """Уровень заточки надетых вещей; там, где слот пуст, — 0."""
+    out = {tier_id: {t: 0 for t in NEST_TYPE_ORDER} for tier_id in TIER_INDEX}
+    if isinstance(raw, dict):
+        for tier_id in TIER_INDEX:
+            sub = raw.get(tier_id)
+            if not isinstance(sub, dict):
+                continue
+            for item_type in NEST_TYPE_ORDER:
+                if (equipped.get(tier_id) or {}).get(item_type):
+                    out[tier_id][item_type] = nest_enchant_level(sub.get(item_type))
+    return out
+
+
+def nest_enchant_bonus(grade: str, level: int) -> float:
+    """Бонус заточки, % — копится по уровням (+5 = сумма всех пяти)."""
+    return round(sum((NEST_ENCHANT_BONUS.get(grade) or [])[:max(0, int(level))]), 4)
+
+
+def nest_enchant_chance(grade: str, level: int) -> float:
+    """Шанс перехода с level на level+1, %; 0 — дальше точить нельзя."""
+    table = NEST_ENCHANT_CHANCES.get(grade) or []
+    return table[level] if 0 <= level < min(NEST_ENCHANT_MAX, len(table)) else 0.0
+
+
+def nest_new_item_id() -> str:
+    return secrets.token_hex(6)
+
+
+def nest_return_item(inventory: dict, enchanted: List[dict], item_type: str, grade: str, level: int) -> None:
+    """Вещь возвращается в инвентарь: +0 — в счётчик, заточенная — отдельной вещью."""
+    if level > 0:
+        enchanted.append({"id": nest_new_item_id(), "type": item_type, "grade": grade, "enchant": level})
+    else:
+        inventory[item_type][grade] += 1
+
+
+def nest_items_payload(row: dict) -> dict:
+    equipped = normalize_nest_equipped(row.get("nest_equipped"))
+    return {
+        "inventory": normalize_nest_inventory(row.get("nest_inventory")),
+        "enchanted": normalize_nest_enchanted(row.get("nest_enchanted")),
+        "equipped": equipped,
+        "equipped_enchant": normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped),
+        # готовые свитки заточки (лежат на Складе Охоты) — для блока «✨ Заточка»
+        "enchant_scrolls": hunt_items_of(row)["enchant_scroll"],
+    }
+
+
 def normalize_nest_miners(raw) -> List[dict]:
     """Осколки в Кузнице теперь лишь считаются (см. nest_owned_shards) — у
     накопления частичек больше нет персонального таймера на каждый осколок
@@ -1171,8 +1259,7 @@ async def nest_state_view(row: dict) -> dict:
         "particles": float(row.get("nest_particles") or 0),
         "shard_count": nest_owned_shards(row),
         "last_claim": nest_last_claim_of(row, now),
-        "inventory": normalize_nest_inventory(row.get("nest_inventory")),
-        "equipped": normalize_nest_equipped(row.get("nest_equipped")),
+        **nest_items_payload(row),
     }
 
 
@@ -1772,6 +1859,22 @@ class NestEquipAction(BaseModel):
     tier_id: str
     item_type: str
     grade: str
+    # заточенная вещь со Склада Снаряжения (без id — незаточенная +0 из счётчика)
+    item_id: Optional[str] = None
+
+
+class NestEnchantAction(BaseModel):
+    user_id: int
+    # что точим: "inv" — одну +0 вещь из стопки (item_type+grade),
+    # "item" — заточенную вещь (item_id), "equipped" — надетую (tier_id+item_type)
+    source: str
+    item_type: Optional[str] = None
+    grade: Optional[str] = None
+    item_id: Optional[str] = None
+    tier_id: Optional[str] = None
+    # уровень, который игрок видел на экране: не совпал — повтор/устаревший
+    # экран, свиток не тратим
+    expected_level: Optional[int] = None
 
 
 class NestUnequipAction(BaseModel):
@@ -1813,6 +1916,8 @@ class EquipMarketListRequest(BaseModel):
     item_type: str
     grade: str
     price_gram: float
+    # заточенная вещь (id из nest_enchanted) — продаётся со своим уровнем
+    item_id: Optional[str] = None
 
 
 class EquipMarketBuyRequest(BaseModel):
@@ -3461,7 +3566,8 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         raise HTTPException(status_code=400, detail="Соперник устарел — попробуй ещё раз")
 
     equipped = normalize_nest_equipped(row.get("nest_equipped"))
-    player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id))}
+    enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
+    player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id), enchant.get(request.tier_id))}
     # Зелья Охоты: +HUNT_POTION_PCT% к атаке (Ярость) и/или защите (Стальная
     # Кожа) ровно на ОДИН бой — списываются в той же CAS-записи, что и энергия.
     buff_rage, buff_skin = bool(row.get("buff_rage")), bool(row.get("buff_skin"))
@@ -3484,8 +3590,9 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         if not opponent_row:
             raise HTTPException(status_code=400, detail="Соперник уже недоступен")
         enemy_tier_id = best_owned_tier(opponent_row.get("monsters"))
-        enemy_equipped = normalize_nest_equipped(opponent_row.get("nest_equipped")).get(enemy_tier_id, {})
-        enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_equipped)
+        enemy_all = normalize_nest_equipped(opponent_row.get("nest_equipped"))
+        enemy_enchant = normalize_nest_equipped_enchant(opponent_row.get("nest_equipped_enchant"), enemy_all)
+        enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_all.get(enemy_tier_id, {}), enemy_enchant.get(enemy_tier_id))
         enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
     enemy_fighter = {"stats": enemy_stats}
 
@@ -3906,7 +4013,8 @@ def strongest_eagle_info(row: dict) -> Optional[dict]:
     return {"tier_id": MONSTER_TIER.get(best["id"]), "feed_level": int(best.get("feed_level") or 1)}
 
 
-def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict]) -> dict:
+def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict],
+                       enchant_for_tier: Optional[dict] = None) -> dict:
     """Итоговые боевые статы орла редкости tier_id — серверный порт
     nestComputeStatsFromEquipped (index.html): та же формула бонуса
     снаряжения (когти->atk, броня->def, маска->crit, амулет->hp+spd),
@@ -3921,7 +4029,8 @@ def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict]) -> dict:
         grade = equipped.get(item_type)
         if not grade:
             continue
-        pct = NEST_GRADE_BONUS.get(grade, 0.0)
+        # бонус грейда + накопленный бонус заточки этой вещи
+        pct = NEST_GRADE_BONUS.get(grade, 0.0) + nest_enchant_bonus(grade, (enchant_for_tier or {}).get(item_type, 0))
         stat = (NEST_ITEM_TYPES.get(item_type) or {}).get("stat")
         if stat == "atk":
             bonus["atk"] += pct
@@ -4289,9 +4398,10 @@ async def _clan_roster_fighters(clan: Optional[dict]) -> list:
         if tier_id not in usable_eagle_ids(read_farm(row.get("monsters"))):
             continue
         equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
         fighters.append({
             "user_id": user_id, "name": row.get("name") or "",
-            "tier_id": tier_id, "stats": combat_eagle_stats(tier_id, equipped.get(tier_id)),
+            "tier_id": tier_id, "stats": combat_eagle_stats(tier_id, equipped.get(tier_id), enchant.get(tier_id)),
         })
     return fighters
 
@@ -4906,8 +5016,10 @@ async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = 
 @app.post("/api/nest/upgrade")
 async def nest_upgrade(request: NestUpgradeAction, x_telegram_init_data: Optional[str] = Header(None)):
     """Улучшение: NEST_UPGRADE_GROUP предметов одного грейда -> 1 предмет
-    следующего, успех 100% (никакого шанса на неудачу, в отличие от слияния
-    орлов)."""
+    следующего, успех 100%. Сначала уходят незаточенные (+0), затем
+    заточенные от меньшего уровня. Сумма уровней заточки всех уничтоженных
+    вещей возвращается готовыми свитками заточки на Склад Охоты; новая вещь
+    всегда +0."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     if request.item_type not in NEST_TYPE_ORDER:
         raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
@@ -4917,22 +5029,38 @@ async def nest_upgrade(request: NestUpgradeAction, x_telegram_init_data: Optiona
 
     def compute(row):
         inventory = normalize_nest_inventory(row.get("nest_inventory"))
-        if inventory[request.item_type][request.grade] < NEST_UPGRADE_GROUP:
+        enchanted = normalize_nest_enchanted(row.get("nest_enchanted"))
+        same = sorted((it for it in enchanted if it["type"] == request.item_type and it["grade"] == request.grade),
+                      key=lambda it: it["enchant"])
+        plain = inventory[request.item_type][request.grade]
+        if plain + len(same) < NEST_UPGRADE_GROUP:
             raise HTTPException(status_code=400, detail=f"Нужно {NEST_UPGRADE_GROUP} предмета этого грейда")
-        inventory[request.item_type][request.grade] -= NEST_UPGRADE_GROUP
+        take_plain = min(plain, NEST_UPGRADE_GROUP)
+        burned = same[:NEST_UPGRADE_GROUP - take_plain]
+        refund = sum(it["enchant"] for it in burned)
+        burned_ids = {it["id"] for it in burned}
+        enchanted = [it for it in enchanted if it["id"] not in burned_ids]
+        inventory[request.item_type][request.grade] -= take_plain
         inventory[request.item_type][next_grade] += 1
-        fields = {"nest_inventory": inventory}
-        return fields, {"inventory": inventory, "item_type": request.item_type, "grade": next_grade}
+        fields = {"nest_inventory": inventory, "nest_enchanted": enchanted}
+        items = hunt_items_of(row)
+        if refund:
+            items["enchant_scroll"] += refund
+            fields["hunt_items"] = items
+        fresh = dict(row, **fields)
+        return fields, dict(nest_items_payload(fresh), item_type=request.item_type, grade=next_grade,
+                            refunded_scrolls=refund, hunt_items=items)
 
     return await run_farm_action(user_id, compute)
 
 
 @app.post("/api/nest/equip")
 async def nest_equip(request: NestEquipAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Экипирует предмет инвентаря на боевого орла указанной редкости —
-    один орёл на редкость (как и вид орла на ферме), поэтому экипировка не
-    привязана к конкретному слоту фермы. Ранее надетый в этот слот предмет
-    возвращается в инвентарь."""
+    """Экипирует предмет на боевого орла указанной редкости — один орёл на
+    редкость, поэтому экипировка не привязана к конкретному слоту фермы.
+    item_id — заточенная вещь (уровень переезжает на орла), без него —
+    незаточенная из счётчика. Ранее надетая вещь возвращается на Склад со
+    своим уровнем заточки."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     if request.item_type not in NEST_TYPE_ORDER:
         raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
@@ -4942,24 +5070,35 @@ async def nest_equip(request: NestEquipAction, x_telegram_init_data: Optional[st
         raise HTTPException(status_code=400, detail="Неизвестный грейд предмета")
 
     def compute(row):
-        inventory = normalize_nest_inventory(row.get("nest_inventory"))
-        if inventory[request.item_type][request.grade] <= 0:
-            raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
-        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        items = nest_items_payload(row)
+        inventory, enchanted = items["inventory"], items["enchanted"]
+        equipped, levels = items["equipped"], items["equipped_enchant"]
+        if request.item_id:
+            item = next((it for it in enchanted if it["id"] == request.item_id), None)
+            if not item or item["type"] != request.item_type or item["grade"] != request.grade:
+                raise HTTPException(status_code=400, detail="Нет такого предмета на Складе")
+            enchanted = [it for it in enchanted if it["id"] != request.item_id]
+            level = item["enchant"]
+        else:
+            if inventory[request.item_type][request.grade] <= 0:
+                raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
+            inventory[request.item_type][request.grade] -= 1
+            level = 0
         prev = equipped[request.tier_id][request.item_type]
-        inventory[request.item_type][request.grade] -= 1
         if prev:
-            inventory[request.item_type][prev] += 1
+            nest_return_item(inventory, enchanted, request.item_type, prev, levels[request.tier_id][request.item_type])
         equipped[request.tier_id][request.item_type] = request.grade
-        fields = {"nest_inventory": inventory, "nest_equipped": equipped}
-        return fields, {"inventory": inventory, "equipped": equipped}
+        levels[request.tier_id][request.item_type] = level
+        fields = {"nest_inventory": inventory, "nest_enchanted": enchanted,
+                  "nest_equipped": equipped, "nest_equipped_enchant": levels}
+        return fields, nest_items_payload(dict(row, **fields))
 
     return await run_farm_action(user_id, compute)
 
 
 @app.post("/api/nest/unequip")
 async def nest_unequip(request: NestUnequipAction, x_telegram_init_data: Optional[str] = Header(None)):
-    """Снимает предмет с боевого орла указанной редкости обратно в инвентарь."""
+    """Снимает предмет с боевого орла обратно на Склад (с его заточкой)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     if request.item_type not in NEST_TYPE_ORDER:
         raise HTTPException(status_code=400, detail="Неизвестный тип снаряжения")
@@ -4967,17 +5106,92 @@ async def nest_unequip(request: NestUnequipAction, x_telegram_init_data: Optiona
         raise HTTPException(status_code=400, detail="Неизвестная редкость орла")
 
     def compute(row):
-        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        items = nest_items_payload(row)
+        inventory, enchanted = items["inventory"], items["enchanted"]
+        equipped, levels = items["equipped"], items["equipped_enchant"]
         prev = equipped[request.tier_id][request.item_type]
         if not prev:
             raise HTTPException(status_code=400, detail="Слот уже пуст")
-        inventory = normalize_nest_inventory(row.get("nest_inventory"))
-        inventory[request.item_type][prev] += 1
+        nest_return_item(inventory, enchanted, request.item_type, prev, levels[request.tier_id][request.item_type])
         equipped[request.tier_id][request.item_type] = None
-        fields = {"nest_inventory": inventory, "nest_equipped": equipped}
-        return fields, {"inventory": inventory, "equipped": equipped}
+        levels[request.tier_id][request.item_type] = 0
+        fields = {"nest_inventory": inventory, "nest_enchanted": enchanted,
+                  "nest_equipped": equipped, "nest_equipped_enchant": levels}
+        return fields, nest_items_payload(dict(row, **fields))
 
     return await run_farm_action(user_id, compute)
+
+
+@app.post("/api/nest/enchant")
+async def nest_enchant(request: NestEnchantAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Заточка: списывает 1 готовый свиток заточки со Склада Охоты (золото
+    не берётся) и бросает шанс по таблице грейда. Успех — +1 к уровню.
+    Неудача — сгорает только свиток, уровень вещи НЕ падает (безопасная
+    заточка). Максимум — NEST_ENCHANT_MAX. Ролл и списание — одной
+    CAS-записью на сервере."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    if request.source not in ("inv", "item", "equipped"):
+        raise HTTPException(status_code=400, detail="Не выбран предмет для заточки")
+
+    def compute(row):
+        items = nest_items_payload(row)
+        inventory, enchanted = items["inventory"], items["enchanted"]
+        equipped, levels = items["equipped"], items["equipped_enchant"]
+        if request.source == "inv":
+            if request.item_type not in NEST_TYPE_ORDER or request.grade not in NEST_GRADES \
+                    or inventory[request.item_type][request.grade] <= 0:
+                raise HTTPException(status_code=400, detail="Этой вещи уже нет на Складе")
+            grade, level = request.grade, 0
+        elif request.source == "item":
+            item = next((it for it in enchanted if it["id"] == request.item_id), None)
+            if not item:
+                raise HTTPException(status_code=400, detail="Этой вещи уже нет на Складе")
+            grade, level = item["grade"], item["enchant"]
+        else:
+            if request.tier_id not in TIER_INDEX or request.item_type not in NEST_TYPE_ORDER \
+                    or not equipped[request.tier_id][request.item_type]:
+                raise HTTPException(status_code=400, detail="На орле нет этой вещи")
+            grade = equipped[request.tier_id][request.item_type]
+            level = levels[request.tier_id][request.item_type]
+        if request.expected_level is not None and int(request.expected_level) != level:
+            raise HTTPException(status_code=409, detail="Уровень заточки уже изменился — обнови экран")
+        if level >= NEST_ENCHANT_MAX:
+            raise HTTPException(status_code=400, detail=f"Максимальная заточка — +{NEST_ENCHANT_MAX}")
+        chance = nest_enchant_chance(grade, level)
+        if chance <= 0:
+            raise HTTPException(status_code=400, detail="Эту вещь дальше точить нельзя")
+        hunt = hunt_items_of(row)
+        if hunt["enchant_scroll"] < 1:
+            raise HTTPException(status_code=400, detail="Нужен 1 готовый свиток заточки — скрафти его в Алхимии Охоты")
+        hunt["enchant_scroll"] -= 1
+        success = random.random() * 100 < chance
+        new_level = level + 1 if success else level
+        ref = None
+        if success:
+            if request.source == "inv":
+                inventory[request.item_type][grade] -= 1
+                new_id = nest_new_item_id()
+                enchanted.append({"id": new_id, "type": request.item_type, "grade": grade, "enchant": new_level})
+                ref = {"source": "item", "item_id": new_id}
+            elif request.source == "item":
+                for it in enchanted:
+                    if it["id"] == request.item_id:
+                        it["enchant"] = new_level
+            else:
+                levels[request.tier_id][request.item_type] = new_level
+        fields = {"hunt_items": hunt, "nest_inventory": inventory, "nest_enchanted": enchanted,
+                  "nest_equipped_enchant": levels}
+        return fields, dict(nest_items_payload(dict(row, **fields)), hunt_items=hunt, success=success,
+                            level=new_level, grade=grade, chance=chance, selected=ref,
+                            bonus=nest_enchant_bonus(grade, new_level))
+
+    try:
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось заточить — попробуй ещё раз")
 
 
 @app.post("/api/eggs/unlock_slot")
@@ -5211,10 +5425,15 @@ async def vip_buy(request: BuyVip, x_telegram_init_data: Optional[str] = Header(
 # — бессрочная скидка на один крафт серого снаряжения в Кузнице.
 HUNT_RESOURCES = ("rock_crystal", "mountain_root", "shimmer_mushroom")
 HUNT_USABLES = ("craft_scroll", "potion_rage", "potion_skin")
-HUNT_ITEMS = HUNT_RESOURCES + HUNT_USABLES
+# Свитки заточки: пустой падает в Дальних Экспедициях (1/2/3 по зонам),
+# готовый варится в Алхимии и тратится на заточку в Гнезде Воинов.
+HUNT_SCROLLS = ("blank_enchant_scroll", "enchant_scroll")
+HUNT_ITEMS = HUNT_RESOURCES + HUNT_USABLES + HUNT_SCROLLS
+HUNT_CRAFTABLE = HUNT_USABLES + ("enchant_scroll",)
 HUNT_ITEM_NAMES = {
     "rock_crystal": "Горный Кристалл", "mountain_root": "Горный Корень", "shimmer_mushroom": "Мерцающий Гриб",
     "craft_scroll": "Древний Свиток Крафта", "potion_rage": "Зелье Ярости", "potion_skin": "Отвар Стальной Кожи",
+    "blank_enchant_scroll": "Пустой свиток заточки", "enchant_scroll": "Свиток заточки",
 }
 HUNT_SLOTS = 3
 
@@ -5619,12 +5838,15 @@ async def hunt_collect(request: HuntSlotAction, x_telegram_init_data: Optional[s
 
 @app.post("/api/hunt/craft")
 async def hunt_craft(request: HuntCraft, x_telegram_init_data: Optional[str] = Header(None)):
-    """Алхимия: сырьё со Склада -> зелье на Склад."""
+    """Алхимия: сырьё со Склада -> зелье (или готовый свиток заточки) на
+    Склад. cost_particles — Небесные частички из Гнезда Воинов, списываются
+    в той же CAS-записи, что и сырьё."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     recipe = HUNT_RECIPES.get(request.recipe_id)
-    if not recipe or recipe["id"] not in HUNT_USABLES:
+    if not recipe or recipe["id"] not in HUNT_CRAFTABLE:
         raise HTTPException(status_code=404, detail="Рецепт не найден")
     cost = {k: int(_cfg_num(recipe["cost"], k, -1)) for k in recipe["cost"]}
+    cost_particles = max(0.0, _cfg_num(recipe, "cost_particles", 0))
     if not cost or any(k not in HUNT_ITEMS or v < 0 for k, v in cost.items()):
         raise HTTPException(status_code=400, detail="Рецепт настроен с ошибкой — сообщи администратору")
 
@@ -5634,10 +5856,16 @@ async def hunt_craft(request: HuntCraft, x_telegram_init_data: Optional[str] = H
         for key, need in cost.items():
             if items.get(key, 0) < need:
                 raise HTTPException(status_code=400, detail=f"Не хватает: {HUNT_ITEM_NAMES.get(key, key)} ({need})")
+        particles = float(row.get("nest_particles") or 0)
+        if particles + 1e-9 < cost_particles:
+            raise HTTPException(status_code=400, detail=f"Не хватает: Небесные частички ({cost_particles:g})")
         for key, need in cost.items():
             items[key] -= need
         items[recipe["id"]] += 1
-        return _hunt_result({"hunt_items": items}, row, now, crafted=recipe["id"])
+        fields = {"hunt_items": items}
+        if cost_particles:
+            fields["nest_particles"] = max(0.0, particles - cost_particles)
+        return _hunt_result(fields, row, now, crafted=recipe["id"])
 
     try:
         return await run_farm_action(user_id, compute)
@@ -5645,7 +5873,7 @@ async def hunt_craft(request: HuntCraft, x_telegram_init_data: Optional[str] = H
         raise
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
-        raise HTTPException(status_code=500, detail="Не удалось сварить зелье — попробуй ещё раз")
+        raise HTTPException(status_code=500, detail="Не удалось скрафтить — попробуй ещё раз")
 
 
 HUNT_BUFF_FIELD = {"potion_rage": "buff_rage", "potion_skin": "buff_skin", "craft_scroll": "buff_craft_discount"}
@@ -6588,10 +6816,19 @@ async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_dat
         raise HTTPException(status_code=400, detail=f"Минимальная цена для этого грейда — {min_price:g} GRAM")
 
     row = await fetch_user(user_id)
+    if request.item_id:
+        item = next((it for it in normalize_nest_enchanted(row.get("nest_enchanted")) if it["id"] == request.item_id), None)
+        if not item or item["type"] != request.item_type or item["grade"] != request.grade:
+            raise HTTPException(status_code=400, detail="Нет такого предмета на Складе")
     try:
-        listing_id = await store.create_equip_listing(
-            user_id, row.get("name") or "", request.item_type, request.grade, request.price_gram, int(time.time()),
-        )
+        if request.item_id:
+            listing_id = await store.create_enchanted_equip_listing(
+                user_id, row.get("name") or "", request.item_id, request.price_gram, int(time.time()),
+            )
+        else:
+            listing_id = await store.create_equip_listing(
+                user_id, row.get("name") or "", request.item_type, request.grade, request.price_gram, int(time.time()),
+            )
     except Exception as e:   # предмет уже возвращён в create_equip_listing
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
@@ -6599,10 +6836,7 @@ async def equip_market_list(request: EquipMarketListRequest, x_telegram_init_dat
         raise HTTPException(status_code=400, detail="Нет такого предмета в инвентаре")
 
     fresh = await store.get(user_id)
-    return {
-        "status": "success", "listing_id": listing_id,
-        "inventory": normalize_nest_inventory(fresh.get("nest_inventory")),
-    }
+    return {"status": "success", "listing_id": listing_id, **nest_items_payload(fresh)}
 
 
 @app.post("/api/market/equip/buy")
@@ -6614,7 +6848,8 @@ async def equip_market_buy(request: EquipMarketBuyRequest, x_telegram_init_data:
     result = await store.buy_equip_listing(user_id, request.listing_id, EQUIP_MARKET_COMMISSION)
     if result == "ok" and lot:
         await log_market_trade("equip", lot, user_id, EQUIP_MARKET_COMMISSION,
-                               item=f"{lot.get('item_type')}:{lot.get('grade')}")
+                               item=f"{lot.get('item_type')}:{lot.get('grade')}"
+                                    + (f":{int(lot.get('enchant') or 0)}" if int(lot.get("enchant") or 0) else ""))
     if result != "ok":
         messages = {
             "not_found": "Лот уже продан или снят с продажи",
@@ -6624,11 +6859,7 @@ async def equip_market_buy(request: EquipMarketBuyRequest, x_telegram_init_data:
         raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось купить"))
 
     fresh = await store.get(user_id)
-    return {
-        "status": "success",
-        "coins": float(fresh.get("coins") or 0.0),
-        "inventory": normalize_nest_inventory(fresh.get("nest_inventory")),
-    }
+    return {"status": "success", "coins": float(fresh.get("coins") or 0.0), **nest_items_payload(fresh)}
 
 
 @app.post("/api/market/equip/cancel")
@@ -6645,7 +6876,7 @@ async def equip_market_cancel(request: EquipMarketCancelRequest, x_telegram_init
         raise HTTPException(status_code=400, detail=messages.get(result, "Не удалось снять лот"))
 
     fresh = await store.get(user_id)
-    return {"status": "success", "inventory": normalize_nest_inventory(fresh.get("nest_inventory"))}
+    return {"status": "success", **nest_items_payload(fresh)}
 
 
 # --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
@@ -7009,6 +7240,9 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     doc["nest_miners"] = normalize_nest_miners(doc.get("nest_miners"))
     doc["nest_inventory"] = normalize_nest_inventory(doc.get("nest_inventory"))
     doc["nest_equipped"] = normalize_nest_equipped(doc.get("nest_equipped"))
+    doc["nest_enchanted"] = normalize_nest_enchanted(doc.get("nest_enchanted"))
+    doc["nest_equipped_enchant"] = normalize_nest_equipped_enchant(doc.get("nest_equipped_enchant"), doc["nest_equipped"])
+    doc["hunt_items"] = hunt_items_of(doc)
     return doc
 
 
@@ -7143,6 +7377,57 @@ async def admin_grant_item(user_id: int, body: AdminGrantItem, _: None = Depends
         return {"nest_inventory": inventory}, {"nest_inventory": inventory}
 
     return await run_farm_action(user_id, compute)
+
+
+class AdminGrantHuntItem(BaseModel):
+    item: str
+    count: int = 10
+
+
+@app.post("/admin/api/players/{user_id}/grant_hunt_item")
+async def admin_grant_hunt_item(user_id: int, body: AdminGrantHuntItem, _: None = Depends(require_admin)):
+    """Тестовая выдача на Склад Охоты: пустые/готовые свитки заточки и
+    остальные предметы Охоты."""
+    try:
+        if body.item not in HUNT_ITEMS:
+            raise HTTPException(status_code=400, detail="Неизвестный предмет Охоты")
+        if not await store.get(user_id):
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        count = max(1, min(int(body.count), 999))
+
+        def compute(row):
+            items = hunt_items_of(row)
+            items[body.item] += count
+            return {"hunt_items": items}, {"hunt_items": items}
+
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось выдать: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/players/{user_id}/grant_random_item")
+async def admin_grant_random_item(user_id: int, _: None = Depends(require_admin)):
+    """Тестовая выдача: одна случайная вещь (случайный тип и грейд, +0)."""
+    try:
+        if not await store.get(user_id):
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        item_type, grade = random.choice(NEST_TYPE_ORDER), random.choice(NEST_GRADES)
+
+        def compute(row):
+            inventory = normalize_nest_inventory(row.get("nest_inventory"))
+            inventory[item_type][grade] += 1
+            return {"nest_inventory": inventory}, {"nest_inventory": inventory, "item_type": item_type, "grade": grade,
+                                                    "name": ((NEST_ITEM_TYPES.get(item_type) or {}).get("names") or {}).get(grade, item_type)}
+
+        return await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось выдать: {type(e).__name__}: {e}")
 
 
 @app.get("/admin/api/withdrawals")
@@ -7603,9 +7888,9 @@ def market_trade_item_label(t: dict) -> str:
     if market == "eagles":
         return t.get("item_name") or (MONSTERS.get(item) or {}).get("name") or item
     if market == "equip" and ":" in item:
-        item_type, grade = item.split(":", 1)
+        item_type, grade, *rest = item.split(":")
         names = ((CONFIG.get("nest") or {}).get("item_types") or {}).get(item_type, {}).get("names") or {}
-        return names.get(grade) or item
+        return (names.get(grade) or item) + (f" [+{rest[0]}]" if rest else "")
     if market == "resources":
         return f"{int(t.get('amount') or 0)} × {'Небесные Осколки' if item == 'shards' else 'Частички'}"
     return item

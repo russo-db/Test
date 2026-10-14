@@ -2372,6 +2372,15 @@ async function openPlayerModal(userId) {
                     <button id="grantItemBtn">+ Выдать предмет</button>
                 </div>
                 <div id="nestInventoryGrid" style="margin-top:8px; overflow-x:auto;"></div>
+                <div class="add-eagle-row" style="margin-top:8px;">
+                    <span id="enchantScrollsLine" class="muted"></span>
+                </div>
+                <div class="add-eagle-row">
+                    <button id="grantBlankScrollsBtn">+10 Пустых свитков</button>
+                    <button id="grantEnchantScrollsBtn">+10 Готовых свитков</button>
+                    <button id="grantRandomItemBtn">🔨 Выдать случайный шмот</button>
+                </div>
+                <div id="enchantedItemsLine" class="muted" style="font-size:12px;"></div>
 
                 <b style="display:block; margin-top:14px;">Доска яиц (0 — пусто, иначе уровень яйца)</b>
                 <div class="eggs-grid" id="eggsGrid">
@@ -2388,6 +2397,7 @@ async function openPlayerModal(userId) {
 
     renderFarmList();
     renderNestInventoryGrid();
+    renderEnchantAdmin();
 
     document.getElementById('addMonsterBtn').onclick = () => {
         const id = document.getElementById('addMonsterSelect').value;
@@ -2422,6 +2432,30 @@ async function openPlayerModal(userId) {
             toast(`Выдано: ${meta.names ? meta.names[grade] : meta.label} × ${count}`);
         } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
     });
+    // Тестовая выдача для заточки: свитки — на Склад Охоты, шмот — в инвентарь (+0).
+    const grantScrolls = (btnId, item, label) => {
+        document.getElementById(btnId).onclick = e => withBusyButton(e.currentTarget, 'Выдаю…', async () => {
+            try {
+                const result = await api(`/admin/api/players/${userId}/grant_hunt_item`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item, count: 10 }),
+                });
+                editingPlayer.hunt_items = result.hunt_items;
+                renderEnchantAdmin();
+                toast(`Выдано: ${label} × 10`);
+            } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+        });
+    };
+    grantScrolls('grantBlankScrollsBtn', 'blank_enchant_scroll', 'Пустой свиток заточки');
+    grantScrolls('grantEnchantScrollsBtn', 'enchant_scroll', 'Свиток заточки');
+    document.getElementById('grantRandomItemBtn').onclick = e => withBusyButton(e.currentTarget, 'Выдаю…', async () => {
+        try {
+            const result = await api(`/admin/api/players/${userId}/grant_random_item`, { method: 'POST' });
+            editingPlayer.nest_inventory = result.nest_inventory;
+            renderNestInventoryGrid();
+            toast(`Выдано: [${NEST_GRADE_LABELS[result.grade] || result.grade}] ${escHtml(result.name)}`);
+        } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+    });
     document.getElementById('playerLedgerBtn').onclick = () => openLedgerModal(userId);
     document.getElementById('playerEggLogBtn').onclick = () => openEggLogModal(userId);
     document.getElementById('playerModalClose').onclick = closePlayerModal;
@@ -2430,6 +2464,17 @@ async function openPlayerModal(userId) {
         if (e.target.id === 'playerModalBackdrop') closePlayerModal();
     });
     document.getElementById('playerModalSave').onclick = savePlayerModal;
+}
+
+function renderEnchantAdmin() {
+    const items = editingPlayer.hunt_items || {};
+    const line = document.getElementById('enchantScrollsLine');
+    if (line) line.textContent = `Склад Охоты: пустых свитков ${fmtNum(items.blank_enchant_scroll || 0)}, готовых свитков заточки ${fmtNum(items.enchant_scroll || 0)}`;
+    const ench = editingPlayer.nest_enchanted || [];
+    const el = document.getElementById('enchantedItemsLine');
+    if (el) el.innerHTML = ench.length
+        ? 'Заточенные вещи: ' + ench.map(it => `[${NEST_GRADE_LABELS[it.grade] || it.grade}] ${escHtml(((nestConfig.item_types || {})[it.type] || {}).names?.[it.grade] || it.type)} [+${it.enchant}]`).join(', ')
+        : 'Заточенных вещей нет';
 }
 
 function renderNestInventoryGrid() {

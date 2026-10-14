@@ -791,6 +791,45 @@ class MongoStore:
     # ресурсов ниже) — nest_inventory это просто счётчики по (тип, грейд),
     # без побочных игровых формул вроде ставки накопления частичек. ---
 
+    async def _give_equip_item(self, user_id: int, listing: dict) -> None:
+        """Вещь из лота — игроку: +0 в счётчик nest_inventory, заточенная —
+        отдельной вещью в nest_enchanted со своим уровнем. ops: 1 — иначе
+        параллельный крафт/заточка (CAS по ops с $set всего инвентаря)
+        затёрли бы выданную вещь."""
+        level = int(listing.get("enchant") or 0)
+        if level > 0:
+            import secrets
+            item = {"id": secrets.token_hex(6), "type": listing["item_type"], "grade": listing["grade"], "enchant": level}
+            await self.users.update_one({"_id": user_id}, {"$push": {"nest_enchanted": item}, "$inc": {"ops": 1}})
+        else:
+            field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
+            await self.users.update_one({"_id": user_id}, {"$inc": {field: 1, "ops": 1}})
+
+    async def create_enchanted_equip_listing(self, seller_id: int, seller_name: str, item_id: str,
+                                             price_gram: float, ts: int):
+        """Выставляет ЗАТОЧЕННУЮ вещь: атомарно вынимает её из nest_enchanted
+        продавца ($pull по id) и создаёт лот с её уровнем. None — вещи нет."""
+        from pymongo import ReturnDocument
+        before = await self.users.find_one_and_update(
+            {"_id": seller_id, "nest_enchanted.id": item_id},
+            {"$pull": {"nest_enchanted": {"id": item_id}}, "$inc": {"ops": 1}},
+            projection={"nest_enchanted": 1}, return_document=ReturnDocument.BEFORE,
+        )
+        item = next((it for it in ((before or {}).get("nest_enchanted") or [])
+                     if isinstance(it, dict) and it.get("id") == item_id), None)
+        if not item:
+            return None
+        listing = {
+            "seller_id": seller_id, "seller_name": seller_name, "item_type": item["type"], "grade": item["grade"],
+            "enchant": int(item.get("enchant") or 0), "price_gram": price_gram, "created_at": ts,
+        }
+        try:
+            result = await self.equip_market.insert_one(listing)
+        except Exception:
+            await self._give_equip_item(seller_id, listing)   # лот не записался — вещь возвращается
+            raise
+        return str(result.inserted_id)
+
     async def create_equip_listing(self, seller_id: int, seller_name: str, item_type: str,
                                     grade: str, price_gram: float, ts: int) -> Optional[str]:
         """Атомарно списывает 1 шт. предмета из nest_inventory[item_type][grade]
@@ -853,10 +892,7 @@ class MongoStore:
             await self.equip_market.insert_one(listing)
             return "insufficient_funds"
 
-        field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
-        # ops: 1 — иначе параллельный крафт/улучшение (CAS по ops с $set всего
-        # инвентаря) затёр бы купленный предмет.
-        await self.users.update_one({"_id": buyer_id}, {"$inc": {field: 1, "ops": 1}})
+        await self._give_equip_item(buyer_id, listing)   # вместе с уровнем заточки
 
         seller_credit = price * (1 - commission)
         await self.users.update_one(
@@ -880,8 +916,7 @@ class MongoStore:
             exists = await self.equip_market.find_one({"_id": oid})
             return "not_owner" if exists else "not_found"
 
-        field = f"nest_inventory.{listing['item_type']}.{listing['grade']}"
-        await self.users.update_one({"_id": seller_id}, {"$inc": {field: 1, "ops": 1}})
+        await self._give_equip_item(seller_id, listing)   # вместе с уровнем заточки
         return "ok"
 
     # --- РЫНОК РЕСУРСОВ: P2P-торговля целыми Небесными Осколками и целыми
