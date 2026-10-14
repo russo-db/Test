@@ -7097,6 +7097,9 @@ class AlchemyMarketListRequest(BaseModel):
     user_id: int
     item: str
     quantity: int
+    # тариф, который игрок видел и подтвердил; если админ его успел поменять —
+    # не выставляем по новой цене молча, а просим обновить экран
+    expected_unit_price: Optional[float] = None
 
 
 class AlchemyMarketLotRequest(BaseModel):
@@ -7147,6 +7150,8 @@ async def alchemy_market_list(request: AlchemyMarketListRequest, x_telegram_init
         raise HTTPException(status_code=400, detail="Количество — от 1 шт.")
     if qty > ALCHEMY_MARKET_MAX_QTY:
         raise HTTPException(status_code=400, detail=f"Не больше {ALCHEMY_MARKET_MAX_QTY} шт. в одном лоте")
+    if request.expected_unit_price is not None and abs(float(request.expected_unit_price) - unit) > 1e-9:
+        raise HTTPException(status_code=409, detail=f"Тариф изменился: теперь {unit:g} 🪙 за 1 шт. — проверь итог и выставь снова")
 
     def compute(row):
         items = hunt_items_of(row)

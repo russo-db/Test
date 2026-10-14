@@ -7225,7 +7225,7 @@
                 // цену не отправляем — её считает сервер по тарифу
                 const response = await fetch('api/market/alchemy/list', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, item, quantity: qty }),
+                    body: JSON.stringify({ user_id: state.userId, item, quantity: qty, expected_unit_price: alchPrice(item) }),
                 });
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); loadAlchemyMarket(); resyncAfterMarketChange(); return; }
