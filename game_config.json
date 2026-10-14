@@ -419,6 +419,10 @@
       ]
     ]
   },
+  "auto_expedition": {
+    "price_gram": 10,
+    "duration_days": 15
+  },
   "expeditions": {
     "duration_hours": 4,
     "cost_meat": 1,

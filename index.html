@@ -1159,6 +1159,13 @@
         .gold-vip-block .gvip-btn { width: 100%; margin-top: 8px; padding: 12px 10px; font-size: 13.5px; }
         .gold-vip-block .gvip-btn.gold { background: linear-gradient(135deg, #ffd76a, #f59e0b); color: #2a1404; text-shadow: none; }
         .gold-vip-block .gvip-note { font-size: 11px; color: #cdb99a; margin-top: 4px; }
+        /* ---------- 🤖 Авто-экспедиции (премиум) ---------- */
+        .auto-exp-block { margin: 10px 0 4px; text-align: center; }
+        .auto-exp-block .autoexp-btn { width: 100%; padding: 13px 10px; font-size: 13.5px; text-transform: none; letter-spacing: 0; line-height: 1.3; }
+        .auto-exp-block .autoexp-btn.active { background: linear-gradient(135deg, #34d399, #059669); border-color: rgba(167, 243, 208, 0.6);
+            box-shadow: 0 0 18px rgba(52, 211, 153, 0.45); color: #fff; }
+        .auto-exp-block .autoexp-note { font-size: 11px; color: var(--text-muted); margin-top: 5px; line-height: 1.35; padding: 0 4px; }
+        .auto-exp-block .autoexp-note b { color: #6ee7b7; }
 
         /* ---------- Охота ---------- */
         /* Подложка экрана: тёмная вуаль поверх приглушённых гор, плотные
@@ -1538,6 +1545,7 @@
                     <div class="farm-queue" id="farmQueue"></div>
                 </div>
                 <div class="gold-vip-block" id="goldVipBlock"></div>
+                <div class="auto-exp-block" id="autoExpBlock"></div>
             </div>
         </div>
 
@@ -2779,6 +2787,19 @@
                 'gvip.sent': '🚀 В экспедиции улетели {n} орл. (−{meat} 🥩)',
                 'gvip.collected': '💰 +{gold} 🪙 с {n} орл.{rest}',
                 'gvip.restFlying': ' · ещё в пути: {n}',
+                'autoexp.buy': '🤖 Включить Авто-экспедиции на {days} дней за {price} Gram 💎',
+                'autoexp.active': '🤖 Авто-экспедиция активна: еще {left}',
+                'autoexp.left': '{d} дн. {h} ч', 'autoexp.leftHours': '{h} ч {m} мин',
+                'autoexp.noteOff': 'Сервер сам собирает золото у вернувшихся орлов и отправляет их снова (−{meat} 🥩 за вылет) — даже когда ты не в игре.',
+                'autoexp.noteOn': 'Тапни, чтобы продлить ещё на {days} дней за {price} Gram — дни прибавятся к остатку.',
+                'autoexp.resting': '😴 Отдыхают без мяса: <b>{n}</b> — полетят, как только пополнишь мясо.',
+                'autoexp.confirmBuy': 'Включить Авто-экспедиции на {days} дней за {price} GRAM?',
+                'autoexp.confirmExtend': 'Продлить Авто-экспедиции ещё на {days} дней за {price} GRAM? Дни прибавятся к оставшемуся времени.',
+                'autoexp.bought': '🤖 Авто-экспедиции включены на {days} дней',
+                'autoexp.extended': '🤖 Авто-экспедиции продлены ещё на {days} дней',
+                'autoexp.cycle': ' · собрано {gold} 🪙, отправлено {sent}',
+                'autoexp.notEnough': 'Не хватает GRAM: нужно {price}',
+                'autoexp.restStatus': '😴 Отдыхает — нет мяса на авто-экспедицию',
                 'hunt.nav': 'Охота',
                 'hunt.heading': '🏹 Охота',
                 'hunt.subheading': 'Шахта, Дальние Экспедиции и Алхимия',
@@ -3315,6 +3336,19 @@
                 'gvip.sent': '🚀 {n} eagle(s) flew off (−{meat} 🥩)',
                 'gvip.collected': '💰 +{gold} 🪙 from {n} eagle(s){rest}',
                 'gvip.restFlying': ' · still flying: {n}',
+                'autoexp.buy': '🤖 Enable Auto-expeditions for {days} days for {price} Gram 💎',
+                'autoexp.active': '🤖 Auto-expedition active: {left} left',
+                'autoexp.left': '{d}d {h}h', 'autoexp.leftHours': '{h}h {m}m',
+                'autoexp.noteOff': 'The server collects gold from returned eagles and sends them again (−{meat} 🥩 per flight) — even while you are offline.',
+                'autoexp.noteOn': 'Tap to extend by {days} more days for {price} Gram — days add to the time left.',
+                'autoexp.resting': '😴 Resting without meat: <b>{n}</b> — they fly as soon as you top up meat.',
+                'autoexp.confirmBuy': 'Enable Auto-expeditions for {days} days for {price} GRAM?',
+                'autoexp.confirmExtend': 'Extend Auto-expeditions by {days} more days for {price} GRAM? Days add to the time left.',
+                'autoexp.bought': '🤖 Auto-expeditions enabled for {days} days',
+                'autoexp.extended': '🤖 Auto-expeditions extended by {days} days',
+                'autoexp.cycle': ' · collected {gold} 🪙, sent {sent}',
+                'autoexp.notEnough': 'Not enough GRAM: need {price}',
+                'autoexp.restStatus': '😴 Resting — no meat for the auto-expedition',
                 'hunt.nav': 'Hunt',
                 'hunt.heading': '🏹 Hunt',
                 'hunt.subheading': 'Mine, Far Expeditions and Alchemy',
@@ -3748,6 +3782,7 @@
         function slotBadge(slot) {
             if (isOnHunt(slot)) return huntNow() >= slot.huntUntil ? '🏹!' : '🏹';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
+            if (slot.autoRest && autoExpActive()) return '😴';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
             return `${slot.feedLevel || 1}/${CONFIG.fusion.feed_levels}`;
@@ -3894,6 +3929,7 @@
             if (isOnHunt(slot)) status = huntNow() >= slot.huntUntil ? t('hunt.farm.backStatus')
                 : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - huntNow()) });
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
+            else if (slot.autoRest && autoExpActive()) status = t('autoexp.restStatus');
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
             else if (isFarmingEgg(slot)) status = t('farm.eggIn', { time: formatCountdown(slot.nextEggAt - nowSeconds()) });
@@ -5157,7 +5193,98 @@
             return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isListed(s) && !isOnExpedition(s));
         }
 
+        // ---------- 🤖 Авто-экспедиции ----------
+        // Цикл крутит сервер (auto_expedition_worker в main.py): собирает золото
+        // у вернувшихся орлов и отправляет их снова, без мяса — «Отдыхает».
+        // Клиент только показывает кнопку/таймер, покупает подписку и
+        // подтягивает свежую ферму, когда кто-то вернулся.
+        let autoExp = { until: 0, price_gram: 10, days: 15 };
+        let autoExpLastSync = 0;
+
+        function applyAutoExp(v) {
+            if (!v || typeof v !== 'object') return;
+            autoExp = { until: Number(v.until) || 0, price_gram: Number(v.price_gram) || 0, days: Number(v.days) || 15 };
+        }
+
+        function autoExpActive() { return autoExp.until > nowSeconds(); }
+        // «10 Gram», а не «10.00 Gram» — цена подписки обычно целая
+        function autoExpPriceText() { const p = autoExp.price_gram; return Number.isInteger(p) ? String(p) : fmtGram(p); }
+
+        function autoExpLeftText() {
+            const sec = Math.max(0, Math.floor(autoExp.until - nowSeconds()));
+            const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+            return d > 0 ? t('autoexp.left', { d, h }) : t('autoexp.leftHours', { h, m });
+        }
+
+        function renderAutoExpBlock() {
+            const el = document.getElementById('autoExpBlock');
+            if (!el) return;
+            const price = autoExpPriceText();
+            const active = autoExpActive();
+            const resting = active ? state.farm.filter(s => s.autoRest).length : 0;
+            const meat = Number(CONFIG.expeditions && CONFIG.expeditions.cost_meat) || 1;
+            // Остаток — в отдельном span (обновляется текстом каждую секунду), чтобы
+            // кнопка не пересобиралась и нажатие в момент тика не терялось.
+            const html = active
+                ? `<button class="btn-primary autoexp-btn active" id="autoExpBtn" onclick="buyAutoExpedition()">${t('autoexp.active', { left: '<span id="autoExpLeft"></span>' })}</button>
+                   ${resting ? `<div class="autoexp-note">${t('autoexp.resting', { n: resting })}</div>` : ''}
+                   <div class="autoexp-note">${t('autoexp.noteOn', { days: autoExp.days, price })}</div>`
+                : `<button class="btn-primary autoexp-btn" id="autoExpBtn" onclick="buyAutoExpedition()">${t('autoexp.buy', { days: autoExp.days, price })}</button>
+                   <div class="autoexp-note">${t('autoexp.noteOff', { meat })}</div>`;
+            setHTMLIfChanged(el, html, { allowInnerUpdates: true });
+            const left = document.getElementById('autoExpLeft');
+            if (left) { const txt = autoExpLeftText(); if (left.textContent !== txt) left.textContent = txt; }
+            maybeSyncAutoExp();
+        }
+
+        // Сервер обрабатывает вернувшихся орлов раз в ~30 с; если на экране
+        // кто-то уже вернулся (или «отдыхающему» хватает мяса) — подтягиваем
+        // свежую ферму, не чаще раза в 15 с.
+        function maybeSyncAutoExp() {
+            if (!autoExpActive() || offlineOnly || !state.userId) return;
+            const meat = Number(CONFIG.expeditions && CONFIG.expeditions.cost_meat) || 1;
+            const due = state.farm.some(s => (isOnExpedition(s) && expeditionReady(s)) || (s.autoRest && state.mnstr >= meat));
+            if (!due || Date.now() - autoExpLastSync < 15000) return;
+            autoExpLastSync = Date.now();
+            syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+        }
+
+        async function buyAutoExpedition() {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            const key = 'auto-exp-buy';
+            if (farmActionBusy.has(key)) return;
+            const price = autoExp.price_gram;
+            const extending = autoExpActive();
+            if ((state.coins || 0) + 1e-9 < price) { toast(t('autoexp.notEnough', { price: autoExpPriceText() })); haptic.notify('warning'); return; }
+            if (!confirm(t(extending ? 'autoexp.confirmExtend' : 'autoexp.confirmBuy', { days: autoExp.days, price: autoExpPriceText() }))) return;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                const response = await fetch('api/farm/auto_expedition/buy', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ user_id: state.userId }) });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); return; }
+                ok = true;
+                applyAutoExp(data.auto_expedition);
+                if (typeof data.coins === 'number') state.coins = data.coins;
+                if (typeof data.gold === 'number') state.gold = data.gold;
+                if (typeof data.mnstr === 'number') state.mnstr = data.mnstr;
+                if (data.monsters) state.farm = readFarm(data.monsters);
+                if (typeof data.ops === 'number') state.ops = data.ops;
+                haptic.notify('success');
+                const c = data.cycle;
+                toast(t(data.extended ? 'autoexp.extended' : 'autoexp.bought', { days: autoExp.days })
+                    + (c && (c.collected || c.sent) ? t('autoexp.cycle', { gold: fmtGram(c.reward), sent: c.sent }) : ''));
+                renderAll();
+                saveLocally();
+            } catch (e) {
+                toast(t('market.serverError'));
+            } finally {
+                if (ok) setTimeout(() => farmActionBusy.delete(key), LIST_ACTION_HOLD_MS); else farmActionBusy.delete(key);
+            }
+        }
+
         function renderGoldVipBlock() {
+            renderAutoExpBlock();
             const el = document.getElementById('goldVipBlock');
             if (!el || !CONFIG || !CONFIG.vip) return;
             const gold = (CONFIG.vip.tiers || []).find(t => t.id === 'gold');
@@ -10861,6 +10988,7 @@
             state.mnstr = data.mnstr || 0;
             state.gold = data.gold || 0;
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
+            applyAutoExp(data.auto_expedition);
             state.merchant = readMerchantState(data.merchant);
             applyWheelState(data.wheel);
             state.farm = readFarm(data.monsters);
@@ -10955,7 +11083,8 @@
                 const hunt = huntUntil > 0
                     ? { huntUntil, huntStartedAt: Number(slot.hunt_started_at) || 0, huntZone: slot.hunt_zone || '', huntSlot: Number(slot.hunt_slot) || 0 }
                     : { huntUntil: 0 };
-                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, ...hunt });
+                const autoRest = !!slot.auto_rest && expeditionUntil <= 0;   // 🤖 авто-экспедиция ждёт мяса
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, autoRest, ...hunt });
                 return farm;
             }, []);
         }

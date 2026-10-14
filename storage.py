@@ -268,6 +268,7 @@ class MongoStore:
             (self.market_trades, "buyer_id", {}),
             (self.market_trades, "seller_id", {}),
             (self.balance_ledger, [("source", 1), ("ts", -1)], {}),
+            (self.users, "auto_expedition_until", {"sparse": True}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)

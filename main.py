@@ -129,6 +129,7 @@ def apply_config(cfg: dict):
     global FEED_BASE_COST, FEED_GROWTH, FEED_TAPS_PER_LEVEL, MERGE_COST_MEAT, MERGE_COST_GRAM, ROULETTE_BY_TIER
     global MERGE_COST_MEAT_BY_TIER
     global EXPEDITIONS_CFG, EXPEDITION_DURATION_HOURS, EXPEDITION_COST_MEAT, EXPEDITION_GOLD_BY_TIER
+    global AUTO_EXP_PRICE_GRAM, AUTO_EXP_DAYS
     global SLOTS_PRICES, VIP_TIERS
     global NEST_CFG, NEST_SHARD_PRICE_GRAM, NEST_SHARD_COOLDOWN_HOURS, NEST_PARTICLE_INTERVAL_HOURS
     global NEST_CRAFT_COST_PARTICLES, NEST_CRAFT_COST_GOLD, NEST_UPGRADE_GROUP, NEST_GRADES, NEST_GRADE_BONUS
@@ -175,6 +176,9 @@ def apply_config(cfg: dict):
     EXPEDITION_DURATION_HOURS = float(EXPEDITIONS_CFG.get("duration_hours", 4))
     EXPEDITION_COST_MEAT = float(EXPEDITIONS_CFG.get("cost_meat", 1))
     EXPEDITION_GOLD_BY_TIER = [float(v) for v in (EXPEDITIONS_CFG.get("gold_by_tier") or [])]
+    AUTO_EXP_CFG = CONFIG.get("auto_expedition") or {}
+    AUTO_EXP_PRICE_GRAM = max(0.0, float(AUTO_EXP_CFG.get("price_gram", 10)))
+    AUTO_EXP_DAYS = max(1, int(AUTO_EXP_CFG.get("duration_days", 15)))
     SLOTS_PRICES = [float(v) for v in (CONFIG["slots"].get("prices") or [])]
     VIP_TIERS = {t["id"]: t for t in (CONFIG.get("vip") or {}).get("tiers", [])}
     MARKET_CFG = CONFIG.get("market") or {}
@@ -656,6 +660,10 @@ def read_farm(raw) -> List[dict]:
         listing_id = entry.get("listing_id")
         if isinstance(listing_id, str) and listing_id:
             slot["listing_id"] = listing_id
+        # Авто-экспедиции: орёл вернулся, а мяса на новый вылет не было —
+        # «Отдыхает», пока мясо не появится (см. auto_expedition_compute).
+        if entry.get("auto_rest") and expedition_until <= 0:
+            slot["auto_rest"] = True
         # Охота: орёл в Дальней Экспедиции (hunt_slot — какой из 3 слотов
         # Охоты он занимает). Отметку сохраняем при любой перезаписи фермы.
         try:
@@ -2512,6 +2520,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         except Exception as e:
             print(f"[load] не удалось обновить имя {user_id}: {type(e).__name__}: {e}")
     row = await accrue_vip_meat(user_id, row)
+    row = await settle_auto_expeditions(user_id, row)
     row = await accrue_shares_dividends(user_id, row)
     row = await reconcile_queues(user_id, row)
     row = await reconcile_pvp_energy(user_id, row)
@@ -2549,6 +2558,7 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "clans_enabled": await clans_enabled_for(request),
         "show_hunt_module": await hunt_enabled_for(request),
         "gold_eagle_vip": gold_eagle_vip(row),
+        "auto_expedition": auto_expedition_view(row),
         # Время сервера: по нему клиент считает таймеры Охоты на ферме — часы
         # телефона могут спешить или отставать на часы.
         "server_time": time.time(),
@@ -2874,6 +2884,222 @@ def gold_eagle_vip(row: dict) -> bool:
 def ensure_gold_eagle_vip(row: dict) -> None:
     if not gold_eagle_vip(row):
         raise HTTPException(status_code=403, detail="Доступно только с активным Gold Eagle VIP")
+
+
+# --- 🤖 АВТО-ЭКСПЕДИЦИИ (премиум, покупается за GRAM на AUTO_EXP_DAYS дней) ---
+# Пока подписка активна, сервер сам — и когда игрок оффлайн — у каждого
+# вернувшегося из обычной экспедиции орла: 1) забирает золото, 2) проверяет
+# мясо, 3) отправляет его в новую экспедицию (−EXPEDITION_COST_MEAT мяса),
+# а если мяса не хватает — оставляет «Отдыхать» (auto_rest) до пополнения.
+# Мясо в минус не уходит. Цикл идёт по времени возвращения орлов: новый вылет
+# начинается в момент возвращения прошлого, поэтому после простоя сервера
+# пропущенные круги досчитываются точно так же, как если бы он не стоял.
+# Орлы, вернувшиеся ДО покупки подписки, отправляются с момента покупки
+# (auto_expedition_since), не задним числом. Ручной «Забрать» у орла выводит
+# его из цикла (дальше он свободен — например, для продажи).
+# Где запускается: фоновый auto_expedition_worker (раз в AUTO_EXP_TICK_SECONDS)
+# и /api/load — оба через run_farm_action (CAS по ops), так что параллельные
+# действия игрока не теряются и золото не задваивается.
+AUTO_EXP_TICK_SECONDS = 30
+AUTO_EXP_MAX_STEPS = 20000   # предохранитель досчёта (24 орла × 15 дней по 1 ч ≈ 8640)
+
+
+def auto_expedition_until_of(row: dict) -> float:
+    try:
+        return max(0.0, float(row.get("auto_expedition_until") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def auto_expedition_view(row: dict) -> dict:
+    return {"until": auto_expedition_until_of(row), "price_gram": AUTO_EXP_PRICE_GRAM, "days": AUTO_EXP_DAYS}
+
+
+def auto_exp_eligible(slot: dict) -> bool:
+    """Тот же допуск, что у ручной отправки: 7 ур., не на рынке, не на Охоте."""
+    return slot["feed_level"] >= FEED_LEVELS and not slot_listed(slot) and not slot_on_hunt(slot)
+
+
+def auto_expedition_due(row: dict, now: float) -> bool:
+    """Есть ли что делать — дешёвая проверка до CAS (фоновый проход по игрокам)."""
+    until = auto_expedition_until_of(row)
+    if until <= 0:
+        return False
+    for slot in read_farm(row.get("monsters")):
+        end = slot["expedition_until"]
+        if 0 < end <= now and end < until:
+            return True
+        if slot.get("auto_rest") and now < until:
+            return True
+    return False
+
+
+def auto_expedition_compute(row: dict, now: float):
+    """Чистый расчёт цикла для run_farm_action: (fields, summary) или None,
+    если делать нечего. События обрабатываются по времени возвращения, общий
+    запас мяса тратится в том же порядке, в каком орлы прилетали."""
+    import heapq
+    until = auto_expedition_until_of(row)
+    if until <= 0:
+        return None
+    since = float(row.get("auto_expedition_since") or 0)
+    farm = read_farm(row.get("monsters"))
+    mnstr = float(row.get("mnstr") or 0)
+    gold = max(0.0, float(row.get("gold") or 0))
+    duration = expedition_duration_seconds(row)
+    cost = EXPEDITION_COST_MEAT
+    heap = [(slot["expedition_until"], i) for i, slot in enumerate(farm)
+            if 0 < slot["expedition_until"] <= now and slot["expedition_until"] < until]
+    heapq.heapify(heap)
+    reward_total, collected, sent, rested, meat_spent, steps = 0.0, 0, 0, 0, 0.0, 0
+    changed = False
+    while heap and steps < AUTO_EXP_MAX_STEPS:
+        steps += 1
+        end, i = heapq.heappop(heap)
+        slot = farm[i]
+        at = max(float(end), since)          # вернулся до покупки — круг с момента покупки
+        # ШАГ 1: золото — на баланс, орёл свободен
+        reward = expedition_gold_reward(slot["id"])
+        gold += reward
+        reward_total += reward
+        collected += 1
+        slot["expedition_until"] = 0
+        slot["expedition_started_at"] = 0
+        slot.pop("auto_rest", None)
+        changed = True
+        if not auto_exp_eligible(slot):
+            continue
+        # ШАГ 2–3: мясо есть — новый вылет с момента возвращения; нет — «Отдыхает»
+        if mnstr + 1e-9 >= cost:
+            mnstr -= cost
+            meat_spent += cost
+            sent += 1
+            slot["expedition_started_at"] = int(at)
+            slot["expedition_until"] = int(at + duration)
+            if slot["expedition_until"] <= now and slot["expedition_until"] < until:
+                heapq.heappush(heap, (slot["expedition_until"], i))
+        else:
+            slot["auto_rest"] = True
+            rested += 1
+    # «Отдыхающие» орлы: мясо появилось — вылет сейчас; орёл стал недоступен
+    # (рынок/Охота) — отметку снимаем, из цикла он вышел.
+    if now < until:
+        for slot in farm:
+            if not slot.get("auto_rest") or slot["expedition_until"] > 0:
+                continue
+            if not auto_exp_eligible(slot):
+                slot.pop("auto_rest", None)
+                changed = True
+            elif mnstr + 1e-9 >= cost:
+                mnstr -= cost
+                meat_spent += cost
+                sent += 1
+                slot.pop("auto_rest", None)
+                slot["expedition_started_at"] = int(now)
+                slot["expedition_until"] = int(now + duration)
+                changed = True
+    if not changed:
+        return None
+    fields = {"monsters": farm, "gold": gold, "mnstr": max(0.0, mnstr)}
+    summary = {"collected": collected, "reward": reward_total, "sent": sent,
+               "rested": sum(1 for s in farm if s.get("auto_rest")), "meat_spent": meat_spent,
+               "monsters": farm, "gold": gold, "mnstr": max(0.0, mnstr)}
+    return fields, summary
+
+
+class _NothingAuto(Exception):
+    pass
+
+
+async def run_auto_expeditions(user_id: int) -> Optional[dict]:
+    """Один проход цикла для игрока (CAS). None — делать было нечего."""
+    def compute(row):
+        out = auto_expedition_compute(row, time.time())
+        if out is None:
+            raise _NothingAuto()
+        return out
+    try:
+        with ledger_source("auto:expedition"):
+            result = await run_farm_action(user_id, compute)
+    except _NothingAuto:
+        return None
+    if result.get("collected"):
+        await record_economy(gold_expeditions=result["reward"], expeditions=result["collected"],
+                             auto_expeditions=result["collected"])
+    return result
+
+
+async def settle_auto_expeditions(user_id: int, row: dict) -> dict:
+    """Для /api/load: досчитать цикл перед выдачей фермы (как accrue_vip_meat)."""
+    try:
+        if auto_expedition_due(row, time.time()) and await run_auto_expeditions(user_id):
+            return await fetch_user(user_id)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+    return row
+
+
+async def auto_expedition_worker():
+    """Фон: раз в AUTO_EXP_TICK_SECONDS обходит подписчиков (и тех, у кого
+    подписка кончилась, но орлы вернулись ещё при ней) и крутит цикл."""
+    while True:
+        try:
+            now = time.time()
+            async for row in store.users.find(
+                {"auto_expedition_until": {"$gt": now - (EXPEDITION_DURATION_HOURS + 1) * 3600 - 7 * 86400}},
+                {"_id": 1, "monsters": 1, "auto_expedition_until": 1},
+            ):
+                if auto_expedition_due(row, now):
+                    try:
+                        await run_auto_expeditions(int(row["_id"]))
+                    except Exception as e:
+                        print(f"[auto-exp] {row.get('_id')}: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"[auto-exp] worker error: {type(e).__name__}: {e}")
+        await asyncio.sleep(AUTO_EXP_TICK_SECONDS)
+
+
+@app.post("/api/farm/auto_expedition/buy")
+async def farm_auto_expedition_buy(request: NestAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """🤖 Авто-экспедиции на AUTO_EXP_DAYS дней за AUTO_EXP_PRICE_GRAM GRAM.
+    Подписка активна — новые дни прибавляются к остатку, ничего не сгорает."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+
+    def compute(row):
+        coins = float(row.get("coins") or 0)
+        if coins + 1e-9 < AUTO_EXP_PRICE_GRAM:
+            raise HTTPException(status_code=400, detail=f"Не хватает GRAM: нужно {AUTO_EXP_PRICE_GRAM:g}")
+        now = time.time()
+        current = auto_expedition_until_of(row)
+        fields = {"coins": coins - AUTO_EXP_PRICE_GRAM}
+        if current > now:
+            until = current + AUTO_EXP_DAYS * 86400          # продление: к остатку
+        else:
+            until = now + AUTO_EXP_DAYS * 86400
+            fields["auto_expedition_since"] = now           # новый период — отсчёт с покупки
+        fields["auto_expedition_until"] = until
+        return fields, {"coins": fields["coins"], "auto_expedition": {**auto_expedition_view(row), "until": until},
+                        "extended": current > now}
+
+    try:
+        result = await run_farm_action(user_id, compute)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось включить авто-экспедиции — попробуй ещё раз")
+    await record_economy(gram_auto_expedition=AUTO_EXP_PRICE_GRAM, auto_expedition_bought=1)
+    # Орлы, которые уже ждут сбора, обрабатываются сразу, а не через полминуты.
+    try:
+        cycle = await run_auto_expeditions(user_id)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        cycle = None
+    fresh = await fetch_user(user_id)
+    result.update({"monsters": read_farm(fresh.get("monsters")), "gold": float(fresh.get("gold") or 0),
+                   "mnstr": float(fresh.get("mnstr") or 0), "coins": float(fresh.get("coins") or 0),
+                   "ops": int(fresh.get("ops") or 0), "cycle": {k: cycle[k] for k in ("collected", "reward", "sent", "rested")} if cycle else None})
+    return result
 
 
 # --- ЗОЛОТЫЕ АКЦИИ (Гнездо Воинов → «📈 Акции») ---
@@ -9002,6 +9228,7 @@ async def admin_set_nft_settings(body: AdminNftSettings, _: int = Depends(requir
 LEDGER_LABELS = [
     ("start", "Стартовый баланс"),
     ("vip:meat", "VIP: ежедневное мясо"),
+    ("auto:expedition", "🤖 Авто-экспедиции: сбор золота и отправка"),
     ("ton:deposit", "Пополнение TON"),
     ("arena:season_rewards", "Награда сезона Арены"),
     ("auction:refund", "Аукцион: возврат ставки"),
@@ -10042,6 +10269,7 @@ async def startup_event():
     await refresh_hunt_enabled(force=True)
     asyncio.create_task(backfill_activity_once())
     asyncio.create_task(auction_worker())
+    asyncio.create_task(auto_expedition_worker())
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
