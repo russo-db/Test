@@ -2378,7 +2378,7 @@
                 'nest.enchant.btn': '🔥 Точить выбранный предмет', 'nest.enchant.item': 'Предмет',
                 'nest.enchant.chance': 'Шанс на +{to}', 'nest.enchant.bonusNow': 'Бонус заточки',
                 'nest.enchant.safe': '🛡️ Безопасная заточка: при неудаче сгорает только свиток, уровень вещи не падает.',
-                'nest.enchant.maxed': 'Максимальная заточка — +{max}', 'nest.enchant.noScroll': 'Нужен готовый свиток заточки — скрафти его в Алхимии Охоты.',
+                'nest.enchant.maxed': 'Максимальная заточка — +{max}', 'nest.enchant.noFurther': 'Эту вещь дальше точить нельзя', 'nest.enchant.noScroll': 'Нужен готовый свиток заточки — скрафти его в Алхимии Охоты.',
                 'nest.enchant.success': '✨ Успех! Вещь заточена до [+{lvl}] (бонус +{bonus}%)',
                 'nest.enchant.fail': '💨 Неудача — свиток сгорел, вещь осталась на [+{lvl}]',
                 'nest.upgradedRefund': '🎉 Ранг повышен! Новая вещь получила ранг [+0], а вам на Склад Охоты возвращено [{n}] свитков заточки!',
@@ -2727,6 +2727,7 @@
                 'hunt.storage.scrolls': 'Свитки заточки',
                 'hunt.alchemy.craftScroll': '📜 Скрафтить Свиток Заточки',
                 'hunt.alchemy.chance100': 'Шанс: 100%.',
+                'hunt.alchemy.collectHint': '💡 В Гнезде Воинов накоплено {n} частичек — собери их, чтобы использовать здесь.',
                 'hunt.desc.rock_crystal': 'Добывается в Шахте. Нужен для зелий Алхимии.',
                 'hunt.desc.mountain_root': 'Добыча Дальних Экспедиций. Нужен для Зелья Ярости.',
                 'hunt.desc.shimmer_mushroom': 'Добыча Дальних Экспедиций. Нужен для Отвара Стальной Кожи.',
@@ -2894,7 +2895,7 @@
                 'nest.enchant.btn': '🔥 Enchant selected item', 'nest.enchant.item': 'Item',
                 'nest.enchant.chance': 'Chance for +{to}', 'nest.enchant.bonusNow': 'Enchant bonus',
                 'nest.enchant.safe': '🛡️ Safe enchant: on failure only the scroll burns, the item keeps its level.',
-                'nest.enchant.maxed': 'Max enchant is +{max}', 'nest.enchant.noScroll': 'You need an enchant scroll — craft it in Hunt Alchemy.',
+                'nest.enchant.maxed': 'Max enchant is +{max}', 'nest.enchant.noFurther': 'This item cannot be enchanted further', 'nest.enchant.noScroll': 'You need an enchant scroll — craft it in Hunt Alchemy.',
                 'nest.enchant.success': '✨ Success! Item enchanted to [+{lvl}] (bonus +{bonus}%)',
                 'nest.enchant.fail': '💨 Failed — the scroll burned, the item stays at [+{lvl}]',
                 'nest.upgradedRefund': '🎉 Rank up! The new item is [+0], and [{n}] enchant scrolls were returned to your Hunt Storage!',
@@ -3243,6 +3244,7 @@
                 'hunt.storage.scrolls': 'Enchant scrolls',
                 'hunt.alchemy.craftScroll': '📜 Craft Enchant Scroll',
                 'hunt.alchemy.chance100': 'Chance: 100%.',
+                'hunt.alchemy.collectHint': '💡 {n} particles are waiting in the Warriors\' Nest — collect them to use here.',
                 'hunt.desc.rock_crystal': 'Mined in the Mine. Used for Alchemy potions.',
                 'hunt.desc.mountain_root': 'Found on Far Expeditions. Used for the Potion of Rage.',
                 'hunt.desc.shimmer_mushroom': 'Found on Far Expeditions. Used for the Steelskin Brew.',
@@ -8253,10 +8255,12 @@
             }
             const meta = CONFIG.nest.item_types[it.type] || {};
             const max = nestEnchantMax();
-            const atMax = it.enchant >= max;
             const chance = nestEnchantChance(it.grade, it.enchant);
+            // максимум достигнут ИЛИ в таблице шансов нет следующего уровня
+            // (конфиг поправили) — сервер всё равно откажет, кнопку не даём
+            const atMax = it.enchant >= max || chance <= 0;
             const nextBonus = atMax ? 0 : nestEnchantBonus(it.grade, it.enchant + 1);
-            const reason = atMax ? t('nest.enchant.maxed', { max }) : (scrolls < 1 ? t('nest.enchant.noScroll') : '');
+            const reason = atMax ? (it.enchant >= max ? t('nest.enchant.maxed', { max }) : t('nest.enchant.noFurther')) : (scrolls < 1 ? t('nest.enchant.noScroll') : '');
             box.innerHTML = `<div class="nest-enchant-box">
                 <div class="stat-row"><span>${t('nest.enchant.item')}</span><b>[${nestGradeLabel(it.grade)}] ${(meta.names || {})[it.grade] || meta.label} +${it.enchant}</b></div>
                 ${atMax ? '' : `<div class="stat-row"><span>${t('nest.enchant.chance', { to: it.enchant + 1 })}</span><b>${fmtPct(chance)}%</b></div>
@@ -11648,6 +11652,8 @@
                     <h3>${meta.icon} ${huntEsc(HUNT_ITEM_META[r.id] ? meta.name : (r.name || r.id))} <span class="hunt-level-pill">${t('hunt.alchemy.inStorage', { n: items[r.id] || 0 })}</span></h3>
                     <div class="hunt-sub">${huntItemDesc(r.id)}${r.id === 'enchant_scroll' ? ' ' + t('hunt.alchemy.chance100') : ''}</div>
                     <div class="hunt-ingredients">${ings}</div>
+                    ${needParticles && haveParticles + 1e-9 < needParticles && Math.floor(nestPendingParticles(serverNow())) >= 1
+                        ? `<div class="hunt-sub" style="color:var(--gold-lt)">${t('hunt.alchemy.collectHint', { n: Math.floor(nestPendingParticles(serverNow())) })}</div>` : ''}
                     <button class="btn-primary" ${ok ? '' : 'disabled'} onclick="huntCraft('${r.id}')">${r.id === 'enchant_scroll' ? t('hunt.alchemy.craftScroll') : t('hunt.alchemy.brew')}</button>
                 </div>`;
             }).join('');
