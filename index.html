@@ -6179,6 +6179,28 @@
             `;
         }
 
+        // Свой лот пропал с витрины — его купили, пока игрок был в игре: GRAM
+        // продавцу уже начислены, проданный орёл ушёл с фермы. Без перечитывания
+        // орёл висел на ферме с замком, «Снять» отвечало «Лот уже продан», а
+        // баланс не менялся до перезахода. То же после отказа покупки/снятия:
+        // сервер знает больше, чем клиент (лот продан, GRAM потрачены и т. п.).
+        const ownLotIds = {};
+        let marketResyncAt = 0;
+        function resyncAfterMarketChange() {
+            if (offlineOnly || !state.userId || Date.now() - marketResyncAt < 3000) return;
+            marketResyncAt = Date.now();
+            syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {});
+        }
+        function noteOwnLots(kind, listings) {
+            const now = new Set((listings || []).filter(l => String(l.seller_id) === String(state.userId)).map(l => l.id));
+            const before = ownLotIds[kind];
+            ownLotIds[kind] = now;
+            if (before && [...before].some(id => !now.has(id))) resyncAfterMarketChange();
+        }
+        function forgetOwnLot(kind, id) {
+            if (ownLotIds[kind]) ownLotIds[kind].delete(id);
+        }
+
         async function loadMarketListings() {
             if (offlineOnly || !state.userId) { renderMarket(); return; }
             try {
@@ -6186,6 +6208,7 @@
                 if (!response.ok) throw new Error('market fetch failed');
                 const data = await response.json();
                 state.marketListings = data.listings || [];
+                noteOwnLots('eagles', state.marketListings);
                 state.marketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
@@ -6272,7 +6295,7 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadMarketListings(); resyncAfterMarketChange(); return; }
                 const queueBefore = (state.farmQueue || []).length;
                 state.coins = data.coins;
                 state.farm = readFarm(data.monsters);
@@ -6296,11 +6319,12 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadMarketListings(); resyncAfterMarketChange(); return; }
                 state.farm = readFarm(data.monsters);
                 if (data.farm_queue) state.farmQueue = readFarm(data.farm_queue);
                 state.slots = data.slots;
                 if (typeof data.ops === 'number') state.ops = data.ops;
+                forgetOwnLot('eagles', listingId);
                 haptic.notify('success');
                 toast(t('market.cancelled'));
                 renderAll();
@@ -6432,6 +6456,7 @@
                 if (!response.ok) throw new Error('equip market fetch failed');
                 const data = await response.json();
                 state.equipMarketListings = data.listings || [];
+                noteOwnLots('equip', state.equipMarketListings);
                 state.equipMarketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
@@ -6526,7 +6551,7 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadEquipMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadEquipMarketListings(); resyncAfterMarketChange(); return; }
                 state.coins = data.coins;
                 state.nest.inventory = data.inventory;
                 haptic.notify('success');
@@ -6546,8 +6571,9 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadEquipMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadEquipMarketListings(); resyncAfterMarketChange(); return; }
                 state.nest.inventory = data.inventory;
+                forgetOwnLot('equip', listingId);
                 haptic.notify('success');
                 toast(t('market.cancelled'));
                 renderAll();
@@ -6712,6 +6738,7 @@
                 if (!response.ok) throw new Error('resource market fetch failed');
                 const data = await response.json();
                 state.resourceMarketListings = data.listings || [];
+                noteOwnLots('resources', state.resourceMarketListings);
                 state.resourceMarketCounts = data.counts || {};
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
@@ -6814,7 +6841,7 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); resyncAfterMarketChange(); return; }
                 state.coins = data.coins;
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
@@ -6836,10 +6863,11 @@
                     body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
                 });
                 const data = await response.json();
-                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadResourceMarketListings(); return; }
+                if (!response.ok) { toast(data.detail || t('market.cancelFailed')); haptic.notify('warning'); loadResourceMarketListings(); resyncAfterMarketChange(); return; }
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
                 if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
+                forgetOwnLot('resources', listingId);
                 haptic.notify('success');
                 toast(t('market.cancelled'));
                 renderAll();

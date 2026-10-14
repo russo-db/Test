@@ -557,10 +557,19 @@ class MongoStore:
             )
             if locked.modified_count == 0:
                 continue  # ферма поменялась параллельно — перечитываем
-            await self.market.insert_one({
-                "_id": oid, "seller_id": seller_id, "seller_name": seller_name,
-                "monster_id": monster_id, "price_gram": price_gram, "created_at": ts, "in_place": True,
-            })
+            try:
+                await self.market.insert_one({
+                    "_id": oid, "seller_id": seller_id, "seller_name": seller_name,
+                    "monster_id": monster_id, "price_gram": price_gram, "created_at": ts, "in_place": True,
+                })
+            except Exception:
+                # лот не записался — замок снимаем, иначе орёл навсегда заперт
+                # без лота, и «Снять с рынка» отвечало бы «Лот уже продан»
+                await self.users.update_one(
+                    {"_id": seller_id, "monsters.listing_id": str(oid)},
+                    {"$unset": {"monsters.$.listing_id": ""}, "$inc": {"ops": 1}},
+                )
+                raise
             return str(oid), None
         return None, "conflict"
 

@@ -6473,10 +6473,14 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
         )
 
     row = await fetch_user(user_id)
-    listing_id, reason = await store.create_listing(
-        user_id, row.get("name") or "", request.monster_id,
-        FEED_LEVELS, request.price_gram, int(time.time()), request.slot_index,
-    )
+    try:
+        listing_id, reason = await store.create_listing(
+            user_id, row.get("name") or "", request.monster_id,
+            FEED_LEVELS, request.price_gram, int(time.time()), request.slot_index,
+        )
+    except Exception as e:   # замок с орла уже снят в create_listing
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось выставить лот — попробуй ещё раз")
     if listing_id is None:
         messages = {
             "listed": "Этот орёл уже выставлен на рынок",
