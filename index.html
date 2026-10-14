@@ -999,11 +999,23 @@
         .nest-equip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         .nest-equip-head h3 { margin: 0; font-size: 15px; }
         .nest-modal-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 4px; }
-        .nest-equip-option { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: var(--panel-soft); border: 1px solid var(--glass-border); margin-bottom: 8px; }
-        .nest-equip-option .nest-equip-ic { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; overflow: hidden; }
+        /* Окно выбора снаряжения — карточки как на рынке: иконка 44px, название
+           14px, строка грейда 12px (бонус не обрезается), компактная кнопка справа.
+           Общий .btn-primary — на всю ширину (width:100%): в flex-строке он
+           сжимал название до нуля, и текст уезжал под кнопку. */
+        .nest-equip-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--panel-soft); border: 1px solid var(--glass-border); margin-bottom: 9px; text-align: left; }
+        .nest-equip-option .nest-equip-ic { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: none; overflow: hidden; }
         .nest-equip-option .nest-equip-info { flex: 1; min-width: 0; }
-        .nest-equip-option .nest-equip-info .nest-equip-n { font-weight: 700; font-size: 12.5px; }
-        .nest-equip-option .nest-equip-info .nest-equip-g { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+        .nest-equip-option .nest-equip-info .nest-equip-n { font-weight: 700; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
+        .nest-equip-option .nest-equip-info .nest-equip-g { font-size: 12px; line-height: 1.3; color: var(--text-muted); margin-top: 3px; }
+        .nest-equip-option .btn-primary, .nest-equip-option .btn-action { flex: 0 0 auto; width: auto; padding: 8px 12px; font-size: 13px; border-radius: 14px; letter-spacing: 0; white-space: nowrap; }
+        .nest-equip-option .btn-primary { box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+        @media (max-width: 360px) {
+            .nest-equip-option { gap: 8px; padding: 9px 10px; }
+            .nest-equip-option .nest-equip-ic { width: 36px; height: 36px; border-radius: 10px; }
+            .nest-equip-option .nest-equip-info .nest-equip-n { font-size: 13px; }
+            .nest-equip-option .btn-primary, .nest-equip-option .btn-action { padding: 7px 9px; font-size: 12px; }
+        }
         .nest-empty-note { color: var(--text-muted); font-size: 12.5px; text-align: center; padding: 24px 10px; }
 
         /* ---------- Арена ---------- */
@@ -9759,7 +9771,7 @@
                     body += `<div class="nest-equip-option">
                         <div class="nest-equip-ic" style="background:${color}33">${nestItemIconMarkup(type, it.grade)}</div>
                         <div class="nest-equip-info"><div class="nest-equip-n">${meta.names[it.grade]}<span class="nest-ench-badge">+${it.enchant}</span></div><div class="nest-equip-g">${nestGradeLabel(it.grade)} · +${fmtPct(bonus)}%</div></div>
-                        <button class="btn-primary" style="padding:8px 14px" onclick="nestEquip('${it.grade}','${it.id}')">${t('nest.equipBtn')}</button>
+                        <button class="btn-primary" onclick="nestEquip('${it.grade}','${it.id}')">${t('nest.equipBtn')}</button>
                     </div>`;
                 });
             (CONFIG.nest.grades || []).forEach(grade => {
@@ -9771,7 +9783,7 @@
                 body += `<div class="nest-equip-option">
                     <div class="nest-equip-ic" style="background:${color}33">${nestItemIconMarkup(type, grade)}</div>
                     <div class="nest-equip-info"><div class="nest-equip-n">${meta.names[grade]}</div><div class="nest-equip-g">${nestGradeLabel(grade)} · +${bonus}% · x${count}</div></div>
-                    <button class="btn-primary" style="padding:8px 14px" onclick="nestEquip('${grade}')">${t('nest.equipBtn')}</button>
+                    <button class="btn-primary" onclick="nestEquip('${grade}')">${t('nest.equipBtn')}</button>
                 </div>`;
             });
             if (!any && !equipped) {
