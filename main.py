@@ -7364,10 +7364,10 @@ def particles_gold_unit_price(value) -> float:
         unit = float("nan")
     if not math.isfinite(unit):
         raise HTTPException(status_code=400, detail=PARTICLES_GOLD_RANGE_DETAIL.format(lo=PARTICLES_GOLD_MIN, hi=PARTICLES_GOLD_MAX))
-    unit = round(unit, 2)
+    # коридор — по введённому значению (2.999 не превращается в 3 округлением), потом до сотых
     if unit < PARTICLES_GOLD_MIN - 1e-9 or unit > PARTICLES_GOLD_MAX + 1e-9:
         raise HTTPException(status_code=400, detail=PARTICLES_GOLD_RANGE_DETAIL.format(lo=PARTICLES_GOLD_MIN, hi=PARTICLES_GOLD_MAX))
-    return unit
+    return min(PARTICLES_GOLD_MAX, max(PARTICLES_GOLD_MIN, round(unit, 2)))
 
 
 def resource_market_min_lot_price(resource: str, amount: int) -> float:
