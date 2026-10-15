@@ -101,6 +101,14 @@ LEDGER_BUCKET_SECONDS = 600
 EGG_LOG_RETENTION_SECONDS = 90 * 24 * 3600   # журнал вскрытия яиц — тоже 90 дней
 
 
+def resource_lot_price(listing: dict) -> tuple:
+    """(поле баланса, цена) лота рынка ресурсов: лоты Частичек за золото —
+    ("gold", price_gold), остальные — ("coins", price_gram)."""
+    if listing.get("currency") == "gold":
+        return "gold", float(listing.get("price_gold") or 0)
+    return "coins", float(listing.get("price_gram") or 0)
+
+
 class ledger_source:
     """with ledger_source("ton:deposit"): ... — метка источника для журнала."""
 
@@ -1010,9 +1018,12 @@ class MongoStore:
     # cancel_listing выше отвечают только за орла и GRAM. ---
 
     async def create_resource_listing(self, seller_id: int, seller_name: str, resource: str,
-                                       amount: int, price_gram: float, ts: int) -> str:
+                                       amount: int, price_gram: float, ts: int,
+                                       price_gold: Optional[float] = None, unit_price_gold: Optional[float] = None) -> str:
         """Просто создаёт лот — ресурс у продавца уже списан вызывающим
-        кодом (main.py._adjust_user_resource) ДО этого вызова."""
+        кодом (main.py._adjust_user_resource) ДО этого вызова. price_gold —
+        лот за ЗОЛОТО (Частички): currency="gold", price_gold = итог лота,
+        unit_price = цена за 1 шт. в золоте; price_gram тогда 0."""
         listing = {
             "seller_id": seller_id, "seller_name": seller_name, "resource": resource,
             "amount": amount, "price_gram": price_gram, "created_at": ts,
@@ -1020,6 +1031,9 @@ class MongoStore:
             # цену»: лот «20 шт. за 0.2» выгоднее, чем «1 шт. за 0.1».
             "unit_price": price_gram / max(1, int(amount)),
         }
+        if price_gold is not None:
+            listing.update({"currency": "gold", "price_gram": 0.0, "price_gold": float(price_gold),
+                            "unit_price": float(unit_price_gold if unit_price_gold is not None else price_gold / max(1, int(amount)))})
         result = await self.resource_market.insert_one(listing)
         return str(result.inserted_id)
 
@@ -1045,9 +1059,18 @@ class MongoStore:
         except InvalidId:
             return "not_found"
 
-        refused = await self._buy_precheck(self.resource_market, oid, buyer_id)
-        if refused:
-            return refused
+        lot = await self.resource_market.find_one({"_id": oid}, {"currency": 1, "price_gold": 1, "seller_id": 1})
+        if lot and lot.get("currency") == "gold":
+            # лот за ЗОЛОТО (Частички) — та же предпроверка, но по золоту
+            if int(lot["seller_id"]) == int(buyer_id):
+                return "own_listing"
+            doc = await self.users.find_one({"_id": buyer_id}, {"gold": 1})
+            if not doc or float(doc.get("gold") or 0) < float(lot.get("price_gold") or 0):
+                return "insufficient_funds"
+        else:
+            refused = await self._buy_precheck(self.resource_market, oid, buyer_id)
+            if refused:
+                return refused
         listing = await self.resource_market.find_one_and_delete({"_id": oid})
         if not listing:
             return "not_found"
@@ -1055,10 +1078,10 @@ class MongoStore:
             await self.resource_market.insert_one(listing)
             return "own_listing"
 
-        price = float(listing["price_gram"])
+        field, price = resource_lot_price(listing)
         result = await self.users.update_one(
-            {"_id": buyer_id, "coins": {"$gte": price}},
-            {"$inc": {"coins": -price, "ops": 1}},
+            {"_id": buyer_id, field: {"$gte": price}},
+            {"$inc": {field: -price, "ops": 1}},
         )
         if result.modified_count == 0:
             await self.resource_market.insert_one(listing)
@@ -1072,8 +1095,8 @@ class MongoStore:
         ресурс покупателю после списания GRAM (гонка на 5 попыток) —
         возвращает GRAM и восстанавливает лот, чтобы деньги не пропали
         без товара."""
-        price = float(listing["price_gram"])
-        await self.users.update_one({"_id": buyer_id}, {"$inc": {"coins": price, "ops": 1}})
+        field, price = resource_lot_price(listing)
+        await self.users.update_one({"_id": buyer_id}, {"$inc": {field: price, "ops": 1}})
         await self.restore_resource_listing(listing)
 
     async def restore_resource_listing(self, listing: dict) -> None:
@@ -1084,12 +1107,20 @@ class MongoStore:
             doc["_id"] = ObjectId(listing_id)
         await self.resource_market.insert_one(doc)
 
-    async def credit_resource_seller(self, seller_id: int, price_gram: float, commission: float) -> None:
+    async def credit_resource_seller(self, seller_id: int, price_gram: float, commission: float,
+                                     currency: str = "gram") -> float:
+        """Продавцу — цена минус комиссия: GRAM (coins + total_earned) или,
+        для лотов за золото (Частички), золото. Возвращает зачисленное."""
+        if currency == "gold":
+            seller_credit = round(price_gram * (1 - commission), 9)
+            await self.users.update_one({"_id": seller_id}, {"$inc": {"gold": seller_credit, "ops": 1}})
+            return seller_credit
         seller_credit = price_gram * (1 - commission)
         await self.users.update_one(
             {"_id": seller_id},
             {"$inc": {"coins": seller_credit, "total_earned": seller_credit, "ops": 1}},
         )
+        return seller_credit
 
     async def take_own_resource_listing(self, seller_id: int, listing_id: str):
         """Снимает СВОЙ лот ресурса с продажи — как cancel_listing/

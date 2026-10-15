@@ -118,6 +118,7 @@ def apply_config(cfg: dict):
     global MONSTER_TIER, TIER_INDEX, MARKET_CFG, MARKET_MIN_TIER_INDEX, MARKET_COMMISSION, MARKET_MIN_PRICE
     global EQUIP_MARKET_CFG, EQUIP_MARKET_COMMISSION, EQUIP_MARKET_MIN_PRICE
     global RESOURCE_MARKET_CFG, RESOURCE_MARKET_COMMISSION, RESOURCE_MARKET_MIN_PRICE, RESOURCE_MARKET_MIN_AMOUNT
+    global PARTICLES_GOLD_MIN, PARTICLES_GOLD_MAX
     global RESOURCE_MARKET_MIN_UNIT_PRICE
     global ALCHEMY_MARKET_CFG, ALCHEMY_MARKET_PRICES, ALCHEMY_MARKET_MAX_QTY, ALCHEMY_MARKET_COMMISSION
     global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
@@ -197,6 +198,10 @@ def apply_config(cfg: dict):
         k: float(v) for k, v in (RESOURCE_MARKET_CFG.get("min_price_per_unit") or {}).items()
     }
     RESOURCE_MARKET_MIN_AMOUNT = {k: int(v) for k, v in (RESOURCE_MARKET_CFG.get("min_amount") or {}).items()}
+    # Частички торгуются за ЗОЛОТО: цена за 1 шт. строго в коридоре (по умолчанию 3–10 🪙)
+    _pg = RESOURCE_MARKET_CFG.get("particles_gold") or {}
+    PARTICLES_GOLD_MIN = float(_pg.get("min_unit_price", 3))
+    PARTICLES_GOLD_MAX = float(_pg.get("max_unit_price", 10))
     # Рынок → «Алхимия»: ресурсы Охоты за ЗОЛОТО по жёсткому тарифу системы за
     # 1 шт. (игрок цену не вводит); комиссия рынка — как у остальных отделов.
     ALCHEMY_MARKET_CFG = CONFIG.get("alchemy_market") or {}
@@ -1964,7 +1969,8 @@ class ResourceMarketListRequest(BaseModel):
     user_id: int
     resource: str  # "shards" | "particles"
     amount: int
-    price_gram: float
+    price_gram: Optional[float] = None       # Небесные Осколки — цена ВСЕГО лота в GRAM
+    unit_price_gold: Optional[float] = None  # Частички — цена за 1 шт. в ЗОЛОТЕ (коридор PARTICLES_GOLD_MIN..MAX)
 
 
 class ResourceMarketBuyRequest(BaseModel):
@@ -7342,7 +7348,26 @@ async def resource_market_listings(user_id: int, x_telegram_init_data: Optional[
     groups = {res: {"resource": res} for res in ("shards", "particles")}
     items, counts = await store.listings_view(store.resource_market, viewer, groups, MARKET_PER_GROUP,
                                               sort_field="unit_price")
-    return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP}
+    return {"listings": items, "counts": counts, "per_group": MARKET_PER_GROUP,
+            "particles_gold": {"min_unit_price": PARTICLES_GOLD_MIN, "max_unit_price": PARTICLES_GOLD_MAX}}
+
+
+PARTICLES_GOLD_RANGE_DETAIL = "Цена должна быть от {lo:g} до {hi:g} золота за 1 частичку!"
+
+
+def particles_gold_unit_price(value) -> float:
+    """Цена 1 частички в золоте: число в коридоре [PARTICLES_GOLD_MIN, MAX],
+    до сотых. Иначе 400 «Цена должна быть от 3 до 10 золота за 1 частичку!»."""
+    try:
+        unit = float(value)
+    except (TypeError, ValueError):
+        unit = float("nan")
+    if not math.isfinite(unit):
+        raise HTTPException(status_code=400, detail=PARTICLES_GOLD_RANGE_DETAIL.format(lo=PARTICLES_GOLD_MIN, hi=PARTICLES_GOLD_MAX))
+    unit = round(unit, 2)
+    if unit < PARTICLES_GOLD_MIN - 1e-9 or unit > PARTICLES_GOLD_MAX + 1e-9:
+        raise HTTPException(status_code=400, detail=PARTICLES_GOLD_RANGE_DETAIL.format(lo=PARTICLES_GOLD_MIN, hi=PARTICLES_GOLD_MAX))
+    return unit
 
 
 def resource_market_min_lot_price(resource: str, amount: int) -> float:
@@ -7362,20 +7387,31 @@ async def resource_market_list(request: ResourceMarketListRequest, x_telegram_in
     min_amount = RESOURCE_MARKET_MIN_AMOUNT.get(request.resource, 1)
     if amount < min_amount:
         raise HTTPException(status_code=400, detail=f"Минимум {min_amount} шт.")
-    request.price_gram = market_price(request.price_gram)
-    check_market_price(request.price_gram)
-    min_price = resource_market_min_lot_price(request.resource, amount)
-    if request.price_gram < min_price - 1e-9:
-        unit = RESOURCE_MARKET_MIN_UNIT_PRICE.get(request.resource, 0.0)
-        per_unit = f" ({unit:g} GRAM за штуку × {amount})" if unit * amount >= min_price - 1e-9 else ""
-        raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM{per_unit}")
+    gold_lot = None
+    if request.resource == "particles":
+        # Частички — только за золото, цена за 1 шт. в коридоре; итог = кол-во × цена
+        unit = particles_gold_unit_price(request.unit_price_gold)
+        if amount > 1_000_000:
+            raise HTTPException(status_code=400, detail="Слишком большое количество")
+        gold_lot = (round(amount * unit, 2), unit)
+    else:
+        if request.price_gram is None:
+            raise HTTPException(status_code=400, detail="Укажи цену лота в GRAM")
+        request.price_gram = market_price(request.price_gram)
+        check_market_price(request.price_gram)
+        min_price = resource_market_min_lot_price(request.resource, amount)
+        if request.price_gram < min_price - 1e-9:
+            unit = RESOURCE_MARKET_MIN_UNIT_PRICE.get(request.resource, 0.0)
+            per_unit = f" ({unit:g} GRAM за штуку × {amount})" if unit * amount >= min_price - 1e-9 else ""
+            raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM{per_unit}")
 
     row = await fetch_user(user_id)
     if not await _adjust_user_resource(user_id, request.resource, -amount):
         raise HTTPException(status_code=400, detail="Недостаточно ресурса для выставления лота")
     try:
         listing_id = await store.create_resource_listing(
-            user_id, row.get("name") or "", request.resource, amount, request.price_gram, int(time.time()),
+            user_id, row.get("name") or "", request.resource, amount, float(request.price_gram or 0), int(time.time()),
+            price_gold=gold_lot[0] if gold_lot else None, unit_price_gold=gold_lot[1] if gold_lot else None,
         )
     except Exception as e:   # лот не записался — ресурс возвращаем, а не теряем
         traceback.print_exception(type(e), e, e.__traceback__)
@@ -7409,8 +7445,9 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
     if claim == "own_listing":
         raise HTTPException(status_code=400, detail="Нельзя купить свой же лот")
     if claim == "insufficient_funds":
-        raise HTTPException(status_code=400, detail="Не хватает GRAM")
-    listing = claim  # GRAM покупателя уже списан на этом этапе
+        lot = await store.resource_market.find_one({"_id": _market_oid(request.listing_id)}, {"currency": 1}) if _market_oid(request.listing_id) else None
+        raise HTTPException(status_code=400, detail="Не хватает золота" if (lot or {}).get("currency") == "gold" else "Не хватает GRAM")
+    listing = claim  # GRAM (или золото — лоты Частичек) покупателя уже списаны на этом этапе
 
     try:
         granted = await _adjust_user_resource(user_id, listing["resource"], int(listing["amount"]))
@@ -7421,20 +7458,73 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
         await store.refund_failed_resource_purchase(user_id, listing)
         raise HTTPException(status_code=409, detail="Не удалось завершить покупку — попробуй ещё раз")
 
-    await store.credit_resource_seller(listing["seller_id"], listing["price_gram"], RESOURCE_MARKET_COMMISSION)
-    await log_market_trade("resources", listing, user_id, RESOURCE_MARKET_COMMISSION,
-                           item=listing.get("resource"), amount=int(listing.get("amount") or 0))
+    if listing.get("currency") == "gold":
+        price = float(listing.get("price_gold") or 0)
+        credit = await store.credit_resource_seller(listing["seller_id"], price, RESOURCE_MARKET_COMMISSION, currency="gold")
+        try:
+            await store.add_market_trade({
+                "ts": time.time(), "market": "resources", "item": listing.get("resource"),
+                "amount": int(listing.get("amount") or 0), "price_gram": price, "seller_credit": credit,
+                "currency": "gold", "seller_id": listing.get("seller_id"), "seller_name": listing.get("seller_name") or "",
+                "buyer_id": user_id, "listed_at": listing.get("created_at"),
+            })
+        except Exception as e:
+            print(f"[market] particles trade log failed: {type(e).__name__}: {e}")
+    else:
+        await store.credit_resource_seller(listing["seller_id"], listing["price_gram"], RESOURCE_MARKET_COMMISSION)
+        await log_market_trade("resources", listing, user_id, RESOURCE_MARKET_COMMISSION,
+                               item=listing.get("resource"), amount=int(listing.get("amount") or 0))
 
     fresh = await store.get(user_id)
     return {
         "status": "success",
         "coins": float(fresh.get("coins") or 0.0),
+        "gold": float(fresh.get("gold") or 0.0),
         "particles": float(fresh.get("nest_particles") or 0),
         "shard_count": nest_owned_shards(fresh),
         # Момент отсчёта добычи сдвигается при смене числа Осколков — без него
         # клиент до перезахода показывал неверное «Готово к сбору».
         "last_claim": nest_last_claim_of(fresh, time.time()),
     }
+
+
+async def migrate_particle_gram_lots() -> dict:
+    """ОДНОРАЗОВАЯ миграция при переходе Частичек на золото: все активные
+    лоты Частичек за GRAM снимаются с рынка, а их частички возвращаются
+    продавцам на склад. Каждый лот забирается атомарно (find_one_and_delete),
+    поэтому при нескольких запусках/экземплярах сервера частички вернутся
+    ровно один раз. Если зачислить не удалось — лот возвращается на рынок
+    (ничего не теряется) и будет обработан при следующем запуске."""
+    refunded, failed, particles = 0, 0, 0
+    query = {"resource": "particles", "currency": {"$ne": "gold"}}
+    for _ in range(10000):
+        lot = await store.resource_market.find_one_and_delete(query)
+        if not lot:
+            break
+        seller, amount = int(lot["seller_id"]), int(lot.get("amount") or 0)
+        try:
+            with ledger_source("market:particles_refund"):
+                ok = amount <= 0 or await _adjust_user_resource(seller, "particles", amount)
+        except Exception as e:
+            traceback.print_exception(type(e), e, e.__traceback__)
+            ok = False
+        if not ok:
+            failed += 1
+            try:
+                await store.resource_market.insert_one(lot)   # вернуть лот — повторим при следующем запуске
+            except Exception as e:
+                print(f"[migrate] не удалось вернуть лот {lot.get('_id')} продавцу {seller}: {type(e).__name__}: {e}")
+            break
+        refunded += 1
+        particles += amount
+        try:
+            await tg_send(seller, f"🔄 Рынок Частичек переходит на Золото. Твой лот ({amount} шт.) снят с продажи, "
+                                  f"частички вернулись на склад. Выставь их заново — цена теперь в золоте за 1 шт.")
+        except Exception:
+            pass
+    if refunded or failed:
+        print(f"[migrate] лоты Частичек за GRAM: снято {refunded}, вернули {particles} шт.; не удалось: {failed}")
+    return {"refunded": refunded, "particles": particles, "failed": failed}
 
 
 @app.post("/api/market/resources/cancel")
@@ -9384,6 +9474,7 @@ LEDGER_LABELS = [
     ("start", "Стартовый баланс"),
     ("vip:meat", "VIP: ежедневное мясо"),
     ("auto:expedition", "🤖 Авто-экспедиции: сбор золота и отправка"),
+    ("market:particles_refund", "Рынок: возврат лота Частичек (переход на золото)"),
     ("ton:deposit", "Пополнение TON"),
     ("arena:season_rewards", "Награда сезона Арены"),
     ("auction:refund", "Аукцион: возврат ставки"),
@@ -10425,6 +10516,10 @@ async def startup_event():
     asyncio.create_task(backfill_activity_once())
     asyncio.create_task(auction_worker())
     asyncio.create_task(auto_expedition_worker())
+    try:
+        await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад
+    except Exception as e:
+        print(f"[migrate] particles → gold FAILED: {type(e).__name__}: {e}")
     asyncio.create_task(ledger_maintenance())
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())

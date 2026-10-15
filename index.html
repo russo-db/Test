@@ -2589,6 +2589,13 @@
                 'resourcemarket.priceLotLabel': 'Цена за ВЕСЬ лот ({amount} шт.), GRAM',
                 'resourcemarket.perUnit': '= {price} GRAM за 1 шт.',
                 'resourcemarket.perUnitShort': '{price} GRAM за шт.',
+                'resourcemarket.perUnitGold': '{price} 🪙 за шт.',
+                'resourcemarket.goldRangeLabel': 'цена {min}–{max} 🪙 за шт.',
+                'resourcemarket.unitGoldLabel': 'Цена за 1 шт., Золото 🪙 (от {min} до {max})',
+                'resourcemarket.goldRangeError': 'Цена должна быть от {min} до {max} золота за 1 частичку!',
+                'resourcemarket.goldTotal': 'Итого: {amount} × {unit} = {total} 🪙',
+                'resourcemarket.goldNet': 'Тебе придёт: {net} 🪙 (комиссия рынка {pct}%)',
+                'resourcemarket.confirmGold': 'Выставить {amount} шт. «Частички» по {unit} золота за штуку?\nИтого за лот: {total} золота.',
                 'resourcemarket.confirmList': 'Выставить {amount} шт. «{res}» за {price} GRAM за весь лот?\nЭто {unit} GRAM за штуку.',
                 'daily.toQueue': 'День {day}: +{reward} — свободных ячеек нет, орёл ждёт в очереди под фермой', 'farm.staleSlot': 'Ферма обновилась — в этой ячейке уже другой орёл. Ничего не сделано, проверь и повтори.', 'vip.meatPerDay': 'Meat каждый день', 'vip.eggReduction': 'Ускорение яиц',
                 'vip.expeditionReduction': 'Ускорение экспедиций', 'vip.duration': 'Срок действия',
@@ -3151,6 +3158,13 @@
                 'resourcemarket.priceLotLabel': 'Price for the WHOLE lot ({amount} pcs), GRAM',
                 'resourcemarket.perUnit': '= {price} GRAM per piece',
                 'resourcemarket.perUnitShort': '{price} GRAM each',
+                'resourcemarket.perUnitGold': '{price} 🪙 each',
+                'resourcemarket.goldRangeLabel': 'price {min}–{max} 🪙 each',
+                'resourcemarket.unitGoldLabel': 'Price per piece, Gold 🪙 ({min} to {max})',
+                'resourcemarket.goldRangeError': 'The price must be from {min} to {max} gold per particle!',
+                'resourcemarket.goldTotal': 'Total: {amount} × {unit} = {total} 🪙',
+                'resourcemarket.goldNet': 'You will get: {net} 🪙 ({pct}% market fee)',
+                'resourcemarket.confirmGold': 'List {amount} × «Particles» at {unit} gold each?\nTotal for the lot: {total} gold.',
                 'resourcemarket.confirmList': 'List {amount} × «{res}» for {price} GRAM for the whole lot?\nThat is {unit} GRAM each.',
                 'daily.toQueue': 'Day {day}: +{reward} — no free slot, the eagle is waiting in the queue below the farm', 'farm.staleSlot': 'Your farm changed — that slot now holds a different eagle. Nothing was done; check and try again.', 'vip.meatPerDay': 'Meat every day', 'vip.eggReduction': 'Egg speed-up',
                 'vip.expeditionReduction': 'Expedition speed-up', 'vip.duration': 'Duration',
@@ -6537,7 +6551,7 @@
                     ${iconHtml}
                     <div class="card-info">
                         <h3>${titleHtml}</h3>
-                        <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')} · ${fmtLotPrice(listing.price_gram)} GRAM</p>
+                        <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')} · ${lotIsGold(listing) ? `${fmtLotPrice(listing.price_gold)} 🪙` : `${fmtLotPrice(listing.price_gram)} GRAM`}</p>
                     </div>
                     <button class="btn-action" onclick="${cancelFn}('${listing.id}')">${t('market.cancelBtn')}</button>
                 </div>`;
@@ -7088,6 +7102,19 @@
             return resource === 'shards' ? (state.nest.shardCount || 0) : (state.nest.particles || 0);
         }
 
+        // Частички торгуются за ЗОЛОТО: цена за 1 шт. строго в коридоре (3–10 🪙)
+        let particlesGoldRange = null;
+        function particlesGoldRange_() {
+            const cfg = particlesGoldRange || (CONFIG.resource_market && CONFIG.resource_market.particles_gold) || {};
+            return { min: Number(cfg.min_unit_price) || 3, max: Number(cfg.max_unit_price) || 10 };
+        }
+        function lotIsGold(l) { return l && l.currency === 'gold'; }
+        function lotPriceHtml(l) {
+            return lotIsGold(l) ? `${fmtLotPrice(l.price_gold)} 🪙` : `${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt="">`;
+        }
+        function lotUnitPrice(l) { return lotIsGold(l) ? Number(l.unit_price) || (l.price_gold / Math.max(1, l.amount)) : l.price_gram / Math.max(1, l.amount); }
+        function fmtGoldUnit(v) { const n = Number(v) || 0; return Number.isInteger(n) ? String(n) : n.toFixed(2); }
+
         function resourceMarketMinAmount(resource) {
             return Number((CONFIG.resource_market.min_amount || {})[resource]) || 1;
         }
@@ -7186,7 +7213,7 @@
                             <h3>${l.amount}× ${resourceLabel(l.resource)}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${t('market.yourListing')}</p>
                         </div>
-                        <button class="btn-action" onclick="cancelResourceMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""> ✕</button>
+                        <button class="btn-action" onclick="cancelResourceMarketListing('${l.id}')">${lotPriceHtml(l)} ✕</button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.noOwnListings')}</p>`;
                 return;
@@ -7195,21 +7222,23 @@
             const rows = listings
                 .filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) !== String(state.userId))
                 // по цене ЗА ШТУКУ: «20 шт. за 0.2» выгоднее «1 шт. за 0.1»
-                .sort((a, b) => (a.price_gram / Math.max(1, a.amount)) - (b.price_gram / Math.max(1, b.amount)) || a.price_gram - b.price_gram);
+                .sort((a, b) => lotUnitPrice(a) - lotUnitPrice(b) || (a.price_gold || a.price_gram) - (b.price_gold || b.price_gram));
 
             const ownRows = listings.filter(l => l.resource === resourceMarketActiveTab && String(l.seller_id) === String(state.userId));
             body.innerHTML = `
                 ${ownRows.map(l => ownListingCard(resourceIconMarkup(l.resource), `${l.amount}× ${resourceLabel(l.resource)}`, l, 'cancelResourceMarketListing')).join('')}
-                <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}${resourceMarketMinUnitPrice(resourceMarketActiveTab) ? ` · ${t('resourcemarket.minUnitLabel', { price: fmtResourceUnitPrice(resourceMarketMinUnitPrice(resourceMarketActiveTab)) })}` : ''}</p>
+                <p class="market-min-price-line">${t('resourcemarket.minAmountLabel', { amount: resourceMarketMinAmount(resourceMarketActiveTab) })}${resourceMarketActiveTab === 'particles'
+                    ? ` · ${t('resourcemarket.goldRangeLabel', { min: fmtGoldUnit(particlesGoldRange_().min), max: fmtGoldUnit(particlesGoldRange_().max) })}`
+                    : (resourceMarketMinUnitPrice(resourceMarketActiveTab) ? ` · ${t('resourcemarket.minUnitLabel', { price: fmtResourceUnitPrice(resourceMarketMinUnitPrice(resourceMarketActiveTab)) })}` : '')}</p>
                 ${marketShownNote(state.resourceMarketCounts, resourceMarketActiveTab, rows.length)}
                 ${rows.length ? rows.map((l, idx) => `
                     <div class="card glass-panel market-card">
                         ${resourceIconMarkup(l.resource)}
                         <div class="card-info">
                             <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
-                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')} · ${t('resourcemarket.perUnitShort', { price: fmtResourceUnitPrice(l.price_gram / Math.max(1, l.amount)) })}</p>
+                            <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')} · ${lotIsGold(l) ? t('resourcemarket.perUnitGold', { price: fmtGoldUnit(lotUnitPrice(l)) }) : t('resourcemarket.perUnitShort', { price: fmtResourceUnitPrice(l.price_gram / Math.max(1, l.amount)) })}</p>
                         </div>
-                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${fmtLotPrice(l.price_gram)}<img class="coin-icon" src="assets/coin.png" alt=""></button>
+                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${lotPriceHtml(l)}</button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
             `;
@@ -7226,6 +7255,7 @@
                 state.resourceMarketListings = data.listings || [];
                 noteOwnLots('resources', state.resourceMarketListings);
                 state.resourceMarketCounts = data.counts || {};
+                if (data.particles_gold) particlesGoldRange = data.particles_gold;
             } catch (e) {
                 // офлайн/сервер недоступен — оставляем то, что уже было в кэше
             }
@@ -7250,8 +7280,32 @@
             renderResourceMarketSell();
         }
 
+        // Частички: [Количество] × [Цена за 1 шт. в золоте] = итог. Цена вне
+        // коридора — кнопка «Выставить» заблокирована, под полем ошибка.
+        function particlesSellState() {
+            const amount = Math.max(0, Math.floor(Number((document.getElementById('resourceMarketSellAmount') || {}).value) || 0));
+            const unit = Number((document.getElementById('resourceMarketSellUnitGold') || {}).value);
+            const { min, max } = particlesGoldRange_();
+            const unitOk = Number.isFinite(unit) && unit >= min - 1e-9 && unit <= max + 1e-9;
+            return { amount, unit, unitOk, total: Math.round(amount * (unitOk ? unit : 0) * 100) / 100, min, max };
+        }
+
+        function updateParticlesSell() {
+            const st = particlesSellState();
+            const err = document.getElementById('resourceMarketGoldErr');
+            if (err) err.style.display = st.unitOk ? 'none' : '';
+            const total = document.getElementById('resourceMarketGoldTotal');
+            if (total) total.textContent = st.unitOk ? t('resourcemarket.goldTotal', { amount: st.amount, unit: fmtGoldUnit(st.unit), total: fmtGoldUnit(st.total) }) : '';
+            const net = document.getElementById('resourceMarketGoldNet');
+            const pct = Math.round((CONFIG.resource_market.commission || 0) * 100);
+            if (net) net.textContent = st.unitOk ? t('resourcemarket.goldNet', { net: fmtGoldUnit(Math.round(st.total * (1 - (CONFIG.resource_market.commission || 0)) * 100) / 100), pct }) : '';
+            const btn = document.getElementById('resourceMarketSellBtn');
+            if (btn) btn.disabled = !st.unitOk || st.amount < 1;
+        }
+
         function renderResourceMarketSell() {
             const resource = resourceMarketSellResource;
+            if (resource === 'particles') { renderParticlesSell(); return; }
             const owned = Math.floor(resourceOwned(resource));
             const minAmount = resourceMarketMinAmount(resource);
             const amountEl = document.getElementById('resourceMarketSellAmount');
@@ -7262,16 +7316,7 @@
 
             document.getElementById('resourceMarketSellBody').innerHTML = `
                 <h2>${t('resourcemarket.sellTitle')}</h2>
-                <div class="lang-options">
-                    <button class="lang-option ${resource === 'shards' ? 'active' : ''}" onclick="selectResourceMarketSellResource('shards')">
-                        ${resourceIconMarkup('shards')}<span>${t('resourcemarket.shardsCard')}</span>
-                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('shards'))}</span>
-                    </button>
-                    <button class="lang-option ${resource === 'particles' ? 'active' : ''}" onclick="selectResourceMarketSellResource('particles')">
-                        ${resourceIconMarkup('particles')}<span>${t('resourcemarket.particlesCard')}</span>
-                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('particles'))}</span>
-                    </button>
-                </div>
+                ${resourceSellPicker(resource)}
                 <div class="pay-label">${t('resourcemarket.amountLabel')}</div>
                 <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}" oninput="onResourceMarketSellAmountInput()">
                 <div class="pay-label" id="resourceMarketPriceLabel">${t('resourcemarket.priceLotLabel', { amount })}</div>
@@ -7287,8 +7332,49 @@
             `;
         }
 
+        function resourceSellPicker(resource) {
+            return `<div class="lang-options">
+                    <button class="lang-option ${resource === 'shards' ? 'active' : ''}" onclick="selectResourceMarketSellResource('shards')">
+                        ${resourceIconMarkup('shards')}<span>${t('resourcemarket.shardsCard')}</span>
+                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('shards'))}</span>
+                    </button>
+                    <button class="lang-option ${resource === 'particles' ? 'active' : ''}" onclick="selectResourceMarketSellResource('particles')">
+                        ${resourceIconMarkup('particles')}<span>${t('resourcemarket.particlesCard')}</span>
+                        <span style="margin-left:auto; color:var(--text-muted)">${Math.floor(resourceOwned('particles'))}</span>
+                    </button>
+                </div>`;
+        }
+
+        function renderParticlesSell() {
+            const owned = Math.floor(resourceOwned('particles'));
+            const minAmount = resourceMarketMinAmount('particles');
+            const { min, max } = particlesGoldRange_();
+            const amountEl = document.getElementById('resourceMarketSellAmount');
+            const unitEl = document.getElementById('resourceMarketSellUnitGold');
+            const amount = Math.max(Number(amountEl ? amountEl.value : 0) || minAmount, minAmount);
+            const unitRaw = unitEl ? unitEl.value : String(min);
+            document.getElementById('resourceMarketSellBody').innerHTML = `
+                <h2>${t('resourcemarket.sellTitle')}</h2>
+                ${resourceSellPicker('particles')}
+                <div class="pay-label">${t('resourcemarket.amountLabel')}</div>
+                <input class="pay-input" id="resourceMarketSellAmount" type="number" inputmode="numeric" min="${minAmount}" max="${owned}" step="1" value="${amount}" oninput="updateParticlesSell()">
+                <div class="pay-label">${t('resourcemarket.unitGoldLabel', { min: fmtGoldUnit(min), max: fmtGoldUnit(max) })}</div>
+                <input class="pay-input" id="resourceMarketSellUnitGold" type="number" inputmode="decimal" min="${min}" max="${max}" step="0.01" value="${unitRaw}" oninput="updateParticlesSell()">
+                <p class="pay-warning" id="resourceMarketGoldErr" style="display:none">${t('resourcemarket.goldRangeError', { min: fmtGoldUnit(min), max: fmtGoldUnit(max) })}</p>
+                <p class="pay-warning" id="resourceMarketGoldTotal" style="color:var(--gold-lt)"></p>
+                <p class="pay-warning" id="resourceMarketGoldNet"></p>
+                <p class="pay-warning">${t('resourcemarket.ownedHint', { amount: owned })}</p>
+                <div class="pay-actions">
+                    <button class="btn-primary" id="resourceMarketSellBtn" onclick="confirmResourceMarketSell()">${t('market.listBtn')}</button>
+                    <button class="btn-action" onclick="closeResourceMarketSell()">${t('common.cancel')}</button>
+                </div>
+            `;
+            updateParticlesSell();
+        }
+
         async function confirmResourceMarketSell() {
             const resource = resourceMarketSellResource;
+            if (resource === 'particles') { await confirmParticlesSell(); return; }
             const amount = Math.floor(Number(document.getElementById('resourceMarketSellAmount').value) || 0);
             const price = Number(document.getElementById('resourceMarketSellPrice').value) || 0;
             const minAmount = resourceMarketMinAmount(resource);
@@ -7320,6 +7406,35 @@
             }
         }
 
+        async function confirmParticlesSell() {
+            const st = particlesSellState();
+            const owned = Math.floor(resourceOwned('particles'));
+            const minAmount = resourceMarketMinAmount('particles');
+            if (!st.unitOk) { toast(t('resourcemarket.goldRangeError', { min: fmtGoldUnit(st.min), max: fmtGoldUnit(st.max) })); haptic.notify('warning'); updateParticlesSell(); return; }
+            if (st.amount < minAmount) { toast(t('resourcemarket.invalidAmount', { amount: minAmount })); return; }
+            if (st.amount > owned) { toast(t('resourcemarket.notEnoughOwned')); return; }
+            if (!confirm(t('resourcemarket.confirmGold', { amount: st.amount, unit: fmtGoldUnit(st.unit), total: fmtGoldUnit(st.total) }))) return;
+            try {
+                const response = await fetch('api/market/resources/list', {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, resource: 'particles', amount: st.amount, unit_price_gold: Math.round(st.unit * 100) / 100 }),
+                });
+                const data = await response.json();
+                if (!response.ok) { toast(data.detail || t('market.listFailed')); haptic.notify('warning'); return; }
+                state.nest.particles = data.particles;
+                state.nest.shardCount = data.shard_count;
+                if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
+                closeResourceMarketSell();
+                haptic.notify('success');
+                toast(t('resourcemarket.listed'));
+                resourceMarketActiveTab = 'mine';
+                renderAll();
+                loadResourceMarketListings();
+            } catch (e) {
+                toast(t('market.serverError'));
+            }
+        }
+
         async function buyResourceMarketListing(listingId) {
             try {
                 const response = await fetch('api/market/resources/buy', {
@@ -7329,6 +7444,7 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); resyncAfterMarketChange(); return; }
                 state.coins = data.coins;
+                if (typeof data.gold === 'number') state.gold = data.gold;
                 state.nest.particles = data.particles;
                 state.nest.shardCount = data.shard_count;
                 if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
