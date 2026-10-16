@@ -7238,7 +7238,7 @@
                             <h3>${l.amount}× ${resourceLabel(l.resource)} ${idx === 0 ? `<span class="market-best-badge">${t('market.bestPrice')}</span>` : ''}</h3>
                             <p style="font-size:12px; color:var(--text-muted)">${escName(l.seller_name) || t('market.seller')} · ${lotIsGold(l) ? t('resourcemarket.perUnitGold', { price: fmtGoldUnit(lotUnitPrice(l)) }) : t('resourcemarket.perUnitShort', { price: fmtResourceUnitPrice(l.price_gram / Math.max(1, l.amount)) })}</p>
                         </div>
-                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}')">${lotPriceHtml(l)}</button>
+                        <button class="btn-action btn-buy" onclick="buyResourceMarketListing('${l.id}', '${lotIsGold(l) ? 'gold' : 'gram'}')">${lotPriceHtml(l)}</button>
                     </div>
                 `).join('') : `<p class="market-section-empty">${t('market.sectionEmpty')}</p>`}
             `;
@@ -7435,13 +7435,18 @@
             }
         }
 
-        async function buyResourceMarketListing(listingId) {
+        // currency — валюта, которую игрок видел на нажатой кнопке (Частички — золото).
+        // Берём её с кнопки, а не из списка в памяти: список мог уже обновиться без
+        // этого лота, и покупка живого лота получала бы ложное «обнови игру».
+        async function buyResourceMarketListing(listingId, currency) {
             try {
-                // валюта лота, которую игрок видел на кнопке (Частички — золото)
-                const lot = (state.resourceMarketListings || []).find(l => l.id === listingId);
+                if (currency !== 'gold' && currency !== 'gram') {
+                    const lot = (state.resourceMarketListings || []).find(l => l.id === listingId);
+                    currency = lotIsGold(lot) ? 'gold' : 'gram';
+                }
                 const response = await fetch('api/market/resources/buy', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId, currency: lotIsGold(lot) ? 'gold' : 'gram' }),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId, currency }),
                 });
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); resyncAfterMarketChange(); return; }
