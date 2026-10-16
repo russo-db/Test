@@ -72,6 +72,8 @@
         /* ---------- Скрытая вторая страница: свайп ВПРАВО на экране Орлов ---------- */
         #farm.fog-anim { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease; }
         #farm.fog-shifted { transform: translateX(100%); opacity: 0.25; pointer-events: none; }
+        /* пока экран Орлов въезжает обратно, случайный тап не должен попасть в слот/кнопку */
+        #farm.fog-closing { pointer-events: none; }
         .fog-page {
             position: fixed; inset: 0; z-index: 15; overflow: hidden;
             display: flex; align-items: center; justify-content: center;
@@ -8378,6 +8380,7 @@
         const FOG_EDGE = 16;           // px от левого края — системный жест, не трогаем
         let fogOpen = false;
         let fogTouch = null;
+        let fogClosingTimer = null;
 
         function fogEls() { return { farm: document.getElementById('farm'), page: document.getElementById('fogPage') }; }
 
@@ -8401,13 +8404,15 @@
         function openFogPage() {
             const { farm, page } = fogEls();
             if (!farm || !page) return;
+            const wasOpen = fogOpen;
             fogOpen = true;
+            clearTimeout(fogClosingTimer); farm.classList.remove('fog-closing');
             farm.classList.add('fog-anim'); page.classList.add('fog-anim');
             fogClearInline();
             farm.classList.add('fog-shifted');
             page.classList.add('open'); page.classList.remove('dragging');
             page.setAttribute('aria-hidden', 'false');
-            haptic.impact('light');
+            if (!wasOpen) haptic.impact('light');
             try { if (tg.BackButton) { tg.BackButton.onClick(onFogBack); tg.BackButton.show(); } } catch (e) {}
         }
 
@@ -8416,6 +8421,9 @@
             if (!farm || !page) return;
             if (!fogOpen && !page.classList.contains('dragging')) return;
             fogOpen = false;
+            clearTimeout(fogClosingTimer);
+            farm.classList.toggle('fog-closing', !instant);
+            if (!instant) fogClosingTimer = setTimeout(() => farm.classList.remove('fog-closing'), 420);
             farm.classList.toggle('fog-anim', !instant); page.classList.toggle('fog-anim', !instant);
             fogClearInline();
             farm.classList.remove('fog-shifted');
