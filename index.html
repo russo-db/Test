@@ -8526,8 +8526,7 @@
             if (!data) return;
             if (data.error !== undefined) return;
             haptic.notify('success');
-            toast(t('shares.claimed', { n: fmtShareGold(data.claimed) }));
-            spawnBurst(12);
+            toast(t('shares.claimed', { n: fmtShareGold(data.claimed) }));   // дивиденды — золото: без летящих монет TON/GRAM
             if (data.stale) return;
             state.gold = data.gold;
             state.shares.unclaimed = 0;
