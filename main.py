@@ -1976,6 +1976,10 @@ class ResourceMarketListRequest(BaseModel):
 class ResourceMarketBuyRequest(BaseModel):
     user_id: int
     listing_id: str
+    # Валюта, в которой игрок видел цену лота. Лоты Частичек — за золото;
+    # закешированная старая страница их не знает и показала бы «0 GRAM», так
+    # что без currency="gold" такой лот не продаётся (409 «обнови игру»).
+    currency: Optional[str] = None
 
 
 class ResourceMarketCancelRequest(BaseModel):
@@ -7439,6 +7443,11 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
     зачисляем раньше самого последнего шага именно поэтому."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
 
+    oid = _market_oid(request.listing_id)
+    peek = await store.resource_market.find_one({"_id": oid}, {"currency": 1}) if oid else None
+    if peek and peek.get("currency") == "gold" and request.currency != "gold":
+        raise HTTPException(status_code=409, detail="Частички теперь продаются за золото — обнови игру (закрой и открой заново)")
+
     claim = await store.claim_resource_listing_for_buy(user_id, request.listing_id)
     if claim == "not_found":
         raise HTTPException(status_code=400, detail="Лот уже продан или снят с продажи")
@@ -7488,20 +7497,56 @@ async def resource_market_buy(request: ResourceMarketBuyRequest, x_telegram_init
     }
 
 
+def _migration_lot_fields(lot: dict):
+    """(seller_id, amount) старого лота или None, если данные битые."""
+    try:
+        seller = lot["seller_id"]
+        if isinstance(seller, bool) or not isinstance(seller, (int, float, str)):
+            return None
+        seller = int(seller)
+        raw = lot.get("amount", 0)
+        if isinstance(raw, bool):
+            return None
+        amount = float(raw if raw is not None else 0)
+        if not math.isfinite(amount) or amount < 0 or amount != int(amount):
+            return None
+        return seller, int(amount)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 async def migrate_particle_gram_lots() -> dict:
     """ОДНОРАЗОВАЯ миграция при переходе Частичек на золото: все активные
     лоты Частичек за GRAM снимаются с рынка, а их частички возвращаются
     продавцам на склад. Каждый лот забирается атомарно (find_one_and_delete),
     поэтому при нескольких запусках/экземплярах сервера частички вернутся
     ровно один раз. Если зачислить не удалось — лот возвращается на рынок
-    (ничего не теряется) и будет обработан при следующем запуске."""
-    refunded, failed, particles = 0, 0, 0
+    (ничего не теряется) и будет обработан при следующем запуске. Лоты с
+    битыми данными (количество/продавец) и лоты продавцов, которых нет в
+    базе, не удаляются, а переносятся в resource_listings_quarantine для
+    ручного разбора — с рынка они уходят, частички не пропадают."""
+    refunded, failed, particles, quarantined = 0, 0, 0, 0
     query = {"resource": "particles", "currency": {"$ne": "gold"}}
     for _ in range(10000):
         lot = await store.resource_market.find_one_and_delete(query)
         if not lot:
             break
-        seller, amount = int(lot["seller_id"]), int(lot.get("amount") or 0)
+        parsed = _migration_lot_fields(lot)
+        seller_row = await store.get(parsed[0]) if parsed else None
+        if not parsed or not seller_row:
+            try:
+                await store.resource_quarantine.insert_one({**lot, "quarantined_at": time.time(),
+                                                            "reason": "bad_fields" if not parsed else "seller_not_found"})
+                quarantined += 1
+                print(f"[migrate] лот {lot.get('_id')} отложен на разбор: {'битые данные' if not parsed else 'нет продавца'} "
+                      f"(seller_id={lot.get('seller_id')!r}, amount={lot.get('amount')!r})")
+            except Exception as e:   # не смогли отложить — возвращаем на рынок, данные не теряем
+                print(f"[migrate] не удалось отложить лот {lot.get('_id')}: {type(e).__name__}: {e}")
+                await store.resource_market.insert_one(lot)
+                failed += 1
+                break
+            continue
+        seller, amount = parsed
         try:
             with ledger_source("market:particles_refund"):
                 ok = amount <= 0 or await _adjust_user_resource(seller, "particles", amount)
@@ -7517,14 +7562,16 @@ async def migrate_particle_gram_lots() -> dict:
             break
         refunded += 1
         particles += amount
-        try:
-            await tg_send(seller, f"🔄 Рынок Частичек переходит на Золото. Твой лот ({amount} шт.) снят с продажи, "
-                                  f"частички вернулись на склад. Выставь их заново — цена теперь в золоте за 1 шт.")
-        except Exception:
-            pass
-    if refunded or failed:
-        print(f"[migrate] лоты Частичек за GRAM: снято {refunded}, вернули {particles} шт.; не удалось: {failed}")
-    return {"refunded": refunded, "particles": particles, "failed": failed}
+        if amount > 0:
+            try:
+                await tg_send(seller, f"🔄 Рынок Частичек переходит на Золото. Твой лот ({amount} шт.) снят с продажи, "
+                                      f"частички вернулись на склад. Выставь их заново — цена теперь в золоте за 1 шт.")
+            except Exception:
+                pass
+    if refunded or failed or quarantined:
+        print(f"[migrate] лоты Частичек за GRAM: снято {refunded}, вернули {particles} шт.; "
+              f"на разбор: {quarantined}; не удалось: {failed}")
+    return {"refunded": refunded, "particles": particles, "failed": failed, "quarantined": quarantined}
 
 
 @app.post("/api/market/resources/cancel")

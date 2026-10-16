@@ -7437,9 +7437,11 @@
 
         async function buyResourceMarketListing(listingId) {
             try {
+                // валюта лота, которую игрок видел на кнопке (Частички — золото)
+                const lot = (state.resourceMarketListings || []).find(l => l.id === listingId);
                 const response = await fetch('api/market/resources/buy', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId }),
+                    body: JSON.stringify({ user_id: state.userId, listing_id: listingId, currency: lotIsGold(lot) ? 'gold' : 'gram' }),
                 });
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadResourceMarketListings(); resyncAfterMarketChange(); return; }

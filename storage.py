@@ -215,6 +215,8 @@ class MongoStore:
         self.market = client[db_name]["market_listings"]
         self.equip_market = client[db_name]["equip_listings"]
         self.resource_market = client[db_name]["resource_listings"]
+        # лоты, которые миграция не смогла разобрать (битое количество/продавец) — не удаляются, а ждут разбора
+        self.resource_quarantine = client[db_name]["resource_listings_quarantine"]
         self.alchemy_market = client[db_name]["alchemy_listings"]
         self.merchant = client[db_name]["merchant_state"]
         self.nest_global = client[db_name]["nest_state"]
