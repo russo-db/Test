@@ -7456,7 +7456,7 @@
                 state.nest.shardCount = data.shard_count;
                 if (typeof data.last_claim === 'number') state.nest.lastClaim = data.last_claim;
                 haptic.notify('success');
-                spawnBurst(12);
+                if (currency !== 'gold') spawnBurst(12);   // лоты Частичек за золото — без летящих монет TON/GRAM
                 toast(t('resourcemarket.bought'));
                 renderAll();
                 loadResourceMarketListings();
@@ -7706,8 +7706,7 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.buyFailed')); haptic.notify('warning'); loadAlchemyMarket(); resyncAfterMarketChange(); return; }
                 applyAlchemyWallet(data);
-                haptic.notify('success');
-                spawnBurst(10);
+                haptic.notify('success');   // покупка за золото — без летящих монет TON/GRAM
                 toast(t('alchmarket.bought', { qty: data.quantity, name: alchMeta(data.item).name }));
                 renderAll();
                 loadAlchemyMarket();
