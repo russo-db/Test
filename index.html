@@ -1913,7 +1913,7 @@
                 <canvas id="arenaCanvas" width="720" height="360"></canvas>
                 <button class="arena-speed-btn" id="arenaSpeedBtn" onclick="arenaToggleSpeed()">×1</button>
                 <div class="arena-banner" id="arenaBanner">
-                    <div class="arena-banner-title" id="arenaBannerTitle">Победа!</div>
+                    <div class="arena-banner-title" id="arenaBannerTitle" data-i18n="arena.winTitle">Победа!</div>
                     <div class="arena-banner-sub" id="arenaBannerSub"></div>
                 </div>
             </div>
@@ -3591,6 +3591,11 @@
             } catch (e) { LANG = 'ru'; }
         }
 
+        function renderReferralTerms() {
+            const el = document.getElementById('referralTerms');
+            if (el && CONFIG) el.innerText = t('friends.qualifyHint', { share: Math.round((CONFIG.referral.share || 0) * 100) });
+        }
+
         function setLanguage(lang) {
             LANG = lang === 'en' ? 'en' : 'ru';
             try { localStorage.setItem('lang', LANG); } catch (e) {}
@@ -3598,7 +3603,9 @@
             const enEl = document.getElementById('langOptEn');
             if (roEl) roEl.classList.toggle('active', LANG === 'ru');
             if (enEl) enEl.classList.toggle('active', LANG === 'en');
+            localizeConfig();
             applyI18n();
+            renderReferralTerms();
             renderSoundToggle();
             haptic.select();
             if (CONFIG) { renderAll(); renderWallet(); if (sharesTabOpen()) renderShares(); }
@@ -11874,6 +11881,35 @@
             { day: 10, mnstr: 9 },
         ];
 
+        // Названия из game_config.json (редкости, орлы, снаряжение) хранятся по-русски,
+        // английские — в полях *_en рядом. Русский оригинал запоминаем при первом
+        // вызове, чтобы язык можно было переключать туда-обратно без перезагрузки.
+        function localizeConfig() {
+            if (!CONFIG) return;
+            const en = LANG === 'en';
+            const pick = (obj, key) => {
+                const ru = '_ru_' + key;
+                if (obj[ru] === undefined) obj[ru] = obj[key];
+                obj[key] = (en && obj[key + '_en']) || obj[ru];
+            };
+            const tierById = {};
+            (CONFIG.tiers || []).forEach(tier => {
+                pick(tier, 'name'); tierById[tier.id] = tier;
+                (tier.monsters || []).forEach(m => pick(m, 'name'));
+            });
+            (CONFIG.monsters || []).forEach(m => {
+                pick(m, 'name');
+                if (tierById[m.tier]) m.rarity = tierById[m.tier].name;
+            });
+            Object.values((CONFIG.nest && CONFIG.nest.item_types) || {}).forEach(meta => {
+                pick(meta, 'label'); pick(meta, 'sub');
+                if (meta.names) {
+                    if (!meta._ru_names) meta._ru_names = Object.assign({}, meta.names);
+                    meta.names = Object.assign({}, meta._ru_names, en ? (meta.names_en || {}) : {});
+                }
+            });
+        }
+
         function normalizeConfig(raw) {
             const cfg = raw || {};
             if (!Array.isArray(cfg.tiers) || !cfg.tiers.length) {
@@ -13943,9 +13979,10 @@
                 return;
             }
 
+            loadLanguagePref();   // до первых t(): условия рефералки и названия из конфига сразу на нужном языке
+            localizeConfig();
             MONSTERS = Object.fromEntries(CONFIG.monsters.map(m => [m.id, m]));
-            document.getElementById('referralTerms').innerText =
-                t('friends.qualifyHint', { share: Math.round((CONFIG.referral.share || 0) * 100) });
+            renderReferralTerms();
             document.getElementById('wheelOpenBtn').style.display =
                 (CONFIG.wheel.segments.length && CONFIG.wheel.enabled) ? '' : 'none';
 
@@ -13953,7 +13990,6 @@
             initProfile();
             initTonConnect();
             loadSoundPref();
-            loadLanguagePref();
             document.getElementById('langOptRu').classList.toggle('active', LANG === 'ru');
             document.getElementById('langOptEn').classList.toggle('active', LANG === 'en');
             applyI18n();

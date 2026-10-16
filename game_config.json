@@ -21,12 +21,14 @@
     {
       "id": "common",
       "name": "Обычный",
+      "name_en": "Common",
       "price": 1,
       "color": "#94a3b8",
       "monsters": [
         {
           "id": "common",
           "name": "Белоголовый Орёл",
+          "name_en": "Bald Eagle",
           "sprite": "common",
           "color": "#8b5e34",
           "desc": "Классический хищник неба — с него начинается любая коллекция.",
@@ -38,12 +40,14 @@
     {
       "id": "uncommon",
       "name": "Необычный",
+      "name_en": "Uncommon",
       "price": 2,
       "color": "#10b981",
       "monsters": [
         {
           "id": "uncommon",
           "name": "Лесной Орёл",
+          "name_en": "Forest Eagle",
           "sprite": "uncommon",
           "color": "#4ade80",
           "desc": "Лесная броня из перьев цвета листвы прячет его в кронах.",
@@ -55,12 +59,14 @@
     {
       "id": "rare",
       "name": "Редкий",
+      "name_en": "Rare",
       "price": 5,
       "color": "#0ea5e9",
       "monsters": [
         {
           "id": "rare",
           "name": "Штормовой Орёл",
+          "name_en": "Storm Eagle",
           "sprite": "rare",
           "color": "#38bdf8",
           "desc": "Крылья гудят от электричества перед каждым нырком за добычей.",
@@ -72,12 +78,14 @@
     {
       "id": "epic",
       "name": "Эпический",
+      "name_en": "Epic",
       "price": 10,
       "color": "#a855f7",
       "monsters": [
         {
           "id": "epic",
           "name": "Тёмный Страж",
+          "name_en": "Dark Guardian",
           "sprite": "epic",
           "color": "#a855f7",
           "desc": "Носит доспехи древних стражей — редко нападает первым, но не отступает.",
@@ -89,12 +97,14 @@
     {
       "id": "legendary",
       "name": "Легендарный",
+      "name_en": "Legendary",
       "price": 25,
       "color": "#f59e0b",
       "monsters": [
         {
           "id": "legendary",
           "name": "Золотой Владыка",
+          "name_en": "Golden Sovereign",
           "sprite": "legendary",
           "color": "#f7b500",
           "desc": "Корона и золото — этот орёл давно забыл, что такое проигрывать.",
@@ -106,12 +116,14 @@
     {
       "id": "mythical",
       "name": "Мифический",
+      "name_en": "Mythic",
       "price": 60,
       "color": "#ef4444",
       "monsters": [
         {
           "id": "mythical",
           "name": "Феникс",
+          "name_en": "Phoenix",
           "sprite": "mythical",
           "color": "#ef4444",
           "desc": "Восстаёт из пепла собственного полёта — миф, который майнит GRAM.",
@@ -527,6 +539,8 @@
     "item_types": {
       "claws": {
         "label": "Когти", "sub": "Атака", "icon": "🗡️", "stat": "atk",
+        "label_en": "Claws", "sub_en": "Attack",
+        "names_en": {"grey": "Iron Spurs", "green": "Wildwood Claws", "blue": "Sapphire Sickles", "purple": "Blades of the Abyss", "gold": "Solar Flare Talons", "mythic": "Skyrenders"},
         "names": {
           "grey": "Железные Шпоры", "green": "Когти Дикого Леса", "blue": "Сапфировые Серпы",
           "purple": "Лезвия Бездны", "gold": "Когти Солнечного Всплеска", "mythic": "Раздиратели Небосвода"
@@ -538,6 +552,8 @@
       },
       "armor": {
         "label": "Броня", "sub": "Защита", "icon": "🛡️", "stat": "def",
+        "label_en": "Armor", "sub_en": "Defense",
+        "names_en": {"grey": "Quilted Breastplate", "green": "Oakwood Carapace", "blue": "Ice Chainmail", "purple": "Stardust Cloak", "gold": "Imperial Cuirass", "mythic": "Aegis of the Feathered Titan"},
         "names": {
           "grey": "Стёганый Нагрудник", "green": "Панцирь Дубрав", "blue": "Ледяная Кольчуга",
           "purple": "Накидка Звёздной Пыли", "gold": "Императорская Кираса", "mythic": "Эгида Пернатого Титана"
@@ -549,6 +565,8 @@
       },
       "mask": {
         "label": "Маска", "sub": "Меткость/Крит", "icon": "🎭", "stat": "crit",
+        "label_en": "Mask", "sub_en": "Accuracy/Crit",
+        "names_en": {"grey": "Leather Eyepatch", "green": "Hunter's Mask", "blue": "Windrose Helm", "purple": "Visor of Illusions", "gold": "Crown of the Sunfaced", "mythic": "Eye of Eternal Thunder"},
         "names": {
           "grey": "Кожаный Наглазник", "green": "Маска Охотника", "blue": "Шлем Розы Ветров",
           "purple": "Забрало Иллюзий", "gold": "Корона Солнцеликого", "mythic": "Око Вечного Грома"
@@ -560,6 +578,8 @@
       },
       "ring": {
         "label": "Амулет", "sub": "ХП/Скорость", "icon": "🧿", "stat": "hpspd",
+        "label_en": "Amulet", "sub_en": "HP/Speed",
+        "names_en": {"grey": "Copper Amulet", "green": "Herbalist's Amulet", "blue": "Seal of the Storm", "purple": "Amulet of Mirages", "gold": "Precious Metric", "mythic": "Relic of the Dawn of Time"},
         "names": {
           "grey": "Медный Амулет", "green": "Амулет Травника", "blue": "Печать Бури",
           "purple": "Амулет Миражей", "gold": "Драгоценная Метрика", "mythic": "Реликвия Начала Времён"
