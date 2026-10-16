@@ -68,6 +68,45 @@
             font-weight: 500;
         }
 
+
+        /* ---------- Скрытая вторая страница: свайп ВПРАВО на экране Орлов ---------- */
+        #farm.fog-anim { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease; }
+        #farm.fog-shifted { transform: translateX(100%); opacity: 0.25; pointer-events: none; }
+        .fog-page {
+            position: fixed; inset: 0; z-index: 15; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transform: translateX(-100%); pointer-events: none; visibility: hidden;
+            background:
+                radial-gradient(80% 60% at 50% 45%, rgba(210, 205, 235, 0.16) 0%, transparent 70%),
+                linear-gradient(180deg, rgba(14, 10, 32, 0.55), rgba(8, 5, 20, 0.75));
+            backdrop-filter: blur(18px) saturate(115%); -webkit-backdrop-filter: blur(18px) saturate(115%);
+        }
+        /* при закрытии visibility выключается только после анимации, при открытии — сразу */
+        .fog-page.fog-anim { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease, visibility 0s linear 0.38s; }
+        .fog-page.fog-anim.open { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease, visibility 0s; }
+        .fog-page.dragging, .fog-page.open { visibility: visible; }
+        .fog-page.open { opacity: 1; transform: none; pointer-events: auto; }
+        /* клубы тумана — большие размытые пятна, медленно плывут */
+        .fog-page .fog-layer { position: absolute; inset: -30%; pointer-events: none; filter: blur(40px); opacity: 0.55; }
+        .fog-page .fog-layer.l1 { background: radial-gradient(35% 25% at 30% 40%, rgba(235, 230, 255, 0.45), transparent 70%),
+                                               radial-gradient(30% 22% at 75% 65%, rgba(200, 210, 240, 0.35), transparent 70%);
+                                  animation: fogDrift1 18s ease-in-out infinite alternate; }
+        .fog-page .fog-layer.l2 { background: radial-gradient(40% 28% at 60% 30%, rgba(255, 220, 170, 0.18), transparent 70%),
+                                               radial-gradient(35% 30% at 25% 75%, rgba(220, 225, 255, 0.3), transparent 70%);
+                                  animation: fogDrift2 24s ease-in-out infinite alternate; }
+        .fog-page .fog-title {
+            position: relative; font-family: 'Orbitron', 'Poppins', sans-serif; font-size: clamp(36px, 12vw, 56px); font-weight: 800;
+            letter-spacing: 3px; color: #f4f1ff; text-align: center;
+            text-shadow: 0 0 18px rgba(220, 215, 255, 0.65), 0 0 46px rgba(245, 158, 11, 0.25);
+            animation: fogPulse 3.2s ease-in-out infinite;
+        }
+        @keyframes fogDrift1 { from { transform: translate3d(-6%, -3%, 0) scale(1); } to { transform: translate3d(6%, 4%, 0) scale(1.12); } }
+        @keyframes fogDrift2 { from { transform: translate3d(5%, 4%, 0) scale(1.08); } to { transform: translate3d(-5%, -4%, 0) scale(1); } }
+        @keyframes fogPulse { 0%, 100% { opacity: 0.75; filter: blur(0.6px); } 50% { opacity: 1; filter: blur(0); } }
+        @media (prefers-reduced-motion: reduce) {
+            .fog-page .fog-layer, .fog-page .fog-title { animation: none; }
+        }
+
         /* Big soft neon blobs drifting behind everything */
         .ambient-orb { position: absolute; border-radius: 50%; filter: blur(70px); z-index: 0; opacity: 0.45; animation: floatOrb 15s infinite alternate ease-in-out; pointer-events: none; }
         .orb-1 { top: -12%; left: -14%; width: 320px; height: 320px; background: var(--accent-violet); }
@@ -2039,6 +2078,13 @@
             </div>
         </div>
 
+        <!-- Скрытая вторая страница: открывается только свайпом вправо на экране Орлов -->
+        <div class="fog-page" id="fogPage" aria-hidden="true">
+            <div class="fog-layer l1"></div>
+            <div class="fog-layer l2"></div>
+            <div class="fog-title" data-i18n="fog.soon">Скоро...</div>
+        </div>
+
         <!-- BOTTOM NAVIGATION -->
         <div class="navbar">
             <div class="nav-item active" onclick="switchTab('farm', this)">
@@ -2786,6 +2832,7 @@
                 'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
                 'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
                 'gvip.title': '👑 Доступ к Gold Eagle VIP',
+                'fog.soon': 'Скоро...',
                 'gvip.activeSub': 'Активен · осталось {time}. Отправка и сбор золота — в 1 клик.',
                 'gvip.inactiveSub': 'Отправляй всех свободных орлов 7 ур. в экспедиции и собирай золото со всех вернувшихся — в 1 клик.',
                 'gvip.otherActive': 'Сейчас активен {name}. Gold Eagle VIP можно будет активировать после его окончания.',
@@ -3355,6 +3402,7 @@
                 'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
                 'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
                 'gvip.title': '👑 Gold Eagle VIP Access',
+                'fog.soon': 'Coming soon...',
                 'gvip.activeSub': 'Active · {time} left. Send and collect gold in 1 tap.',
                 'gvip.inactiveSub': 'Send every free lvl 7 eagle on expeditions and collect gold from all returned ones — in 1 tap.',
                 'gvip.otherActive': '{name} is active now. Gold Eagle VIP can be activated after it ends.',
@@ -8317,7 +8365,133 @@
             }
         }
 
+
+        // ---------- Скрытая вторая страница («Скоро...») ----------
+        // Открывается ТОЛЬКО свайпом слева направо по экрану Орлов (#farm):
+        // жест слушает сам контейнер фермы, поэтому на рынке и других вкладках
+        // его нет. Палец ведёт экран за собой; отпустил дальше порога —
+        // страница открывается, иначе экран возвращается на место. Назад:
+        // свайп влево по странице тумана, кнопка «Назад» Telegram или любая
+        // вкладка внизу. Нажатия (кормление, ячейки) не мешают: после сдвига
+        // пальца браузер не присылает click.
+        const FOG_SWIPE_MIN = 70;      // px — минимальный сдвиг вправо
+        const FOG_EDGE = 16;           // px от левого края — системный жест, не трогаем
+        let fogOpen = false;
+        let fogTouch = null;
+
+        function fogEls() { return { farm: document.getElementById('farm'), page: document.getElementById('fogPage') }; }
+
+        function fogSetDrag(dx) {
+            const { farm, page } = fogEls();
+            const w = window.innerWidth || 1;
+            const k = Math.max(0, Math.min(1, dx / w));
+            farm.style.transform = `translateX(${Math.max(0, dx)}px)`;
+            farm.style.opacity = String(1 - 0.75 * k);
+            page.classList.add('dragging');
+            page.style.transform = `translateX(${-100 + k * 100}%)`;
+            page.style.opacity = String(k);
+        }
+
+        function fogClearInline() {
+            const { farm, page } = fogEls();
+            farm.style.transform = ''; farm.style.opacity = '';
+            page.style.transform = ''; page.style.opacity = '';
+        }
+
+        function openFogPage() {
+            const { farm, page } = fogEls();
+            if (!farm || !page) return;
+            fogOpen = true;
+            farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogClearInline();
+            farm.classList.add('fog-shifted');
+            page.classList.add('open'); page.classList.remove('dragging');
+            page.setAttribute('aria-hidden', 'false');
+            haptic.impact('light');
+            try { if (tg.BackButton) { tg.BackButton.onClick(onFogBack); tg.BackButton.show(); } } catch (e) {}
+        }
+
+        function closeFogPage(instant) {
+            const { farm, page } = fogEls();
+            if (!farm || !page) return;
+            if (!fogOpen && !page.classList.contains('dragging')) return;
+            fogOpen = false;
+            farm.classList.toggle('fog-anim', !instant); page.classList.toggle('fog-anim', !instant);
+            fogClearInline();
+            farm.classList.remove('fog-shifted');
+            page.classList.remove('open', 'dragging');
+            page.setAttribute('aria-hidden', 'true');
+            try { if (tg.BackButton) { tg.BackButton.offClick(onFogBack); tg.BackButton.hide(); } } catch (e) {}
+        }
+
+        function onFogBack() { closeFogPage(false); }
+
+        function fogTouchStart(e, onFog) {
+            if (e.touches.length !== 1) { fogTouch = null; return; }
+            const tch = e.touches[0];
+            if (!onFog) {
+                const farm = document.getElementById('farm');
+                if (fogOpen || !farm.classList.contains('active')) { fogTouch = null; return; }
+                if (tch.clientX < FOG_EDGE) { fogTouch = null; return; }
+                if (e.target.closest('input, textarea, select, [contenteditable="true"], .no-fog-swipe')) { fogTouch = null; return; }
+            } else if (!fogOpen) { fogTouch = null; return; }
+            fogTouch = { x: tch.clientX, y: tch.clientY, t: Date.now(), dir: null, onFog, dx: 0 };
+        }
+
+        function fogTouchMove(e) {
+            if (!fogTouch) return;
+            const tch = e.touches[0];
+            const dx = tch.clientX - fogTouch.x, dy = tch.clientY - fogTouch.y;
+            if (!fogTouch.dir) {
+                if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+                // горизонтально и в нужную сторону: на ферме — только вправо, на тумане — только влево
+                const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+                const wanted = fogTouch.onFog ? dx < 0 : dx > 0;
+                fogTouch.dir = horizontal && wanted ? 'h' : 'skip';
+                if (fogTouch.dir === 'h') { const { farm, page } = fogEls(); farm.classList.remove('fog-anim'); page.classList.remove('fog-anim'); }
+            }
+            if (fogTouch.dir !== 'h') return;
+            fogTouch.dx = dx;
+            const w = window.innerWidth || 1;
+            fogSetDrag(fogTouch.onFog ? Math.max(0, w + dx) : Math.max(0, dx));
+        }
+
+        function fogTouchEnd() {
+            if (!fogTouch) return;
+            const st = fogTouch; fogTouch = null;
+            if (st.dir !== 'h') return;
+            const v = Math.abs(st.dx) / Math.max(1, Date.now() - st.t);   // px/ms
+            const far = Math.abs(st.dx) > FOG_SWIPE_MIN || (Math.abs(st.dx) > 40 && v > 0.5);
+            if (st.onFog) {
+                if (far) closeFogPage(false); else openFogPage();
+            } else if (far) {
+                openFogPage();
+            } else {
+                // не дотянул — экран Орлов плавно возвращается
+                const { farm, page } = fogEls();
+                farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+                fogClearInline();
+                page.classList.remove('dragging');
+            }
+        }
+
+        function initFogSwipe() {
+            const { farm, page } = fogEls();
+            if (!farm || !page) return;
+            farm.addEventListener('touchstart', e => fogTouchStart(e, false), { passive: true });
+            farm.addEventListener('touchmove', fogTouchMove, { passive: true });
+            farm.addEventListener('touchend', fogTouchEnd, { passive: true });
+            farm.addEventListener('touchcancel', fogTouchEnd, { passive: true });
+            page.addEventListener('touchstart', e => fogTouchStart(e, true), { passive: true });
+            page.addEventListener('touchmove', fogTouchMove, { passive: true });
+            page.addEventListener('touchend', fogTouchEnd, { passive: true });
+            page.addEventListener('touchcancel', fogTouchEnd, { passive: true });
+            // после анимации убираем transition, чтобы он не мешал обычным перерисовкам
+            [farm, page].forEach(el => el.addEventListener('transitionend', e => { if (e.target === el) el.classList.remove('fog-anim'); }));
+        }
+
         function switchTab(tabId, element) {
+            closeFogPage(true);
             haptic.select();
             auctionStop();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
@@ -13768,6 +13942,7 @@
             renderAll();
             renderWallet();
             startLoops();
+            initFogSwipe();
 
             document.getElementById('boot').style.display = 'none';
         }
