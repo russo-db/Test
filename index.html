@@ -576,7 +576,7 @@
         .egg-queue-item:first-child { opacity: 0.75; filter: grayscale(0.15); }
 
         /* ---------- Орлы: очередь тех, что не поместились в открытые слоты ---------- */
-        .farm-queue-wrap { margin: 10px 0 0; }
+        .farm-queue-wrap { margin: 10px 0 0; align-self: stretch; min-width: 0; max-width: 100%; }
         .farm-queue-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: center; margin: 0 0 8px; }
         .farm-queue { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; -webkit-overflow-scrolling: touch; scrollbar-width: none; justify-content: flex-start; }
         .farm-queue::-webkit-scrollbar { display: none; }
@@ -8426,14 +8426,41 @@
 
         function onFogBack() { closeFogPage(false); }
 
+        // палец лёг на ленту, которую можно прокрутить влево (очередь орлов и т.п.) —
+        // свайп вправо принадлежит ей, а не туману
+        function fogInsideScroller(target, stop) {
+            for (let el = target; el && el !== stop; el = el.parentElement) {
+                if (el.scrollLeft > 0 && el.scrollWidth > el.clientWidth + 1) {
+                    const ox = getComputedStyle(el).overflowX;
+                    if (ox === 'auto' || ox === 'scroll') return true;
+                }
+            }
+            return false;
+        }
+
+        function fogSnapBack() {
+            const { farm, page } = fogEls();
+            farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogClearInline();
+            page.classList.remove('dragging');
+        }
+
         function fogTouchStart(e, onFog) {
-            if (e.touches.length !== 1) { fogTouch = null; return; }
+            if (e.touches.length !== 1) {
+                // второй палец — жест отменяется, экран встаёт на место
+                if (fogTouch) {
+                    const st = fogTouch; fogTouch = null;
+                    if (st.dir === 'h') { if (st.onFog) openFogPage(); else fogSnapBack(); }
+                }
+                return;
+            }
             const tch = e.touches[0];
             if (!onFog) {
                 const farm = document.getElementById('farm');
                 if (fogOpen || !farm.classList.contains('active')) { fogTouch = null; return; }
                 if (tch.clientX < FOG_EDGE) { fogTouch = null; return; }
                 if (e.target.closest('input, textarea, select, [contenteditable="true"], .no-fog-swipe')) { fogTouch = null; return; }
+                if (fogInsideScroller(e.target, farm)) { fogTouch = null; return; }
             } else if (!fogOpen) { fogTouch = null; return; }
             fogTouch = { x: tch.clientX, y: tch.clientY, t: Date.now(), dir: null, onFog, dx: 0 };
         }
@@ -8456,10 +8483,11 @@
             fogSetDrag(fogTouch.onFog ? Math.max(0, w + dx) : Math.max(0, dx));
         }
 
-        function fogTouchEnd() {
+        function fogTouchEnd(e) {
             if (!fogTouch) return;
             const st = fogTouch; fogTouch = null;
             if (st.dir !== 'h') return;
+            if (e && e.type === 'touchcancel') { if (st.onFog) openFogPage(); else fogSnapBack(); return; }
             const v = Math.abs(st.dx) / Math.max(1, Date.now() - st.t);   // px/ms
             const far = Math.abs(st.dx) > FOG_SWIPE_MIN || (Math.abs(st.dx) > 40 && v > 0.5);
             if (st.onFog) {
@@ -8468,10 +8496,7 @@
                 openFogPage();
             } else {
                 // не дотянул — экран Орлов плавно возвращается
-                const { farm, page } = fogEls();
-                farm.classList.add('fog-anim'); page.classList.add('fog-anim');
-                fogClearInline();
-                page.classList.remove('dragging');
+                fogSnapBack();
             }
         }
 
@@ -10732,6 +10757,7 @@
             haptic.select();
             arenaStopLoop();
             nftStopTimer();
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('auction').classList.add('active');
             await loadAuction();
@@ -10743,6 +10769,7 @@
         function closeAuctionScreen() {
             haptic.select();
             auctionStop();
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
         }
@@ -12003,6 +12030,7 @@
             if (!clansEnabled) { toast('Раздел кланов временно отключён'); return; }
             haptic.select();
             auctionStop();
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('clans').classList.add('active');
             arenaStopLoop();
@@ -12013,6 +12041,7 @@
             haptic.select();
             clanLiveStop();
             clanBracketStopCountdown();
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
         }
@@ -12119,6 +12148,7 @@
             haptic.select();
             auctionStop();
             arenaStopLoop();
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('hunt').classList.add('active');
             switchHuntTab(tab || huntTab, { silent: true });
@@ -12129,6 +12159,7 @@
         function closeHuntScreen() {
             haptic.select();
             if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
+            closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
             renderAll();
