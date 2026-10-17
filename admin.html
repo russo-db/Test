@@ -2898,7 +2898,14 @@ async function raidChatCall(url, okColor) {
 }
 ['raidChatInput', 'raidAppInput'].forEach(id => document.getElementById(id).addEventListener('input', e => { e.target.dataset.dirty = '1'; }));
 document.getElementById('raidChatCheckBtn').onclick = () => raidChatCall('/admin/api/raid_settings/check');
-document.getElementById('raidChatTestBtn').onclick = () => raidChatCall('/admin/api/raid_settings/test');
+// тестовое сообщение уходит в чат игры: после отправки кнопка 3 с не реагирует,
+// чтобы второй тап двойного нажатия не прислал второе
+let raidTestHoldUntil = 0;
+document.getElementById('raidChatTestBtn').onclick = async () => {
+    if (Date.now() < raidTestHoldUntil || document.getElementById('raidChatCheck').dataset.busy) return;
+    raidTestHoldUntil = Date.now() + 60000;
+    try { await raidChatCall('/admin/api/raid_settings/test'); } finally { raidTestHoldUntil = Date.now() + 3000; }
+};
 document.getElementById('raidChatSave').onclick = e => withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
     try {
         const r = await api('/admin/api/raid_settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },

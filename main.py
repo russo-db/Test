@@ -7150,10 +7150,20 @@ async def admin_raid_chat_check(body: AdminRaidChatCheck, _: None = Depends(requ
         raise HTTPException(status_code=500, detail=f"Не удалось проверить чат: {type(e).__name__}: {e}")
 
 
+RAID_TEST_COOLDOWN = 10.0
+_raid_test_last = 0.0
+
+
 @app.post("/admin/api/raid_settings/test")
 async def admin_raid_chat_test(body: AdminRaidChatCheck, _: None = Depends(require_admin)):
     """Тестовое сообщение в чат призыва — с кнопкой, которая открывает игру
-    так же, как настоящий призыв (тот же адрес Mini App)."""
+    так же, как настоящий призыв (тот же адрес Mini App). Не чаще раза в
+    RAID_TEST_COOLDOWN секунд: двойной тап не должен слать в чат игры два."""
+    global _raid_test_last
+    now = time.time()
+    if now - _raid_test_last < RAID_TEST_COOLDOWN:
+        wait = int(math.ceil(RAID_TEST_COOLDOWN - (now - _raid_test_last)))
+        return {"ok": False, "detail": f"Тестовое сообщение уже отправлено — повторить можно через {wait} с"}
     cfg = await raid_chat_settings()
     chat = normalize_tg_chat(body.chat) or cfg["chat"]
     if not chat or not DAILY_SUB_CHAT_RE.match(chat):
@@ -7162,12 +7172,14 @@ async def admin_raid_chat_test(body: AdminRaidChatCheck, _: None = Depends(requi
         raise HTTPException(status_code=400, detail="Бот не настроен (BOT_TOKEN / BOT_USERNAME)")
     base = f"https://t.me/{BOT_USERNAME}/{cfg['app_short_name']}" if cfg["app_short_name"] else f"https://t.me/{BOT_USERNAME}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("Открыть игру ⚔️", url=f"{base}?startapp=raidtest")]])
+    _raid_test_last = now
     try:
         await tg_api_bot().send_message(chat_id=chat, text="⚔️ Проверка: сюда будут приходить призывы на Мировых боссов.",
                                         reply_markup=markup)
         return {"ok": True, "chat": chat, "detail": "Сообщение отправлено — проверьте чат и нажмите кнопку"}
     except Exception as e:
         print(f"[admin] raid test message to {chat!r} failed: {type(e).__name__}: {e}")
+        _raid_test_last = 0.0   # не отправилось — повторить можно сразу
         return {"ok": False, "chat": chat, "detail": f"Telegram не принял сообщение: {e}"}
 
 
