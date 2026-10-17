@@ -2971,6 +2971,7 @@
                 'raid.link.full': 'В этой группе уже нет мест (5/5)',
                 'raid.link.busy': 'Ты уже в другом лобби — сначала выйди из него',
                 'raid.farm.status': '⚔️ В рейде на Мирового босса',
+                'raid.farm.noDelete': 'Нельзя удалить — орёл в рейде',
                 'raid.farm.toast': '⚔️ Орёл в рейде на Мирового босса — пока рейд не закончится, его нельзя продать, слить или удалить',
                 'hunt.disabled': 'Раздел «Охота» сейчас недоступен',
                 'hunt.serverDown': 'Сервер недоступен',
@@ -3596,6 +3597,7 @@
                 'raid.link.full': 'This party has no free seats (5/5)',
                 'raid.link.busy': 'You are already in another lobby — leave it first',
                 'raid.farm.status': '⚔️ In a World boss raid',
+                'raid.farm.noDelete': 'Cannot delete — the eagle is in a raid',
                 'raid.farm.toast': '⚔️ This eagle is in a World boss raid — until it ends it cannot be sold, fused or deleted',
                 'hunt.disabled': 'The Hunt is not available right now',
                 'hunt.serverDown': 'Server unavailable',
@@ -5457,7 +5459,7 @@
         }
 
         function goldVipFreeEagles() {
-            return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isInRaid(s) && !isListed(s) && !isOnExpedition(s));
+            return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isListed(s) && !isOnExpedition(s));
         }
 
         // ---------- 🤖 Авто-экспедиции ----------
@@ -8234,17 +8236,6 @@
                 `;
                 return;
             }
-            if (isInRaid(slot) && !isOnHunt(slot) && !isOnExpedition(slot)) {
-                document.getElementById('slotModalBody').innerHTML = `
-                    <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
-                    <h2 style="color:${monster.color}">${monster.name}</h2>
-                    <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
-                    <p class="slot-modal-sub slot-listed-note">🔒 ${t('raid.farm.toast')}</p>
-                    ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('bosses');">⚔️ ${t('hunt.tab.bosses')}</button>` : ''}
-                    <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
-                `;
-                return;
-            }
             if (isOnHunt(slot)) {
                 const back = huntNow() >= slot.huntUntil;
                 document.getElementById('slotModalBody').innerHTML = `
@@ -8298,7 +8289,8 @@
                 actionHtml = `<button class="btn-primary" style="margin-top:10px" disabled>${t('slot.collectEgg')}</button>`;
             }
 
-            const fusionHtml = (!onExpedition && canFuse(monster) && fed)
+            const inRaid = isInRaid(slot);   // ⚔️ рейд не мешает экспедициям, но слить/удалить нельзя
+            const fusionHtml = (!onExpedition && !inRaid && canFuse(monster) && fed)
                 ? `<p class="slot-modal-sub">${t('slot.fusionHint', { name: monster.name, nextName: nextTierOf(monster).monsters[0].name })}</p>`
                 : '';
 
@@ -8316,11 +8308,13 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
-                ${isInRaid(slot) ? `<p class="slot-modal-sub" style="margin-top:8px">${t('raid.farm.status')}</p>` : ''}
+                ${inRaid ? `<p class="slot-modal-sub" style="margin-top:8px">${t('raid.farm.status')}</p>` : ''}
                 ${autoExpRunning() && (onExpedition || slot.autoRest) ? `
                     <p class="slot-modal-sub" style="margin-top:8px">${onExpedition ? t(slot.autoOff ? 'autoexp.offNote' : 'autoexp.onNote') : t('autoexp.restStatus')}</p>
                     <button class="btn-action" style="margin-top:6px; width:100%" onclick="toggleAutoExpEagle(modalSlot, ${onExpedition && slot.autoOff ? 'true' : 'false'})">${t(onExpedition && slot.autoOff ? 'autoexp.backBtn' : 'autoexp.offBtn')}</button>` : ''}
-                ${onExpedition
+                ${inRaid
+                    ? `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" disabled>🗑 ${t('raid.farm.noDelete')}</button>`
+                    : onExpedition
                     ? `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" disabled>🗑 ${t('slot.deleteOnExpedition')}</button>`
                     : `<button class="btn-action btn-danger" style="margin-top:8px; width:100%" onclick="askDeleteEagle()">🗑 ${t('slot.deleteBtn')}</button>`}
                 <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
