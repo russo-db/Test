@@ -1235,8 +1235,11 @@
         @media (max-width: 380px) {
             #hunt .subtab-item { font-size: 10px; letter-spacing: 0; padding-left: 1px; padding-right: 1px; }
         }
-        /* пять вкладок: длинное «Мировые боссы» переносится в две строки */
-        #huntTabBar .subtab-item { white-space: normal; line-height: 1.2; display: flex; align-items: center; justify-content: center; }
+        /* «Мировые боссы» — отдельной строкой под четырьмя основными вкладками:
+           в один ряд пять вкладок на телефоне обрезались */
+        #huntTabBar { flex-wrap: wrap; }
+        #huntTabBar .subtab-item[data-hunttab="bosses"] { flex: 1 0 100%; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 9px; padding-bottom: 10px; }
+        #huntTabBar .subtab-item[data-hunttab="bosses"].active::after { left: 32%; right: 32%; }
         /* ⚔️ Мировые боссы */
         .raid-boss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
         .raid-boss { padding: 10px; border-radius: 14px; background: rgba(14, 9, 26, 0.82); border: 1px solid var(--raid-c, rgba(255,255,255,0.14)); min-width: 0; }
