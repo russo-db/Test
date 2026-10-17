@@ -7091,9 +7091,15 @@ async def admin_raid_settings_save(body: AdminRaidSettings, _: None = Depends(re
     chat = normalize_tg_chat(body.chat)
     if chat and not DAILY_SUB_CHAT_RE.match(chat):
         raise HTTPException(status_code=400, detail="Нужен числовой ID чата (-100…) или @username. Ссылка-приглашение t.me/+… не подойдёт — напишите в чате /chatid")
-    app_name = (body.app_short_name or "").strip().strip("/")
-    if app_name.startswith("https://t.me/"):
-        app_name = app_name.rstrip("/").split("/")[-1].split("?")[0]
+    app_name = (body.app_short_name or "").strip()
+    # вставили ссылку: t.me/<бот>/<приложение>[?startapp=…] — берём имя приложения;
+    # ссылка только на бота (t.me/<бот>) — это не Mini App, имя бота сюда не годится
+    link = re.match(r"^(?:https?://)?(?:t\.me|telegram\.me)/([^/?#\s]+)(?:/([^/?#\s]+))?", app_name)
+    if link:
+        if not link.group(2):
+            raise HTTPException(status_code=400, detail="Это ссылка на бота, а не на Mini App. Оставьте поле пустым (откроется главное Mini App бота) или вставьте t.me/<бот>/<приложение>")
+        app_name = link.group(2)
+    app_name = app_name.strip("/")
     if app_name and not RAID_APP_RE.match(app_name):
         raise HTTPException(status_code=400, detail="Короткое имя Mini App — латиница, цифры и _ (3–64 символа), как в BotFather")
     try:

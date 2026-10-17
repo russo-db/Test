@@ -2868,9 +2868,13 @@ document.getElementById('sharesMidnightBtn').onclick = e => {
 // ⚔️ Мировые боссы: чат для призыва
 const RAID_CHAT_SOURCES = { env: 'сейчас: переменная RAID_CHAT_ID на сервере (важнее этого поля)', admin: 'сейчас: это поле',
     daily_sub: 'сейчас: чат ежедневной награды (Задания)', none: '⚠️ не задан — призыв не работает' };
-function applyRaidSettings(r) {
-    document.getElementById('raidChatInput').value = r.saved_chat || '';
-    document.getElementById('raidAppInput').value = r.saved_app || '';
+// Поля перезаполняем с сервера, только если админ их сейчас не правит:
+// loadHuntAdmin зовётся и при «Обновить»/«Найти»/листании таблицы игроков ниже.
+function applyRaidSettings(r, force) {
+    for (const [id, val] of [['raidChatInput', r.saved_chat || ''], ['raidAppInput', r.saved_app || '']]) {
+        const el = document.getElementById(id);
+        if (force || !el.dataset.dirty) { el.value = val; delete el.dataset.dirty; }
+    }
     const src = RAID_CHAT_SOURCES[r.source] || '';
     document.getElementById('raidChatSource').textContent = r.chat ? `${r.chat} · ${src}` : src;
     document.getElementById('raidChatSource').style.color = r.chat ? '' : '#f0b429';
@@ -2892,14 +2896,16 @@ async function raidChatCall(url, okColor) {
     } catch (e) { if (e.message !== 'unauthorized') { out.textContent = '❌ ' + e.message; out.style.color = '#f87171'; } }
     finally { delete out.dataset.busy; }
 }
+['raidChatInput', 'raidAppInput'].forEach(id => document.getElementById(id).addEventListener('input', e => { e.target.dataset.dirty = '1'; }));
 document.getElementById('raidChatCheckBtn').onclick = () => raidChatCall('/admin/api/raid_settings/check');
 document.getElementById('raidChatTestBtn').onclick = () => raidChatCall('/admin/api/raid_settings/test');
 document.getElementById('raidChatSave').onclick = e => withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
     try {
         const r = await api('/admin/api/raid_settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat: document.getElementById('raidChatInput').value, app_short_name: document.getElementById('raidAppInput').value }) });
-        applyRaidSettings(r);
-        toast(r.saved_chat ? 'Чат для призыва сохранён' : 'Поле очищено — призыв идёт в чат ежедневной награды, если он задан');
+        applyRaidSettings(r, true);
+        toast(r.source === 'env' ? 'Сохранено, но сейчас действует переменная RAID_CHAT_ID на сервере — она важнее поля'
+            : r.saved_chat ? 'Чат для призыва сохранён' : 'Поле очищено — призыв идёт в чат ежедневной награды, если он задан');
     } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 });
 
