@@ -303,13 +303,14 @@ def apply_config(cfg: dict):
                     if isinstance(r.get("id"), str) and isinstance(r.get("cost"), dict)}
     # ⚔️ МИРОВЫЕ БОССЫ (командные рейды во вкладке Охоты, см. /api/hunt/raid/*)
     global RAID_CFG, RAID_ENABLED, RAID_PARTY_SIZE, RAID_GATHER_SECONDS, RAID_BATTLE_SECONDS
-    global RAID_SUMMON_COOLDOWN, RAID_BOSSES, RAID_BOSS_ORDER, RAID_PAYMENTS
+    global RAID_SUMMON_COOLDOWN, RAID_BOSSES, RAID_BOSS_ORDER, RAID_PAYMENTS, RAID_MIN_EAGLE_LEVEL
     RAID_CFG = CONFIG.get("world_bosses") if isinstance(CONFIG.get("world_bosses"), dict) else {}
     RAID_ENABLED = RAID_CFG.get("enabled", True) is not False
     RAID_PARTY_SIZE = max(1, int(_cfg_num(RAID_CFG, "party_size", 5)))
     RAID_GATHER_SECONDS = max(60.0, _cfg_num(RAID_CFG, "gather_minutes", 30) * 60)
     RAID_BATTLE_SECONDS = max(10.0, _cfg_num(RAID_CFG, "battle_minutes", 10) * 60)
     RAID_SUMMON_COOLDOWN = max(5.0, _cfg_num(RAID_CFG, "summon_cooldown_seconds", 60))
+    RAID_MIN_EAGLE_LEVEL = max(1, int(_cfg_num(RAID_CFG, "min_eagle_level", 7)))
     RAID_BOSSES = {}
     for b in _cfg_list(RAID_CFG, "bosses"):
         bid = b.get("id")
@@ -2875,7 +2876,6 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
         ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
         ensure_slot_not_on_hunt(slot, "отправить в обычную экспедицию")
-        ensure_slot_not_in_raid(slot, "отправить в обычную экспедицию")
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
         if slot["feed_level"] < FEED_LEVELS:
@@ -2996,7 +2996,7 @@ def auto_expedition_view(row: dict) -> dict:
 
 def auto_exp_eligible(slot: dict) -> bool:
     """Тот же допуск, что у ручной отправки: 7 ур., не на рынке, не на Охоте."""
-    return slot["feed_level"] >= FEED_LEVELS and not slot_listed(slot) and not slot_on_hunt(slot) and not slot_in_raid(slot)
+    return slot["feed_level"] >= FEED_LEVELS and not slot_listed(slot) and not slot_on_hunt(slot)
 
 
 def auto_expedition_due(row: dict, now: float) -> bool:
@@ -3643,7 +3643,7 @@ async def admin_shares_simulate_midnight(_: None = Depends(require_admin)):
 def vip_expedition_free(slot: dict) -> bool:
     """Полностью свободный орёл: 7 ур., не на Охоте, не на Рынке и не в
     обычной экспедиции (включая вернувшихся, но ещё не собранных)."""
-    return (slot["feed_level"] >= FEED_LEVELS and not slot_on_hunt(slot) and not slot_in_raid(slot)
+    return (slot["feed_level"] >= FEED_LEVELS and not slot_on_hunt(slot)
             and not slot_listed(slot) and not slot_on_expedition(slot))
 
 
@@ -6000,7 +6000,7 @@ def hunt_pick_eagle(farm: List[dict], zone: dict) -> Optional[int]:
     min_rank = hunt_tier_rank(zone.get("min_tier"))
     best, best_rank = None, None
     for i, slot in enumerate(farm):
-        if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot) or slot_in_raid(slot):
+        if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot):
             continue
         rank = tier_index(slot["id"])
         if rank >= min_rank and (best_rank is None or rank < best_rank):
@@ -6373,7 +6373,11 @@ async def hunt_use(request: HuntUse, x_telegram_init_data: Optional[str] = Heade
 # --- ⚔️ МИРОВЫЕ БОССЫ: командные рейды (вкладка «Мировые боссы» в Охоте) ---
 # Лобби — документ коллекции raid_lobbies (схема — в storage.py, self.raids).
 # Он единственный источник правды о составе группы: кто в members, тот в
-# рейде. Залог игрока (1 Частичка / 10 Горных Кристаллов / 30 Мяса) и замок
+# рейде. В рейд берут орла 7+ уровня, не выставленного на рынок; обычная и
+# Дальняя экспедиции не мешают — рейд идёт параллельно, полёт не прерывается.
+# Замок рейда защищает орла только от того, что его меняет или убирает
+# (рынок, купец, слияние, удаление, сжигание за силу клана).
+# Залог игрока (1 Частичка / 10 Горных Кристаллов / 30 Мяса) и замок
 # орла лежат в документе самого игрока: raid_entry {lobby, payment, amount,
 # monster_id, at} + raid_id в ячейке фермы (см. read_farm). Документов два,
 # транзакций в MongoDB у нас нет, поэтому порядок такой:
@@ -6439,9 +6443,10 @@ def raid_on_cooldown(row: dict, now: float) -> bool:
 
 
 def raid_slot_free(slot: dict) -> bool:
-    """Свободный орёл для рейда: не в экспедиции, не на Охоте, не на рынке, не в
-    другом рейде. Уровень и редкость — любые."""
-    return not slot_on_expedition(slot) and not slot_on_hunt(slot) and not slot_listed(slot) and not slot_in_raid(slot)
+    """Орёл для рейда: уровень >= RAID_MIN_EAGLE_LEVEL (7) и не выставлен на
+    P2P-рынок; ещё не записан в другой рейд. Обычная или Дальняя экспедиция
+    НЕ мешает — рейд идёт параллельно и полёт не прерывает. Редкость любая."""
+    return slot["feed_level"] >= RAID_MIN_EAGLE_LEVEL and not slot_listed(slot) and not slot_in_raid(slot)
 
 
 def raid_member_damage(row: dict, tier_id: str) -> dict:
@@ -6584,6 +6589,7 @@ async def raid_state(user_id: int, row: Optional[dict] = None) -> dict:
         "bosses": [raid_boss_view(RAID_BOSSES[b]) for b in RAID_BOSS_ORDER],
         "payments": [{"id": k, "amount": v, "have": raid_resource_have(row, k)} for k, v in RAID_PAYMENTS.items()],
         "party_size": RAID_PARTY_SIZE, "gather_seconds": RAID_GATHER_SECONDS, "battle_seconds": RAID_BATTLE_SECONDS,
+        "min_eagle_level": RAID_MIN_EAGLE_LEVEL,
         "cooldown_until": next_reset if raid_on_cooldown(row, now) else 0,
         "lobby": mine, "in_lobby": bool(entry), "browser": browser,
     }
@@ -6626,8 +6632,12 @@ def raid_precheck(row: dict, request: RaidEnter, now: float) -> None:
     if not (0 <= i < len(farm)):
         raise HTTPException(status_code=404, detail="Орёл не найден")
     ensure_expected_monster(farm[i], request.monster_id)
+    if slot_listed(farm[i]):
+        raise HTTPException(status_code=400, detail="Этот орёл выставлен на рынок — сначала сними лот")
+    if slot_in_raid(farm[i]):
+        raise HTTPException(status_code=400, detail="Этот орёл уже в рейде")
     if not raid_slot_free(farm[i]):
-        raise HTTPException(status_code=400, detail="Этот орёл занят — выбери свободного (не в экспедиции, не на Охоте и не на рынке)")
+        raise HTTPException(status_code=400, detail=f"В рейд берут орлов только {RAID_MIN_EAGLE_LEVEL} уровня и выше")
     amount = RAID_PAYMENTS[request.payment]
     if raid_resource_have(row, request.payment) + 1e-9 < amount:
         raise HTTPException(status_code=400, detail=f"Не хватает: нужно {amount:g} × {RAID_PAYMENT_NAMES.get(request.payment, request.payment)}")

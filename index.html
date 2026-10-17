@@ -2946,8 +2946,8 @@
                 'raid.pickTitleCreate': 'Новая группа: {boss}',
                 'raid.pickTitleJoin': 'Вход в группу: {boss}',
                 'raid.pickBossLine': 'ХП {hp} · при победе +{gold} 🪙 каждому',
-                'raid.pickEagle': 'Твой орёл для похода',
-                'raid.pickNoEagles': 'Нет свободных орлов: все в экспедициях, на Охоте или на рынке.',
+                'raid.pickEagle': 'Твой орёл для похода (7 ур., 🧭/🏹 — летит, это не мешает)',
+                'raid.pickNoEagles': 'Нет подходящих орлов: в рейд берут орлов {lvl} уровня, не выставленных на рынок. Орлы в экспедициях — подходят.',
                 'raid.pickPay': 'Оплата похода (залог)',
                 'raid.pay.particles': 'Частичка', 'raid.pay.rock_crystal': 'Горный Кристалл', 'raid.pay.meat': 'Мясо',
                 'raid.payHave': 'есть {have}',
@@ -2971,7 +2971,7 @@
                 'raid.link.full': 'В этой группе уже нет мест (5/5)',
                 'raid.link.busy': 'Ты уже в другом лобби — сначала выйди из него',
                 'raid.farm.status': '⚔️ В рейде на Мирового босса',
-                'raid.farm.toast': '⚔️ Орёл в рейде на Мирового босса — пока рейд не закончится, он занят',
+                'raid.farm.toast': '⚔️ Орёл в рейде на Мирового босса — пока рейд не закончится, его нельзя продать, слить или удалить',
                 'hunt.disabled': 'Раздел «Охота» сейчас недоступен',
                 'hunt.serverDown': 'Сервер недоступен',
                 'hunt.loading': 'Загрузка…',
@@ -3571,8 +3571,8 @@
                 'raid.pickTitleCreate': 'New party: {boss}',
                 'raid.pickTitleJoin': 'Join party: {boss}',
                 'raid.pickBossLine': 'HP {hp} · victory: +{gold} 🪙 each',
-                'raid.pickEagle': 'Your eagle for the raid',
-                'raid.pickNoEagles': 'No free eagles: all are on expeditions, on the Hunt or on the market.',
+                'raid.pickEagle': 'Your eagle for the raid (lvl 7, 🧭/🏹 — flying, that is fine)',
+                'raid.pickNoEagles': 'No suitable eagles: raids take level {lvl} eagles that are not listed on the market. Eagles on expeditions are fine.',
                 'raid.pickPay': 'Raid payment (deposit)',
                 'raid.pay.particles': 'Particle', 'raid.pay.rock_crystal': 'Rock Crystal', 'raid.pay.meat': 'Meat',
                 'raid.payHave': 'have {have}',
@@ -3596,7 +3596,7 @@
                 'raid.link.full': 'This party has no free seats (5/5)',
                 'raid.link.busy': 'You are already in another lobby — leave it first',
                 'raid.farm.status': '⚔️ In a World boss raid',
-                'raid.farm.toast': '⚔️ This eagle is in a World boss raid — busy until the raid ends',
+                'raid.farm.toast': '⚔️ This eagle is in a World boss raid — until it ends it cannot be sold, fused or deleted',
                 'hunt.disabled': 'The Hunt is not available right now',
                 'hunt.serverDown': 'Server unavailable',
                 'hunt.loading': 'Loading…',
@@ -4029,8 +4029,8 @@
         // прогресс кормления текущего уровня.
         function slotBadge(slot) {
             if (isOnHunt(slot)) return huntNow() >= slot.huntUntil ? '🏹!' : '🏹';
-            if (isInRaid(slot)) return '⚔️';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
+            if (isInRaid(slot)) return '⚔️';
             if (slot.autoRest && autoExpRunning()) return '😴';
             if (isFullyFed(slot)) return '🍖';
             if (slot.nextEggAt > 0) return '⏳';
@@ -4177,8 +4177,8 @@
             let status;
             if (isOnHunt(slot)) status = huntNow() >= slot.huntUntil ? t('hunt.farm.backStatus')
                 : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - huntNow()) });
-            else if (isInRaid(slot)) status = t('raid.farm.status');
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
+            else if (isInRaid(slot)) status = t('raid.farm.status');
             else if (slot.autoRest && autoExpRunning()) status = t('autoexp.restStatus');
             else if (eggReady(slot)) status = t('farm.eggReady');
             else if (isFullyFed(slot)) status = t('farm.fullyFed');
@@ -5292,14 +5292,14 @@
                 toast(t('hunt.farm.flyingToast', { time: formatCountdown(slot.huntUntil - huntNow()) }));
                 return;
             }
-            if (isInRaid(slot)) {
-                if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
-                toast(t('raid.farm.toast'));
-                return;
-            }
             if (isOnExpedition(slot)) {
                 if (expeditionReady(slot)) collectExpedition(i);
                 else toast(t('farm.expeditionToast', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) }));
+                return;
+            }
+            if (isInRaid(slot)) {
+                if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
+                toast(t('raid.farm.toast'));
                 return;
             }
             if (eggReady(slot)) { collectEgg(i); return; }
@@ -5321,7 +5321,6 @@
             if (!slot || isOnExpedition(slot)) return;
             if (isListed(slot)) { toast(t('farm.listedToast')); return; }
             if (isOnHunt(slot)) { toast(t('hunt.farm.noExpedition')); haptic.notify('warning'); return; }
-            if (isInRaid(slot)) { toast(t('raid.farm.toast')); haptic.notify('warning'); return; }
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'expedition-start:' + i;
@@ -8235,7 +8234,7 @@
                 `;
                 return;
             }
-            if (isInRaid(slot)) {
+            if (isInRaid(slot) && !isOnHunt(slot) && !isOnExpedition(slot)) {
                 document.getElementById('slotModalBody').innerHTML = `
                     <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <h2 style="color:${monster.color}">${monster.name}</h2>
@@ -8254,6 +8253,7 @@
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
                     <div class="stat-row"><span>🏹 ${huntEsc(huntZoneName(slot))}</span><b style="color:#7cff6b">${back ? t('hunt.farm.backShort') : formatCountdown(slot.huntUntil - huntNow())}</b></div>
                     <p class="slot-modal-sub slot-listed-note">🔒 ${t('hunt.farm.lockNote')}</p>
+                    ${isInRaid(slot) ? `<p class="slot-modal-sub">${t('raid.farm.status')}</p>` : ''}
                     ${back ? `<button class="btn-primary" style="margin-top:10px" onclick="closeSlotModal(); huntCollectFromFarm(modalSlot);">🎒 ${t('hunt.farm.collectLoot')}</button>` : ''}
                     ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('expeditions');">🏹 ${t('hunt.farm.openHunt')}</button>` : ''}
                     <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
@@ -8316,6 +8316,7 @@
 
                 ${actionHtml}
                 ${expeditionBtnHtml}
+                ${isInRaid(slot) ? `<p class="slot-modal-sub" style="margin-top:8px">${t('raid.farm.status')}</p>` : ''}
                 ${autoExpRunning() && (onExpedition || slot.autoRest) ? `
                     <p class="slot-modal-sub" style="margin-top:8px">${onExpedition ? t(slot.autoOff ? 'autoexp.offNote' : 'autoexp.onNote') : t('autoexp.restStatus')}</p>
                     <button class="btn-action" style="margin-top:6px; width:100%" onclick="toggleAutoExpEagle(modalSlot, ${onExpedition && slot.autoOff ? 'true' : 'false'})">${t(onExpedition && slot.autoOff ? 'autoexp.backBtn' : 'autoexp.offBtn')}</button>` : ''}
@@ -12534,7 +12535,7 @@
             const level = Number(huntCfg().eagle_level) || CONFIG.fusion.feed_levels;
             let best = -1, bestRank = Infinity;
             state.farm.forEach((slot, i) => {
-                if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot) || isInRaid(slot)) return;
+                if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot)) return;
                 const rank = tierIndexOf(MONSTERS[slot.id]);
                 if (rank >= minRank && rank < bestRank) { best = i; bestRank = rank; }
             });
@@ -12671,9 +12672,13 @@
             const color = tier ? tier.color : '#94a3b8';
             return `<span class="raid-grade" style="background:${huntEsc(color)}">${huntEsc(tier ? tier.name : '?')}</span>`;
         }
+        // В рейд — орёл 7+ уровня, не выставленный на рынок. Обычная и Дальняя
+        // экспедиции не мешают: рейд идёт параллельно и полёт не прерывает.
+        function raidMinLevel() { return Number(raidData && raidData.min_eagle_level) || 7; }
         function raidFreeEagles() {
+            const min = raidMinLevel();
             return state.farm.map((s, i) => ({ s, i }))
-                .filter(({ s }) => !isOnExpedition(s) && !isOnHunt(s) && !isListed(s) && !isInRaid(s) && MONSTERS[s.id]);
+                .filter(({ s }) => (s.feedLevel || 1) >= min && !isListed(s) && !isInRaid(s) && MONSTERS[s.id]);
         }
 
         async function loadRaid(silent) {
@@ -12906,10 +12911,10 @@
                 const m = MONSTERS[s.id];
                 return `<button class="raid-pick ${p.slot === i ? 'selected' : ''}" onclick="raidPickEagle(${i})">
                     <img src="${framePath(m.sprite, 0)}" alt="">
-                    <span class="raid-pick-main"><b>${huntEsc(m.name)}</b> · ${t('raid.lvl', { lvl: s.feedLevel || 1 })}</span>
+                    <span class="raid-pick-main"><b>${huntEsc(m.name)}</b> · ${t('raid.lvl', { lvl: s.feedLevel || 1 })}${isOnHunt(s) ? ' · 🏹' : isOnExpedition(s) ? ' · 🧭' : ''}</span>
                     ${raidGradePill(m.tier)}
                 </button>`;
-            }).join('') : `<div class="hunt-sub">${t('raid.pickNoEagles')}</div>`;
+            }).join('') : `<div class="hunt-sub">${t('raid.pickNoEagles', { lvl: raidMinLevel() })}</div>`;
             const paysHtml = pays.map(x => {
                 const ok = payOk(x.id);
                 return `<button class="raid-pick ${p.pay === x.id ? 'selected' : ''}" ${ok ? '' : 'disabled'} onclick="raidPickPay('${x.id}')">
