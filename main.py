@@ -3223,6 +3223,13 @@ async def farm_auto_expedition_buy(request: AutoExpBuyRequest, x_telegram_init_d
             until = now + AUTO_EXP_DAYS * 86400
             fields["auto_expedition_since"] = now           # новый период — отсчёт с покупки
             fields["auto_expedition_active"] = True         # только что купил — автоматизация ВКЛ
+            # «Отдыхает» с прошлой подписки — на экране это давно обычный свободный
+            # орёл; новый период не должен внезапно отправить именно его
+            farm = read_farm(row.get("monsters"))
+            if any(s.get("auto_rest") for s in farm):
+                for s in farm:
+                    s.pop("auto_rest", None)
+                fields["monsters"] = farm
         fields["auto_expedition_until"] = until
         return fields, {"coins": fields["coins"], "auto_expedition": {**auto_expedition_view({**row, **fields}), "until": until},
                         "extended": current > now}
