@@ -2961,6 +2961,7 @@
                 'raid.toast.disbanded': 'Группа распущена — залоги вернулись участникам',
                 'raid.toast.started': '⚔️ Атака! Итог боя — через 10 минут',
                 'raid.toast.summoned': '📣 Призыв отправлен в чат игры',
+                'raid.toast.gone': 'Лобби распущено или тебя исключили — залог вернулся на склад',
                 'raid.confirmKick': 'Исключить {name}? Залог вернётся ему на склад.',
                 'raid.confirmLeave': 'Покинуть лобби? Залог вернётся на склад.',
                 'raid.confirmDisband': 'Распустить группу? Всем вернутся залоги.',
@@ -3585,6 +3586,7 @@
                 'raid.toast.disbanded': 'Party disbanded — deposits returned',
                 'raid.toast.started': '⚔️ Attack! Battle result in 10 minutes',
                 'raid.toast.summoned': '📣 Summon sent to the game chat',
+                'raid.toast.gone': 'The lobby was disbanded or you were removed — deposit returned to storage',
                 'raid.confirmKick': 'Remove {name}? Their deposit will be returned.',
                 'raid.confirmLeave': 'Leave the lobby? Your deposit will be returned.',
                 'raid.confirmDisband': 'Disband the party? Everyone gets their deposit back.',
@@ -12686,9 +12688,18 @@
             }
         }
 
+        let raidOwnActionUntil = 0;   // свои кик/выход/роспуск уже показали тост — второй не нужен
+
         function applyRaid(data) {
             if (!data) return;
+            const prev = raidData && raidData.lobby;
             if (data.raid) { raidData = data.raid; raidFetchedAt = Date.now() / 1000; setServerClock(Number(data.raid.server_time)); }
+            const cur = raidData && raidData.lobby;
+            // меня кикнули / лобби распустилось по таймеру, пока я смотрел
+            if (prev && prev.status === 'gathering' && (!cur || cur.id !== prev.id) && Date.now() > raidOwnActionUntil) {
+                toast(t('raid.toast.gone'));
+                if (raidPick && raidPick.lobbyId === prev.id) raidClosePick();
+            }
             if (data.hunt) applyHunt(data.hunt); else renderRaid();
         }
 
@@ -12724,6 +12735,7 @@
                     return null;
                 }
                 ok = true;
+                raidOwnActionUntil = Date.now() + 3000;
                 applyRaid(data);
                 haptic.notify('success');
                 return data;

@@ -6563,6 +6563,8 @@ async def raid_state(user_id: int, row: Optional[dict] = None) -> dict:
         lobby = await raid_get(entry["lobby"])
         if lobby:
             mine = raid_lobby_view(lobby, user_id, now)
+            if lobby.get("leader_id") == user_id:
+                mine["summon_ready_at"] = max(mine["summon_ready_at"], float(row.get("raid_summon_at") or 0) + RAID_SUMMON_COOLDOWN)
     if mine is None:
         # результат последнего боя (показываем, пока игрок его не закрыл)
         last = row.get("raid_last_lobby")
@@ -6906,29 +6908,34 @@ async def raid_summon(request: RaidLobbyAction, x_telegram_init_data: Optional[s
         if not chat:
             raise HTTPException(status_code=400, detail="Чат игры не указан в админке — призыв недоступен")
         now = time.time()
-        lobby = await store.raids.find_one_and_update(
-            {"_id": request.lobby_id, "status": "gathering", "leader_id": user_id, "expires_at": {"$gt": now},
-             "$or": [{"last_summon_at": {"$lte": now - RAID_SUMMON_COOLDOWN}}, {"last_summon_at": None},
-                     {"last_summon_at": {"$exists": False}}]},
-            {"$set": {"last_summon_at": now}})
+        lobby = await raid_get(request.lobby_id)
         if not lobby:
-            cur = await raid_get(request.lobby_id)
-            if not cur:
-                raise HTTPException(status_code=404, detail="Лобби не найдено")
-            if cur.get("leader_id") != user_id:
-                raise HTTPException(status_code=403, detail="Призывать игроков может только лидер группы")
-            if cur.get("status") != "gathering" or float(cur.get("expires_at") or 0) <= now:
-                raise HTTPException(status_code=409, detail="Сбор уже закончен")
-            wait = int(math.ceil(float(cur.get("last_summon_at") or 0) + RAID_SUMMON_COOLDOWN - now))
+            raise HTTPException(status_code=404, detail="Лобби не найдено")
+        if lobby.get("leader_id") != user_id:
+            raise HTTPException(status_code=403, detail="Призывать игроков может только лидер группы")
+        if lobby.get("status") != "gathering" or float(lobby.get("expires_at") or 0) <= now:
+            raise HTTPException(status_code=409, detail="Сбор уже закончен")
+        # Лимит — на игрока, а не на лобби: иначе «создал → призвал → распустил
+        # (залог вернулся) → создал снова» слал бы в чат сколько угодно сообщений.
+        stamped = await store.users.update_one(
+            {"_id": user_id, "$or": [{"raid_summon_at": {"$lte": now - RAID_SUMMON_COOLDOWN}}, {"raid_summon_at": None},
+                                     {"raid_summon_at": {"$exists": False}}]},
+            {"$set": {"raid_summon_at": now}})
+        if not stamped.modified_count:
+            row = await fetch_user(user_id)
+            wait = int(math.ceil(float(row.get("raid_summon_at") or 0) + RAID_SUMMON_COOLDOWN - now))
             raise HTTPException(status_code=429, detail=f"Призыв уже отправлен — повторить можно через {max(1, wait)} с")
+        prev_lobby_stamp = lobby.get("last_summon_at") or 0
+        await store.raids.update_one({"_id": lobby["_id"]}, {"$set": {"last_summon_at": now}})
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("Вступить в бой ⚔️", url=raid_deep_link(lobby["_id"]))]])
         try:
             await tg_api_bot().send_message(chat_id=chat, text=raid_summon_text(lobby), parse_mode=ParseMode.HTML,
                                             reply_markup=markup)
         except Exception as e:
             print(f"[raid] summon to {chat!r} failed: {type(e).__name__}: {e}")
-            await store.raids.update_one({"_id": lobby["_id"], "last_summon_at": now},
-                                         {"$set": {"last_summon_at": lobby.get("last_summon_at") or 0}})
+            # не отправилось — лимит не тратим
+            await store.users.update_one({"_id": user_id, "raid_summon_at": now}, {"$set": {"raid_summon_at": 0}})
+            await store.raids.update_one({"_id": lobby["_id"], "last_summon_at": now}, {"$set": {"last_summon_at": prev_lobby_stamp}})
             raise HTTPException(status_code=502, detail="Telegram не принял сообщение — проверь, что бот добавлен в чат игры")
         return await raid_response(user_id, summoned=True)
     except HTTPException:
