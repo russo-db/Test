@@ -8586,6 +8586,7 @@
             fogOpen = true;
             clearTimeout(fogClosingTimer); farm.classList.remove('fog-closing');
             farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogAnimFallback();
             fogClearInline();
             farm.classList.add('fog-shifted');
             page.classList.add('open'); page.classList.remove('dragging');
@@ -8603,6 +8604,7 @@
             farm.classList.toggle('fog-closing', !instant);
             if (!instant) fogClosingTimer = setTimeout(() => farm.classList.remove('fog-closing'), 420);
             farm.classList.toggle('fog-anim', !instant); page.classList.toggle('fog-anim', !instant);
+            if (!instant) fogAnimFallback();
             fogClearInline();
             farm.classList.remove('fog-shifted');
             page.classList.remove('open', 'dragging');
@@ -8624,9 +8626,16 @@
             return false;
         }
 
+        let fogAnimTimer = null;
+        function fogAnimFallback() {
+            clearTimeout(fogAnimTimer);
+            fogAnimTimer = setTimeout(() => { const { farm, page } = fogEls(); farm && farm.classList.remove('fog-anim'); page && page.classList.remove('fog-anim'); }, 450);
+        }
+
         function fogSnapBack() {
             const { farm, page } = fogEls();
             farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogAnimFallback();
             fogClearInline();
             page.classList.remove('dragging');
         }
@@ -8698,7 +8707,10 @@
             page.addEventListener('touchend', fogTouchEnd, { passive: true });
             page.addEventListener('touchcancel', fogTouchEnd, { passive: true });
             // после анимации убираем transition, чтобы он не мешал обычным перерисовкам
-            [farm, page].forEach(el => el.addEventListener('transitionend', e => { if (e.target === el) el.classList.remove('fog-anim'); }));
+            // после анимации убираем transition: по transitionend, при отмене перехода и
+            // страховкой по таймеру (под нагрузкой событие может опоздать или не прийти)
+            [farm, page].forEach(el => ['transitionend', 'transitioncancel'].forEach(ev =>
+                el.addEventListener(ev, e => { if (e.target === el) el.classList.remove('fog-anim'); })));
         }
 
         function switchTab(tabId, element) {
