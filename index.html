@@ -5425,6 +5425,7 @@
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('market.serverError')); syncFromServer({ keepActiveSlot: true }).then(() => renderAll()).catch(() => {}); return; }
                 ok = true;
+                slotModalHoldUntil = Date.now() + LIST_ACTION_HOLD_MS;
                 if (data.monsters) state.farm = readFarm(data.monsters);
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 haptic.notify('success');
@@ -7932,7 +7933,12 @@
             slotDeleteConfirm = false;
         }
 
+        // После «Вывести из авто» у отдыхающего орла кнопка исчезает, и на её место
+        // поднимается «🗑 Удалить» — второй тап двойного нажатия не должен её нажать.
+        let slotModalHoldUntil = 0;
+
         function askDeleteEagle() {
+            if (Date.now() < slotModalHoldUntil) return;
             const slot = state.farm[modalSlot];
             if (slot && (isListed(slot) || isOnExpedition(slot) || isOnHunt(slot))) {
                 toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? t('hunt.farm.noDelete') : t('slot.deleteOnExpedition'));
