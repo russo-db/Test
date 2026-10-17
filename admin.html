@@ -501,6 +501,28 @@
                     орлы, которые уже летят, вернутся по старому времени. Обычные экспедиции за золотом и другие таймеры игры
                     не меняются. По умолчанию 12 часов; от 1 секунды до 30 суток.</div>
             </div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <div class="nft-interval-head">
+                    <b>⚔️ Мировые боссы — чат для «Призвать игроков»:</b> <span id="raidChatSource" class="muted" style="font-size:12px;"></span>
+                </div>
+                <div class="muted" style="font-size:12px; margin-bottom:8px;">
+                    Сюда бот отправляет «⚔️ СБОР НА БОССА…» с кнопкой «Вступить в бой ⚔️». Нужен <b>числовой ID</b> чата (-100…) или @username —
+                    ссылка-приглашение t.me/+… не подойдёт. Как узнать ID: добавьте бота в чат и напишите там <code>/chatid</code> (отвечает только админам).
+                    Бот должен быть участником чата с правом писать. Поле пустое — призыв уходит в чат ежедневной награды (Задания), если он задан.
+                    Проверку подписки для ежедневной награды это поле <b>не</b> меняет.
+                </div>
+                <div class="field-row">
+                    <label>ID чата (-100… или @username) <input id="raidChatInput" placeholder="-100…"></label>
+                    <label>Короткое имя Mini App (необязательно) <input id="raidAppInput" placeholder="например, play"></label>
+                </div>
+                <div class="toolbar">
+                    <button class="primary" id="raidChatSave">💾 Сохранить</button>
+                    <button id="raidChatCheckBtn">Проверить бота</button>
+                    <button id="raidChatTestBtn">📨 Тестовое сообщение</button>
+                </div>
+                <div class="muted" id="raidChatCheck" style="font-size:12px; margin-top:4px;"></div>
+                <div class="muted" id="raidLinkExample" style="font-size:12px; margin-top:4px;"></div>
+            </div>
             <div class="card-grid" id="huntCards"></div>
             <h3 style="margin:20px 0 10px;">Мониторинг ресурсов</h3>
             <div class="toolbar">
@@ -2843,7 +2865,46 @@ document.getElementById('sharesMidnightBtn').onclick = e => {
     });
 };
 
+// ⚔️ Мировые боссы: чат для призыва
+const RAID_CHAT_SOURCES = { env: 'сейчас: переменная RAID_CHAT_ID на сервере (важнее этого поля)', admin: 'сейчас: это поле',
+    daily_sub: 'сейчас: чат ежедневной награды (Задания)', none: '⚠️ не задан — призыв не работает' };
+function applyRaidSettings(r) {
+    document.getElementById('raidChatInput').value = r.saved_chat || '';
+    document.getElementById('raidAppInput').value = r.saved_app || '';
+    const src = RAID_CHAT_SOURCES[r.source] || '';
+    document.getElementById('raidChatSource').textContent = r.chat ? `${r.chat} · ${src}` : src;
+    document.getElementById('raidChatSource').style.color = r.chat ? '' : '#f0b429';
+    document.getElementById('raidLinkExample').textContent = !r.bot_ready ? '⚠️ BOT_TOKEN / BOT_USERNAME не заданы — призыв недоступен'
+        : `Кнопка в сообщении ведёт на: ${r.link_example}` + (r.env_app ? ' (имя Mini App из переменной RAID_APP_SHORT_NAME)' : '');
+}
+async function loadRaidSettings() {
+    try { applyRaidSettings(await api('/admin/api/raid_settings')); } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+async function raidChatCall(url, okColor) {
+    const out = document.getElementById('raidChatCheck');
+    if (out.dataset.busy) return;
+    out.dataset.busy = '1'; out.textContent = '…'; out.style.color = '';
+    try {
+        const r = await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat: document.getElementById('raidChatInput').value || '' }) });
+        out.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.detail;
+        out.style.color = r.ok ? '#4ade80' : '#f0b429';
+    } catch (e) { if (e.message !== 'unauthorized') { out.textContent = '❌ ' + e.message; out.style.color = '#f87171'; } }
+    finally { delete out.dataset.busy; }
+}
+document.getElementById('raidChatCheckBtn').onclick = () => raidChatCall('/admin/api/raid_settings/check');
+document.getElementById('raidChatTestBtn').onclick = () => raidChatCall('/admin/api/raid_settings/test');
+document.getElementById('raidChatSave').onclick = e => withBusyButton(e.currentTarget, 'Сохраняю…', async () => {
+    try {
+        const r = await api('/admin/api/raid_settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat: document.getElementById('raidChatInput').value, app_short_name: document.getElementById('raidAppInput').value }) });
+        applyRaidSettings(r);
+        toast(r.saved_chat ? 'Чат для призыва сохранён' : 'Поле очищено — призыв идёт в чат ежедневной награды, если он задан');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+});
+
 async function loadHuntAdmin() {
+    loadRaidSettings();
     try {
         const params = new URLSearchParams({ search: huntAdmin.search, limit: huntAdmin.limit, offset: huntAdmin.offset });
         const data = await api('/admin/api/hunt?' + params);

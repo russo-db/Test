@@ -6880,21 +6880,41 @@ async def raid_start(request: RaidLobbyAction, x_telegram_init_data: Optional[st
         raise HTTPException(status_code=500, detail="Не удалось начать бой — попробуй ещё раз")
 
 
+RAID_CHAT_SETTING = "raid_chat"                 # админка → Охота → «Мировые боссы»
+RAID_APP_SETTING = "raid_app_short_name"
+RAID_APP_RE = re.compile(r"^[A-Za-z0-9_]{3,64}$")
+
+
+async def raid_chat_settings() -> dict:
+    """Куда звать игроков. Порядок: RAID_CHAT_ID из окружения → поле в
+    админке (Охота → Мировые боссы) → чат ежедневной награды (Задания).
+    Ссылка ведёт на Mini App по короткому имени (окружение или админка),
+    без него — на главное Mini App бота."""
+    env_chat = os.getenv("RAID_CHAT_ID", "").strip()
+    saved_chat = str(await store.get_setting(RAID_CHAT_SETTING, "") or "")
+    daily_chat = str(((await refresh_daily_sub()) or {}).get("chat") or "")
+    if env_chat:
+        chat, source = env_chat, "env"
+    elif saved_chat:
+        chat, source = saved_chat, "admin"
+    elif daily_chat:
+        chat, source = daily_chat, "daily_sub"
+    else:
+        chat, source = "", "none"
+    env_app = os.getenv("RAID_APP_SHORT_NAME", "").strip().strip("/")
+    saved_app = str(await store.get_setting(RAID_APP_SETTING, "") or "")
+    return {"chat": chat, "source": source, "saved_chat": saved_chat, "daily_chat": daily_chat, "env_chat": env_chat,
+            "app_short_name": env_app or saved_app, "saved_app": saved_app, "env_app": env_app}
+
+
 async def raid_chat_id():
-    """Куда звать игроков: RAID_CHAT_ID из окружения или чат из админки
-    (Задания → ежедневная награда: числовой ID официального чата)."""
-    env = os.getenv("RAID_CHAT_ID", "").strip()
-    if env:
-        return env
-    cfg = await refresh_daily_sub()
-    return (cfg or {}).get("chat") or ""
+    return (await raid_chat_settings())["chat"]
 
 
-def raid_deep_link(lobby_id: str) -> str:
-    """Ссылка на Mini App с параметром запуска lobby_<id>. С коротким именем
-    приложения (RAID_APP_SHORT_NAME из BotFather) — t.me/<бот>/<приложение>,
-    без него — главное Mini App бота (t.me/<бот>?startapp=…)."""
-    app_name = os.getenv("RAID_APP_SHORT_NAME", "").strip().strip("/")
+def raid_deep_link(lobby_id: str, app_name: str = "") -> str:
+    """Ссылка на Mini App с параметром запуска lobby_<id>: с коротким именем
+    приложения из BotFather — t.me/<бот>/<приложение>, без него — главное
+    Mini App бота (t.me/<бот>?startapp=…)."""
     base = f"https://t.me/{BOT_USERNAME}/{app_name}" if app_name else f"https://t.me/{BOT_USERNAME}"
     return f"{base}?startapp=lobby_{lobby_id}"
 
@@ -6914,9 +6934,10 @@ async def raid_summon(request: RaidLobbyAction, x_telegram_init_data: Optional[s
     try:
         if not BOT_TOKEN or not BOT_USERNAME:
             raise HTTPException(status_code=400, detail="Бот не настроен — призыв недоступен")
-        chat = await raid_chat_id()
+        raid_cfg = await raid_chat_settings()
+        chat = raid_cfg["chat"]
         if not chat:
-            raise HTTPException(status_code=400, detail="Чат игры не указан в админке — призыв недоступен")
+            raise HTTPException(status_code=400, detail="Чат для призыва не указан — админка → Охота → «Мировые боссы»")
         now = time.time()
         lobby = await raid_get(request.lobby_id)
         if not lobby:
@@ -6937,7 +6958,7 @@ async def raid_summon(request: RaidLobbyAction, x_telegram_init_data: Optional[s
             raise HTTPException(status_code=429, detail=f"Призыв уже отправлен — повторить можно через {max(1, wait)} с")
         prev_lobby_stamp = lobby.get("last_summon_at") or 0
         await store.raids.update_one({"_id": lobby["_id"]}, {"$set": {"last_summon_at": now}})
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Вступить в бой ⚔️", url=raid_deep_link(lobby["_id"]))]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Вступить в бой ⚔️", url=raid_deep_link(lobby["_id"], raid_cfg["app_short_name"]))]])
         try:
             await tg_api_bot().send_message(chat_id=chat, text=raid_summon_text(lobby), parse_mode=ParseMode.HTML,
                                             reply_markup=markup)
@@ -7034,6 +7055,114 @@ async def raid_worker():
         except Exception as e:
             print(f"[raid] worker error: {type(e).__name__}: {e}")
         await asyncio.sleep(RAID_TICK_SECONDS)
+
+
+# --- АДМИН: МИРОВЫЕ БОССЫ — куда бот зовёт игроков («Призвать игроков») ---
+class AdminRaidSettings(BaseModel):
+    chat: str = ""
+    app_short_name: str = ""
+
+
+class AdminRaidChatCheck(BaseModel):
+    chat: str = ""
+
+
+async def admin_raid_settings_view() -> dict:
+    cfg = await raid_chat_settings()
+    cfg["bot_username"] = BOT_USERNAME
+    cfg["bot_ready"] = bool(BOT_TOKEN and BOT_USERNAME)
+    cfg["link_example"] = raid_deep_link("0123456789", cfg["app_short_name"]) if BOT_USERNAME else ""
+    return cfg
+
+
+@app.get("/admin/api/raid_settings")
+async def admin_raid_settings(_: None = Depends(require_admin)):
+    try:
+        return await admin_raid_settings_view()
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить настройки: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/raid_settings")
+async def admin_raid_settings_save(body: AdminRaidSettings, _: None = Depends(require_admin)):
+    """ID чата (-100… или @username) и необязательное короткое имя Mini App.
+    Пустое поле — убрать (призыв пойдёт в чат ежедневной награды, если он задан)."""
+    chat = normalize_tg_chat(body.chat)
+    if chat and not DAILY_SUB_CHAT_RE.match(chat):
+        raise HTTPException(status_code=400, detail="Нужен числовой ID чата (-100…) или @username. Ссылка-приглашение t.me/+… не подойдёт — напишите в чате /chatid")
+    app_name = (body.app_short_name or "").strip().strip("/")
+    if app_name.startswith("https://t.me/"):
+        app_name = app_name.rstrip("/").split("/")[-1].split("?")[0]
+    if app_name and not RAID_APP_RE.match(app_name):
+        raise HTTPException(status_code=400, detail="Короткое имя Mini App — латиница, цифры и _ (3–64 символа), как в BotFather")
+    try:
+        await store.set_setting(RAID_CHAT_SETTING, chat)
+        await store.set_setting(RAID_APP_SETTING, app_name)
+        print(f"[admin] Мировые боссы: чат призыва = {chat or '—'}, Mini App = {app_name or 'главное'}")
+        return await admin_raid_settings_view()
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось сохранить: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/raid_settings/check")
+async def admin_raid_chat_check(body: AdminRaidChatCheck, _: None = Depends(require_admin)):
+    """Может ли бот писать в этот чат (пусто — проверить действующий)."""
+    chat = normalize_tg_chat(body.chat) or (await raid_chat_settings())["chat"]
+    if not chat or not DAILY_SUB_CHAT_RE.match(chat):
+        raise HTTPException(status_code=400, detail="Укажите числовой ID чата (-100…) или @username")
+    if not BOT_TOKEN:
+        return {"ok": False, "chat": chat, "detail": "BOT_TOKEN не задан на сервере — бот не сможет писать в чат"}
+    try:
+        from telegram.error import TelegramError
+        bot = tg_api_bot()
+        try:
+            info = await bot.get_chat(chat)
+        except TelegramError as e:
+            return {"ok": False, "chat": chat, "detail": f"Бот не видит чат {chat}: {e}. Добавьте бота в чат."}
+        me = await bot.get_me()
+        try:
+            member = await bot.get_chat_member(chat, me.id)
+        except TelegramError as e:
+            return {"ok": False, "chat": chat, "detail": f"Не удалось узнать права бота: {e}"}
+        status = member.status
+        title = getattr(info, "title", "") or chat
+        kind = getattr(info, "type", "")
+        if kind == "channel":
+            ok = status in ("administrator", "creator") and getattr(member, "can_post_messages", True) is not False
+            detail = (f"«{title}» (канал): бот может публиковать" if ok
+                      else f"«{title}» (канал): бот не может публиковать ({status}). Сделайте @{me.username} админом с правом публикации.")
+        else:
+            can_send = getattr(member, "can_send_messages", None)
+            ok = status in ("member", "administrator", "creator") or (status == "restricted" and can_send is not False)
+            detail = (f"«{title}» (чат): бот в чате и может писать — призыв будет приходить сюда" if ok
+                      else f"«{title}» (чат): бот не может писать ({status}). Добавьте @{me.username} в чат и разрешите ему сообщения.")
+        return {"ok": ok, "chat": chat, "title": title, "bot_status": status, "detail": detail}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось проверить чат: {type(e).__name__}: {e}")
+
+
+@app.post("/admin/api/raid_settings/test")
+async def admin_raid_chat_test(body: AdminRaidChatCheck, _: None = Depends(require_admin)):
+    """Тестовое сообщение в чат призыва — с кнопкой, которая открывает игру
+    так же, как настоящий призыв (тот же адрес Mini App)."""
+    cfg = await raid_chat_settings()
+    chat = normalize_tg_chat(body.chat) or cfg["chat"]
+    if not chat or not DAILY_SUB_CHAT_RE.match(chat):
+        raise HTTPException(status_code=400, detail="Укажите числовой ID чата (-100…) или @username")
+    if not BOT_TOKEN or not BOT_USERNAME:
+        raise HTTPException(status_code=400, detail="Бот не настроен (BOT_TOKEN / BOT_USERNAME)")
+    base = f"https://t.me/{BOT_USERNAME}/{cfg['app_short_name']}" if cfg["app_short_name"] else f"https://t.me/{BOT_USERNAME}"
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("Открыть игру ⚔️", url=f"{base}?startapp=raidtest")]])
+    try:
+        await tg_api_bot().send_message(chat_id=chat, text="⚔️ Проверка: сюда будут приходить призывы на Мировых боссов.",
+                                        reply_markup=markup)
+        return {"ok": True, "chat": chat, "detail": "Сообщение отправлено — проверьте чат и нажмите кнопку"}
+    except Exception as e:
+        print(f"[admin] raid test message to {chat!r} failed: {type(e).__name__}: {e}")
+        return {"ok": False, "chat": chat, "detail": f"Telegram не принял сообщение: {e}"}
 
 
 # --- АДМИН: ОХОТА (тумблер раздела и мониторинг ресурсов игроков) ---
@@ -10938,7 +11067,8 @@ async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not user or not chat or user.id not in MAINTENANCE_WHITELIST or not update.effective_message:
             return
         await update.effective_message.reply_text(
-            f"ID этого чата: {chat.id}\nВставьте его в админке → Задания → «Подписка для ежедневной награды».")
+            f"ID этого чата: {chat.id}\nВставьте его в админке: Охота → «Мировые боссы» (куда звать в рейд) "
+            f"или Задания → «Подписка для ежедневной награды».")
     except Exception as e:
         print(f"[bot] /chatid failed: {type(e).__name__}: {e}")
 
