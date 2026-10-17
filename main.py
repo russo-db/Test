@@ -7164,23 +7164,30 @@ async def admin_raid_chat_test(body: AdminRaidChatCheck, _: None = Depends(requi
     if now - _raid_test_last < RAID_TEST_COOLDOWN:
         wait = int(math.ceil(RAID_TEST_COOLDOWN - (now - _raid_test_last)))
         return {"ok": False, "detail": f"Тестовое сообщение уже отправлено — повторить можно через {wait} с"}
-    cfg = await raid_chat_settings()
-    chat = normalize_tg_chat(body.chat) or cfg["chat"]
-    if not chat or not DAILY_SUB_CHAT_RE.match(chat):
-        raise HTTPException(status_code=400, detail="Укажите числовой ID чата (-100…) или @username")
-    if not BOT_TOKEN or not BOT_USERNAME:
-        raise HTTPException(status_code=400, detail="Бот не настроен (BOT_TOKEN / BOT_USERNAME)")
-    base = f"https://t.me/{BOT_USERNAME}/{cfg['app_short_name']}" if cfg["app_short_name"] else f"https://t.me/{BOT_USERNAME}"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("Открыть игру ⚔️", url=f"{base}?startapp=raidtest")]])
-    _raid_test_last = now
+    # лимит занимаем сразу, до первого await: иначе одновременные запросы
+    # все успевали пройти проверку и каждый слал своё сообщение
+    prev, _raid_test_last = _raid_test_last, now
+    sent = False
     try:
-        await tg_api_bot().send_message(chat_id=chat, text="⚔️ Проверка: сюда будут приходить призывы на Мировых боссов.",
-                                        reply_markup=markup)
+        cfg = await raid_chat_settings()
+        chat = normalize_tg_chat(body.chat) or cfg["chat"]
+        if not chat or not DAILY_SUB_CHAT_RE.match(chat):
+            raise HTTPException(status_code=400, detail="Укажите числовой ID чата (-100…) или @username")
+        if not BOT_TOKEN or not BOT_USERNAME:
+            raise HTTPException(status_code=400, detail="Бот не настроен (BOT_TOKEN / BOT_USERNAME)")
+        base = f"https://t.me/{BOT_USERNAME}/{cfg['app_short_name']}" if cfg["app_short_name"] else f"https://t.me/{BOT_USERNAME}"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Открыть игру ⚔️", url=f"{base}?startapp=raidtest")]])
+        try:
+            await tg_api_bot().send_message(chat_id=chat, text="⚔️ Проверка: сюда будут приходить призывы на Мировых боссов.",
+                                            reply_markup=markup)
+        except Exception as e:
+            print(f"[admin] raid test message to {chat!r} failed: {type(e).__name__}: {e}")
+            return {"ok": False, "chat": chat, "detail": f"Telegram не принял сообщение: {e}"}
+        sent = True
         return {"ok": True, "chat": chat, "detail": "Сообщение отправлено — проверьте чат и нажмите кнопку"}
-    except Exception as e:
-        print(f"[admin] raid test message to {chat!r} failed: {type(e).__name__}: {e}")
-        _raid_test_last = 0.0   # не отправилось — повторить можно сразу
-        return {"ok": False, "chat": chat, "detail": f"Telegram не принял сообщение: {e}"}
+    finally:
+        if not sent and _raid_test_last == now:
+            _raid_test_last = prev   # не отправилось — лимит не тратим
 
 
 # --- АДМИН: ОХОТА (тумблер раздела и мониторинг ресурсов игроков) ---
