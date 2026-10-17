@@ -251,6 +251,15 @@ class MongoStore:
         self.daily_claims = client[db_name]["daily_claims"]
         # Журнал сделок рынка: кто у кого что купил и за сколько (все 3 отдела).
         self.market_trades = client[db_name]["market_trades"]
+        # ⚔️ Лобби рейдов на Мировых боссов (см. раздел МИРОВЫЕ БОССЫ в main.py):
+        # {_id: 10 hex, boss_id, status gathering|battle|won|lost|disbanded,
+        #  leader_id, leader_name, created_at, expires_at (сбор 30 мин),
+        #  battle_started_at, battle_ends_at (бой 10 мин), last_summon_at,
+        #  members: [{user_id, name, monster_id, tier_id, payment, amount,
+        #  paid, joined_at}] (до 5), result {damage, hp, won, gold, by_member},
+        #  reason (почему распущено), finished_at}. Залог игрока лежит в его
+        # документе — raid_entry {lobby, payment, amount, monster_id, at}.
+        self.raids = client[db_name]["raid_lobbies"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -279,6 +288,10 @@ class MongoStore:
             (self.market_trades, "seller_id", {}),
             (self.balance_ledger, [("source", 1), ("ts", -1)], {}),
             (self.users, "auto_expedition_until", {"sparse": True}),
+            (self.users, "raid_entry.lobby", {"sparse": True}),
+            (self.raids, [("status", 1), ("expires_at", 1)], {}),
+            (self.raids, [("status", 1), ("battle_ends_at", 1)], {}),
+            (self.raids, [("status", 1), ("created_at", -1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -487,6 +500,8 @@ class MongoStore:
             return {"status": "on_expedition"}
         if int(farm[slot_index].get("hunt_until") or 0) > 0:
             return {"status": "on_hunt"}   # Дальняя Экспедиция (Охота)
+        if farm[slot_index].get("raid_id"):
+            return {"status": "in_raid"}   # ⚔️ лобби/бой Мирового босса
         if int(farm[slot_index].get("feed_level") or 0) < feed_levels:
             return {"status": "not_fed"}
         if len(farm) <= 1:
@@ -554,7 +569,7 @@ class MongoStore:
             else:
                 idx = next((i for i, m in enumerate(farm)
                             if fits(m) and not m.get("listing_id") and not int(m.get("expedition_until") or 0)
-                            and not int(m.get("hunt_until") or 0)), None)
+                            and not int(m.get("hunt_until") or 0) and not m.get("raid_id")), None)
                 if idx is None:
                     return None, "not_found"
             if farm[idx].get("listing_id"):
@@ -563,6 +578,8 @@ class MongoStore:
                 return None, "on_expedition"
             if int(farm[idx].get("hunt_until") or 0) > 0:
                 return None, "on_hunt"   # Дальняя Экспедиция (Охота)
+            if farm[idx].get("raid_id"):
+                return None, "in_raid"   # ⚔️ лобби/бой Мирового босса
 
             oid = ObjectId()
             farm[idx] = dict(farm[idx], listing_id=str(oid))
@@ -2419,7 +2436,7 @@ class MongoStore:
         idx = next((i for i, m in enumerate(farm)
                     if m.get("id") == monster_id and int(m.get("feed_level") or 0) >= feed_levels
                     and not m.get("listing_id") and not int(m.get("expedition_until") or 0)
-                    and not int(m.get("hunt_until") or 0)), None)
+                    and not int(m.get("hunt_until") or 0) and not m.get("raid_id")), None)
         if idx is None:
             return None
         original = farm[:]

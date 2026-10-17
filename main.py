@@ -301,6 +301,25 @@ def apply_config(cfg: dict):
     HUNT_ZONES = {z["id"]: z for z in _cfg_list(HUNT_CFG, "zones") if isinstance(z.get("id"), str) and z["id"]}
     HUNT_RECIPES = {r["id"]: r for r in _cfg_list(HUNT_CFG, "recipes")
                     if isinstance(r.get("id"), str) and isinstance(r.get("cost"), dict)}
+    # ⚔️ МИРОВЫЕ БОССЫ (командные рейды во вкладке Охоты, см. /api/hunt/raid/*)
+    global RAID_CFG, RAID_ENABLED, RAID_PARTY_SIZE, RAID_GATHER_SECONDS, RAID_BATTLE_SECONDS
+    global RAID_SUMMON_COOLDOWN, RAID_BOSSES, RAID_BOSS_ORDER, RAID_PAYMENTS
+    RAID_CFG = CONFIG.get("world_bosses") if isinstance(CONFIG.get("world_bosses"), dict) else {}
+    RAID_ENABLED = RAID_CFG.get("enabled", True) is not False
+    RAID_PARTY_SIZE = max(1, int(_cfg_num(RAID_CFG, "party_size", 5)))
+    RAID_GATHER_SECONDS = max(60.0, _cfg_num(RAID_CFG, "gather_minutes", 30) * 60)
+    RAID_BATTLE_SECONDS = max(10.0, _cfg_num(RAID_CFG, "battle_minutes", 10) * 60)
+    RAID_SUMMON_COOLDOWN = max(5.0, _cfg_num(RAID_CFG, "summon_cooldown_seconds", 60))
+    RAID_BOSSES = {}
+    for b in _cfg_list(RAID_CFG, "bosses"):
+        bid = b.get("id")
+        if isinstance(bid, str) and re.match(r"^[a-z0-9_]{1,24}$", bid) and _cfg_num(b, "hp", 0) > 0:
+            RAID_BOSSES[bid] = {"id": bid, "name": str(b.get("name") or bid), "name_en": str(b.get("name_en") or b.get("name") or bid),
+                                "hp": _cfg_num(b, "hp", 0), "gold": max(0.0, _cfg_num(b, "gold", 0))}
+    RAID_BOSS_ORDER = list(RAID_BOSSES)
+    pay = RAID_CFG.get("payments") if isinstance(RAID_CFG.get("payments"), dict) else {}
+    RAID_PAYMENTS = {k: _cfg_num(pay, k, d) for k, d in (("particles", 1), ("rock_crystal", 10), ("meat", 30))
+                     if _cfg_num(pay, k, d) > 0}
 
 
 apply_config(load_config())
@@ -673,6 +692,11 @@ def read_farm(raw) -> List[dict]:
         # на ферме свободным (для скрещивания, продажи, Охоты).
         if entry.get("auto_off") and expedition_until > 0:
             slot["auto_off"] = True
+        # ⚔️ Мировой босс: орёл отдан в лобби рейда (id лобби) — до роспуска,
+        # кика или конца боя он занят так же, как в экспедиции/Охоте.
+        raid_id = entry.get("raid_id")
+        if isinstance(raid_id, str) and RAID_ID_RE.match(raid_id):
+            slot["raid_id"] = raid_id
         # Охота: орёл в Дальней Экспедиции (hunt_slot — какой из 3 слотов
         # Охоты он занимает). Отметку сохраняем при любой перезаписи фермы.
         try:
@@ -706,6 +730,19 @@ def slot_on_hunt(slot: dict) -> bool:
 
 
 HUNT_LOCK_DETAIL = "Орёл в Дальней Экспедиции (Охота) — до возвращения его нельзя {action}"
+
+RAID_ID_RE = re.compile(r"^[a-f0-9]{10}$")
+RAID_LOCK_DETAIL = "Орёл в рейде на Мирового босса — пока рейд не закончится, его нельзя {action}"
+
+
+def slot_in_raid(slot: dict) -> bool:
+    """Орёл записан в лобби Мирового босса (сбор или бой)."""
+    return bool(slot.get("raid_id"))
+
+
+def ensure_slot_not_in_raid(slot: dict, action: str) -> None:
+    if slot_in_raid(slot):
+        raise HTTPException(status_code=400, detail=RAID_LOCK_DETAIL.format(action=action))
 
 
 def ensure_slot_not_on_hunt(slot: dict, action: str) -> None:
@@ -2751,6 +2788,8 @@ async def farm_fusion_attempt(request: FusionAttempt, x_telegram_init_data: Opti
             raise HTTPException(status_code=400, detail="Орёл в экспедиции")
         ensure_slot_not_on_hunt(a, "сливать")
         ensure_slot_not_on_hunt(b, "сливать")
+        ensure_slot_not_in_raid(a, "сливать")
+        ensure_slot_not_in_raid(b, "сливать")
         if a["id"] != b["id"]:
             raise HTTPException(status_code=400, detail="Разные виды орлов")
         if a["feed_level"] < FEED_LEVELS or b["feed_level"] < FEED_LEVELS:
@@ -2836,6 +2875,7 @@ async def farm_expedition_start(request: FarmSlotAction, x_telegram_init_data: O
         ensure_expected_monster(slot, request.monster_id)
         ensure_slot_not_listed(slot)
         ensure_slot_not_on_hunt(slot, "отправить в обычную экспедицию")
+        ensure_slot_not_in_raid(slot, "отправить в обычную экспедицию")
         if slot["expedition_until"] > 0:
             raise HTTPException(status_code=400, detail="Орёл уже в экспедиции")
         if slot["feed_level"] < FEED_LEVELS:
@@ -2956,7 +2996,7 @@ def auto_expedition_view(row: dict) -> dict:
 
 def auto_exp_eligible(slot: dict) -> bool:
     """Тот же допуск, что у ручной отправки: 7 ур., не на рынке, не на Охоте."""
-    return slot["feed_level"] >= FEED_LEVELS and not slot_listed(slot) and not slot_on_hunt(slot)
+    return slot["feed_level"] >= FEED_LEVELS and not slot_listed(slot) and not slot_on_hunt(slot) and not slot_in_raid(slot)
 
 
 def auto_expedition_due(row: dict, now: float) -> bool:
@@ -3603,7 +3643,7 @@ async def admin_shares_simulate_midnight(_: None = Depends(require_admin)):
 def vip_expedition_free(slot: dict) -> bool:
     """Полностью свободный орёл: 7 ур., не на Охоте, не на Рынке и не в
     обычной экспедиции (включая вернувшихся, но ещё не собранных)."""
-    return (slot["feed_level"] >= FEED_LEVELS and not slot_on_hunt(slot)
+    return (slot["feed_level"] >= FEED_LEVELS and not slot_on_hunt(slot) and not slot_in_raid(slot)
             and not slot_listed(slot) and not slot_on_expedition(slot))
 
 
@@ -3741,6 +3781,7 @@ async def farm_delete_eagle(request: FarmSlotAction, x_telegram_init_data: Optio
         if slot_on_expedition(farm[i]):
             raise HTTPException(status_code=400, detail="Орёл в экспедиции — его нельзя удалить")
         ensure_slot_not_on_hunt(farm[i], "удалить")
+        ensure_slot_not_in_raid(farm[i], "удалить")
         if len(farm) <= 1:
             raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
 
@@ -5959,7 +6000,7 @@ def hunt_pick_eagle(farm: List[dict], zone: dict) -> Optional[int]:
     min_rank = hunt_tier_rank(zone.get("min_tier"))
     best, best_rank = None, None
     for i, slot in enumerate(farm):
-        if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot):
+        if slot["feed_level"] < HUNT_EAGLE_LEVEL or slot_listed(slot) or slot_on_expedition(slot) or slot_on_hunt(slot) or slot_in_raid(slot):
             continue
         rank = tier_index(slot["id"])
         if rank >= min_rank and (best_rank is None or rank < best_rank):
@@ -6327,6 +6368,655 @@ async def hunt_use(request: HuntUse, x_telegram_init_data: Optional[str] = Heade
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось применить предмет — попробуй ещё раз")
+
+
+# --- ⚔️ МИРОВЫЕ БОССЫ: командные рейды (вкладка «Мировые боссы» в Охоте) ---
+# Лобби — документ коллекции raid_lobbies (схема — в storage.py, self.raids).
+# Он единственный источник правды о составе группы: кто в members, тот в
+# рейде. Залог игрока (1 Частичка / 10 Горных Кристаллов / 30 Мяса) и замок
+# орла лежат в документе самого игрока: raid_entry {lobby, payment, amount,
+# monster_id, at} + raid_id в ячейке фермы (см. read_farm). Документов два,
+# транзакций в MongoDB у нас нет, поэтому порядок такой:
+#   1) занять место в лобби (атомарный $push с проверкой «< 5 мест»);
+#   2) списать залог и запереть орла одной CAS-записью игрока;
+#   3) отметить место оплаченным (paid). Не вышло на шаге 2 — место
+#      освобождается сразу.
+# Всё остальное (кик, выход, роспуск лидером, роспуск по таймеру, итог боя)
+# сводится к одному идемпотентному settle_raid_entry: он сверяет raid_entry
+# игрока с лобби и решает — залог остаётся / возвращается на склад /
+# сгорает (+золото при победе). Залог списан ровно один раз (raid_entry есть
+# — значит списан) и снимается ровно один раз (та же CAS-запись удаляет
+# raid_entry), так что повторные и параллельные вызовы безопасны. Фоновый
+# raid_worker раз в RAID_TICK_SECONDS распускает просроченные лобби,
+# считает бои и подбирает «хвосты» (сбой между шагами 1–3).
+RAID_TICK_SECONDS = 10
+RAID_UNPAID_GRACE_SECONDS = 30      # место заняли, а залог так и не списался — освобождаем
+RAID_KEEP_FINISHED_SECONDS = 7 * 86400
+RAID_FINAL = ("won", "lost", "disbanded")
+RAID_PAYMENT_NAMES = {"particles": "Частичка", "rock_crystal": "Горный Кристалл", "meat": "Мясо"}
+
+
+def raid_boss_view(boss: dict) -> dict:
+    return {"id": boss["id"], "name": boss["name"], "name_en": boss["name_en"], "hp": boss["hp"], "gold": boss["gold"]}
+
+
+def raid_resource_have(row: dict, kind: str) -> float:
+    if kind == "particles":
+        return max(0.0, float(row.get("nest_particles") or 0))
+    if kind == "rock_crystal":
+        return float(hunt_items_of(row).get("rock_crystal", 0))
+    if kind == "meat":
+        return max(0.0, float(row.get("mnstr") or 0))
+    return 0.0
+
+
+def raid_resource_fields(row: dict, kind: str, delta: float) -> dict:
+    """Поля для $set: ресурс kind изменён на delta (минус — залог, плюс — возврат)."""
+    if kind == "particles":
+        return {"nest_particles": max(0.0, float(row.get("nest_particles") or 0) + delta)}
+    if kind == "rock_crystal":
+        items = hunt_items_of(row)
+        items["rock_crystal"] = max(0, int(round(items.get("rock_crystal", 0) + delta)))
+        return {"hunt_items": items}
+    if kind == "meat":
+        return {"mnstr": max(0.0, float(row.get("mnstr") or 0) + delta)}
+    raise ValueError(kind)
+
+
+def raid_entry_of(row: dict) -> Optional[dict]:
+    e = row.get("raid_entry")
+    if isinstance(e, dict) and isinstance(e.get("lobby"), str) and RAID_ID_RE.match(e["lobby"]):
+        return e
+    return None
+
+
+def raid_on_cooldown(row: dict, now: float) -> bool:
+    """Победа уже была в эти сутки сервера (UTC) — следующий рейд после 00:00."""
+    try:
+        return int(row.get("raid_win_day")) == day_index(now)
+    except (TypeError, ValueError):
+        return False
+
+
+def raid_slot_free(slot: dict) -> bool:
+    """Свободный орёл для рейда: не в экспедиции, не на Охоте, не на рынке, не в
+    другом рейде. Уровень и редкость — любые."""
+    return not slot_on_expedition(slot) and not slot_on_hunt(slot) and not slot_listed(slot) and not slot_in_raid(slot)
+
+
+def raid_member_damage(row: dict, tier_id: str) -> dict:
+    """Урон участника = атака выбранного орла (текущие статы в игре: база
+    редкости + снаряжение и его заточка, как в бою Арены/кланов) + суммарный
+    бонус заточки надетого на эту редкость снаряжения."""
+    equipped = normalize_nest_equipped(row.get("nest_equipped"))
+    enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
+    eq, en = equipped.get(tier_id) or {}, enchant.get(tier_id) or {}
+    atk = float(combat_eagle_stats(tier_id, eq, en)["atk"])
+    bonus = sum(nest_enchant_bonus(grade, en.get(item_type, 0)) for item_type, grade in eq.items() if grade)
+    return {"atk": atk, "enchant_bonus": round(bonus, 4), "damage": round(atk + bonus, 4)}
+
+
+def raid_lobby_view(lobby: dict, viewer_id: Optional[int] = None, now: Optional[float] = None) -> dict:
+    """Лобби для экрана. Про участников — строго ник и грейд (редкость) орла;
+    чем платил другой игрок, не показываем."""
+    now = time.time() if now is None else now
+    boss = RAID_BOSSES.get(lobby.get("boss_id")) or {"id": lobby.get("boss_id"), "name": "?", "name_en": "?", "hp": 0, "gold": 0}
+    members = []
+    for m in lobby.get("members") or []:
+        members.append({"user_id": m["user_id"], "name": m.get("name") or f"Игрок {m['user_id']}",
+                        "tier_id": m.get("tier_id"), "monster_id": m.get("monster_id"),
+                        "leader": m["user_id"] == lobby.get("leader_id"), "paid": bool(m.get("paid"))})
+    result = lobby.get("result") or None
+    view = {
+        "id": lobby["_id"], "boss": raid_boss_view(boss), "status": lobby.get("status"),
+        "leader_id": lobby.get("leader_id"), "leader_name": lobby.get("leader_name") or "",
+        "members": members, "count": len(members), "size": RAID_PARTY_SIZE,
+        "created_at": lobby.get("created_at"), "expires_at": lobby.get("expires_at"),
+        "battle_ends_at": lobby.get("battle_ends_at"), "reason": lobby.get("reason"),
+        "summon_ready_at": float(lobby.get("last_summon_at") or 0) + RAID_SUMMON_COOLDOWN,
+        "server_time": now,
+    }
+    if result:
+        view["result"] = {"damage": result.get("damage"), "hp": result.get("hp"), "won": bool(result.get("won")),
+                          "gold": result.get("gold", 0)}
+        if viewer_id is not None:
+            mine = (result.get("by_member") or {}).get(str(viewer_id))
+            if mine:
+                view["result"]["mine"] = mine
+    return view
+
+
+async def raid_get(lobby_id: str) -> Optional[dict]:
+    if not isinstance(lobby_id, str) or not RAID_ID_RE.match(lobby_id):
+        return None
+    return await store.raids.find_one({"_id": lobby_id})
+
+
+async def settle_raid_entry(user_id: int) -> Optional[str]:
+    """Сверяет залог игрока с лобби и доводит его до конца. Возвращает, что
+    сделано: None — делать нечего (залога нет или игрок всё ещё в рейде),
+    "refund" — залог вернулся на склад, "won" / "lost" — рейд окончен."""
+    row = await fetch_user(user_id)
+    entry = raid_entry_of(row)
+    if not entry:
+        return None
+    lobby = await raid_get(entry["lobby"])
+    status = (lobby or {}).get("status")
+    member = next((m for m in (lobby or {}).get("members") or [] if m.get("user_id") == user_id), None)
+    if lobby and member and status in ("gathering", "battle"):
+        return None                                  # всё ещё в рейде — залог держим
+    if lobby and member and status in ("won", "lost"):
+        outcome = status                             # участвовал в бою — залог сгорает
+    else:
+        outcome = "refund"                           # кик / выход / роспуск / нет лобби
+    boss = RAID_BOSSES.get((lobby or {}).get("boss_id")) or {}
+    win_gold = float(((lobby or {}).get("result") or {}).get("gold") or boss.get("gold") or 0)
+    win_day = day_index(float((lobby or {}).get("battle_ends_at") or time.time()))
+
+    class _Gone(Exception):
+        pass
+
+    def compute(r):
+        e = raid_entry_of(r)
+        if not e or e["lobby"] != entry["lobby"] or e.get("at") != entry.get("at"):
+            raise _Gone()                            # уже урегулировано параллельным вызовом
+        farm = read_farm(r.get("monsters"))
+        for s in farm:
+            if s.get("raid_id") == e["lobby"]:
+                s.pop("raid_id", None)
+        fields = {"monsters": farm, "raid_entry": None}
+        extra = {"outcome": outcome}
+        if outcome == "refund":
+            fields.update(raid_resource_fields(r, e.get("payment"), float(e.get("amount") or 0)))
+        elif outcome == "won":
+            fields["gold"] = max(0.0, float(r.get("gold") or 0)) + win_gold
+            fields["raid_win_day"] = win_day
+            extra["gold"] = win_gold
+        return fields, extra
+
+    source = {"refund": "raid:refund", "won": "raid:reward", "lost": "raid:lost"}[outcome]
+    try:
+        with ledger_source(source):
+            await run_farm_action(user_id, compute)
+    except _Gone:
+        return None
+    if outcome == "won":
+        await record_economy(gold_raids=win_gold, raid_wins=1)
+    return outcome
+
+
+async def raid_settle_many(user_ids) -> None:
+    for uid in user_ids:
+        try:
+            await settle_raid_entry(int(uid))
+        except Exception as e:
+            print(f"[raid] settle {uid}: {type(e).__name__}: {e}")
+
+
+async def raid_state(user_id: int, row: Optional[dict] = None) -> dict:
+    """Всё для вкладки «Мировые боссы»: боссы, моё лобби, браузер групп, КД."""
+    now = time.time()
+    row = row or await fetch_user(user_id)
+    entry = raid_entry_of(row)
+    mine = None
+    if entry:
+        lobby = await raid_get(entry["lobby"])
+        if lobby:
+            mine = raid_lobby_view(lobby, user_id, now)
+    if mine is None:
+        # результат последнего боя (показываем, пока игрок его не закрыл)
+        last = row.get("raid_last_lobby")
+        if isinstance(last, str) and RAID_ID_RE.match(last):
+            lobby = await raid_get(last)
+            if lobby and lobby.get("status") in ("won", "lost") and \
+                    any(m.get("user_id") == user_id for m in lobby.get("members") or []):
+                mine = raid_lobby_view(lobby, user_id, now)
+    browser = []
+    async for lb in store.raids.find({"status": "gathering", "expires_at": {"$gt": now}}).sort("created_at", -1).limit(30):
+        v = raid_lobby_view(lb, None, now)
+        browser.append({"id": v["id"], "boss": v["boss"], "leader_name": v["leader_name"], "leader_id": v["leader_id"],
+                        "count": v["count"], "size": v["size"], "expires_at": v["expires_at"]})
+    next_reset = (day_index(now) + 1) * 86400
+    return {
+        "enabled": RAID_ENABLED, "server_time": now,
+        "bosses": [raid_boss_view(RAID_BOSSES[b]) for b in RAID_BOSS_ORDER],
+        "payments": [{"id": k, "amount": v, "have": raid_resource_have(row, k)} for k, v in RAID_PAYMENTS.items()],
+        "party_size": RAID_PARTY_SIZE, "gather_seconds": RAID_GATHER_SECONDS, "battle_seconds": RAID_BATTLE_SECONDS,
+        "cooldown_until": next_reset if raid_on_cooldown(row, now) else 0,
+        "lobby": mine, "in_lobby": bool(entry), "browser": browser,
+    }
+
+
+async def raid_response(user_id: int, **extra) -> dict:
+    row = await fetch_user(user_id)
+    out = {"status": "success", "raid": await raid_state(user_id, row), "hunt": hunt_state(row)}
+    out.update(extra)
+    return out
+
+
+class RaidEnter(BaseModel):
+    user_id: int
+    slot_index: int
+    monster_id: Optional[str] = None
+    payment: str
+    boss_id: Optional[str] = None      # создать лобби
+    lobby_id: Optional[str] = None     # войти в чужое
+
+
+class RaidLobbyAction(BaseModel):
+    user_id: int
+    lobby_id: str
+    target_id: Optional[int] = None    # кого кикнуть
+
+
+def raid_precheck(row: dict, request: RaidEnter, now: float) -> None:
+    """Быстрые отказы ДО того, как занимать место в лобби."""
+    if not RAID_ENABLED:
+        raise HTTPException(status_code=403, detail="Мировые боссы временно закрыты")
+    if request.payment not in RAID_PAYMENTS:
+        raise HTTPException(status_code=400, detail="Выбери способ оплаты похода")
+    if raid_entry_of(row):
+        raise HTTPException(status_code=409, detail="Ты уже в лобби рейда — сначала выйди из него")
+    if raid_on_cooldown(row, now):
+        raise HTTPException(status_code=400, detail="Сегодня уже была победа над боссом — новый рейд после 00:00 по серверу")
+    farm = read_farm(row.get("monsters"))
+    i = request.slot_index
+    if not (0 <= i < len(farm)):
+        raise HTTPException(status_code=404, detail="Орёл не найден")
+    ensure_expected_monster(farm[i], request.monster_id)
+    if not raid_slot_free(farm[i]):
+        raise HTTPException(status_code=400, detail="Этот орёл занят — выбери свободного (не в экспедиции, не на Охоте и не на рынке)")
+    amount = RAID_PAYMENTS[request.payment]
+    if raid_resource_have(row, request.payment) + 1e-9 < amount:
+        raise HTTPException(status_code=400, detail=f"Не хватает: нужно {amount:g} × {RAID_PAYMENT_NAMES.get(request.payment, request.payment)}")
+
+
+async def raid_charge(user_id: int, lobby_id: str, request: RaidEnter) -> None:
+    """Шаг 2: залог и замок орла — одна CAS-запись игрока."""
+    now = time.time()
+
+    def compute(row):
+        raid_precheck(row, request, now)
+        farm = read_farm(row.get("monsters"))
+        slot = farm[request.slot_index]
+        slot["raid_id"] = lobby_id
+        amount = RAID_PAYMENTS[request.payment]
+        fields = {"monsters": farm, "raid_last_lobby": lobby_id,
+                  "raid_entry": {"lobby": lobby_id, "payment": request.payment, "amount": amount,
+                                 "monster_id": slot["id"], "at": now}}
+        fields.update(raid_resource_fields(row, request.payment, -amount))
+        return fields, {}
+
+    await run_farm_action(user_id, compute)
+
+
+async def raid_seat_and_charge(user_id: int, lobby_id: str, request: RaidEnter, row: dict) -> None:
+    """Шаги 2–3 после того, как место в лобби занято (шаг 1)."""
+    try:
+        await raid_charge(user_id, lobby_id, request)
+    except BaseException:
+        # залог не списан — место освобождаем сразу
+        await store.raids.update_one({"_id": lobby_id}, {"$pull": {"members": {"user_id": user_id, "paid": False}}})
+        raise
+    await store.raids.update_one({"_id": lobby_id, "members.user_id": user_id}, {"$set": {"members.$.paid": True}})
+    # пока списывали, лобби могли распустить / игрока кикнуть — тогда залог сразу вернётся
+    await settle_raid_entry(user_id)
+
+
+def raid_member_doc(row: dict, user_id: int, request: RaidEnter, now: float) -> dict:
+    farm = read_farm(row.get("monsters"))
+    slot = farm[request.slot_index]
+    return {"user_id": user_id, "name": row.get("name") or f"Игрок {user_id}", "monster_id": slot["id"],
+            "tier_id": MONSTER_TIER.get(slot["id"]), "payment": request.payment,
+            "amount": RAID_PAYMENTS[request.payment], "paid": False, "joined_at": now}
+
+
+@app.get("/api/hunt/raid/state/{user_id}")
+async def raid_get_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        await settle_raid_entry(user_id)
+        return await raid_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить Мировых боссов — попробуй ещё раз")
+
+
+@app.get("/api/hunt/raid/lobby/{lobby_id}")
+async def raid_get_lobby(lobby_id: str, user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лобби по ссылке из чата (startapp=lobby_XXXX) — превью перед входом."""
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        lobby = await raid_get(lobby_id)
+        if not lobby:
+            raise HTTPException(status_code=404, detail="Лобби не найдено — возможно, его уже распустили")
+        return {"status": "success", "lobby": raid_lobby_view(lobby, user_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить лобби — попробуй ещё раз")
+
+
+@app.post("/api/hunt/raid/create")
+async def raid_create(request: RaidEnter, x_telegram_init_data: Optional[str] = Header(None)):
+    """Создать своё лобби: лидер сразу первый участник (свой орёл и залог)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        boss = RAID_BOSSES.get(request.boss_id or "")
+        if not boss:
+            raise HTTPException(status_code=400, detail="Выбери босса")
+        await settle_raid_entry(user_id)
+        row = await fetch_user(user_id)
+        now = time.time()
+        raid_precheck(row, request, now)
+        lobby_id = secrets.token_hex(5)
+        member = raid_member_doc(row, user_id, request, now)
+        await store.raids.insert_one({
+            "_id": lobby_id, "boss_id": boss["id"], "status": "gathering",
+            "leader_id": user_id, "leader_name": member["name"],
+            "created_at": now, "expires_at": now + RAID_GATHER_SECONDS,
+            "battle_started_at": None, "battle_ends_at": None, "last_summon_at": 0,
+            "members": [member], "result": None, "reason": None, "finished_at": None,
+        })
+        try:
+            await raid_seat_and_charge(user_id, lobby_id, request, row)
+        except BaseException:
+            await store.raids.update_one({"_id": lobby_id, "status": "gathering"},
+                                         {"$set": {"status": "disbanded", "reason": "create_failed", "finished_at": time.time()}})
+            raise
+        return await raid_response(user_id, lobby_id=lobby_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось создать лобби — попробуй ещё раз")
+
+
+@app.post("/api/hunt/raid/join")
+async def raid_join(request: RaidEnter, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Войти»: занять место (строго до 5), списать выбранный залог, запереть орла."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        lobby_id = request.lobby_id or ""
+        if not RAID_ID_RE.match(lobby_id):
+            raise HTTPException(status_code=404, detail="Лобби не найдено")
+        await settle_raid_entry(user_id)
+        row = await fetch_user(user_id)
+        now = time.time()
+        raid_precheck(row, request, now)
+        seated = await store.raids.find_one_and_update(
+            {"_id": lobby_id, "status": "gathering", "expires_at": {"$gt": now},
+             "members.user_id": {"$ne": user_id}, f"members.{RAID_PARTY_SIZE - 1}": {"$exists": False}},
+            {"$push": {"members": raid_member_doc(row, user_id, request, now)}},
+        )
+        if not seated:
+            lobby = await raid_get(lobby_id)
+            if not lobby:
+                raise HTTPException(status_code=404, detail="Лобби не найдено — возможно, его уже распустили")
+            if any(m.get("user_id") == user_id for m in lobby.get("members") or []):
+                raise HTTPException(status_code=409, detail="Ты уже в этом лобби")
+            if lobby.get("status") != "gathering" or float(lobby.get("expires_at") or 0) <= now:
+                raise HTTPException(status_code=409, detail="Группа уже ушла в бой или распущена")
+            raise HTTPException(status_code=409, detail=f"Мест нет — в группе уже {RAID_PARTY_SIZE}/{RAID_PARTY_SIZE}")
+        await raid_seat_and_charge(user_id, lobby_id, request, row)
+        return await raid_response(user_id, lobby_id=lobby_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось войти в лобби — попробуй ещё раз")
+
+
+async def raid_disband(lobby_id: str, reason: str, extra_filter: Optional[dict] = None) -> Optional[dict]:
+    """Распустить лобби (только во время сбора) и вернуть залоги всем участникам."""
+    flt = {"_id": lobby_id, "status": "gathering"}
+    flt.update(extra_filter or {})
+    lobby = await store.raids.find_one_and_update(
+        flt, {"$set": {"status": "disbanded", "reason": reason, "finished_at": time.time()}})
+    if lobby:
+        await raid_settle_many(m["user_id"] for m in lobby.get("members") or [])
+    return lobby
+
+
+@app.post("/api/hunt/raid/kick")
+async def raid_kick(request: RaidLobbyAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Лидер выгоняет участника до старта боя — залог участнику возвращается сразу."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        target = request.target_id
+        if target is None or target == user_id:
+            raise HTTPException(status_code=400, detail="Выбери, кого исключить")
+        lobby = await store.raids.find_one_and_update(
+            {"_id": request.lobby_id, "status": "gathering", "leader_id": user_id, "members.user_id": target},
+            {"$pull": {"members": {"user_id": target}}})
+        if not lobby:
+            cur = await raid_get(request.lobby_id)
+            if not cur:
+                raise HTTPException(status_code=404, detail="Лобби не найдено")
+            if cur.get("leader_id") != user_id:
+                raise HTTPException(status_code=403, detail="Исключать игроков может только лидер группы")
+            if cur.get("status") != "gathering":
+                raise HTTPException(status_code=409, detail="Бой уже начался — состав не меняется")
+            raise HTTPException(status_code=409, detail="Этого игрока уже нет в лобби")
+        await raid_settle_many([target])
+        return await raid_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось исключить игрока — попробуй ещё раз")
+
+
+@app.post("/api/hunt/raid/leave")
+async def raid_leave(request: RaidLobbyAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выйти из лобби до боя (залог возвращается). Лидер выходит — группа распускается."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        cur = await raid_get(request.lobby_id)
+        if not cur or not any(m.get("user_id") == user_id for m in cur.get("members") or []):
+            await settle_raid_entry(user_id)
+            return await raid_response(user_id)
+        if cur.get("status") != "gathering":
+            raise HTTPException(status_code=409, detail="Бой уже идёт — из рейда не выйти")
+        if cur.get("leader_id") == user_id:
+            if not await raid_disband(request.lobby_id, "leader", {"leader_id": user_id}):
+                raise HTTPException(status_code=409, detail="Бой уже начался — группу не распустить")
+        else:
+            await store.raids.update_one({"_id": request.lobby_id, "status": "gathering"},
+                                         {"$pull": {"members": {"user_id": user_id}}})
+            await settle_raid_entry(user_id)
+        return await raid_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось выйти из лобби — попробуй ещё раз")
+
+
+@app.post("/api/hunt/raid/start")
+async def raid_start(request: RaidLobbyAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """«ПОДТВЕРДИТЬ АТАКУ» — только лидер, только 5/5 и у всех оплачен залог."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        now = time.time()
+        lobby = await store.raids.find_one_and_update(
+            {"_id": request.lobby_id, "status": "gathering", "leader_id": user_id, "expires_at": {"$gt": now},
+             f"members.{RAID_PARTY_SIZE - 1}": {"$exists": True}, "members.paid": {"$ne": False}},
+            {"$set": {"status": "battle", "battle_started_at": now, "battle_ends_at": now + RAID_BATTLE_SECONDS}})
+        if not lobby:
+            cur = await raid_get(request.lobby_id)
+            if not cur:
+                raise HTTPException(status_code=404, detail="Лобби не найдено")
+            if cur.get("leader_id") != user_id:
+                raise HTTPException(status_code=403, detail="Начать бой может только лидер группы")
+            if cur.get("status") == "battle":
+                raise HTTPException(status_code=409, detail="Бой уже идёт")
+            if cur.get("status") != "gathering" or float(cur.get("expires_at") or 0) <= now:
+                raise HTTPException(status_code=409, detail="Лобби распущено — время сбора вышло")
+            n = len(cur.get("members") or [])
+            if n < RAID_PARTY_SIZE:
+                raise HTTPException(status_code=400, detail=f"В поход идут строго {RAID_PARTY_SIZE} игроков — сейчас {n}/{RAID_PARTY_SIZE}")
+            raise HTTPException(status_code=409, detail="Не все участники ещё внесли залог — подожди пару секунд")
+        return await raid_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось начать бой — попробуй ещё раз")
+
+
+async def raid_chat_id():
+    """Куда звать игроков: RAID_CHAT_ID из окружения или чат из админки
+    (Задания → ежедневная награда: числовой ID официального чата)."""
+    env = os.getenv("RAID_CHAT_ID", "").strip()
+    if env:
+        return env
+    cfg = await refresh_daily_sub()
+    return (cfg or {}).get("chat") or ""
+
+
+def raid_deep_link(lobby_id: str) -> str:
+    """Ссылка на Mini App с параметром запуска lobby_<id>. С коротким именем
+    приложения (RAID_APP_SHORT_NAME из BotFather) — t.me/<бот>/<приложение>,
+    без него — главное Mini App бота (t.me/<бот>?startapp=…)."""
+    app_name = os.getenv("RAID_APP_SHORT_NAME", "").strip().strip("/")
+    base = f"https://t.me/{BOT_USERNAME}/{app_name}" if app_name else f"https://t.me/{BOT_USERNAME}"
+    return f"{base}?startapp=lobby_{lobby_id}"
+
+
+def raid_summon_text(lobby: dict) -> str:
+    boss = RAID_BOSSES.get(lobby.get("boss_id")) or {"name": "?"}
+    leader = html.escape(lobby.get("leader_name") or "Игрок")
+    return (f"⚔️ СБОР НА БОССА: {html.escape(boss['name'].upper())}!\n"
+            f"Игрок {leader} собирает рейд!\n"
+            f"Мест в лобби: {len(lobby.get('members') or [])}/{RAID_PARTY_SIZE}.")
+
+
+@app.post("/api/hunt/raid/summon")
+async def raid_summon(request: RaidLobbyAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Призвать игроков»: бот пишет в общий чат игры с кнопкой «Вступить в бой ⚔️»."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        if not BOT_TOKEN or not BOT_USERNAME:
+            raise HTTPException(status_code=400, detail="Бот не настроен — призыв недоступен")
+        chat = await raid_chat_id()
+        if not chat:
+            raise HTTPException(status_code=400, detail="Чат игры не указан в админке — призыв недоступен")
+        now = time.time()
+        lobby = await store.raids.find_one_and_update(
+            {"_id": request.lobby_id, "status": "gathering", "leader_id": user_id, "expires_at": {"$gt": now},
+             "$or": [{"last_summon_at": {"$lte": now - RAID_SUMMON_COOLDOWN}}, {"last_summon_at": None},
+                     {"last_summon_at": {"$exists": False}}]},
+            {"$set": {"last_summon_at": now}})
+        if not lobby:
+            cur = await raid_get(request.lobby_id)
+            if not cur:
+                raise HTTPException(status_code=404, detail="Лобби не найдено")
+            if cur.get("leader_id") != user_id:
+                raise HTTPException(status_code=403, detail="Призывать игроков может только лидер группы")
+            if cur.get("status") != "gathering" or float(cur.get("expires_at") or 0) <= now:
+                raise HTTPException(status_code=409, detail="Сбор уже закончен")
+            wait = int(math.ceil(float(cur.get("last_summon_at") or 0) + RAID_SUMMON_COOLDOWN - now))
+            raise HTTPException(status_code=429, detail=f"Призыв уже отправлен — повторить можно через {max(1, wait)} с")
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Вступить в бой ⚔️", url=raid_deep_link(lobby["_id"]))]])
+        try:
+            await tg_api_bot().send_message(chat_id=chat, text=raid_summon_text(lobby), parse_mode=ParseMode.HTML,
+                                            reply_markup=markup)
+        except Exception as e:
+            print(f"[raid] summon to {chat!r} failed: {type(e).__name__}: {e}")
+            await store.raids.update_one({"_id": lobby["_id"], "last_summon_at": now},
+                                         {"$set": {"last_summon_at": lobby.get("last_summon_at") or 0}})
+            raise HTTPException(status_code=502, detail="Telegram не принял сообщение — проверь, что бот добавлен в чат игры")
+        return await raid_response(user_id, summoned=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось призвать игроков — попробуй ещё раз")
+
+
+@app.post("/api/hunt/raid/dismiss")
+async def raid_dismiss(request: RaidLobbyAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Закрыть карточку итога боя."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await store.users.update_one({"_id": user_id, "raid_last_lobby": request.lobby_id},
+                                     {"$set": {"raid_last_lobby": None}})
+        return await raid_response(user_id)
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось обновить — попробуй ещё раз")
+
+
+async def raid_resolve(lobby: dict) -> None:
+    """Итог боя: урон группы против ХП босса. Пишет итог ровно один раз
+    (условие status=battle), затем урегулирует залоги участников."""
+    boss = RAID_BOSSES.get(lobby.get("boss_id")) or {"hp": float("inf"), "gold": 0}
+    by_member, total = {}, 0.0
+    for m in lobby.get("members") or []:
+        try:
+            row = await fetch_user(int(m["user_id"]))
+            tier = MONSTER_TIER.get(m.get("monster_id")) or m.get("tier_id")
+            d = raid_member_damage(row, tier)
+        except Exception as e:
+            print(f"[raid] damage {m.get('user_id')}: {type(e).__name__}: {e}")
+            d = {"atk": 0.0, "enchant_bonus": 0.0, "damage": 0.0}
+        by_member[str(m["user_id"])] = d
+        total += d["damage"]
+    total = round(total, 4)
+    won = total >= float(boss["hp"])
+    done = await store.raids.find_one_and_update(
+        {"_id": lobby["_id"], "status": "battle"},
+        {"$set": {"status": "won" if won else "lost", "finished_at": time.time(),
+                  "result": {"damage": total, "hp": boss["hp"], "won": won, "gold": boss["gold"] if won else 0,
+                             "by_member": by_member}}})
+    if done:
+        await raid_settle_many(m["user_id"] for m in done.get("members") or [])
+
+
+async def raid_tick(now: Optional[float] = None) -> None:
+    now = time.time() if now is None else now
+    # 1) сбор не уложился в 30 минут — роспуск и возврат всем
+    async for lb in store.raids.find({"status": "gathering", "expires_at": {"$lte": now}}, {"_id": 1}):
+        await raid_disband(lb["_id"], "timeout", {"expires_at": {"$lte": now}})
+    # 2) 10 минут боя прошли — считаем итог
+    async for lb in store.raids.find({"status": "battle", "battle_ends_at": {"$lte": now}}):
+        await raid_resolve(lb)
+    # 3) место занято, а залог так и не списался (сбой посреди входа) — освобождаем
+    async for lb in store.raids.find({"status": "gathering", "members.paid": False}):
+        for m in lb.get("members") or []:
+            if m.get("paid") is False and float(m.get("joined_at") or 0) < now - RAID_UNPAID_GRACE_SECONDS:
+                row = await fetch_user(int(m["user_id"]))
+                e = raid_entry_of(row)
+                if e and e["lobby"] == lb["_id"]:
+                    await store.raids.update_one({"_id": lb["_id"], "members.user_id": m["user_id"]},
+                                                 {"$set": {"members.$.paid": True}})
+                else:
+                    await store.raids.update_one({"_id": lb["_id"]},
+                                                 {"$pull": {"members": {"user_id": m["user_id"], "paid": False}}})
+    # 4) залоги, чьё лобби уже закончилось/распущено, — довести до конца
+    async for row in store.users.find({"raid_entry.lobby": {"$exists": True}}, {"_id": 1, "raid_entry": 1}):
+        e = raid_entry_of(row)
+        if not e:
+            continue
+        lb = await raid_get(e["lobby"])
+        if not lb or lb.get("status") in RAID_FINAL or \
+                not any(m.get("user_id") == row["_id"] for m in lb.get("members") or []):
+            await raid_settle_many([row["_id"]])
+    # 5) старые закончившиеся лобби — чистим
+    await store.raids.delete_many({"status": {"$in": list(RAID_FINAL)}, "finished_at": {"$lt": now - RAID_KEEP_FINISHED_SECONDS}})
+
+
+async def raid_worker():
+    while True:
+        try:
+            await raid_tick()
+        except Exception as e:
+            print(f"[raid] worker error: {type(e).__name__}: {e}")
+        await asyncio.sleep(RAID_TICK_SECONDS)
 
 
 # --- АДМИН: ОХОТА (тумблер раздела и мониторинг ресурсов игроков) ---
@@ -7017,6 +7707,8 @@ async def merchant_sell_eagle(request: MerchantSellEagle, x_telegram_init_data: 
         raise HTTPException(status_code=400, detail="Орёл в экспедиции — купцу его не продать")
     if result["status"] == "on_hunt":
         raise HTTPException(status_code=400, detail=HUNT_LOCK_DETAIL.format(action="продать купцу"))
+    if result["status"] == "in_raid":
+        raise HTTPException(status_code=400, detail=RAID_LOCK_DETAIL.format(action="продать купцу"))
     if result["status"] == "not_fed":
         raise HTTPException(status_code=400, detail="Купец берёт только полностью откормленных орлов")
     if result["status"] == "last_eagle":
@@ -7141,6 +7833,7 @@ async def market_list(request: MarketListRequest, x_telegram_init_data: Optional
             "listed": "Этот орёл уже выставлен на рынок",
             "on_expedition": "Орёл в экспедиции — его нельзя выставить на рынок",
             "on_hunt": HUNT_LOCK_DETAIL.format(action="выставить на рынок"),
+            "in_raid": RAID_LOCK_DETAIL.format(action="выставить на рынок"),
             "conflict": "Ферма изменилась — попробуй ещё раз",
         }
         raise HTTPException(status_code=400, detail=messages.get(reason, "Нет такого прокачанного орла на ферме"))
@@ -9528,6 +10221,10 @@ LEDGER_LABELS = [
     ("start", "Стартовый баланс"),
     ("vip:meat", "VIP: ежедневное мясо"),
     ("auto:expedition", "🤖 Авто-экспедиции: сбор золота и отправка"),
+    ("raid:refund", "⚔️ Мировые боссы: возврат залога (кик / выход / роспуск)"),
+    ("raid:reward", "⚔️ Мировые боссы: победа — золото"),
+    ("raid:lost", "⚔️ Мировые боссы: поражение — залог сгорел"),
+    ("/api/hunt/raid/", "⚔️ Мировые боссы: залог за вход в лобби"),
     ("market:particles_refund", "Рынок: возврат лота Частичек (переход на золото)"),
     ("ton:deposit", "Пополнение TON"),
     ("arena:season_rewards", "Награда сезона Арены"),
@@ -10570,6 +11267,7 @@ async def startup_event():
     asyncio.create_task(backfill_activity_once())
     asyncio.create_task(auction_worker())
     asyncio.create_task(auto_expedition_worker())
+    asyncio.create_task(raid_worker())
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад
     except Exception as e:

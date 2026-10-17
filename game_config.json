@@ -431,6 +431,20 @@
       ]
     ]
   },
+  "world_bosses": {
+    "enabled": true,
+    "party_size": 5,
+    "gather_minutes": 30,
+    "battle_minutes": 10,
+    "summon_cooldown_seconds": 60,
+    "bosses": [
+      {"id": "easy", "name": "Лёгкий", "name_en": "Easy", "hp": 100, "gold": 20},
+      {"id": "medium", "name": "Средний", "name_en": "Medium", "hp": 200, "gold": 40},
+      {"id": "hard", "name": "Тяжёлый", "name_en": "Hard", "hp": 300, "gold": 60},
+      {"id": "mythic", "name": "Мифический", "name_en": "Mythic", "hp": 500, "gold": 100}
+    ],
+    "payments": {"particles": 1, "rock_crystal": 10, "meat": 30}
+  },
   "auto_expedition": {
     "price_gram": 10,
     "duration_days": 15

@@ -1235,6 +1235,42 @@
         @media (max-width: 380px) {
             #hunt .subtab-item { font-size: 10px; letter-spacing: 0; padding-left: 1px; padding-right: 1px; }
         }
+        /* пять вкладок: длинное «Мировые боссы» переносится в две строки */
+        #huntTabBar .subtab-item { white-space: normal; line-height: 1.2; display: flex; align-items: center; justify-content: center; }
+        /* ⚔️ Мировые боссы */
+        .raid-boss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .raid-boss { padding: 10px; border-radius: 14px; background: rgba(14, 9, 26, 0.82); border: 1px solid var(--raid-c, rgba(255,255,255,0.14)); min-width: 0; }
+        .raid-boss h4 { font-size: 13px; margin: 0 0 4px; color: var(--raid-c, #fff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .raid-boss .raid-boss-stat { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+        .raid-boss .raid-boss-stat b { color: var(--text-main); }
+        .raid-boss .btn-action { width: 100%; margin-top: 8px; padding: 8px 4px; font-size: 12px; }
+        .raid-row { display: flex; align-items: center; gap: 8px; padding: 9px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+        .raid-row:last-child { border-bottom: none; }
+        .raid-row-info { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.35; }
+        .raid-row-info .raid-nick { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .raid-row-info .raid-row-boss { font-size: 11.5px; }
+        .raid-row-count { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+        .raid-row .btn-action { padding: 7px 12px; font-size: 12px; flex: 0 0 auto; }
+        .raid-members { margin: 10px 0; }
+        .raid-member { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 8px; margin-bottom: 6px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .raid-member.empty { justify-content: center; color: var(--text-muted); font-size: 12px; border-style: dashed; }
+        .raid-member .raid-nick { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .raid-grade { flex: 0 0 auto; font-size: 10.5px; font-weight: 800; padding: 3px 8px; border-radius: 999px; color: #0b0614; white-space: nowrap; }
+        .raid-kick { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.12); color: #fca5a5; font-weight: 800; cursor: pointer; }
+        .raid-status { text-align: center; font-size: 13px; margin: 6px 0 2px; }
+        .raid-status b { font-family: 'Orbitron', 'Poppins', sans-serif; font-variant-numeric: tabular-nums; }
+        .raid-actions { display: grid; gap: 8px; margin-top: 8px; }
+        .raid-result { text-align: center; padding: 10px; border-radius: 14px; margin: 8px 0; }
+        .raid-result.won { background: rgba(34, 197, 94, 0.14); border: 1px solid rgba(34, 197, 94, 0.45); }
+        .raid-result.lost { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.45); }
+        .raid-result .raid-result-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+        .raid-pick { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 6px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main); cursor: pointer; font: inherit; font-size: 12.5px; }
+        .raid-pick.selected { border-color: var(--accent-coin, #f59e0b); background: rgba(245, 158, 11, 0.14); }
+        .raid-pick:disabled { opacity: 0.45; cursor: default; }
+        .raid-pick img { width: 30px; height: 30px; object-fit: contain; flex: 0 0 auto; }
+        .raid-pick .raid-pick-main { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .raid-pick-list { max-height: 34vh; overflow-y: auto; margin: 6px 0 10px; }
+        .raid-modal-label { font-size: 12px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 8px; text-align: left; }
         #hunt .hunt-section-title { display: inline-block; padding: 3px 10px; border-radius: 8px; background: rgba(14, 9, 26, 0.8); color: #f1dccb; }
         #hunt .hunt-cost { background: rgba(255, 255, 255, 0.09); }
         #hunt .hunt-buff.off { background: rgba(14, 9, 26, 0.82); color: #cbb6a6; }
@@ -1866,11 +1902,13 @@
                 <div class="subtab-item" data-hunttab="expeditions" onclick="switchHuntTab('expeditions')" data-i18n="hunt.tab.expeditions">Экспедиции</div>
                 <div class="subtab-item" data-hunttab="storage" onclick="switchHuntTab('storage')" data-i18n="hunt.tab.storage">Склад</div>
                 <div class="subtab-item" data-hunttab="alchemy" onclick="switchHuntTab('alchemy')" data-i18n="hunt.tab.alchemy">Алхимия</div>
+                <div class="subtab-item" data-hunttab="bosses" onclick="switchHuntTab('bosses')" data-i18n="hunt.tab.bosses">Мировые боссы</div>
             </div>
             <div class="subtab-panel active" id="huntSubMine"></div>
             <div class="subtab-panel" id="huntSubExpeditions"></div>
             <div class="subtab-panel" id="huntSubStorage"></div>
             <div class="subtab-panel" id="huntSubAlchemy"></div>
+            <div class="subtab-panel" id="huntSubBosses"></div>
         </div>
 
         <div id="arena" class="content">
@@ -2879,6 +2917,60 @@
                 'hunt.tab.expeditions': 'Экспедиции',
                 'hunt.tab.storage': 'Склад',
                 'hunt.tab.alchemy': 'Алхимия',
+                'hunt.tab.bosses': 'Мировые боссы',
+                'raid.loading': 'Загружаем Мировых боссов…',
+                'raid.bossesTitle': '⚔️ Мировые боссы',
+                'raid.bossesSub': 'Собери группу ровно из {size} игроков, у каждого — свой орёл. Победа: золото каждому участнику.',
+                'raid.hp': 'ХП', 'raid.reward': 'Награда', 'raid.rewardEach': '+{gold} 🪙 каждому',
+                'raid.create': 'Создать группу',
+                'raid.browserTitle': '🛡️ Собираются сейчас',
+                'raid.browserEmpty': 'Пока никто не собирает группу — создай свою!',
+                'raid.enter': 'Войти', 'raid.full': 'Мест нет',
+                'raid.cd': '🏆 Победа сегодня уже была. Следующий рейд — после 00:00 по серверу (через {time}).',
+                'raid.lobbyTitle': 'Лобби: {boss}',
+                'raid.gathering': 'Сбор группы: {time}',
+                'raid.battle': '⚔️ Бой идёт: {time}',
+                'raid.freeSlot': 'Свободное место',
+                'raid.summon': '📣 Призвать игроков', 'raid.summonIn': '📣 Призвать снова через {sec} с',
+                'raid.start': '⚔️ ПОДТВЕРДИТЬ АТАКУ', 'raid.startNeed': '⚔️ ПОДТВЕРДИТЬ АТАКУ ({n}/{size})',
+                'raid.disband': 'Распустить группу', 'raid.leave': 'Покинуть лобби',
+                'raid.leaderNote': 'Атака доступна только при полной группе {size}/{size}. Не собрались за 30 минут — лобби распустится, залоги вернутся.',
+                'raid.memberNote': 'Ждём, пока лидер соберёт {size}/{size} и подтвердит атаку. Кик или роспуск — залог вернётся.',
+                'raid.battleNote': 'Орлы бьются с боссом. Итог — через 10 минут после старта.',
+                'raid.won': '🏆 Победа!', 'raid.lost': '💀 Поражение',
+                'raid.resultDamage': 'Урон группы: {dmg} из {hp} ХП',
+                'raid.resultGold': '+{gold} 🪙 золота на баланс',
+                'raid.resultBurned': 'Залог за вход сгорел. Можно собирать новую группу.',
+                'raid.resultMine': 'Твой вклад: {dmg} (атака {atk} + заточка {bonus})',
+                'raid.close': 'Закрыть',
+                'raid.pickTitleCreate': 'Новая группа: {boss}',
+                'raid.pickTitleJoin': 'Вход в группу: {boss}',
+                'raid.pickBossLine': 'ХП {hp} · при победе +{gold} 🪙 каждому',
+                'raid.pickEagle': 'Твой орёл для похода',
+                'raid.pickNoEagles': 'Нет свободных орлов: все в экспедициях, на Охоте или на рынке.',
+                'raid.pickPay': 'Оплата похода (залог)',
+                'raid.pay.particles': 'Частичка', 'raid.pay.rock_crystal': 'Горный Кристалл', 'raid.pay.meat': 'Мясо',
+                'raid.payHave': 'есть {have}',
+                'raid.pickNote': 'Залог списывается сразу при входе. Кик или роспуск — вернётся полностью, поражение — сгорает.',
+                'raid.confirmCreate': 'Создать и внести залог', 'raid.confirmJoin': 'Войти и внести залог',
+                'raid.lvl': 'ур. {lvl}',
+                'raid.toast.created': '⚔️ Группа создана — зови игроков!',
+                'raid.toast.joined': '⚔️ Ты в группе! Залог внесён',
+                'raid.toast.kicked': 'Игрок исключён — залог ему вернулся',
+                'raid.toast.left': 'Ты вышел из лобби — залог вернулся на склад',
+                'raid.toast.disbanded': 'Группа распущена — залоги вернулись участникам',
+                'raid.toast.started': '⚔️ Атака! Итог боя — через 10 минут',
+                'raid.toast.summoned': '📣 Призыв отправлен в чат игры',
+                'raid.confirmKick': 'Исключить {name}? Залог вернётся ему на склад.',
+                'raid.confirmLeave': 'Покинуть лобби? Залог вернётся на склад.',
+                'raid.confirmDisband': 'Распустить группу? Всем вернутся залоги.',
+                'raid.kickTitle': 'Исключить игрока', 'raid.leaveTitle': 'Выйти из лобби', 'raid.disbandTitle': 'Распустить группу',
+                'raid.link.notFound': 'Группа из чата не найдена — её уже распустили',
+                'raid.link.closed': 'Эта группа уже ушла в бой или распущена',
+                'raid.link.full': 'В этой группе уже нет мест (5/5)',
+                'raid.link.busy': 'Ты уже в другом лобби — сначала выйди из него',
+                'raid.farm.status': '⚔️ В рейде на Мирового босса',
+                'raid.farm.toast': '⚔️ Орёл в рейде на Мирового босса — пока рейд не закончится, он занят',
                 'hunt.disabled': 'Раздел «Охота» сейчас недоступен',
                 'hunt.serverDown': 'Сервер недоступен',
                 'hunt.loading': 'Загрузка…',
@@ -3449,6 +3541,60 @@
                 'hunt.tab.expeditions': 'Expeditions',
                 'hunt.tab.storage': 'Storage',
                 'hunt.tab.alchemy': 'Alchemy',
+                'hunt.tab.bosses': 'World bosses',
+                'raid.loading': 'Loading World bosses…',
+                'raid.bossesTitle': '⚔️ World bosses',
+                'raid.bossesSub': 'Gather a party of exactly {size} players, each with their own eagle. Victory: gold for every member.',
+                'raid.hp': 'HP', 'raid.reward': 'Reward', 'raid.rewardEach': '+{gold} 🪙 each',
+                'raid.create': 'Create party',
+                'raid.browserTitle': '🛡️ Gathering now',
+                'raid.browserEmpty': 'Nobody is gathering a party yet — create your own!',
+                'raid.enter': 'Join', 'raid.full': 'Full',
+                'raid.cd': '🏆 You already won today. Next raid after 00:00 server time (in {time}).',
+                'raid.lobbyTitle': 'Lobby: {boss}',
+                'raid.gathering': 'Gathering: {time}',
+                'raid.battle': '⚔️ Battle in progress: {time}',
+                'raid.freeSlot': 'Free seat',
+                'raid.summon': '📣 Summon players', 'raid.summonIn': '📣 Summon again in {sec} s',
+                'raid.start': '⚔️ CONFIRM ATTACK', 'raid.startNeed': '⚔️ CONFIRM ATTACK ({n}/{size})',
+                'raid.disband': 'Disband party', 'raid.leave': 'Leave lobby',
+                'raid.leaderNote': 'Attack unlocks only with a full party {size}/{size}. Not gathered in 30 minutes — the lobby disbands and deposits are returned.',
+                'raid.memberNote': 'Waiting for the leader to gather {size}/{size} and confirm the attack. Kick or disband — your deposit is returned.',
+                'raid.battleNote': 'The eagles are fighting the boss. Result in 10 minutes after the start.',
+                'raid.won': '🏆 Victory!', 'raid.lost': '💀 Defeat',
+                'raid.resultDamage': 'Party damage: {dmg} of {hp} HP',
+                'raid.resultGold': '+{gold} 🪙 gold added',
+                'raid.resultBurned': 'The entry deposit is burned. You can gather a new party.',
+                'raid.resultMine': 'Your share: {dmg} (attack {atk} + enchant {bonus})',
+                'raid.close': 'Close',
+                'raid.pickTitleCreate': 'New party: {boss}',
+                'raid.pickTitleJoin': 'Join party: {boss}',
+                'raid.pickBossLine': 'HP {hp} · victory: +{gold} 🪙 each',
+                'raid.pickEagle': 'Your eagle for the raid',
+                'raid.pickNoEagles': 'No free eagles: all are on expeditions, on the Hunt or on the market.',
+                'raid.pickPay': 'Raid payment (deposit)',
+                'raid.pay.particles': 'Particle', 'raid.pay.rock_crystal': 'Rock Crystal', 'raid.pay.meat': 'Meat',
+                'raid.payHave': 'have {have}',
+                'raid.pickNote': 'The deposit is taken right when you join. Kick or disband — fully returned; defeat — burned.',
+                'raid.confirmCreate': 'Create and pay deposit', 'raid.confirmJoin': 'Join and pay deposit',
+                'raid.lvl': 'lvl {lvl}',
+                'raid.toast.created': '⚔️ Party created — summon players!',
+                'raid.toast.joined': '⚔️ You are in the party! Deposit paid',
+                'raid.toast.kicked': 'Player removed — their deposit is returned',
+                'raid.toast.left': 'You left the lobby — deposit returned to storage',
+                'raid.toast.disbanded': 'Party disbanded — deposits returned',
+                'raid.toast.started': '⚔️ Attack! Battle result in 10 minutes',
+                'raid.toast.summoned': '📣 Summon sent to the game chat',
+                'raid.confirmKick': 'Remove {name}? Their deposit will be returned.',
+                'raid.confirmLeave': 'Leave the lobby? Your deposit will be returned.',
+                'raid.confirmDisband': 'Disband the party? Everyone gets their deposit back.',
+                'raid.kickTitle': 'Remove player', 'raid.leaveTitle': 'Leave lobby', 'raid.disbandTitle': 'Disband party',
+                'raid.link.notFound': 'The party from the chat was not found — it was disbanded',
+                'raid.link.closed': 'This party is already in battle or disbanded',
+                'raid.link.full': 'This party has no free seats (5/5)',
+                'raid.link.busy': 'You are already in another lobby — leave it first',
+                'raid.farm.status': '⚔️ In a World boss raid',
+                'raid.farm.toast': '⚔️ This eagle is in a World boss raid — busy until the raid ends',
                 'hunt.disabled': 'The Hunt is not available right now',
                 'hunt.serverDown': 'Server unavailable',
                 'hunt.loading': 'Loading…',
@@ -3881,6 +4027,7 @@
         // прогресс кормления текущего уровня.
         function slotBadge(slot) {
             if (isOnHunt(slot)) return huntNow() >= slot.huntUntil ? '🏹!' : '🏹';
+            if (isInRaid(slot)) return '⚔️';
             if (isOnExpedition(slot)) return expeditionReady(slot) ? '🧭!' : '🧭';
             if (slot.autoRest && autoExpRunning()) return '😴';
             if (isFullyFed(slot)) return '🍖';
@@ -4028,6 +4175,7 @@
             let status;
             if (isOnHunt(slot)) status = huntNow() >= slot.huntUntil ? t('hunt.farm.backStatus')
                 : t('hunt.farm.flyingStatus', { zone: huntZoneName(slot), time: formatCountdown(slot.huntUntil - huntNow()) });
+            else if (isInRaid(slot)) status = t('raid.farm.status');
             else if (isOnExpedition(slot)) status = expeditionReady(slot) ? t('farm.expeditionBack') : t('farm.expeditionIn', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) });
             else if (slot.autoRest && autoExpRunning()) status = t('autoexp.restStatus');
             else if (eggReady(slot)) status = t('farm.eggReady');
@@ -5142,6 +5290,11 @@
                 toast(t('hunt.farm.flyingToast', { time: formatCountdown(slot.huntUntil - huntNow()) }));
                 return;
             }
+            if (isInRaid(slot)) {
+                if (fusionSelected !== -1) { fusionSelected = -1; renderSlotGrid(); }
+                toast(t('raid.farm.toast'));
+                return;
+            }
             if (isOnExpedition(slot)) {
                 if (expeditionReady(slot)) collectExpedition(i);
                 else toast(t('farm.expeditionToast', { time: formatCountdown(slot.expeditionUntil - nowSeconds()) }));
@@ -5166,6 +5319,7 @@
             if (!slot || isOnExpedition(slot)) return;
             if (isListed(slot)) { toast(t('farm.listedToast')); return; }
             if (isOnHunt(slot)) { toast(t('hunt.farm.noExpedition')); haptic.notify('warning'); return; }
+            if (isInRaid(slot)) { toast(t('raid.farm.toast')); haptic.notify('warning'); return; }
             if (!isFullyFed(slot)) { toast('В экспедицию берут только полностью прокачанных орлов'); haptic.notify('warning'); return; }
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
             const key = 'expedition-start:' + i;
@@ -5302,7 +5456,7 @@
         }
 
         function goldVipFreeEagles() {
-            return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isListed(s) && !isOnExpedition(s));
+            return state.farm.filter(s => (s.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isOnHunt(s) && !isInRaid(s) && !isListed(s) && !isOnExpedition(s));
         }
 
         // ---------- 🤖 Авто-экспедиции ----------
@@ -5698,7 +5852,7 @@
                 .filter(({ slot }) => {
                     const monster = MONSTERS[slot.id];
                     const offer = monster && merchantBuybackOffer(monster.tier);
-                    return offer && offer.left > 0 && isFullyFed(slot) && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot);
+                    return offer && offer.left > 0 && isFullyFed(slot) && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot) && !isInRaid(slot);
                 });
         }
 
@@ -6587,7 +6741,7 @@
             return state.farm.filter(slot => {
                 const monster = MONSTERS[slot.id];
                 return monster && tierIndexOf(monster) >= 1 && (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels
-                    && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot);
+                    && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot) && !isInRaid(slot);
             });
         }
 
@@ -7940,8 +8094,8 @@
         function askDeleteEagle() {
             if (Date.now() < slotModalHoldUntil) return;
             const slot = state.farm[modalSlot];
-            if (slot && (isListed(slot) || isOnExpedition(slot) || isOnHunt(slot))) {
-                toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? t('hunt.farm.noDelete') : t('slot.deleteOnExpedition'));
+            if (slot && (isListed(slot) || isOnExpedition(slot) || isOnHunt(slot) || isInRaid(slot))) {
+                toast(isListed(slot) ? t('farm.listedToast') : isOnHunt(slot) ? t('hunt.farm.noDelete') : isInRaid(slot) ? t('raid.farm.toast') : t('slot.deleteOnExpedition'));
                 return;
             }
             slotDeleteConfirm = true;
@@ -8075,6 +8229,17 @@
                     <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
                     <p class="slot-modal-sub slot-listed-note">🔒 ${t('slot.listedNote')}</p>
                     <button class="btn-action" style="margin-top:10px; width:100%" onclick="cancelMarketListing('${slot.listingId}'); closeSlotModal();">${t('slot.unlistBtn')}</button>
+                    <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
+                `;
+                return;
+            }
+            if (isInRaid(slot)) {
+                document.getElementById('slotModalBody').innerHTML = `
+                    <img class="roll-prize" src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    <h2 style="color:${monster.color}">${monster.name}</h2>
+                    <p class="slot-modal-sub"><span style="color:${tier.color}">${tier.name}</span> • ${t('slot.slotNumber', { n: modalSlot + 1 })}</p>
+                    <p class="slot-modal-sub slot-listed-note">🔒 ${t('raid.farm.toast')}</p>
+                    ${huntEnabled ? `<button class="btn-action" style="margin-top:10px; width:100%" onclick="closeSlotModal(); openHuntScreen('bosses');">⚔️ ${t('hunt.tab.bosses')}</button>` : ''}
                     <button class="btn-action roll-close" onclick="closeSlotModal()">${t('common.close')}</button>
                 `;
                 return;
@@ -11558,7 +11723,10 @@
                     : { huntUntil: 0 };
                 const autoRest = !!slot.auto_rest && expeditionUntil <= 0;   // 🤖 авто-экспедиция ждёт мяса
                 const autoOff = !!slot.auto_off && expeditionUntil > 0;      // 🤖 выведен из авто: вернётся и останется
-                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, autoRest, autoOff, ...hunt });
+                // ⚔️ Мировой босс: орёл в лобби/бою рейда — занят, как в экспедиции
+                const rawRaid = slot.raid_id !== undefined ? slot.raid_id : slot.raidId;
+                const raidId = typeof rawRaid === 'string' && /^[a-f0-9]{10}$/.test(rawRaid) ? rawRaid : '';
+                farm.push({ id: slot.id, nextEggAt, eggStartedAt, feedLevel, feedTaps, expeditionUntil, expeditionStartedAt, listingId, autoRest, autoOff, raidId, ...hunt });
                 return farm;
             }, []);
         }
@@ -12043,7 +12211,7 @@
         // Орлы 7 уровня — те же, что уже нельзя дальше кормить (см. FEED_LEVELS);
         // в отличие от eligibleMarketEagles, обычная (common) редкость тоже подходит.
         function eligibleClanBurnEagles() {
-            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot));
+            return state.farm.filter(slot => (slot.feedLevel || 1) >= CONFIG.fusion.feed_levels && !isListed(slot) && !isOnExpedition(slot) && !isOnHunt(slot) && !isInRaid(slot));
         }
 
         // Раздел «Кланы» можно выключить из админки. Состояние приходит в /api/load
@@ -12209,6 +12377,8 @@
         function closeHuntScreen() {
             haptic.select();
             if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
+            raidStopPolling();
+            if (raidPick) raidClosePick();
             closeFogPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
@@ -12219,9 +12389,10 @@
             if (!opts.silent) haptic.select();
             huntTab = tab;
             document.querySelectorAll('#huntTabBar .subtab-item').forEach(el => el.classList.toggle('active', el.dataset.hunttab === tab));
-            const panels = { mine: 'huntSubMine', expeditions: 'huntSubExpeditions', storage: 'huntSubStorage', alchemy: 'huntSubAlchemy' };
+            const panels = { mine: 'huntSubMine', expeditions: 'huntSubExpeditions', storage: 'huntSubStorage', alchemy: 'huntSubAlchemy', bosses: 'huntSubBosses' };
             Object.entries(panels).forEach(([id, el]) => document.getElementById(el).classList.toggle('active', id === tab));
             renderHunt();
+            if (tab === 'bosses') { loadRaid(true); raidStartPolling(); } else raidStopPolling();
         }
 
         async function loadHunt() {
@@ -12361,7 +12532,7 @@
             const level = Number(huntCfg().eagle_level) || CONFIG.fusion.feed_levels;
             let best = -1, bestRank = Infinity;
             state.farm.forEach((slot, i) => {
-                if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot)) return;
+                if ((slot.feedLevel || 1) < level || isListed(slot) || isOnExpedition(slot) || isOnHunt(slot) || isInRaid(slot)) return;
                 const rank = tierIndexOf(MONSTERS[slot.id]);
                 if (rank >= minRank && rank < bestRank) { best = i; bestRank = rank; }
             });
@@ -12470,6 +12641,383 @@
             if (modal) modal.classList.remove('open');
         }
 
+        // ---------- ⚔️ МИРОВЫЕ БОССЫ (вкладка Охоты) ----------
+        // Всё решает сервер (/api/hunt/raid/*): лобби до 5 мест, залог при
+        // входе, кик/выход/роспуск с возвратом, старт строго 5/5, итог боя
+        // через 10 минут. Клиент показывает состояние и шлёт намерения.
+        // Пока вкладка открыта, состояние перечитывается раз в RAID_POLL_MS.
+        const RAID_POLL_MS = 4000;
+        const RAID_PAY_ICONS = { particles: '📦', rock_crystal: '💎', meat: '🥩' };
+        let raidData = null;
+        let raidFetchedAt = 0;
+        let raidPollTimer = null;
+        let raidPick = null;          // { mode: 'create'|'join', bossId, lobbyId, boss, slot, pay }
+        let raidSig = '';
+        let raidDeepLinkDone = false;
+
+        function isInRaid(slot) {
+            return !!(slot && slot.raidId);
+        }
+
+        function raidNow() { return serverNow(); }
+        // залог и остатки — целые числа без «1.0»
+        function raidNum(v) { v = Number(v) || 0; return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100); }
+        function raidBossName(b) { return b ? (LANG === 'en' ? (b.name_en || b.name) : b.name) : ''; }
+        function raidTier(tierId) { return (CONFIG.tiers || []).find(t => t.id === tierId) || null; }
+        function raidGradePill(tierId) {
+            const tier = raidTier(tierId);
+            const color = tier ? tier.color : '#94a3b8';
+            return `<span class="raid-grade" style="background:${huntEsc(color)}">${huntEsc(tier ? tier.name : '?')}</span>`;
+        }
+        function raidFreeEagles() {
+            return state.farm.map((s, i) => ({ s, i }))
+                .filter(({ s }) => !isOnExpedition(s) && !isOnHunt(s) && !isListed(s) && !isInRaid(s) && MONSTERS[s.id]);
+        }
+
+        async function loadRaid(silent) {
+            if (offlineOnly || !state.userId) return;
+            try {
+                const response = await fetch(`api/hunt/raid/state/${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                if (!response.ok) { if (!silent && !data.hunt_disabled) toast(data.detail || t('market.serverError')); return; }
+                applyRaid(data);
+            } catch (e) {
+                if (!silent) toast(t('hunt.serverDown'));
+            }
+        }
+
+        function applyRaid(data) {
+            if (!data) return;
+            if (data.raid) { raidData = data.raid; raidFetchedAt = Date.now() / 1000; setServerClock(Number(data.raid.server_time)); }
+            if (data.hunt) applyHunt(data.hunt); else renderRaid();
+        }
+
+        function raidStartPolling() {
+            if (raidPollTimer) return;
+            raidPollTimer = setInterval(() => {
+                const screen = document.getElementById('hunt');
+                if (!screen || !screen.classList.contains('active') || huntTab !== 'bosses') { raidStopPolling(); return; }
+                loadRaid(true);
+            }, RAID_POLL_MS);
+        }
+
+        function raidStopPolling() {
+            if (raidPollTimer) { clearInterval(raidPollTimer); raidPollTimer = null; }
+        }
+
+        // Как huntPost: ключ держится ещё HUNT_TAP_COOLDOWN_MS после ответа,
+        // чтобы второй тап двойного клика не попал в новую кнопку на том же месте.
+        async function raidPost(url, body, key) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify(Object.assign({ user_id: state.userId }, body || {})),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (!data.hunt_disabled) { toast(data.detail || t('market.serverError')); haptic.notify('warning'); }
+                    loadRaid(true);
+                    return null;
+                }
+                ok = true;
+                applyRaid(data);
+                haptic.notify('success');
+                return data;
+            } catch (e) {
+                toast(t('market.serverError'));
+                return null;
+            } finally {
+                if (ok) setTimeout(() => farmActionBusy.delete(key), HUNT_TAP_COOLDOWN_MS); else farmActionBusy.delete(key);
+            }
+        }
+
+        // --- Отрисовка вкладки ---
+        function renderRaid() {
+            const el = document.getElementById('huntSubBosses');
+            if (!el) return;
+            if (!raidData) { setHTMLIfChanged(el, `<p class="subtitle">${t('raid.loading')}</p>`); return; }
+            const r = raidData;
+            const now = raidNow();
+            const cd = r.cooldown_until > now;
+            let html = '';
+            if (cd) html += `<div class="hunt-card glass-panel"><div class="hunt-sub">${t('raid.cd', { time: `<b id="raidCdTimer">${formatCountdown(r.cooldown_until - now)}</b>` })}</div></div>`;
+            if (r.lobby) {
+                html += renderRaidLobby(r.lobby, now);
+            } else {
+                html += `<div class="hunt-card glass-panel">
+                    <h3>${t('raid.bossesTitle')}</h3>
+                    <div class="hunt-sub" style="margin-bottom:10px">${t('raid.bossesSub', { size: r.party_size })}</div>
+                    <div class="raid-boss-grid">${r.bosses.map((b, i) => {
+                        const c = ['#7cff6b', '#4fc3ff', '#c084fc', '#f59e0b'][i] || '#fff';
+                        return `<div class="raid-boss" style="--raid-c:${c}">
+                            <h4>${huntEsc(raidBossName(b))}</h4>
+                            <div class="raid-boss-stat">${t('raid.hp')}: <b>${fmt(b.hp)}</b></div>
+                            <div class="raid-boss-stat">${t('raid.reward')}: <b>${t('raid.rewardEach', { gold: fmt(b.gold) })}</b></div>
+                            <button class="btn-action" ${cd || r.in_lobby ? 'disabled' : ''} onclick="raidOpenCreate('${huntEsc(b.id)}')">${t('raid.create')}</button>
+                        </div>`;
+                    }).join('')}</div>
+                </div>
+                <div class="hunt-card glass-panel">
+                    <h3>${t('raid.browserTitle')}</h3>
+                    ${r.browser.length ? r.browser.map(lb => {
+                        const full = lb.count >= lb.size;
+                        return `<div class="raid-row">
+                            <div class="raid-row-info"><span class="raid-nick">👑 ${huntEsc(lb.leader_name)}</span><span class="raid-row-boss hunt-sub">${huntEsc(raidBossName(lb.boss))} · ${t('raid.hp')} ${fmt(lb.boss.hp)}</span></div>
+                            <span class="raid-row-count">${lb.count}/${lb.size}</span>
+                            <button class="btn-action" ${full || cd || r.in_lobby ? 'disabled' : ''} onclick="raidOpenJoin('${huntEsc(lb.id)}')">${full ? t('raid.full') : t('raid.enter')}</button>
+                        </div>`;
+                    }).join('') : `<div class="hunt-sub">${t('raid.browserEmpty')}</div>`}
+                </div>`;
+            }
+            raidSig = r.lobby ? `${r.lobby.status}:${Math.max(0, Math.ceil((r.lobby.summon_ready_at || 0) - now)) > 0}` : '';
+            setHTMLIfChanged(el, goldify(html));
+            tickRaid();
+        }
+
+        function renderRaidLobby(lb, now) {
+            const me = state.userId;
+            const isLeader = lb.leader_id === me;
+            const gathering = lb.status === 'gathering';
+            let statusHtml = '';
+            if (gathering) statusHtml = `<div class="raid-status">${t('raid.gathering', { time: `<b id="raidTimer">${formatCountdown(lb.expires_at - now)}</b>` })} · <b>${lb.count}/${lb.size}</b></div>`;
+            else if (lb.status === 'battle') statusHtml = `<div class="raid-status">${t('raid.battle', { time: `<b id="raidTimer">${formatCountdown(lb.battle_ends_at - now)}</b>` })}</div>`;
+            const rows = [];
+            for (let i = 0; i < lb.size; i++) {
+                const m = lb.members[i];
+                if (!m) { rows.push(`<div class="raid-member empty">${t('raid.freeSlot')}</div>`); continue; }
+                const kick = isLeader && gathering && !m.leader
+                    ? `<button class="raid-kick" onclick="raidAskKick(${Number(m.user_id)})" aria-label="kick">✕</button>` : '';
+                rows.push(`<div class="raid-member">${raidGradePill(m.tier_id)}<span class="raid-nick">${m.leader ? '👑 ' : ''}${huntEsc(m.name)}</span>${kick}</div>`);
+            }
+            let actions = '';
+            if (gathering && isLeader) {
+                const full = lb.count >= lb.size && lb.members.every(m => m.paid);
+                const wait = Math.max(0, Math.ceil((lb.summon_ready_at || 0) - now));
+                actions = `<div class="raid-actions">
+                    <button class="btn-action" id="raidSummonBtn" ${wait > 0 ? 'disabled' : ''} onclick="raidSummon()">${wait > 0 ? t('raid.summonIn', { sec: wait }) : t('raid.summon')}</button>
+                    <button class="btn-primary" ${full ? '' : 'disabled'} onclick="raidStart()">${full ? t('raid.start') : t('raid.startNeed', { n: lb.count, size: lb.size })}</button>
+                    <button class="btn-action btn-danger" onclick="raidAskDisband()">${t('raid.disband')}</button>
+                </div>
+                <div class="hunt-sub" style="margin-top:8px">${t('raid.leaderNote', { size: lb.size })}</div>`;
+            } else if (gathering) {
+                actions = `<div class="raid-actions"><button class="btn-action btn-danger" onclick="raidAskLeave()">${t('raid.leave')}</button></div>
+                    <div class="hunt-sub" style="margin-top:8px">${t('raid.memberNote', { size: lb.size })}</div>`;
+            } else if (lb.status === 'battle') {
+                actions = `<div class="hunt-sub" style="margin-top:6px">${t('raid.battleNote')}</div>`;
+            } else if (lb.result) {
+                const res = lb.result;
+                const mine = res.mine ? `<div class="hunt-sub">${t('raid.resultMine', { dmg: raidNum(res.mine.damage), atk: raidNum(res.mine.atk), bonus: raidNum(res.mine.enchant_bonus) })}</div>` : '';
+                actions = `<div class="raid-result ${res.won ? 'won' : 'lost'}">
+                        <div class="raid-result-title">${res.won ? t('raid.won') : t('raid.lost')}</div>
+                        <div class="hunt-sub">${t('raid.resultDamage', { dmg: raidNum(res.damage), hp: raidNum(res.hp) })}</div>
+                        <div class="hunt-sub">${res.won ? t('raid.resultGold', { gold: fmt(res.gold) }) : t('raid.resultBurned')}</div>
+                        ${mine}
+                    </div>
+                    <div class="raid-actions"><button class="btn-action" onclick="raidDismiss()">${t('raid.close')}</button></div>`;
+            }
+            return `<div class="hunt-card glass-panel">
+                <h3>⚔️ ${t('raid.lobbyTitle', { boss: huntEsc(raidBossName(lb.boss)) })} <span class="hunt-level-pill">${t('raid.hp')}&nbsp;${raidNum(lb.boss.hp)}</span></h3>
+                <div class="hunt-sub">${t('raid.reward')}: ${t('raid.rewardEach', { gold: fmt(lb.boss.gold) })}</div>
+                ${statusHtml}
+                <div class="raid-members">${rows.join('')}</div>
+                ${actions}
+            </div>`;
+        }
+
+        // Таймеры обновляются текстом (без пересборки кнопок); смена статуса —
+        // полная перерисовка.
+        function tickRaid() {
+            if (!raidData || huntTab !== 'bosses') return;
+            const now = raidNow();
+            const lb = raidData.lobby;
+            if (lb) {
+                const sig = `${lb.status}:${Math.max(0, Math.ceil((lb.summon_ready_at || 0) - now)) > 0}`;
+                if (sig !== raidSig) { renderRaid(); return; }
+                const el = document.getElementById('raidTimer');
+                if (el) {
+                    const left = lb.status === 'battle' ? lb.battle_ends_at - now : lb.expires_at - now;
+                    const txt = formatCountdown(left);
+                    if (el.textContent !== txt) el.textContent = txt;
+                    // время вышло — сервер уже считает итог / распускает: подтянуть пораньше
+                    if (left <= 0 && Date.now() / 1000 - raidFetchedAt > 2) { raidFetchedAt = Date.now() / 1000; loadRaid(true); }
+                }
+                const btn = document.getElementById('raidSummonBtn');
+                if (btn) {
+                    const wait = Math.max(0, Math.ceil((lb.summon_ready_at || 0) - now));
+                    const txt = wait > 0 ? t('raid.summonIn', { sec: wait }) : t('raid.summon');
+                    if (btn.textContent !== txt) btn.textContent = txt;
+                }
+            }
+            const cdEl = document.getElementById('raidCdTimer');
+            if (cdEl) {
+                const left = raidData.cooldown_until - now;
+                if (left <= 0) { loadRaid(true); return; }
+                const txt = formatCountdown(left);
+                if (cdEl.textContent !== txt) cdEl.textContent = txt;
+            }
+        }
+
+        // --- Выбор орла и оплаты (создание / вход) ---
+        function raidOpenCreate(bossId) {
+            const boss = raidData && raidData.bosses.find(b => b.id === bossId);
+            if (!boss) return;
+            haptic.impact('light');
+            raidPick = { mode: 'create', bossId, boss, slot: null, pay: null };
+            renderRaidPick();
+        }
+
+        async function raidOpenJoin(lobbyId, preview) {
+            let boss = null;
+            const row = raidData && raidData.browser.find(b => b.id === lobbyId);
+            if (row) boss = row.boss;
+            else if (preview) boss = preview.boss;
+            if (!boss) return;
+            haptic.impact('light');
+            raidPick = { mode: 'join', lobbyId, boss, slot: null, pay: null };
+            renderRaidPick();
+        }
+
+        function renderRaidPick() {
+            if (!raidPick) return;
+            huntModalItem = null;
+            const p = raidPick;
+            const eagles = raidFreeEagles();
+            if (p.slot !== null && !eagles.some(e => e.i === p.slot)) p.slot = null;
+            const pays = (raidData && raidData.payments) || [];
+            const payOk = id => { const x = pays.find(q => q.id === id); return x && x.have + 1e-9 >= x.amount; };
+            if (p.pay && !payOk(p.pay)) p.pay = null;
+            const eaglesHtml = eagles.length ? eagles.map(({ s, i }) => {
+                const m = MONSTERS[s.id];
+                return `<button class="raid-pick ${p.slot === i ? 'selected' : ''}" onclick="raidPickEagle(${i})">
+                    <img src="${framePath(m.sprite, 0)}" alt="">
+                    <span class="raid-pick-main"><b>${huntEsc(m.name)}</b> · ${t('raid.lvl', { lvl: s.feedLevel || 1 })}</span>
+                    ${raidGradePill(m.tier)}
+                </button>`;
+            }).join('') : `<div class="hunt-sub">${t('raid.pickNoEagles')}</div>`;
+            const paysHtml = pays.map(x => {
+                const ok = payOk(x.id);
+                return `<button class="raid-pick ${p.pay === x.id ? 'selected' : ''}" ${ok ? '' : 'disabled'} onclick="raidPickPay('${x.id}')">
+                    <span style="font-size:20px">${RAID_PAY_ICONS[x.id] || ''}</span>
+                    <span class="raid-pick-main"><b>${raidNum(x.amount)} × ${t('raid.pay.' + x.id)}</b></span>
+                    <span class="hunt-sub">${t('raid.payHave', { have: raidNum(Math.floor(x.have * 100) / 100) })}</span>
+                </button>`;
+            }).join('');
+            const ready = p.slot !== null && p.pay;
+            document.getElementById('huntModalBody').innerHTML = goldify(`
+                <h2>${t(p.mode === 'create' ? 'raid.pickTitleCreate' : 'raid.pickTitleJoin', { boss: huntEsc(raidBossName(p.boss)) })}</h2>
+                <p class="slot-modal-sub">${t('raid.pickBossLine', { hp: fmt(p.boss.hp), gold: fmt(p.boss.gold) })}</p>
+                <div class="raid-modal-label">${t('raid.pickEagle')}</div>
+                <div class="raid-pick-list">${eaglesHtml}</div>
+                <div class="raid-modal-label">${t('raid.pickPay')}</div>
+                <div style="margin-top:6px">${paysHtml}</div>
+                <p class="slot-modal-sub" style="margin-top:6px">${t('raid.pickNote')}</p>
+                <button class="btn-primary" style="margin-top:10px" id="raidPickConfirm" ${ready ? '' : 'disabled'} onclick="raidConfirmPick()">${t(p.mode === 'create' ? 'raid.confirmCreate' : 'raid.confirmJoin')}</button>
+                <button class="btn-action roll-close" onclick="raidClosePick()">${t('common.cancel')}</button>`);
+            document.getElementById('huntModal').classList.add('open');
+        }
+
+        function raidPickEagle(i) { if (!raidPick) return; haptic.select(); raidPick.slot = i; renderRaidPick(); }
+        function raidPickPay(id) { if (!raidPick) return; haptic.select(); raidPick.pay = id; renderRaidPick(); }
+        function raidClosePick() { raidPick = null; closeHuntModal(); }
+
+        async function raidConfirmPick() {
+            const p = raidPick;
+            if (!p || p.slot === null || !p.pay) return;
+            const slot = state.farm[p.slot];
+            if (!slot) return;
+            const body = { slot_index: p.slot, monster_id: slot.id, payment: p.pay };
+            if (p.mode === 'create') body.boss_id = p.bossId; else body.lobby_id = p.lobbyId;
+            const data = await raidPost(p.mode === 'create' ? 'api/hunt/raid/create' : 'api/hunt/raid/join', body, 'raid-enter');
+            if (!data) return;
+            raidPick = null;
+            closeHuntModal();
+            toast(t(p.mode === 'create' ? 'raid.toast.created' : 'raid.toast.joined'));
+            renderAll();
+        }
+
+        // --- Действия в лобби ---
+        function raidLobbyId() { return raidData && raidData.lobby ? raidData.lobby.id : null; }
+
+        async function raidSummon() {
+            const id = raidLobbyId(); if (!id) return;
+            if (await raidPost('api/hunt/raid/summon', { lobby_id: id }, 'raid-summon')) toast(t('raid.toast.summoned'));
+        }
+
+        async function raidStart() {
+            const id = raidLobbyId(); if (!id) return;
+            if (await raidPost('api/hunt/raid/start', { lobby_id: id }, 'raid-start')) toast(t('raid.toast.started'));
+        }
+
+        function raidAskKick(uid) {
+            const lb = raidData && raidData.lobby; if (!lb) return;
+            const m = lb.members.find(x => x.user_id === uid); if (!m) return;
+            huntConfirm(t('raid.kickTitle'), t('raid.confirmKick', { name: huntEsc(m.name) }), t('raid.kickTitle'), async () => {
+                if (await raidPost('api/hunt/raid/kick', { lobby_id: lb.id, target_id: uid }, 'raid-kick-' + uid)) toast(t('raid.toast.kicked'));
+            });
+        }
+
+        function raidAskLeave() {
+            const id = raidLobbyId(); if (!id) return;
+            huntConfirm(t('raid.leaveTitle'), t('raid.confirmLeave'), t('raid.leave'), async () => {
+                if (await raidPost('api/hunt/raid/leave', { lobby_id: id }, 'raid-leave')) { toast(t('raid.toast.left')); renderAll(); }
+            });
+        }
+
+        function raidAskDisband() {
+            const id = raidLobbyId(); if (!id) return;
+            huntConfirm(t('raid.disbandTitle'), t('raid.confirmDisband'), t('raid.disband'), async () => {
+                if (await raidPost('api/hunt/raid/leave', { lobby_id: id }, 'raid-leave')) { toast(t('raid.toast.disbanded')); renderAll(); }
+            });
+        }
+
+        async function raidDismiss() {
+            const id = raidLobbyId(); if (!id) return;
+            await raidPost('api/hunt/raid/dismiss', { lobby_id: id }, 'raid-dismiss');
+        }
+
+        // --- Deep link: Mini App открыт кнопкой «Вступить в бой ⚔️» из чата ---
+        // Параметр запуска приходит как initDataUnsafe.start_param (ссылка
+        // t.me/<бот>?startapp=lobby_XXXX) или tgWebAppStartParam в адресе.
+        function raidStartParam() {
+            let sp = '';
+            try { sp = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || ''; } catch (e) {}
+            if (!sp) {
+                try {
+                    sp = new URLSearchParams(location.search).get('tgWebAppStartParam')
+                        || new URLSearchParams(location.hash.replace(/^#/, '')).get('tgWebAppStartParam') || '';
+                } catch (e) {}
+            }
+            const m = /^lobby_([a-f0-9]{10})$/.exec(String(sp));
+            return m ? m[1] : null;
+        }
+
+        async function raidHandleDeepLink() {
+            const id = raidStartParam();
+            if (!id || raidDeepLinkDone || offlineOnly || !state.userId) return;
+            raidDeepLinkDone = true;
+            if (!huntEnabled) { toast(t('hunt.disabled')); return; }
+            await openHuntScreen('bosses');
+            await loadRaid(true);
+            if (!raidData) return;
+            if (raidData.lobby && raidData.lobby.id === id && ['gathering', 'battle'].includes(raidData.lobby.status)) return;   // уже внутри
+            let lobby = null;
+            try {
+                const response = await fetch(`api/hunt/raid/lobby/${id}?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json();
+                if (response.ok) lobby = data.lobby;
+            } catch (e) {}
+            if (!lobby) { toast(t('raid.link.notFound')); return; }
+            if (lobby.status !== 'gathering' || lobby.expires_at <= raidNow()) { toast(t('raid.link.closed')); return; }
+            if (lobby.count >= lobby.size) { toast(t('raid.link.full')); return; }
+            if (raidData.in_lobby) { toast(t('raid.link.busy')); return; }
+            if (raidData.cooldown_until > raidNow()) { toast(t('raid.cd', { time: formatCountdown(raidData.cooldown_until - raidNow()) })); return; }
+            raidOpenJoin(id, lobby);
+        }
+
         // --- Отрисовка ---
         function huntBuffChips(buffs) {
             buffs = buffs || {};
@@ -12503,12 +13051,14 @@
             if (!huntData) {
                 ['huntSubMine', 'huntSubExpeditions', 'huntSubStorage', 'huntSubAlchemy'].forEach(id =>
                     setHTMLIfChanged(document.getElementById(id), `<p class="subtitle">${t('hunt.loading')}</p>`));
+                renderRaid();
                 return;
             }
             renderHuntMine();
             renderHuntExpeditions();
             renderHuntStorage();
             renderHuntAlchemy();
+            renderRaid();
             if (huntModalItem) renderHuntModalItem();
         }
 
@@ -12685,6 +13235,7 @@
                 if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
                 return;
             }
+            tickRaid();
             if (!huntData) return;
             tickHuntMine();
             const now = huntNow();
@@ -14024,6 +14575,7 @@
             renderWallet();
             startLoops();
             initFogSwipe();
+            raidHandleDeepLink();   // ⚔️ открыт кнопкой «Вступить в бой» из чата → сразу в лобби
 
             document.getElementById('boot').style.display = 'none';
         }
