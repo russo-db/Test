@@ -287,6 +287,7 @@ class MongoStore:
             (self.market_trades, "buyer_id", {}),
             (self.market_trades, "seller_id", {}),
             (self.balance_ledger, [("source", 1), ("ts", -1)], {}),
+            (self.balance_ledger, [("ts", -1)], {}),
             (self.users, "auto_expedition_until", {"sparse": True}),
             (self.users, "raid_entry.lobby", {"sparse": True}),
             (self.raids, [("status", 1), ("expires_at", 1)], {}),

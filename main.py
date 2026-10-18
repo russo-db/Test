@@ -10487,6 +10487,72 @@ async def admin_player_ledger(user_id: int, currency: str = "", limit: int = 100
         raise HTTPException(status_code=500, detail=f"Не удалось загрузить журнал: {type(e).__name__}: {e}")
 
 
+LEDGER_SCAN_MAX = 300000
+
+
+@app.get("/admin/api/ledger/sources")
+async def admin_ledger_sources(hours: float = 24, field: str = "coins", _: None = Depends(require_admin)):
+    """«Откуда GRAM»: сводка журнала балансов по ВСЕМ игрокам за последние
+    hours часов — сколько пришло и ушло по каждому источнику и кому больше
+    всего начислилось. Ответ на «откуда столько GRAM на балансах»."""
+    try:
+        if field not in LEDGER_FIELDS_ADMIN:
+            raise HTTPException(status_code=400, detail="Поле: coins (GRAM), mnstr (Meat) или gold (золото)")
+        hours = max(1.0, min(24.0 * 90, float(hours)))
+        since = time.time() - hours * 3600
+        by_source, by_user = {}, {}
+        scanned = 0
+        async for doc in store.balance_ledger.find({"ts": {"$gte": since}, f"delta.{field}": {"$exists": True}},
+                                                   {"user_id": 1, "source": 1, "delta": 1, "count": 1}):
+            scanned += 1
+            if scanned > LEDGER_SCAN_MAX:
+                break
+            v = float((doc.get("delta") or {}).get(field) or 0)
+            if not v:
+                continue
+            src = str(doc.get("source") or "system")
+            uid = doc.get("user_id")
+            agg = by_source.setdefault(src, {"plus": 0.0, "minus": 0.0, "ops": 0, "users": {}})
+            agg["plus" if v > 0 else "minus"] += v
+            agg["ops"] += int(doc.get("count") or 1)
+            agg["users"][uid] = agg["users"].get(uid, 0.0) + v
+            u = by_user.setdefault(uid, {"net": 0.0, "plus": 0.0, "sources": {}})
+            u["net"] += v
+            if v > 0:
+                u["plus"] += v
+                u["sources"][src] = u["sources"].get(src, 0.0) + v
+        top_ids = [uid for uid, _ in sorted(by_user.items(), key=lambda kv: -kv[1]["plus"])[:20]]
+        names = {}
+        for uid in top_ids + [uid for agg in by_source.values() for uid, _ in sorted(agg["users"].items(), key=lambda kv: -kv[1])[:3]]:
+            if uid not in names:
+                doc = await store.get(uid) if isinstance(uid, int) else None
+                names[uid] = (doc or {}).get("name") or ""
+        sources = []
+        for src, agg in by_source.items():
+            top = sorted(agg["users"].items(), key=lambda kv: -kv[1])[:3]
+            sources.append({"source": src, "label": ledger_label(src), "plus": round(agg["plus"], 6),
+                            "minus": round(agg["minus"], 6), "net": round(agg["plus"] + agg["minus"], 6),
+                            "ops": agg["ops"], "players": len(agg["users"]),
+                            "top": [{"user_id": uid, "name": names.get(uid, ""), "amount": round(val, 6)} for uid, val in top if val > 0]})
+        sources.sort(key=lambda r: -r["plus"])
+        top_players = [{"user_id": uid, "name": names.get(uid, ""), "plus": round(by_user[uid]["plus"], 6),
+                        "net": round(by_user[uid]["net"], 6),
+                        "sources": sorted(({"label": ledger_label(k), "amount": round(v, 6)} for k, v in by_user[uid]["sources"].items()),
+                                          key=lambda r: -r["amount"])[:4]}
+                       for uid in top_ids if by_user[uid]["plus"] > 0]
+        return {"field": field, "hours": hours, "since": since, "scanned": scanned, "truncated": scanned > LEDGER_SCAN_MAX,
+                "total_plus": round(sum(r["plus"] for r in sources), 6), "total_minus": round(sum(r["minus"] for r in sources), 6),
+                "sources": sources, "top_players": top_players}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось собрать сводку журнала: {type(e).__name__}: {e}")
+
+
+LEDGER_FIELDS_ADMIN = ("coins", "mnstr", "gold")
+
+
 EGG_PLACED_LABELS = {"farm": "на ферму", "queue": "в очередь (слоты заняты)"}
 
 

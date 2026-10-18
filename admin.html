@@ -129,6 +129,7 @@
     .ledger-balances .stat-card { flex: 1; min-width: 140px; padding: 10px 12px; }
     .ledger-filter { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
     .ledger-filter button.active { background: #f0b429; color: #1a1408; font-weight: 700; }
+    #ledgerSrcBar button.active { background: #f0b429; color: #1a1408; font-weight: 700; }
     .ledger-plus { color: #4ade80; font-weight: 700; white-space: nowrap; }
     .ledger-minus { color: #ff6b6b; font-weight: 700; white-space: nowrap; }
     .ledger-table td, .ledger-table th { padding: 6px 8px; }
@@ -780,7 +781,38 @@
         </div>
 
         <div class="page" id="page-economy">
-            <h2>Экономика: куда уходит золото</h2>
+            <h2>💸 Откуда пришли балансы (журнал)</h2>
+            <p class="muted" style="font-size:12px;">
+                Все изменения GRAM, Meat и золота у всех игроков за выбранный период — по источникам (пополнение TON, продажа на рынке,
+                ежедневная награда, награды Арены, выдача админом и т.д.) и кому больше всего начислилось. Клик по игроку — его журнал.
+            </p>
+            <div class="toolbar" id="ledgerSrcBar">
+                <select id="ledgerSrcField">
+                    <option value="coins" selected>GRAM</option>
+                    <option value="mnstr">Meat</option>
+                    <option value="gold">Золото</option>
+                </select>
+                <button data-hours="24" class="active">24 часа</button>
+                <button data-hours="48">48 часов</button>
+                <button data-hours="168">7 дней</button>
+                <span class="muted" id="ledgerSrcInfo" style="font-size:12px;"></span>
+            </div>
+            <div class="card-grid" id="ledgerSrcCards"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Источник</th><th>Пришло</th><th>Ушло</th><th>Итог</th><th>Игроков</th><th>Операций</th><th>Больше всего получили</th></tr></thead>
+                    <tbody id="ledgerSrcBody"></tbody>
+                </table>
+            </div>
+            <h3 style="margin:16px 0 8px;">Кому больше всего начислилось</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Игрок</th><th>Пришло</th><th>Итог за период</th><th>Откуда</th></tr></thead>
+                    <tbody id="ledgerSrcPlayers"></tbody>
+                </table>
+            </div>
+
+            <h2 style="margin-top:28px;">Экономика: куда уходит золото</h2>
             <p class="muted">
                 Золото приходит только из экспедиций, а уходит в крафт снаряжения (300 за предмет), обмен на мясо у купца,
                 создание кланов, энергию Арены и Охоту (шахта, первый слот экспедиций). Скрещивание можно оплатить мясом или GRAM — чем больше доля мяса,
@@ -2162,7 +2194,48 @@ document.getElementById('dailyLogDay').onchange = loadDailyStats;
 document.getElementById('retentionRefreshBtn').onclick = e => withBusyButton(e.currentTarget, 'Считаю…', loadRetention);
 document.getElementById('retentionDays').onchange = loadRetention;
 
+// 💸 Откуда пришли балансы — сводка журнала по всем игрокам
+let ledgerSrcHours = 24;
+async function loadLedgerSources() {
+    const field = document.getElementById('ledgerSrcField').value;
+    const info = document.getElementById('ledgerSrcInfo');
+    info.textContent = 'Считаю…';
+    let d;
+    try { d = await api(`/admin/api/ledger/sources?hours=${ledgerSrcHours}&field=${field}`); }
+    catch (e) { info.textContent = ''; if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    const unit = { coins: 'GRAM', mnstr: 'Meat', gold: 'золота' }[field];
+    const f = v => fmtNum(Math.round(v * 100) / 100);
+    const who = (p) => `<a href="#" data-ledger-user="${Number(p.user_id)}">${escHtml(p.name || ('ID ' + p.user_id))}</a>`;
+    info.textContent = `записей журнала: ${fmtNum(d.scanned)}${d.truncated ? ' (показана часть — сузьте период)' : ''}`;
+    document.getElementById('ledgerSrcCards').innerHTML = [
+        ['Пришло', `+${f(d.total_plus)} ${unit}`], ['Ушло', `${f(d.total_minus)} ${unit}`],
+        ['Итог на балансах', `${d.total_plus + d.total_minus >= 0 ? '+' : ''}${f(d.total_plus + d.total_minus)} ${unit}`],
+    ].map(([l, v]) => `<div class="stat-card"><div class="label">${l} за ${ledgerSrcHours} ч</div><div class="value">${v}</div></div>`).join('');
+    document.getElementById('ledgerSrcBody').innerHTML = d.sources.length ? d.sources.map(r => `<tr>
+        <td title="${escHtml(r.source)}">${escHtml(r.label)}</td>
+        <td class="ledger-plus">${r.plus ? '+' + f(r.plus) : ''}</td><td class="ledger-minus">${r.minus ? f(r.minus) : ''}</td>
+        <td>${r.net >= 0 ? '+' : ''}${f(r.net)}</td><td>${fmtNum(r.players)}</td><td>${fmtNum(r.ops)}</td>
+        <td>${r.top.map(p => `${who(p)} +${f(p.amount)}`).join('<br>')}</td></tr>`).join('')
+        : `<tr><td colspan="7" class="muted">За период изменений нет</td></tr>`;
+    document.getElementById('ledgerSrcPlayers').innerHTML = d.top_players.length ? d.top_players.map(p => `<tr>
+        <td>${who(p)}</td><td class="ledger-plus">+${f(p.plus)}</td><td>${p.net >= 0 ? '+' : ''}${f(p.net)}</td>
+        <td>${p.sources.map(x => `${escHtml(x.label)}: +${f(x.amount)}`).join('<br>')}</td></tr>`).join('')
+        : `<tr><td colspan="4" class="muted">—</td></tr>`;
+}
+document.getElementById('ledgerSrcBar').addEventListener('click', e => {
+    const b = e.target.closest('button[data-hours]'); if (!b) return;
+    ledgerSrcHours = Number(b.dataset.hours);
+    document.querySelectorAll('#ledgerSrcBar button[data-hours]').forEach(x => x.classList.toggle('active', x === b));
+    loadLedgerSources();
+});
+document.getElementById('ledgerSrcField').onchange = () => loadLedgerSources();
+document.getElementById('page-economy').addEventListener('click', e => {
+    const a = e.target.closest('a[data-ledger-user]'); if (!a) return;
+    e.preventDefault(); openLedgerModal(Number(a.dataset.ledgerUser));
+});
+
 async function loadEconomy() {
+    loadLedgerSources();
     let data;
     try { data = await api('/admin/api/economy'); }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
