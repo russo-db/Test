@@ -2944,7 +2944,7 @@
                 'raid.resultDamage': 'Урон группы: {dmg} из {hp} ХП',
                 'raid.resultGold': '+{gold} 🪙 золота на баланс',
                 'raid.resultBurned': 'Залог за вход сгорел. Можно собирать новую группу.',
-                'raid.resultMine': 'Твой вклад: {dmg} (атака {atk} + заточка {bonus})',
+                'raid.resultMine': 'Твой вклад: {dmg} (атака орла со снаряжением и заточкой)',
                 'raid.close': 'Закрыть',
                 'raid.pickTitleCreate': 'Новая группа: {boss}',
                 'raid.pickTitleJoin': 'Вход в группу: {boss}',
@@ -3570,7 +3570,7 @@
                 'raid.resultDamage': 'Party damage: {dmg} of {hp} HP',
                 'raid.resultGold': '+{gold} 🪙 gold added',
                 'raid.resultBurned': 'The entry deposit is burned. You can gather a new party.',
-                'raid.resultMine': 'Your share: {dmg} (attack {atk} + enchant {bonus})',
+                'raid.resultMine': 'Your share: {dmg} (eagle attack incl. gear and enchant)',
                 'raid.close': 'Close',
                 'raid.pickTitleCreate': 'New party: {boss}',
                 'raid.pickTitleJoin': 'Join party: {boss}',
@@ -12836,7 +12836,7 @@
                 actions = `<div class="hunt-sub" style="margin-top:6px">${t('raid.battleNote')}</div>`;
             } else if (lb.result) {
                 const res = lb.result;
-                const mine = res.mine ? `<div class="hunt-sub">${t('raid.resultMine', { dmg: raidNum(res.mine.damage), atk: raidNum(res.mine.atk), bonus: raidNum(res.mine.enchant_bonus) })}</div>` : '';
+                const mine = res.mine ? `<div class="hunt-sub">${t('raid.resultMine', { dmg: raidNum(res.mine.damage) })}</div>` : '';
                 actions = `<div class="raid-result ${res.won ? 'won' : 'lost'}">
                         <div class="raid-result-title">${res.won ? t('raid.won') : t('raid.lost')}</div>
                         <div class="hunt-sub">${t('raid.resultDamage', { dmg: raidNum(res.damage), hp: raidNum(res.hp) })}</div>

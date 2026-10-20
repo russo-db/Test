@@ -6451,14 +6451,13 @@ def raid_slot_free(slot: dict) -> bool:
 
 def raid_member_damage(row: dict, tier_id: str) -> dict:
     """Урон участника = атака выбранного орла (текущие статы в игре: база
-    редкости + снаряжение и его заточка, как в бою Арены/кланов) + суммарный
-    бонус заточки надетого на эту редкость снаряжения."""
+    редкости + снаряжение и его заточка, как в бою Арены/кланов). Заточка уже
+    входит в атаку и отдельно не добавляется."""
     equipped = normalize_nest_equipped(row.get("nest_equipped"))
     enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
     eq, en = equipped.get(tier_id) or {}, enchant.get(tier_id) or {}
-    atk = float(combat_eagle_stats(tier_id, eq, en)["atk"])
-    bonus = sum(nest_enchant_bonus(grade, en.get(item_type, 0)) for item_type, grade in eq.items() if grade)
-    return {"atk": atk, "enchant_bonus": round(bonus, 4), "damage": round(atk + bonus, 4)}
+    atk = round(float(combat_eagle_stats(tier_id, eq, en)["atk"]), 4)
+    return {"atk": atk, "damage": atk}
 
 
 def raid_lobby_view(lobby: dict, viewer_id: Optional[int] = None, now: Optional[float] = None) -> dict:
@@ -7001,7 +7000,7 @@ async def raid_resolve(lobby: dict) -> None:
             d = raid_member_damage(row, tier)
         except Exception as e:
             print(f"[raid] damage {m.get('user_id')}: {type(e).__name__}: {e}")
-            d = {"atk": 0.0, "enchant_bonus": 0.0, "damage": 0.0}
+            d = {"atk": 0.0, "damage": 0.0}
         by_member[str(m["user_id"])] = d
         total += d["damage"]
     total = round(total, 4)
