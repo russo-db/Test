@@ -193,6 +193,16 @@
         .rock-lvl.done .rock-lvl-n { background: #5a3608; color: #fde68a; }
         .rock-lvl .rock-lvl-txt { flex: 1 1 150px; min-width: 0; line-height: 1.4; }
         .rock-lvl .btn-primary { flex: 0 0 auto; width: auto; margin-left: auto; padding: 8px 10px; font-size: 11.5px; white-space: nowrap; }
+        .rock-call-btn { border-color: rgba(245, 158, 11, 0.7); box-shadow: 0 0 14px rgba(245, 158, 11, 0.35); }
+        .rock-army-list { max-height: 42vh; overflow-y: auto; margin: 8px 0 4px; text-align: left; }
+        .rock-army-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin-bottom: 6px; border-radius: 12px;
+                         background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .rock-army-row img { width: 40px; height: 40px; object-fit: contain; flex: 0 0 auto; }
+        .rock-army-info { min-width: 0; font-size: 11.5px; line-height: 1.4; }
+        .rock-army-info b { display: block; font-size: 13px; }
+        .rock-army-info span { color: var(--text-muted); }
+        .rock-army-confirm { margin-top: 10px; animation: rockPulse 1.6s ease-in-out infinite; }
+        @keyframes rockPulse { 0%, 100% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); } 50% { box-shadow: 0 0 22px rgba(245, 158, 11, 0.65); } }
         .rock-busy { text-align: center; padding: 10px; border-radius: 12px; font-weight: 700; font-size: 13px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.45); }
         .rock-lvl.locked { opacity: 0.55; }
         .rock-lvl .rock-lvl-side { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
@@ -3252,6 +3262,26 @@
                 'rock.toast.garrison': '🛡️ Орлов на Скале: +{n}',
                 'rock.toast.challenge': '⚔️ Вызов брошен — бой идёт 1 минуту',
                 'rock.toast.research': '🧬 Уровень {n} изучен!',
+                'rock.call': '📣 Великий призыв',
+                'rock.callIn': '📣 Призыв через {time}',
+                'rock.callHint': 'Бот напишет всем воинам фракции (сначала самым сильным) с кнопкой «Вступить в бой!». Раз в 60 минут, только в окно атаки или обороны.',
+                'rock.callTitle': '📣 Великий призыв',
+                'rock.callText': 'Бот разошлёт призыв всем воинам фракции с орлами {lvl} ур. Следующий призыв — через 60 минут.',
+                'rock.callBtn': 'Призвать',
+                'rock.toast.call': '📣 Призыв отправлен: воинов в очереди — {n}',
+                'rock.army.title': '⚔️ Подтвердите своё войско',
+                'rock.army.sub': 'Твои орлы {lvl} ур. (не на рынке): {n}',
+                'rock.army.empty': 'Нет орлов {lvl} ур. — в бой идти некому.',
+                'rock.army.plus': '⚔️ Подтвердить войско — в штурм',
+                'rock.army.reserve': '🛡️ Подтвердить войско — в резерв',
+                'rock.army.garrison': '🛡️ Подтвердить войско — в гарнизон',
+                'rock.army.inSquad': 'Твоё войско уже в штурмовом отряде.',
+                'rock.army.inGarrison': 'Твоё войско уже на Скале.',
+                'rock.army.wait': 'Окно открыто — штурм ещё не объявлен. Как только Лидер объявит его, подтверди войско здесь.',
+                'rock.army.closed': 'Сейчас нет окна атаки или обороны твоей фракции.',
+                'rock.army.initial': 'Твои орлы стояли на Скале в начале штурма — резерв только для свежих сил.',
+                'rock.army.full': 'Свободных мест в гарнизоне нет.',
+                'rock.army.close': 'Закрыть',
                 'rock.phrase.att1': '{att} пробивает ворота Скалы!',
                 'rock.phrase.att2': '{att} обрушивает когти на стены Цитадели!',
                 'rock.phrase.att3': 'Крылья воинов «{att}» закрыли небо над Скалой!',
@@ -3966,6 +3996,26 @@
                 'rock.toast.garrison': '🛡️ Eagles on the Rock: +{n}',
                 'rock.toast.challenge': '⚔️ Challenge thrown — the duel lasts 1 minute',
                 'rock.toast.research': '🧬 Level {n} learned!',
+                'rock.call': '📣 Great Call',
+                'rock.callIn': '📣 Call in {time}',
+                'rock.callHint': 'The bot will message every warrior of the faction (strongest first) with a «Join the battle!» button. Once per 60 minutes, only during an attack or defense window.',
+                'rock.callTitle': '📣 Great Call',
+                'rock.callText': 'The bot will send the call to every warrior of the faction with level {lvl} eagles. Next call — in 60 minutes.',
+                'rock.callBtn': 'Call',
+                'rock.toast.call': '📣 Call sent: warriors in the queue — {n}',
+                'rock.army.title': '⚔️ Confirm your army',
+                'rock.army.sub': 'Your level {lvl} eagles (not on the market): {n}',
+                'rock.army.empty': 'No level {lvl} eagles — nobody to send into battle.',
+                'rock.army.plus': '⚔️ Confirm army — to the assault',
+                'rock.army.reserve': '🛡️ Confirm army — as reserves',
+                'rock.army.garrison': '🛡️ Confirm army — to the garrison',
+                'rock.army.inSquad': 'Your army is already in the assault squad.',
+                'rock.army.inGarrison': 'Your army is already on the Rock.',
+                'rock.army.wait': 'The window is open — the assault has not been declared yet. Confirm your army here as soon as the Leader declares it.',
+                'rock.army.closed': 'Your faction has no attack or defense window right now.',
+                'rock.army.initial': 'Your eagles were on the Rock when the assault began — reserves are for fresh forces only.',
+                'rock.army.full': 'No free slots in the garrison.',
+                'rock.army.close': 'Close',
                 'rock.phrase.att1': '{att} is breaking through the Rock gates!',
                 'rock.phrase.att2': '{att} brings its talons down on the Citadel walls!',
                 'rock.phrase.att3': 'The wings of {att} have covered the sky above the Rock!',
@@ -9171,6 +9221,12 @@
             }
             // действия
             const acts = [];
+            if (me.is_leader && me.call_window) {
+                const waitCall = (me.call_ready_at || 0) > serverNow();
+                acts.push(waitCall
+                    ? `<button class="btn-action" disabled>${t('rock.callIn', { time: rockUntil(me.call_ready_at) })}</button>`
+                    : `<button class="btn-action rock-call-btn" onclick="rockAskCall()">${t('rock.call')}</button><div class="rock-muted">${t('rock.callHint')}</div>`);
+            }
             if (me.can_declare) acts.push(`<button class="btn-primary" onclick="rockDeclare()">${t('rock.declare')}</button><div class="rock-muted">${t('rock.declareHint')}</div>`);
             else if (!s && r.window && r.window.faction === me.faction_id) acts.push(`<div class="rock-muted" style="text-align:center">${r.window.used ? t('rock.windowUsed') : t('rock.waitLeader')}</div>`);
             if (s && s.attacker === me.faction_id) {
@@ -9312,6 +9368,95 @@
                 if (await rockPost('api/rock/challenge', {}, 'rock-challenge')) toast(t('rock.toast.challenge'));
             });
         }
+        function rockAskCall() {
+            huntConfirm(t('rock.callTitle'), t('rock.callText', { lvl: rockData ? rockData.min_level : 7 }), t('rock.callBtn'), async () => {
+                const d = await rockPost('api/factions/great-call', {}, 'rock-call');
+                if (d) toast(t('rock.toast.call', { n: d.recipients || 0 }));
+            });
+        }
+
+        // --- Окно «Подтвердите своё войско»: переход из Великого призыва (start_param faction_assault) ---
+        function rockArmyAction(r) {
+            const me = r.me, s = r.siege, fid = me.faction_id;
+            if (!me.eligible) return { note: t('rock.army.empty', { lvl: r.min_level }) };
+            if (s && s.attacker === fid) {
+                if (s.mine && s.mine.side === 'a') return { note: t('rock.army.inSquad') };
+                if (me.can_plus) return { btn: t('rock.army.plus'), fn: 'rockArmyConfirm("plus")' };
+                if (me.attack_used) return { note: t('rock.plusUsed') };
+            }
+            if (r.owner === fid) {
+                if (me.in_garrison > 0 || (s && s.mine && s.mine.side === 'd')) return { note: t('rock.army.inGarrison') };
+                if (me.can_reserve) return { btn: s ? t('rock.army.reserve') : t('rock.army.garrison'), fn: 'rockArmyConfirm("garrison")' };
+                if (s) return { note: t('rock.army.initial') };
+                return { note: t('rock.army.full') };
+            }
+            if (r.window && r.window.faction === fid && !s) return { note: t('rock.army.wait') };
+            return { note: t('rock.army.closed') };
+        }
+
+        function rockOpenArmy() {
+            const r = rockData;
+            if (!r || !r.active || !r.me || !r.me.faction_id) return false;
+            const army = r.me.army || [];
+            const rows = army.map(e => {
+                const tier = (CONFIG.tiers || []).find(x => x.id === e.tier) || {};
+                const m = (tier.monsters || [])[0] || {};
+                return `<div class="rock-army-row" style="--tc:${tier.color || '#fff'}">
+                    ${m.sprite ? `<img src="${framePath(m.sprite, 0)}" alt="">` : ''}
+                    <div class="rock-army-info"><b style="color:${tier.color || '#fff'}">${huntEsc(m.name || tier.name || e.tier)}</b>
+                    <span>⚔️ ${rockNum(e.atk)} · 🛡️ ${rockNum(e.def)} · ❤️ ${rockNum(e.hp)} · 💥 ${rockNum(e.crit)}% · 💨 ${rockNum(e.spd)}</span></div>
+                </div>`;
+            }).join('');
+            const act = rockArmyAction(r);
+            document.getElementById('huntModalBody').innerHTML = goldify(`
+                <h2>${t('rock.army.title')}</h2>
+                <p class="slot-modal-sub">${t('rock.army.sub', { lvl: r.min_level, n: army.length })}</p>
+                <div class="rock-army-list">${rows || `<div class="rock-muted">${t('rock.army.empty', { lvl: r.min_level })}</div>`}</div>
+                ${act.btn ? `<button class="btn-primary rock-army-confirm" id="rockArmyConfirmBtn" onclick='${act.fn}'>${act.btn}</button>`
+                    : `<div class="rock-busy" style="margin-top:10px">${act.note}</div>`}
+                <button class="btn-action roll-close" onclick="closeHuntModal()">${t('rock.army.close')}</button>`);
+            openHuntModalEl();
+            return true;
+        }
+
+        async function rockArmyConfirm(kind) {
+            const btn = document.getElementById('rockArmyConfirmBtn');
+            if (btn) btn.disabled = true;
+            const ok = kind === 'plus' ? await rockPost('api/rock/plus', {}, 'rock-plus') : await rockPost('api/rock/garrison', {}, 'rock-garrison');
+            if (ok) {
+                closeHuntModal();
+                toast(kind === 'plus' ? t('rock.toast.plus') : t('rock.toast.garrison', { n: ok.added || 0 }));
+            } else if (btn) {
+                rockOpenArmy();   // состояние изменилось — окно показывает актуальное
+            }
+        }
+
+        let rockDeepLinkDone = false;
+        function rockStartParam() {
+            let sp = '';
+            try { sp = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || ''; } catch (e) {}
+            if (!sp) {
+                try {
+                    sp = new URLSearchParams(location.search).get('tgWebAppStartParam')
+                        || new URLSearchParams(location.hash.replace(/^#/, '')).get('tgWebAppStartParam') || '';
+                } catch (e) {}
+            }
+            return String(sp);
+        }
+        // Открыт кнопкой «⚔️ Вступить в бой!» из Великого призыва: сразу правый
+        // экран Скалы и окно подтверждения войска — без деревни и лишних кликов.
+        async function rockHandleDeepLink() {
+            if (rockDeepLinkDone || rockStartParam() !== 'faction_assault' || offlineOnly || !state.userId) return;
+            rockDeepLinkDone = true;
+            rockTab = 'rock';
+            if (!rockData) await loadRock(true);
+            if (!rockData || !rockData.active) return;
+            openFogPage();
+            renderRock();
+            if (!rockData.me || !rockData.me.faction_id) return;   // фракции нет — сначала выбор
+            rockOpenArmy();
+        }
+
         async function rockLearn(level) {
             if (await rockPost('api/rock/research', { expected_level: level }, 'rock-research')) toast(t('rock.toast.research', { n: level + 1 }));
         }
@@ -15241,7 +15386,11 @@
             renderWallet();
             startLoops();
             initFogSwipe();
-            loadRock(true);         // 🏔 запущена ли Орлиная Скала — чтобы при свайпе сразу был хаб, а не туман
+            if (rockStartParam() === 'faction_assault') {
+                // 📣 из Великого призыва: экран Скалы и окно войска открываются ещё под экраном
+                // загрузки — деревню игрок не видит (не дольше 4 с, если сеть медленная)
+                await Promise.race([rockHandleDeepLink().catch(() => {}), new Promise(res => setTimeout(res, 4000))]);
+            } else loadRock(true);         // 🏔 запущена ли Орлиная Скала — чтобы при свайпе сразу был хаб, а не туман
             raidHandleDeepLink();   // ⚔️ открыт кнопкой «Вступить в бой» из чата → сразу в лобби
 
             document.getElementById('boot').style.display = 'none';

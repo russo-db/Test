@@ -425,6 +425,10 @@ class MongoStore:
         # Архив осад/вызовов с выплатами Очков Заслуг: {_id, kind, payouts {uid: n},
         # paid (выплаты разнесены), ...}. Выплата игроку идемпотентна (rock_paid).
         self.rock_history = client[db_name]["rock_history"]
+        # 📣 Великий призыв Лидера: очередь рассылки {_id, faction, queue [uid по
+        # убыванию силы], next (сколько обработано), status pending|done,
+        # lease_until (кто сейчас шлёт), sent, failed, created_at}.
+        self.rock_calls = client[db_name]["rock_calls"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -463,6 +467,7 @@ class MongoStore:
             (self.rock_feed, [("faction", 1), ("ts", -1)], {}),
             (self.rock_history, [("paid", 1), ("ts", 1)], {}),
             (self.rock_history, [("ts", -1)], {}),
+            (self.rock_calls, [("status", 1), ("created_at", 1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)

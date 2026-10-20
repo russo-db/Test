@@ -12283,9 +12283,15 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
           "challenge_used": int(row.get("rock_challenge_day") or -1) == today,
           "attack_used": int(row.get("rock_attack_day") or -1) == today}
     out["me"] = me
+    # войско для окна «Подтвердить войско» (переход из Великого призыва)
+    me["army"] = [{k: e[k] for k in ("tier", "atk", "def", "hp", "crit", "spd")} for e in snapshot[:60]]
     if not fid:
         return out
     me["is_leader"] = (rock_public_leader(st, fid) or {}).get("id") == user_id
+    if me["is_leader"]:
+        last_call = float((st.get("calls") or {}).get(fid) or 0)
+        me["call_ready_at"] = last_call + ROCK_CALL_COOLDOWN if last_call else 0
+        me["call_window"] = rock_call_window(st, fid, now)
     win = rock_current_window(st, now, fid) or rock_current_window(st, now)
     out["window"] = {"faction": win["faction"], "start": win["start"], "end": win["end"],
                      "used": win["key"] in (st.get("windows_used") or [])} if win else None
@@ -12807,7 +12813,8 @@ async def admin_rock_activate(_: None = Depends(require_admin)):
             return {"active": True, "initialized": True, "initializing": False, "test_mode": False, "activated_at": now,
                     "leaders": bal["leaders"], "owner": bal["owner"], "merit_hour": int(now // 3600),
                     "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None,
-                    "challenges": {}, "last_challenge": {}, "last_siege": None, "windows_used": [], "test_window": None}, True
+                    "challenges": {}, "last_challenge": {}, "last_siege": None, "windows_used": [], "test_window": None,
+                    "calls": {}}, True
 
         await rock_cas(finish)
         ROCK_POWER_CACHE["data"] = None
@@ -12863,6 +12870,208 @@ async def admin_rock_test_window(body: AdminRockTestWindow, _: None = Depends(re
         raise HTTPException(status_code=500, detail="Не удалось открыть тестовое окно")
 
 
+# --- 📣 ВЕЛИКИЙ ПРИЗЫВ ЛИДЕРА: бот пишет всем воинам фракции (сначала самым
+# сильным) с кнопкой «⚔️ Вступить в бой!» → игра открывается сразу в окне
+# подтверждения войска (start_param faction_assault). Кулдаун — 60 минут на
+# фракцию, только в окно атаки/обороны. Рассылка — из очереди в БД, не
+# быстрее ROCK_CALL_RATE сообщений в секунду (лимит Telegram — ~30/с). ---
+ROCK_CALL_COOLDOWN = 3600
+ROCK_CALL_RATE = 25
+ROCK_CALL_PARAM = "faction_assault"
+ROCK_CALL_WORKER_ID = secrets.token_hex(4)
+ROCK_CALL_TEXTS = {
+    "sun": "☀️ Вас призывает Лидер Легиона Кровавого Солнца! Братья, обнажите когти! Наш вожак собирает "
+           "Кровавую Стаю для сокрушительного штурма Орлиной Скалы! Подтвердите свое войско!",
+    "steel": "⚔️ Вас призывает Лидер Ордена Небесной Стали! Рыцари Небес, к оружию! Цитадель в опасности, "
+             "Лидер собирает все щиты для железной обороны Скалы! Подтвердите свое войско!",
+    "storm": "🌪️ Вас призывает Вождь Племени Вечного Шторма! Час настал! Великий вихрь готов поглотить врагов, "
+             "Лидер призывает все резервы для молниеносной атаки! Подтвердите свое войско!",
+}
+
+
+class RockCallCooldown(Exception):
+    def __init__(self, retry_after: int):
+        self.retry_after = max(1, int(retry_after))
+
+
+def rock_call_cooldown_message(sec: int) -> str:
+    m, s = divmod(max(1, int(sec)), 60)
+    return f"Призыв будет доступен через {m} мин. {s} сек." if m else f"Призыв будет доступен через {s} сек."
+
+
+def rock_call_window(st: dict, fid: str, now: float) -> bool:
+    """Открыто ли окно атаки или обороны этой фракции: идёт штурм с её участием,
+    открыто её окно штурма, или она владеет Скалой и окно открыто у претендента."""
+    siege = st.get("siege")
+    if siege and fid in (siege.get("attacker"), siege.get("defender")):
+        return True
+    if rock_current_window(st, now, fid):
+        return True
+    return st.get("owner") == fid and rock_current_window(st, now) is not None
+
+
+def rock_call_text(fid: str) -> str:
+    return ROCK_CALL_TEXTS.get(fid) or f"📣 Вас призывает Лидер фракции «{rock_faction_name(fid)}»! Подтвердите свое войско!"
+
+
+async def rock_call_link() -> str:
+    cfg = await raid_chat_settings()
+    app_name = cfg.get("app_short_name") or ""
+    base = f"https://t.me/{BOT_USERNAME}/{app_name}" if app_name else f"https://t.me/{BOT_USERNAME}"
+    return f"{base}?startapp={ROCK_CALL_PARAM}"
+
+
+async def rock_call_recipients(fid: str, exclude: int) -> list:
+    """Все воины фракции с орлами N ур. (не на рынке) — по убыванию суммарной
+    силы этих орлов (статы со снаряжением, заточкой и исследованиями)."""
+    proj = {"monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1}
+    ranked = []
+    async for doc in store.users.find({"faction_id": fid, "is_bot": {"$ne": True}}, proj):
+        if doc["_id"] == exclude:
+            continue
+        power = rock_player_power(doc)
+        if power > 0:
+            ranked.append((power, doc["_id"]))
+    ranked.sort(key=lambda x: (-x[0], x[1]))
+    return [uid for _, uid in ranked]
+
+
+class GreatCallRequest(BaseModel):
+    user_id: int
+
+
+@app.post("/api/factions/great-call")
+async def faction_great_call(request: GreatCallRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """«📣 Великий призыв»: только Лидер, только в окно атаки/обороны своей
+    фракции, раз в 60 минут на фракцию (429 с retry_after_seconds)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        st = await rock_require_access(user_id)
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        if (rock_public_leader(st, fid) or {}).get("id") != user_id:
+            raise HTTPException(status_code=403, detail="Великий призыв доступен только Лидеру фракции")
+        now = time.time()
+        if not rock_call_window(st, fid, now):
+            raise HTTPException(status_code=400, detail="Призыв доступен только во время окна атаки или обороны вашей фракции")
+        if not BOT_TOKEN or not BOT_USERNAME:
+            raise HTTPException(status_code=400, detail="Бот не настроен — призыв недоступен")
+        prev = {}
+
+        def mutate(s):
+            if (rock_public_leader(s, fid) or {}).get("id") != user_id:
+                raise HTTPException(status_code=403, detail="Великий призыв доступен только Лидеру фракции")
+            calls = dict(s.get("calls") or {})
+            last = float(calls.get(fid) or 0)
+            if last and now - last < ROCK_CALL_COOLDOWN:
+                raise RockCallCooldown(last + ROCK_CALL_COOLDOWN - now)
+            prev["last"] = calls.get(fid)
+            calls[fid] = now
+            return {"calls": calls}, True
+
+        await rock_cas(mutate)
+        try:
+            queue = await rock_call_recipients(fid, user_id)
+            job_id = f"{fid}:{int(now * 1000)}"
+            await store.rock_calls.insert_one({
+                "_id": job_id, "faction": fid, "leader_id": user_id, "queue": queue, "next": 0,
+                "status": "pending" if queue else "done", "lease_until": 0, "sent": 0, "failed": 0, "created_at": now,
+            })
+        except Exception:
+            # очередь не создалась — призыв не потрачен
+            def rollback(s):
+                calls = dict(s.get("calls") or {})
+                if calls.get(fid) != now:
+                    return None, False
+                if prev.get("last"):
+                    calls[fid] = prev["last"]
+                else:
+                    calls.pop(fid, None)
+                return {"calls": calls}, True
+            await rock_cas(rollback)
+            raise
+        await rock_feed_add([fid], "📣 Лидер объявил Великий призыв! Подтвердите своё войско.",
+                            "📣 The Leader issued the Great Call! Confirm your army.")
+        return {"success": True, "recipients": len(queue), "cooldown_until": now + ROCK_CALL_COOLDOWN,
+                **(await rock_response(user_id))}
+    except RockCallCooldown as e:
+        msg = rock_call_cooldown_message(e.retry_after)
+        return JSONResponse(status_code=429, content={"success": False, "retry_after_seconds": e.retry_after,
+                                                       "message": msg, "detail": msg})
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось объявить призыв — попробуй ещё раз")
+
+
+def _retry_seconds(value) -> float:
+    try:
+        return float(value.total_seconds())
+    except AttributeError:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 5.0
+
+
+async def rock_call_step() -> bool:
+    """Одна пачка рассылки: берёт задание (аренда на 30 с — второй процесс его
+    не тронет), шлёт до ROCK_CALL_RATE сообщений параллельно и держит пачку
+    не короче секунды (не больше ROCK_CALL_RATE в секунду). Кому Telegram
+    ответил «слишком часто» — переставляются в конец очереди, задание ждёт
+    сколько сказано. True — работа ещё есть."""
+    from pymongo import ReturnDocument
+    from telegram.error import RetryAfter
+    t0 = time.time()
+    job = await store.rock_calls.find_one_and_update(
+        {"status": "pending", "lease_until": {"$lt": t0}},
+        {"$set": {"lease_until": t0 + 30, "lease_owner": ROCK_CALL_WORKER_ID}},
+        sort=[("created_at", 1)], return_document=ReturnDocument.AFTER)
+    if not job:
+        return False
+    queue, start = job.get("queue") or [], int(job.get("next") or 0)
+    chunk = queue[start:start + ROCK_CALL_RATE]
+    text = rock_call_text(job["faction"])
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("⚔️ Вступить в бой!", url=await rock_call_link())]])
+
+    async def send(uid):
+        await tg_api_bot().send_message(chat_id=uid, text=text, reply_markup=markup)
+
+    results = await asyncio.gather(*[send(uid) for uid in chunk], return_exceptions=True)
+    sent = failed = 0
+    retry, wait = [], 0.0
+    for uid, res in zip(chunk, results):
+        if isinstance(res, RetryAfter):
+            retry.append(uid)
+            wait = max(wait, _retry_seconds(res.retry_after) + 1)
+        elif isinstance(res, Exception):   # бот заблокирован, чат не найден и т.п. — дальше по очереди
+            failed += 1
+            print(f"[great-call] {uid}: {type(res).__name__}: {res}")
+        else:
+            sent += 1
+    nxt = start + len(chunk)
+    total = len(queue) + len(retry)
+    update = {"$set": {"next": nxt, "status": "done" if nxt >= total else "pending",
+                       "lease_until": (time.time() + wait) if wait else 0},
+              "$inc": {"sent": sent, "failed": failed}}
+    if retry:
+        update["$push"] = {"queue": {"$each": retry}}
+    await store.rock_calls.update_one({"_id": job["_id"], "lease_owner": ROCK_CALL_WORKER_ID}, update)
+    await asyncio.sleep(max(0.0, 1.05 - (time.time() - t0)))   # пачка — не чаще раза в секунду
+    return nxt < total and not wait
+
+
+async def rock_call_sender():
+    while True:
+        busy = False
+        try:
+            busy = await rock_call_step()
+        except Exception as e:
+            print(f"[great-call] sender error: {type(e).__name__}: {e}")
+        await asyncio.sleep(0 if busy else 2)
+
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -12895,6 +13104,7 @@ async def startup_event():
     asyncio.create_task(auto_expedition_worker())
     asyncio.create_task(raid_worker())
     asyncio.create_task(rock_worker())
+    asyncio.create_task(rock_call_sender())
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад
     except Exception as e:
