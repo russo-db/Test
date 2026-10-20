@@ -12208,7 +12208,8 @@ async def rock_tick(now: Optional[float] = None) -> None:
         await rock_tick_merit(st, now)
         await rock_tick_challenges(st, now)
         await rock_tick_siege(st, now)
-    await rock_pay_pending()
+    if not st.get("initializing"):   # пока идёт запуск (стирание теста) — тестовые выплаты не разносим
+        await rock_pay_pending()
 
 
 async def rock_worker():
@@ -12266,7 +12267,9 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
                          "rage_pct": rock_rage_pct(st, f),
                          # в закрытом тесте (админы) балансировщик не мешает собираться в одну фракцию
                          "overloaded": rock_overloaded(data, f) if not fid and st.get("active") else False})
-    out = {"active": True, "test_mode": not st.get("active"), "now": now, "owner": st.get("owner"), "factions": factions,
+    out = {"active": True, "test_mode": bool(st.get("test_mode")) and not st.get("initialized"),
+           "hidden": bool(st.get("initialized")) and not st.get("active"),   # запущена, но скрыта кнопкой «Скрыть» (видят админы)
+           "now": now, "owner": st.get("owner"), "factions": factions,
            "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
            "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
            "research": [{"level": i + 1, **lv} for i, lv in enumerate(ROCK_RESEARCH)],
