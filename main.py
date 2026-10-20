@@ -11766,14 +11766,22 @@ async def rock_ensure_test_mode() -> dict:
 
 
 def rock_runs(st: dict) -> bool:
-    """Идут ли фоновые процессы Скалы: запущена для всех или идёт закрытый тест."""
-    return bool(st.get("active") or st.get("test_mode"))
+    """Идут ли фоновые процессы Скалы: запущена (в т.ч. скрыта кнопкой «Скрыть» —
+    админы в ней могут действовать, их вызовы и штурмы должны завершаться) или
+    идёт закрытый тест. Пока идёт настоящий запуск (стирание теста и
+    балансировщик) — стоят."""
+    if st.get("initializing"):
+        return False
+    return bool(st.get("active") or st.get("test_mode") or st.get("initialized"))
 
 
 async def rock_require_access(user_id: int) -> dict:
     """Доступ к любым действиям Скалы: Скала запущена для всех — или это
     админ (закрытый тест). Остальным — 403 «Скоро...», ни одного поля фракций."""
     st = await rock_get_state()
+    if st.get("initializing"):
+        # идёт настоящий запуск: тестовые данные стираются, ветераны распределяются
+        raise HTTPException(status_code=409, detail="Скала запускается — попробуй через минуту")
     if st.get("active"):
         return st
     if rock_tester(user_id):
