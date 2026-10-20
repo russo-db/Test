@@ -1094,10 +1094,12 @@ function renderRockAdmin(d) {
     if (!el) return;
     const fname = id => { const f = (d.factions || []).find(x => x.id === id); return f ? `${f.icon} ${escHtml(f.name)}` : '—'; };
     const status = d.active ? '<b style="color:#22c55e">🟢 Запущена и видна игрокам</b>'
-        : (d.initialized ? '<b style="color:#f59e0b">🙈 Запущена, но скрыта от игроков</b>' : '<b style="color:#9ca3af">⏸ Не запущена — игроки видят «Скоро...»</b>');
+        : (d.initialized ? '<b style="color:#f59e0b">🙈 Запущена, но скрыта от игроков (админы видят)</b>'
+            : (d.test_mode ? `<b style="color:#a78bfa">🧪 Закрытый тест — Скалу видят только админы (${(d.testers || []).join(', ')}), игроки видят «Скоро...»</b>`
+                : `<b style="color:#9ca3af">⏸ Не запущена — игроки видят «Скоро...». Админы (${(d.testers || []).join(', ')}) могут зайти в неё для закрытого теста</b>`));
     const s = d.siege;
     el.innerHTML = `<div>${status}${d.activated_at ? ` <span class="muted">· запуск ${rockAdminTime(d.activated_at)}</span>` : ''}</div>
-        ${d.initialized ? `<div style="margin-top:8px">Скалу удерживает: <b>${fname(d.owner)}</b> · гарнизон ${d.garrison}/${d.garrison_slots}</div>
+        ${d.initialized || d.test_mode ? `<div style="margin-top:8px">Скалу удерживает: <b>${fname(d.owner)}</b> · гарнизон ${d.garrison}/${d.garrison_slots}</div>
         <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Фракция</th><th>Воинов</th><th>Сила</th><th>Лидер</th><th>Неудач подряд</th><th>Ярость</th><th>Вызов</th></tr></thead><tbody>
             ${(d.factions || []).map(f => `<tr><td>${f.icon} ${escHtml(f.name)}</td><td>${f.members}</td><td>${Math.round(f.power)}</td>
                 <td>${f.leader ? `👑 ${escHtml(f.leader.name)} <span class="muted">(${f.leader.id})</span>` : '—'}</td>
@@ -1122,7 +1124,8 @@ async function loadRockAdmin() {
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
 }
 document.getElementById('rockLaunchBtn').onclick = e => {
-    if (!confirm('Запустить Орлиную Скалу? Ветераны будут распределены по фракциям, назначены Лидеры. Отменить распределение нельзя.')) return;
+    const extra = rockAdminData && rockAdminData.test_mode ? '\n\nВсё из закрытого теста (фракции админов, Очки Заслуг, исследования, лента) будет стёрто.' : '';
+    if (!confirm('Запустить Орлиную Скалу для всех? Ветераны будут распределены по фракциям, назначены Лидеры. Отменить распределение нельзя.' + extra)) return;
     withBusyButton(e.currentTarget, 'Запуск…', async () => {
         try { const d = await api('/admin/api/rock/activate', { method: 'POST' }); renderRockAdmin(d); toast(d.message || 'Скала запущена'); }
         catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); loadRockAdmin(); }

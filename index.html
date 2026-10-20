@@ -3248,6 +3248,7 @@
                 'rock.phrase.idle2': '{own} точит когти в ожидании штурма.',
                 'rock.phrase.idle3': 'Над Скалой тихо… но ветер приносит запах битвы.',
                 'rock.arenaFaction': 'Фракция',
+                'rock.testBanner': '🧪 Закрытый тест: Скалу сейчас видят только админы',
             },
             en: {
                 'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.market': 'Market', 'nav.profile': 'Profile',
@@ -3960,6 +3961,7 @@
                 'rock.phrase.idle2': '{own} sharpens its talons awaiting the assault.',
                 'rock.phrase.idle3': 'The Rock is quiet… but the wind smells of battle.',
                 'rock.arenaFaction': 'Faction',
+                'rock.testBanner': '🧪 Closed test: only admins can see the Rock right now',
             },
         };
 
@@ -9067,6 +9069,7 @@
                 else if (rockTab === 'research') html += renderRockResearch(r);
                 else html += renderRockMain(r);
             }
+            if (r.test_mode) html = `<div class="rock-busy" style="margin-bottom:10px; font-size:12px">${t('rock.testBanner')}</div>` + html;
             setHTMLIfChanged(hub, goldify(html));
         }
 

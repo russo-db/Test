@@ -4075,7 +4075,7 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_all.get(enemy_tier_id, {}), enemy_enchant.get(enemy_tier_id))
         enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
     enemy_fighter = {"stats": enemy_stats}
-    rock_on = await rock_is_active()
+    rock_on = await rock_is_active() or rock_tester(user_id)
     enemy_faction = None
     if rock_on and not is_bot and opponent_row.get("faction_id") in ROCK_FACTIONS:
         enemy_faction = opponent_row["faction_id"]
@@ -4165,7 +4165,7 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     # arena_fight — построенный на той же идее). limit=None — в таблицу
     # попадают ВСЕ игроки, не только верхушка.
     top_docs = await store.get_leaderboard(None)
-    rock_on = await rock_is_active()
+    rock_on = await rock_is_active() or rock_tester(user_id)   # админы видят гербы и в закрытом тесте
     top = [
         {
             "user_id": doc["user_id"],
@@ -11736,11 +11736,49 @@ async def rock_is_active() -> bool:
     return bool(ROCK_ACTIVE_CACHE["active"])
 
 
-async def rock_require_active() -> dict:
+def rock_tester(user_id) -> bool:
+    """Закрытый тест: админы (MAINTENANCE_WHITELIST) видят и используют Скалу,
+    даже пока она не запущена для всех. user_id здесь — всегда результат
+    authenticate() (подпись Telegram), подменить его в запросе нельзя."""
+    try:
+        return int(user_id) in MAINTENANCE_WHITELIST
+    except (TypeError, ValueError):
+        return False
+
+
+async def rock_ensure_test_mode() -> dict:
+    """Первый заход админа до запуска: Скала поднимается в режиме закрытого
+    теста — без балансировщика ветеранов, владелец — первая фракция, Лидер —
+    первый вступивший. При настоящем запуске всё это стирается."""
     st = await rock_get_state()
-    if not st.get("active"):
-        raise HTTPException(status_code=403, detail="Скоро...")
+    if st.get("initialized") or st.get("test_mode") or st.get("initializing"):
+        return st
+
+    def mutate(s):
+        if s.get("initialized") or s.get("test_mode") or s.get("initializing"):
+            return None, False
+        return {"test_mode": True, "owner": ROCK_FACTION_ORDER[0], "leaders": {}, "challenges": {}, "last_challenge": {},
+                "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None, "last_siege": None,
+                "windows_used": [], "test_window": None, "merit_hour": int(time.time() // 3600)}, True
+
+    st, _ = await rock_cas(mutate)
     return st
+
+
+def rock_runs(st: dict) -> bool:
+    """Идут ли фоновые процессы Скалы: запущена для всех или идёт закрытый тест."""
+    return bool(st.get("active") or st.get("test_mode"))
+
+
+async def rock_require_access(user_id: int) -> dict:
+    """Доступ к любым действиям Скалы: Скала запущена для всех — или это
+    админ (закрытый тест). Остальным — 403 «Скоро...», ни одного поля фракций."""
+    st = await rock_get_state()
+    if st.get("active"):
+        return st
+    if rock_tester(user_id):
+        return await rock_ensure_test_mode()
+    raise HTTPException(status_code=403, detail="Скоро...")
 
 
 async def rock_feed_add(factions, text: str, text_en: str = "") -> None:
@@ -12014,7 +12052,7 @@ async def rock_tick_merit(st: dict, now: float) -> None:
     owner = st.get("owner")
 
     def mutate(s):
-        if int(s.get("merit_hour") or 0) >= hour or not s.get("active"):
+        if int(s.get("merit_hour") or 0) >= hour or not rock_runs(s):
             return None, False
         return {"merit_hour": hour}, True
 
@@ -12158,7 +12196,7 @@ async def rock_tick_siege(st: dict, now: float) -> None:
 async def rock_tick(now: Optional[float] = None) -> None:
     now = time.time() if now is None else now
     st = await rock_get_state()
-    if st.get("active"):
+    if rock_runs(st):
         await rock_tick_merit(st, now)
         await rock_tick_challenges(st, now)
         await rock_tick_siege(st, now)
@@ -12207,7 +12245,7 @@ def rock_public_leader(st: dict, fid: str) -> Optional[dict]:
 
 async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict:
     now = time.time() if now is None else now
-    if not st.get("active"):
+    if not st.get("active") and not (rock_tester(user_id) and (st.get("test_mode") or st.get("initialized"))):
         return {"active": False}
     row = await fetch_user(user_id)
     fid = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
@@ -12217,8 +12255,10 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     for f in ROCK_FACTION_ORDER:
         factions.append({**ROCK_FACTIONS[f], "members": data[f]["members"], "power": round(data[f]["power"]),
                          "leader": rock_public_leader(st, f), "fail_streak": int((st.get("fail_streak") or {}).get(f) or 0),
-                         "rage_pct": rock_rage_pct(st, f), "overloaded": rock_overloaded(data, f) if not fid else False})
-    out = {"active": True, "now": now, "owner": st.get("owner"), "factions": factions,
+                         "rage_pct": rock_rage_pct(st, f),
+                         # в закрытом тесте (админы) балансировщик не мешает собираться в одну фракцию
+                         "overloaded": rock_overloaded(data, f) if not fid and st.get("active") else False})
+    out = {"active": True, "test_mode": not st.get("active"), "now": now, "owner": st.get("owner"), "factions": factions,
            "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
            "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
            "research": [{"level": i + 1, **lv} for i, lv in enumerate(ROCK_RESEARCH)],
@@ -12297,6 +12337,8 @@ async def rock_response(user_id: int) -> dict:
 async def rock_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
     user_id = authenticate(x_telegram_init_data, user_id)
     try:
+        if rock_tester(user_id):
+            await rock_ensure_test_mode()
         return await rock_response(user_id)
     except HTTPException:
         raise
@@ -12324,7 +12366,7 @@ async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = H
     суммарной силы орлов N ур. относительно слабейшей) — закрыта."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        await rock_require_active()
+        st_access = await rock_require_access(user_id)
         fid = request.faction_id
         if fid not in ROCK_FACTIONS:
             raise HTTPException(status_code=400, detail="Неизвестная фракция")
@@ -12334,7 +12376,7 @@ async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = H
                 return await rock_response(user_id)
             raise HTTPException(status_code=409, detail="Ты уже во фракции — сменить её нельзя")
         data = await rock_faction_stats(force=True)
-        if rock_overloaded(data, fid):
+        if st_access.get("active") and rock_overloaded(data, fid):
             raise HTTPException(status_code=400, detail="Эта фракция перегружена силами, выберите другую!")
         res = await store.users.update_one({"_id": user_id, "faction_id": None},
                                            {"$set": {"faction_id": fid, "faction_joined_at": time.time()}})
@@ -12370,7 +12412,7 @@ async def rock_research(request: RockAction, x_telegram_init_data: Optional[str]
     два уровня и не спишет дважды)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        await rock_require_active()
+        await rock_require_access(user_id)
         row = await fetch_user(user_id)
         rock_my_faction(row)
         level = rock_research_level(row)
@@ -12450,7 +12492,7 @@ async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] 
     """«Объявить общий штурм Скалы» — строго Лидер фракции, чьё сейчас окно."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        await rock_require_active()
+        await rock_require_access(user_id)
         row = await fetch_user(user_id)
         fid = rock_my_faction(row)
         now = time.time()
@@ -12503,7 +12545,7 @@ async def rock_plus(request: RockAction, x_telegram_init_data: Optional[str] = H
     """«+» — в штурмовой отряд уходят ВСЕ подходящие орлы игрока (1 раз в сутки)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        await rock_require_active()
+        await rock_require_access(user_id)
         row = await fetch_user(user_id)
         fid = rock_my_faction(row)
         await rock_do_plus(user_id, row, fid)
@@ -12522,7 +12564,7 @@ async def rock_garrison(request: RockAction, x_telegram_init_data: Optional[str]
     на Скале в момент его начала (свежие силы)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        await rock_require_active()
+        await rock_require_access(user_id)
         row = await fetch_user(user_id)
         fid = rock_my_faction(row)
         snap = rock_snapshot(row)
@@ -12570,7 +12612,7 @@ async def rock_challenge(request: RockAction, x_telegram_init_data: Optional[str
     1-минутный бой, вызовы остальных отклоняются (is_under_challenge)."""
     user_id = authenticate(x_telegram_init_data, request.user_id)
     try:
-        st = await rock_require_active()
+        st = await rock_require_access(user_id)
         row = await fetch_user(user_id)
         fid = rock_my_faction(row)
         leader = rock_public_leader(st, fid)
@@ -12658,6 +12700,19 @@ async def rock_run_balancer(now: float) -> dict:
             "totals": {k: round(v) for k, v in totals.items()}}
 
 
+async def rock_wipe_test_data() -> None:
+    """Настоящий запуск после закрытого теста: фракции, Очки Заслуг,
+    исследования и лимиты, набранные в тесте (а до запуска это могли быть
+    только админы), стираются — все стартуют на равных; лента и архив теста — тоже."""
+    await store.users.update_many(
+        {"$or": [{"faction_id": {"$exists": True}}, {"merit": {"$exists": True}}, {"rock_research": {"$exists": True}}]},
+        {"$unset": {"faction_id": "", "faction_joined_at": "", "merit": "", "rock_research": "",
+                    "rock_attack_day": "", "rock_challenge_day": "", "rock_paid": ""}})
+    await store.rock_feed.delete_many({})
+    await store.rock_history.delete_many({})
+    ROCK_POWER_CACHE["data"] = None
+
+
 class AdminRockVisibility(BaseModel):
     active: bool
 
@@ -12674,6 +12729,7 @@ async def admin_rock_view() -> dict:
     siege = st.get("siege")
     return {
         "active": st.get("active"), "initialized": st.get("initialized"), "initializing": st.get("initializing"),
+        "test_mode": bool(st.get("test_mode")) and not st.get("initialized"), "testers": list(MAINTENANCE_WHITELIST),
         "activated_at": st.get("activated_at"), "owner": st.get("owner"),
         "factions": [{**ROCK_FACTIONS[f], **data[f], "leader": rock_public_leader(st, f),
                       "fail_streak": int((st.get("fail_streak") or {}).get(f) or 0), "rage_pct": rock_rage_pct(st, f),
@@ -12717,17 +12773,20 @@ async def admin_rock_activate(_: None = Depends(require_admin)):
                 raise HTTPException(status_code=409, detail="Запуск уже идёт или выполнен — обнови страницу")
             return {"initializing": True}, True
 
-        await rock_cas(claim)
+        st_claimed, _ = await rock_cas(claim)
         try:
+            if st_claimed.get("test_mode"):
+                await rock_wipe_test_data()
             bal = await rock_run_balancer(now)
         except Exception:
             await rock_cas(lambda s: ({"initializing": False}, True))
             raise
 
         def finish(s):
-            return {"active": True, "initialized": True, "initializing": False, "activated_at": now,
+            return {"active": True, "initialized": True, "initializing": False, "test_mode": False, "activated_at": now,
                     "leaders": bal["leaders"], "owner": bal["owner"], "merit_hour": int(now // 3600),
-                    "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None}, True
+                    "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None,
+                    "challenges": {}, "last_challenge": {}, "last_siege": None, "windows_used": [], "test_window": None}, True
 
         await rock_cas(finish)
         ROCK_POWER_CACHE["data"] = None
@@ -12768,8 +12827,8 @@ async def admin_rock_test_window(body: AdminRockTestWindow, _: None = Depends(re
         minutes = max(1, min(180, int(body.minutes or 60)))
 
         def mutate(s):
-            if not s.get("initialized"):
-                raise HTTPException(status_code=400, detail="Сначала запусти Скалу")
+            if not s.get("initialized") and not s.get("test_mode"):
+                raise HTTPException(status_code=400, detail="Сначала запусти Скалу или зайди в неё админом (закрытый тест)")
             if s.get("owner") == body.faction_id:
                 raise HTTPException(status_code=400, detail="Эта фракция владеет Скалой — ей нечего штурмовать")
             return {"test_window": {"key": f"test:{int(now)}", "faction": body.faction_id, "start": now, "end": now + minutes * 60}}, True
