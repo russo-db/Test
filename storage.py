@@ -416,6 +416,15 @@ class MongoStore:
         #  reason (почему распущено), finished_at}. Залог игрока лежит в его
         # документе — raid_entry {lobby, payment, amount, monster_id, at}.
         self.raids = client[db_name]["raid_lobbies"]
+        # 🏔 Орлиная Скала (см. раздел ОРЛИНАЯ СКАЛА в main.py): _id "state" —
+        # одно общее состояние (активность, владелец, лидеры фракций, вызовы,
+        # гарнизон, текущая осада, версия v для CAS-записи).
+        self.rock = client[db_name]["eagle_rock"]
+        # Лента системных сообщений фракций: {faction, ts, text, text_en}.
+        self.rock_feed = client[db_name]["rock_feed"]
+        # Архив осад/вызовов с выплатами Очков Заслуг: {_id, kind, payouts {uid: n},
+        # paid (выплаты разнесены), ...}. Выплата игроку идемпотентна (rock_paid).
+        self.rock_history = client[db_name]["rock_history"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -450,6 +459,10 @@ class MongoStore:
             (self.raids, [("status", 1), ("expires_at", 1)], {}),
             (self.raids, [("status", 1), ("battle_ends_at", 1)], {}),
             (self.raids, [("status", 1), ("created_at", -1)], {}),
+            (self.users, "faction_id", {"sparse": True}),
+            (self.rock_feed, [("faction", 1), ("ts", -1)], {}),
+            (self.rock_history, [("paid", 1), ("ts", 1)], {}),
+            (self.rock_history, [("ts", -1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -1541,12 +1554,12 @@ class MongoStore:
         ]
         if limit is not None:
             pipeline.append({"$limit": limit})
-        pipeline.append({"$project": {"name": 1, "pvp_rating": "$_rating"}})
+        pipeline.append({"$project": {"name": 1, "pvp_rating": "$_rating", "faction_id": 1}})
         docs = []
         async for doc in self.users.aggregate(pipeline):
             docs.append({
                 "user_id": doc["_id"], "name": doc.get("name") or "",
-                "pvp_rating": doc.get("pvp_rating"),
+                "pvp_rating": doc.get("pvp_rating"), "faction_id": doc.get("faction_id"),
             })
         return docs
 

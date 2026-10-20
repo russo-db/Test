@@ -689,5 +689,51 @@
       {"id": "potion_skin", "name": "Отвар Стальной Кожи", "cost": {"shimmer_mushroom": 4, "rock_crystal": 5}},
       {"id": "enchant_scroll", "name": "Свиток Заточки", "cost": {"blank_enchant_scroll": 1, "rock_crystal": 10}, "cost_particles": 5}
     ]
+  },
+  "eagle_rock": {
+    "min_eagle_level": 7,
+    "factions": [
+      {"id": "sun", "name": "Легион Кровавого Солнца", "name_en": "Legion of the Blood Sun", "color": "#ef4444", "icon": "☀️"},
+      {"id": "steel", "name": "Орден Небесной Стали", "name_en": "Order of Heavenly Steel", "color": "#3b82f6", "icon": "⚔️"},
+      {"id": "storm", "name": "Племя Вечного Шторма", "name_en": "Tribe of the Eternal Storm", "color": "#22c55e", "icon": "🌪️"}
+    ],
+    "utc_offset_hours": 3,
+    "windows": ["15:00", "20:00"],
+    "window_minutes": 60,
+    "siege_minutes": 30,
+    "round_seconds": 60,
+    "wave_size": 10,
+    "turns_per_round": 3,
+    "garrison_slots": 50,
+    "challenge_seconds": 60,
+    "challenge_min_eagles": 3,
+    "challenge_penalty": 15,
+    "veterans_top": 30,
+    "veterans_active_days": 7,
+    "overload_pct": 25,
+    "overload_min_gap": 300,
+    "merit_owner_hourly": 1,
+    "merit_garrison_hourly": 5,
+    "merit_per_damage": 50,
+    "merit_damage_cap": 20,
+    "merit_attack_win": 50,
+    "merit_attack_loss": 15,
+    "rage_step_pct": 20,
+    "rage_free_fails": 1,
+    "rage_cap_pct": 200,
+    "crit_cap_pct": 60,
+    "crit_mult": 2,
+    "research": [
+      {"cost": 50, "atk": 0.5, "def": 0.5, "hp": 2, "crit": 0.25, "spd": 0.25},
+      {"cost": 80, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
+      {"cost": 110, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
+      {"cost": 150, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 200, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 260, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 330, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 410, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
+      {"cost": 500, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
+      {"cost": 610, "atk": 2.0, "def": 2.0, "hp": 10, "crit": 1.0, "spd": 1.0}
+    ]
   }
 }

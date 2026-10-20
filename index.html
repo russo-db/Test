@@ -109,6 +109,80 @@
             .fog-page .fog-layer, .fog-page .fog-title { animation: none; }
         }
 
+        /* ---------- 🏔 Орлиная Скала (правый экран после запуска из админки) ---------- */
+        .fog-page .rock-hub { display: none; }
+        .fog-page.rock-on .fog-layer, .fog-page.rock-on .fog-title { display: none; }
+        .fog-page.rock-on {
+            background: radial-gradient(90% 55% at 50% 0%, rgba(120, 90, 200, 0.25), transparent 70%),
+                        linear-gradient(180deg, rgba(14, 9, 30, 0.96), rgba(8, 5, 18, 0.98));
+        }
+        .fog-page.rock-on .rock-hub {
+            display: block; position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+            padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(140px + env(safe-area-inset-bottom, 0px)); text-align: left;
+        }
+        .rock-title { font-family: 'Orbitron', 'Poppins', sans-serif; font-weight: 800; font-size: 20px; text-align: center; margin: 2px 0 4px; letter-spacing: 1px; }
+        .rock-sub { color: var(--text-muted); font-size: 12.5px; text-align: center; line-height: 1.45; margin-bottom: 12px; }
+        .rock-card { padding: 14px; border-radius: 18px; margin-bottom: 12px; }
+        .rock-card h3 { font-size: 15px; margin: 0 0 8px; }
+        .rock-muted { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+        .rock-tabs { display: flex; gap: 6px; margin: 4px 0 12px; }
+        .rock-tab { flex: 1 1 0; min-width: 0; padding: 7px 2px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05);
+                    color: var(--text-main); font-weight: 700; font-size: 11.5px; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.15; }
+        .rock-tab .rock-tab-ic { font-size: 17px; }
+        .rock-tab .rock-tab-tx { max-width: 100%; overflow-wrap: anywhere; }
+        .rock-tab.active { background: linear-gradient(135deg, rgba(245,158,11,0.32), rgba(168,85,247,0.3)); border-color: rgba(245,158,11,0.6); }
+        .rock-emblem { --fc: #fff; position: relative; flex: 0 0 auto; width: 46px; height: 54px; display: inline-flex; align-items: center; justify-content: center;
+                       font-size: 22px;
+                       clip-path: polygon(50% 0, 100% 14%, 100% 58%, 50% 100%, 0 58%, 0 14%); box-shadow: inset 0 0 0 2px rgba(255,215,120,0.6); }
+        .rock-emblem.big { width: 74px; height: 86px; font-size: 36px; }
+        .rock-emblem.mini { width: 18px; height: 21px; font-size: 10px; vertical-align: -4px; margin-right: 4px; }
+        .rock-fcard { --fc: #fff; display: flex; gap: 12px; align-items: center; padding: 12px; margin-bottom: 10px; border-radius: 16px; cursor: pointer;
+                      border: 1px solid rgba(255,255,255,0.2); }
+        .rock-fcard.disabled { opacity: 0.38; filter: grayscale(0.7); cursor: not-allowed; }
+        .rock-fcard .rock-fname { font-weight: 800; font-size: 14.5px; }
+        .rock-fcard .rock-finfo { flex: 1; min-width: 0; }
+        .rock-citadel { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px 0 6px; }
+        .rock-citadel svg { width: 150px; height: 112px; }
+        .rock-owner { font-weight: 800; font-size: 14px; text-align: center; }
+        .rock-phrase { min-height: 36px; text-align: center; font-size: 13px; font-weight: 700; color: #fde68a; margin: 6px 0 6px; line-height: 1.35; }
+        .rock-bar { position: relative; height: 16px; border-radius: 999px; overflow: hidden; background: var(--att, rgba(255,255,255,0.08)); border: 1px solid rgba(255,255,255,0.18); }
+        .rock-bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--def, #22c55e); transition: width 0.6s ease; }
+        .rock-bar-legend { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); margin-top: 4px; gap: 8px; }
+        .rock-timer { text-align: center; font-size: 13px; margin: 10px 0 4px; }
+        .rock-timer b { font-variant-numeric: tabular-nums; }
+        .rock-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .rock-actions .btn-primary, .rock-actions .btn-action { width: 100%; justify-content: center; }
+        .rock-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .rock-stat { padding: 9px 10px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: var(--text-muted); }
+        .rock-stat b { display: block; color: var(--text-main); font-size: 15px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .rock-log { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
+        .rock-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,0.07); font-size: 12.5px; }
+        .rock-row:last-child { border-bottom: none; }
+        .rock-row span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rock-medal { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; vertical-align: middle;
+                      background: radial-gradient(circle at 35% 30%, #fff3b0, #f5b301 55%, #a86b00); box-shadow: 0 0 0 2px #7a4b00 inset, 0 2px 8px rgba(245, 179, 1, 0.45); }
+        .rock-merit { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+        .rock-merit b { font-family: 'Orbitron', 'Poppins', sans-serif; font-size: 20px; color: #fcd34d; }
+        .rock-result { text-align: center; padding: 10px; border-radius: 14px; margin-top: 8px; font-weight: 700; font-size: 13px; }
+        .rock-result.won { background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.45); }
+        .rock-result.lost { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); }
+        .rock-feed { font-size: 12.5px; line-height: 1.45; }
+        .rock-feed div { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .rock-feed small { color: var(--text-muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+        .rock-scroll { color: #3b2508; border-radius: 18px; padding: 16px 14px; margin-bottom: 12px;
+                       background: radial-gradient(120% 80% at 50% 0%, #f7e7bf, #e9cf93 60%, #d7b06a); box-shadow: inset 0 0 0 2px #a8793a, inset 0 0 24px rgba(120, 72, 10, 0.35), 0 8px 24px rgba(0,0,0,0.45); }
+        .rock-scroll h3 { font-family: 'Orbitron', 'Poppins', sans-serif; text-align: center; color: #5a3608; margin: 0 0 4px; }
+        .rock-scroll .rock-muted { color: #6b4a1a; text-align: center; }
+        .rock-lvl { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px dashed rgba(90, 54, 8, 0.35); font-size: 12px; }
+        .rock-lvl:last-child { border-bottom: none; }
+        .rock-lvl .rock-lvl-n { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800;
+                                background: rgba(90, 54, 8, 0.14); border: 1px solid rgba(90, 54, 8, 0.45); }
+        .rock-lvl.done .rock-lvl-n { background: #5a3608; color: #fde68a; }
+        .rock-lvl .rock-lvl-txt { flex: 1; min-width: 0; line-height: 1.4; }
+        .rock-lvl .btn-primary { flex: 0 0 auto; width: auto; padding: 8px 10px; font-size: 11.5px; white-space: nowrap; }
+        .rock-busy { text-align: center; padding: 10px; border-radius: 12px; font-weight: 700; font-size: 13px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.45); }
+        .rock-lvl.locked { opacity: 0.55; }
+
         /* Big soft neon blobs drifting behind everything */
         .ambient-orb { position: absolute; border-radius: 50%; filter: blur(70px); z-index: 0; opacity: 0.45; animation: floatOrb 15s infinite alternate ease-in-out; pointer-events: none; }
         .orb-1 { top: -12%; left: -14%; width: 320px; height: 320px; background: var(--accent-violet); }
@@ -2126,6 +2200,7 @@
             <div class="fog-layer l1"></div>
             <div class="fog-layer l2"></div>
             <div class="fog-title" data-i18n="fog.soon">Скоро...</div>
+            <div class="rock-hub" id="rockHub"></div>
         </div>
 
         <!-- BOTTOM NAVIGATION -->
@@ -3087,6 +3162,92 @@
                 'hunt.farm.collectLoot': 'Забрать добычу',
                 'hunt.farm.openHunt': 'Открыть Охоту',
                 'hunt.nest.discountNote': '📜 Свиток Крафта: этот крафт — {gold} 🪙 вместо {full} 🪙',
+                'rock.loading': 'Загрузка Орлиной Скалы…',
+                'rock.chooseTitle': '🏔 Орлиная Скала',
+                'rock.chooseSub': 'Выбери фракцию — навсегда. С ней ты будешь штурмовать и оборонять Скалу, а её герб появится рядом с твоим ником на Арене.',
+                'rock.members': 'Воинов: {n} · Сила: {p}',
+                'rock.leader': 'Лидер: {name}',
+                'rock.noLeader': 'Лидера пока нет — первый вступивший возглавит фракцию',
+                'rock.overloaded': 'Эта фракция перегружена силами, выберите другую!',
+                'rock.joinTitle': 'Вступить во фракцию?',
+                'rock.joinText': '«{name}» — выбор навсегда, сменить фракцию будет нельзя.',
+                'rock.joinBtn': 'Вступить',
+                'rock.tab.rock': 'Орлиная Скала',
+                'rock.tab.faction': 'Моя Фракция',
+                'rock.tab.research': 'Исследования',
+                'rock.ownerLine': 'Скалу удерживает: {name}',
+                'rock.garrison': 'Гарнизон: {n}/{slots}',
+                'rock.defense': '🛡️ Оборона {pct}%',
+                'rock.assault': '⚔️ Штурм {pct}%',
+                'rock.siegeTimer': 'Штурм: {att} → {def} · осталось {time} · раунд {r}/{total}',
+                'rock.windowOpen': 'Окно штурма открыто для «{name}» ещё {time}',
+                'rock.nextWindow': 'Следующее окно: «{name}» в {at} (через {time})',
+                'rock.noWindows': 'Окна штурма появятся после назначения владельца',
+                'rock.declare': '⚔️ Объявить общий штурм Скалы',
+                'rock.declareHint': 'Ты — Лидер. Объяви штурм, и вся фракция сможет встать в отряд на 30 минут.',
+                'rock.waitLeader': 'Окно открыто — ждём, когда Лидер объявит штурм.',
+                'rock.windowUsed': 'В этом окне штурм уже был.',
+                'rock.plus': '➕ В штурмовой отряд (все орлы {lvl} ур.)',
+                'rock.plusUsed': 'Сегодня ты уже записывался на штурм — снова завтра.',
+                'rock.mineAtt': 'Ты в отряде: орлов живы {alive}/{n} · урон {dmg}',
+                'rock.mineDef': 'Твои орлы на Скале: живы {alive}/{n} · впитано {abs}',
+                'rock.reserve': '🛡️ Резерв подкреплений',
+                'rock.reserveHint': 'Займи выбитые места гарнизона свежими орлами — только если твоих орлов не было на Скале в начале штурма.',
+                'rock.toGarrison': '🛡️ Встать в гарнизон Скалы',
+                'rock.garrisonHint': 'Орлы в гарнизоне получают +{n} Очков Заслуг в час и встречают штурм первыми.',
+                'rock.inGarrison': 'Твоих орлов в гарнизоне: {n} (+{merit} Заслуг/ч)',
+                'rock.needEagles': 'Нужен хотя бы один орёл {lvl} ур., не выставленный на рынок.',
+                'rock.siegeTitle': '⚔️ Идёт штурм',
+                'rock.attackers': 'Штурмовой отряд',
+                'rock.defenders': 'Гарнизон',
+                'rock.alive': '{a}/{t} живы',
+                'rock.players': 'игроков: {n}',
+                'rock.logLine': 'Раунд {r}: пало атакующих {a}, защитников {d}',
+                'rock.lastWon': '🏔 «{att}» захватил Скалу у «{def}»!',
+                'rock.lastLost': '🛡️ «{def}» отстоял Скалу от «{att}»',
+                'rock.lastMine': 'Твоя награда: +{n} Очков Заслуг',
+                'rock.garrisonList': '🛡️ Гарнизон Скалы',
+                'rock.garrisonEmpty': 'Гарнизон пуст — Скалу некому защищать!',
+                'rock.eagles': 'орлов: {n}',
+                'rock.merit': 'Очки Заслуг',
+                'rock.meritHint': '+1 в час всей фракции-владельцу Скалы, +5 в час гарнизону, награды за штурм и бонус за урон.',
+                'rock.rage': '🔥 Ярость Аутсайдера: +{pct}% к атаке и HP орлов на штурме',
+                'rock.rageNone': 'Ярость Аутсайдера: нет (копится после 2 неудачных штурмов подряд)',
+                'rock.youLeader': '👑 Ты — Лидер фракции. Принимай вызовы и веди штурм!',
+                'rock.challenge': '⚔️ Бросить вызов Лидеру',
+                'rock.challengeBusy': 'Лидер защищает трон в бою против {name}',
+                'rock.challengeUsed': 'Вызов можно бросать 1 раз в сутки — снова завтра.',
+                'rock.challengeNeed': 'Нужно минимум {n} орла {lvl} ур. (сейчас {have}).',
+                'rock.challengeHint': 'Бой всех твоих орлов {lvl} ур. против всех орлов Лидера. Победа — трон твой. Поражение — −{pen} Очков Заслуг в пользу Лидера.',
+                'rock.challengeTitle': 'Бросить вызов Лидеру?',
+                'rock.challengeText': 'Бой {name} длится 1 минуту. Вызов — 1 раз в сутки.',
+                'rock.challengeWon': '👑 {c} сверг {l} и занял трон!',
+                'rock.challengeLost': '🛡️ {l} отстоял трон против {c} (+{pen} Заслуг)',
+                'rock.feedTitle': '📜 Вести фракции',
+                'rock.feedEmpty': 'Пока тихо…',
+                'rock.researchTitle': '🧬 Древний Свиток Исследований',
+                'rock.researchSub': 'Общая ветка фракции: каждый уровень навсегда прибавляет к БАЗЕ всех твоих орлов на Скале.',
+                'rock.researchTotal': 'Сейчас: +{atk} атака, +{def} защита, +{hp} HP, +{crit}% крит, +{spd} скорость',
+                'rock.lvlBonus': '+{atk} атк · +{def} защ · +{hp} HP · +{crit}% крит · +{spd} скор',
+                'rock.learn': 'Изучить · {cost} 🏅',
+                'rock.learned': '✓ изучено',
+                'rock.researchMax': 'Ветка изучена полностью!',
+                'rock.toast.joined': '🏔 Добро пожаловать во фракцию!',
+                'rock.toast.declared': '⚔️ Штурм объявлен!',
+                'rock.toast.plus': '➕ Твои орлы в штурмовом отряде!',
+                'rock.toast.garrison': '🛡️ Орлов на Скале: +{n}',
+                'rock.toast.challenge': '⚔️ Вызов брошен — бой идёт 1 минуту',
+                'rock.toast.research': '🧬 Уровень {n} изучен!',
+                'rock.phrase.att1': '{att} пробивает ворота Скалы!',
+                'rock.phrase.att2': '{att} обрушивает когти на стены Цитадели!',
+                'rock.phrase.att3': 'Крылья воинов «{att}» закрыли небо над Скалой!',
+                'rock.phrase.def1': '{def} намертво сдерживает атаку!',
+                'rock.phrase.def2': '{def} устраивает врагу тёплый приём!',
+                'rock.phrase.def3': 'Стены держатся — {def} не отступает ни на шаг!',
+                'rock.phrase.idle1': '{own} гордо реет над Орлиной Скалой.',
+                'rock.phrase.idle2': '{own} точит когти в ожидании штурма.',
+                'rock.phrase.idle3': 'Над Скалой тихо… но ветер приносит запах битвы.',
+                'rock.arenaFaction': 'Фракция',
             },
             en: {
                 'nav.farm': 'Eagles', 'nav.eggs': 'Eggs', 'nav.missions': 'Missions', 'nav.market': 'Market', 'nav.profile': 'Profile',
@@ -3713,6 +3874,92 @@
                 'hunt.farm.collectLoot': 'Collect loot',
                 'hunt.farm.openHunt': 'Open the Hunt',
                 'hunt.nest.discountNote': '📜 Crafting Scroll: this craft costs {gold} 🪙 instead of {full} 🪙',
+                'rock.loading': 'Loading the Eagle Rock…',
+                'rock.chooseTitle': '🏔 Eagle Rock',
+                'rock.chooseSub': 'Choose a faction — forever. With it you will storm and defend the Rock, and its crest will appear next to your name in the Arena.',
+                'rock.members': 'Warriors: {n} · Power: {p}',
+                'rock.leader': 'Leader: {name}',
+                'rock.noLeader': 'No Leader yet — the first to join will lead the faction',
+                'rock.overloaded': 'This faction is overloaded with power, choose another one!',
+                'rock.joinTitle': 'Join this faction?',
+                'rock.joinText': '«{name}» — this choice is permanent, you cannot change factions.',
+                'rock.joinBtn': 'Join',
+                'rock.tab.rock': 'Eagle Rock',
+                'rock.tab.faction': 'My Faction',
+                'rock.tab.research': 'Research',
+                'rock.ownerLine': 'The Rock is held by: {name}',
+                'rock.garrison': 'Garrison: {n}/{slots}',
+                'rock.defense': '🛡️ Defense {pct}%',
+                'rock.assault': '⚔️ Assault {pct}%',
+                'rock.siegeTimer': 'Assault: {att} → {def} · {time} left · round {r}/{total}',
+                'rock.windowOpen': 'The assault window is open for «{name}» for {time}',
+                'rock.nextWindow': 'Next window: «{name}» at {at} (in {time})',
+                'rock.noWindows': 'Assault windows appear once the Rock has an owner',
+                'rock.declare': '⚔️ Declare a full assault on the Rock',
+                'rock.declareHint': 'You are the Leader. Declare the assault and the whole faction can join the squad for 30 minutes.',
+                'rock.waitLeader': 'The window is open — waiting for the Leader to declare the assault.',
+                'rock.windowUsed': 'An assault has already happened in this window.',
+                'rock.plus': '➕ Join the assault squad (all level {lvl} eagles)',
+                'rock.plusUsed': 'You already joined an assault today — come back tomorrow.',
+                'rock.mineAtt': 'You are in the squad: eagles alive {alive}/{n} · damage {dmg}',
+                'rock.mineDef': 'Your eagles on the Rock: alive {alive}/{n} · absorbed {abs}',
+                'rock.reserve': '🛡️ Send reinforcements',
+                'rock.reserveHint': 'Fill the fallen garrison slots with fresh eagles — only if your eagles were not on the Rock when the assault began.',
+                'rock.toGarrison': '🛡️ Join the Rock garrison',
+                'rock.garrisonHint': 'Garrison eagles earn +{n} Merit per hour and meet the assault first.',
+                'rock.inGarrison': 'Your eagles in the garrison: {n} (+{merit} Merit/h)',
+                'rock.needEagles': 'You need at least one level {lvl} eagle that is not listed on the market.',
+                'rock.siegeTitle': '⚔️ Assault in progress',
+                'rock.attackers': 'Assault squad',
+                'rock.defenders': 'Garrison',
+                'rock.alive': '{a}/{t} alive',
+                'rock.players': 'players: {n}',
+                'rock.logLine': 'Round {r}: attackers fell {a}, defenders fell {d}',
+                'rock.lastWon': '🏔 «{att}» captured the Rock from «{def}»!',
+                'rock.lastLost': '🛡️ «{def}» held the Rock against «{att}»',
+                'rock.lastMine': 'Your reward: +{n} Merit',
+                'rock.garrisonList': '🛡️ Rock garrison',
+                'rock.garrisonEmpty': 'The garrison is empty — nobody defends the Rock!',
+                'rock.eagles': 'eagles: {n}',
+                'rock.merit': 'Merit Points',
+                'rock.meritHint': '+1 per hour for the whole faction holding the Rock, +5 per hour for the garrison, assault rewards and a damage bonus.',
+                'rock.rage': '🔥 Outsider Rage: +{pct}% attack and HP for assault eagles',
+                'rock.rageNone': 'Outsider Rage: none (builds up after 2 failed assaults in a row)',
+                'rock.youLeader': '👑 You are the faction Leader. Accept challenges and lead the assault!',
+                'rock.challenge': '⚔️ Challenge the Leader',
+                'rock.challengeBusy': 'The Leader is defending the throne against {name}',
+                'rock.challengeUsed': 'You can challenge once per day — come back tomorrow.',
+                'rock.challengeNeed': 'You need at least {n} level {lvl} eagles (you have {have}).',
+                'rock.challengeHint': 'All your level {lvl} eagles fight all of the Leader\'s eagles. Win — the throne is yours. Lose — −{pen} Merit to the Leader.',
+                'rock.challengeTitle': 'Challenge the Leader?',
+                'rock.challengeText': 'The duel with {name} lasts 1 minute. One challenge per day.',
+                'rock.challengeWon': '👑 {c} overthrew {l} and took the throne!',
+                'rock.challengeLost': '🛡️ {l} defended the throne against {c} (+{pen} Merit)',
+                'rock.feedTitle': '📜 Faction news',
+                'rock.feedEmpty': 'All quiet so far…',
+                'rock.researchTitle': '🧬 Ancient Scroll of Research',
+                'rock.researchSub': 'The faction\'s shared branch: each level permanently adds to the BASE stats of all your eagles on the Rock.',
+                'rock.researchTotal': 'Now: +{atk} attack, +{def} defense, +{hp} HP, +{crit}% crit, +{spd} speed',
+                'rock.lvlBonus': '+{atk} atk · +{def} def · +{hp} HP · +{crit}% crit · +{spd} spd',
+                'rock.learn': 'Learn · {cost} 🏅',
+                'rock.learned': '✓ learned',
+                'rock.researchMax': 'The branch is fully researched!',
+                'rock.toast.joined': '🏔 Welcome to the faction!',
+                'rock.toast.declared': '⚔️ Assault declared!',
+                'rock.toast.plus': '➕ Your eagles joined the assault squad!',
+                'rock.toast.garrison': '🛡️ Eagles on the Rock: +{n}',
+                'rock.toast.challenge': '⚔️ Challenge thrown — the duel lasts 1 minute',
+                'rock.toast.research': '🧬 Level {n} learned!',
+                'rock.phrase.att1': '{att} is breaking through the Rock gates!',
+                'rock.phrase.att2': '{att} brings its talons down on the Citadel walls!',
+                'rock.phrase.att3': 'The wings of {att} have covered the sky above the Rock!',
+                'rock.phrase.def1': '{def} holds the attack like a stone wall!',
+                'rock.phrase.def2': '{def} gives the enemy a warm welcome!',
+                'rock.phrase.def3': 'The walls hold — {def} does not give an inch!',
+                'rock.phrase.idle1': '{own} proudly soars above the Eagle Rock.',
+                'rock.phrase.idle2': '{own} sharpens its talons awaiting the assault.',
+                'rock.phrase.idle3': 'The Rock is quiet… but the wind smells of battle.',
+                'rock.arenaFaction': 'Faction',
             },
         };
 
@@ -8593,6 +8840,7 @@
             page.setAttribute('aria-hidden', 'false');
             if (!wasOpen) haptic.impact('light');
             try { if (tg.BackButton) { tg.BackButton.onClick(onFogBack); tg.BackButton.show(); } } catch (e) {}
+            if (!wasOpen) rockStartPolling();   // 🏔 Орлиная Скала: свежее состояние, пока экран открыт
         }
 
         function closeFogPage(instant) {
@@ -8610,6 +8858,7 @@
             page.classList.remove('open', 'dragging');
             page.setAttribute('aria-hidden', 'true');
             try { if (tg.BackButton) { tg.BackButton.offClick(onFogBack); tg.BackButton.hide(); } } catch (e) {}
+            rockStopPolling();
         }
 
         function onFogBack() { closeFogPage(false); }
@@ -8711,6 +8960,348 @@
             // страховкой по таймеру (под нагрузкой событие может опоздать или не прийти)
             [farm, page].forEach(el => ['transitionend', 'transitioncancel'].forEach(ev =>
                 el.addEventListener(ev, e => { if (e.target === el) el.classList.remove('fog-anim'); })));
+        }
+
+        // ---------- 🏔 ОРЛИНАЯ СКАЛА: хаб фракций на правом экране ----------
+        // До запуска из админки сервер отвечает {active:false} — остаётся туман
+        // и «Скоро...». После запуска туман уходит, игрок без фракции видит
+        // выбор из трёх карточек, остальные — три вкладки хаба.
+        let rockData = null;
+        let rockTab = 'rock';
+        let rockPollTimer = null;
+        let rockTickTimer = null;
+        let rockLoadSeq = 0;
+        let rockPhrase = { at: 0, key: '', text: '' };
+
+        function rockFaction(id) { return rockData && (rockData.factions || []).find(f => f.id === id) || null; }
+        function rockFName(f) { return f ? (LANG === 'en' ? (f.name_en || f.name) : f.name) : '—'; }
+        function rockFNameById(id) { return rockFName(rockFaction(id)); }
+        function rockRgba(hex, a) {
+            const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+            if (!m) return `rgba(255,255,255,${a})`;
+            const n = parseInt(m[1], 16);
+            return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+        }
+        function rockBadge(icon, color) {
+            if (!icon) return '';
+            const bg = `linear-gradient(160deg, ${rockRgba(color, 1)}, ${rockRgba(color, 0.45)} 70%, rgba(0,0,0,0.6))`;
+            return `<span class="rock-emblem mini" style="background:${bg}">${huntEsc(icon)}</span>`;
+        }
+        function rockEmblem(f, size) {
+            if (!f) return '';
+            const bg = `linear-gradient(160deg, ${rockRgba(f.color, 1)}, ${rockRgba(f.color, 0.45)} 70%, rgba(0,0,0,0.6))`;
+            return `<span class="rock-emblem ${size || ''}" style="background:${bg}">${huntEsc(f.icon)}</span>`;
+        }
+        function rockNum(v) { v = Number(v) || 0; return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100); }
+        function rockClock(ts) {
+            try { return new Date(ts * 1000).toLocaleTimeString(LANG === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }); }
+            catch (e) { return ''; }
+        }
+        function rockUntil(ts) { return `<b data-rock-until="${Number(ts) || 0}">${formatCountdown(Math.max(0, (Number(ts) || 0) - serverNow()))}</b>`; }
+
+        async function loadRock(silent) {
+            if (offlineOnly || !state.userId) return;
+            const seq = ++rockLoadSeq;
+            try {
+                const response = await fetch(`api/rock/state?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!response.ok) return;
+                const data = await response.json();
+                if (seq !== rockLoadSeq) return;   // пришёл ответ старого запроса — пропускаем
+                rockData = data;
+                renderRock();
+            } catch (e) {
+                if (!silent) toast(t('market.serverError'));
+            }
+        }
+
+        let rockLastPoll = 0;
+        function rockStartPolling() {
+            rockStopPolling();
+            loadRock(true);
+            rockLastPoll = Date.now();
+            // во время штурма или вызова — каждые 4 с, иначе раз в 15 с
+            rockPollTimer = setInterval(() => {
+                const fast = rockData && rockData.active && (rockData.siege || rockData.challenge);
+                if (fast || Date.now() - rockLastPoll > 15000) { rockLastPoll = Date.now(); loadRock(true); }
+            }, 4000);
+            rockTickTimer = setInterval(tickRock, 1000);
+        }
+
+        function rockStopPolling() {
+            if (rockPollTimer) clearInterval(rockPollTimer);
+            if (rockTickTimer) clearInterval(rockTickTimer);
+            rockPollTimer = null; rockTickTimer = null;
+        }
+
+        function tickRock() {
+            const now = serverNow();
+            let expired = false;
+            document.querySelectorAll('#rockHub [data-rock-until]').forEach(el => {
+                const left = Number(el.dataset.rockUntil) - now;
+                if (left <= 0 && el.dataset.rockDone !== '1') { el.dataset.rockDone = '1'; expired = true; }
+                el.textContent = formatCountdown(Math.max(0, left));
+            });
+            // таймер дошёл до нуля (бой вызова, раунд, окно) — сразу свежие данные
+            if (expired) setTimeout(() => loadRock(true), 1200);
+            if (rockData && rockData.active && rockData.me && rockData.me.faction_id && rockTab === 'rock' && Date.now() - rockPhrase.at > 180000) renderRock();
+        }
+
+        function renderRock() {
+            const page = document.getElementById('fogPage');
+            const hub = document.getElementById('rockHub');
+            if (!page || !hub) return;
+            const on = !!(rockData && rockData.active);
+            page.classList.toggle('rock-on', on);
+            if (!on) { hub.innerHTML = ''; return; }
+            rockFitTop();
+            const r = rockData;
+            let html;
+            if (!r.me || !r.me.faction_id) html = renderRockChoose(r);
+            else {
+                html = `<div class="rock-tabs">
+                    ${['rock', 'faction', 'research'].map(k => `<div class="rock-tab ${rockTab === k ? 'active' : ''}" onclick="rockSwitchTab('${k}')"><span class="rock-tab-ic">${{ rock: '🏔', faction: '💬', research: '🧬' }[k]}</span><span class="rock-tab-tx">${t('rock.tab.' + k)}</span></div>`).join('')}
+                </div>`;
+                if (rockTab === 'faction') html += renderRockFaction(r);
+                else if (rockTab === 'research') html += renderRockResearch(r);
+                else html += renderRockMain(r);
+            }
+            setHTMLIfChanged(hub, goldify(html));
+        }
+
+        // верхняя панель с балансами лежит поверх правого экрана — хаб начинается под ней
+        function rockFitTop() {
+            const hub = document.getElementById('rockHub');
+            const head = document.querySelector('.top-header');
+            if (!hub || !head) return;
+            const bottom = Math.max(0, Math.round(head.getBoundingClientRect().bottom));
+            hub.style.paddingTop = `${bottom + 12}px`;
+        }
+        window.addEventListener('resize', () => { if (rockData && rockData.active) rockFitTop(); });
+
+        function rockSwitchTab(k) { haptic.select(); rockTab = k; renderRock(); }
+
+        function renderRockChoose(r) {
+            return `<div class="rock-title">${t('rock.chooseTitle')}</div>
+                <div class="rock-sub">${t('rock.chooseSub')}</div>
+                ${(r.factions || []).map(f => `<div class="rock-fcard ${f.overloaded ? 'disabled' : ''}" data-faction="${huntEsc(f.id)}"
+                        style="background:linear-gradient(135deg, ${rockRgba(f.color, 0.24)}, rgba(14,9,26,0.88)); border-color:${rockRgba(f.color, 0.6)}"
+                        onclick="rockAskJoin('${huntEsc(f.id)}')">
+                    ${rockEmblem(f, 'big')}
+                    <div class="rock-finfo">
+                        <div class="rock-fname" style="color:${rockRgba(f.color, 1)}">${huntEsc(rockFName(f))}</div>
+                        <div class="rock-muted">${t('rock.members', { n: f.members, p: rockNum(f.power) })}</div>
+                        <div class="rock-muted">${f.leader ? t('rock.leader', { name: `👑 ${huntEsc(f.leader.name)}` }) : t('rock.noLeader')}</div>
+                        ${f.overloaded ? `<div class="rock-muted" style="color:#fca5a5; margin-top:4px">${t('rock.overloaded')}</div>` : ''}
+                    </div>
+                </div>`).join('')}`;
+        }
+
+        function rockAskJoin(fid) {
+            const f = rockFaction(fid);
+            if (!f) return;
+            if (f.overloaded) { toast(t('rock.overloaded')); haptic.notify('warning'); return; }
+            huntConfirm(t('rock.joinTitle'), `${rockEmblem(f)}<br>${t('rock.joinText', { name: huntEsc(rockFName(f)) })}`, t('rock.joinBtn'), async () => {
+                if (await rockPost('api/rock/join', { faction_id: fid }, 'rock-join')) { toast(t('rock.toast.joined')); rockTab = 'rock'; renderRock(); }
+            });
+        }
+
+        function rockCitadelSvg(color) {
+            const c = rockRgba(color, 1), d = rockRgba(color, 0.55);
+            return `<svg viewBox="0 0 150 112" aria-hidden="true">
+                <defs><linearGradient id="rockMt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b7fa8"/><stop offset="1" stop-color="#2a2140"/></linearGradient></defs>
+                <path d="M0 112 L38 48 L58 70 L80 30 L112 74 L126 58 L150 112 Z" fill="url(#rockMt)"/>
+                <path d="M80 30 L72 44 L88 44 Z" fill="#e9e4ff" opacity="0.8"/>
+                <rect x="58" y="26" width="44" height="40" fill="${d}" stroke="${c}" stroke-width="2"/>
+                <rect x="66" y="12" width="12" height="20" fill="${c}"/><rect x="82" y="12" width="12" height="20" fill="${c}"/>
+                <path d="M66 12 h3 v-4 h3 v4 h3 v-4 h3 v4" fill="${c}"/><path d="M82 12 h3 v-4 h3 v4 h3 v-4 h3 v4" fill="${c}"/>
+                <path d="M74 66 v-14 a6 6 0 0 1 12 0 v14 Z" fill="#140c26"/>
+                <path d="M80 0 v12" stroke="#fcd34d" stroke-width="1.5"/><path d="M80 1 l14 4 l-14 4 Z" fill="${c}"/>
+            </svg>`;
+        }
+
+        function rockPickPhrase(r) {
+            const s = r.siege;
+            const owner = rockFNameById(r.owner);
+            let pool, params;
+            if (s) { pool = ['att1', 'att2', 'att3', 'def1', 'def2', 'def3']; params = { att: rockFNameById(s.attacker), def: rockFNameById(s.defender) }; }
+            else { pool = ['idle1', 'idle2', 'idle3']; params = { own: owner }; }
+            const key = (s ? 's' : 'i') + ':' + (r.owner || '');
+            if (Date.now() - rockPhrase.at > 180000 || rockPhrase.key !== key) {
+                const pick = pool[Math.floor(Math.random() * pool.length)];
+                rockPhrase = { at: Date.now(), key, text: t('rock.phrase.' + pick, params) };
+            }
+            return rockPhrase.text;
+        }
+
+        function renderRockMain(r) {
+            const me = r.me, owner = rockFaction(r.owner), s = r.siege;
+            let html = `<div class="rock-card glass-panel">
+                <div class="rock-citadel">${rockCitadelSvg(owner ? owner.color : '#9ca3af')}
+                    <div class="rock-owner">${owner ? rockEmblem(owner, 'mini') : ''}${t('rock.ownerLine', { name: `<span style="color:${owner ? rockRgba(owner.color, 1) : '#fff'}">${huntEsc(rockFName(owner))}</span>` })}</div>
+                </div>
+                <div class="rock-phrase">${huntEsc(rockPickPhrase(r))}</div>`;
+            if (s) {
+                const att = rockFaction(s.attacker), def = rockFaction(s.defender);
+                const pct = Math.round((Number(s.domination) || 0) * 100);
+                html += `<div class="rock-bar" style="--att:${rockRgba(att && att.color, 0.85)}; --def:${rockRgba(def && def.color, 0.95)}"><i style="width:${pct}%"></i></div>
+                    <div class="rock-bar-legend"><span>${t('rock.defense', { pct })}</span><span>${t('rock.assault', { pct: 100 - pct })}</span></div>
+                    <div class="rock-timer">${t('rock.siegeTimer', { att: huntEsc(rockFName(att)), def: huntEsc(rockFName(def)), time: rockUntil(s.ends_at), r: s.round, total: s.rounds_total })}</div>`;
+            } else {
+                const g = r.garrison || { count: 0, slots: r.garrison_slots };
+                const pct = Math.round(100 * (g.count || 0) / Math.max(1, g.slots || 1));
+                html += `<div class="rock-bar" style="--def:${rockRgba(owner && owner.color, 0.95)}"><i style="width:${pct}%"></i></div>
+                    <div class="rock-bar-legend"><span>${t('rock.garrison', { n: g.count || 0, slots: g.slots })}</span><span>${pct}%</span></div>`;
+                if (r.window) html += `<div class="rock-timer">${t('rock.windowOpen', { name: huntEsc(rockFNameById(r.window.faction)), time: rockUntil(r.window.end) })}</div>`;
+                else {
+                    const nxt = (r.upcoming || []).find(w => w.start > serverNow());
+                    html += `<div class="rock-timer">${nxt ? t('rock.nextWindow', { name: huntEsc(rockFNameById(nxt.faction)), at: rockClock(nxt.start), time: rockUntil(nxt.start) }) : t('rock.noWindows')}</div>`;
+                }
+            }
+            // действия
+            const acts = [];
+            if (me.can_declare) acts.push(`<button class="btn-primary" onclick="rockDeclare()">${t('rock.declare')}</button><div class="rock-muted">${t('rock.declareHint')}</div>`);
+            else if (!s && r.window && r.window.faction === me.faction_id) acts.push(`<div class="rock-muted" style="text-align:center">${r.window.used ? t('rock.windowUsed') : t('rock.waitLeader')}</div>`);
+            if (s && s.attacker === me.faction_id) {
+                if (s.mine && s.mine.side === 'a') acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.mineAtt', { alive: s.mine.alive, n: s.mine.eagles, dmg: s.mine.dmg })}</div>`);
+                else if (me.can_plus) acts.push(`<button class="btn-primary" onclick="rockPlus()">${t('rock.plus', { lvl: r.min_level })}</button>`);
+                else if (me.attack_used) acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.plusUsed')}</div>`);
+                else if (!me.eligible) acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.needEagles', { lvl: r.min_level })}</div>`);
+            }
+            if (r.owner === me.faction_id) {
+                if (s && s.mine && s.mine.side === 'd') acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.mineDef', { alive: s.mine.alive, n: s.mine.eagles, abs: s.mine.abs })}</div>`);
+                else if (!s && me.in_garrison > 0) acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.inGarrison', { n: me.in_garrison, merit: 5 })}</div>`);
+                if (me.can_reserve) acts.push(`<button class="btn-action" onclick="rockGarrison()">${s ? t('rock.reserve') : t('rock.toGarrison')}</button><div class="rock-muted">${s ? t('rock.reserveHint') : t('rock.garrisonHint', { n: 5 })}</div>`);
+                else if (!me.eligible && !me.in_garrison) acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.needEagles', { lvl: r.min_level })}</div>`);
+            }
+            if (acts.length) html += `<div class="rock-actions">${acts.join('')}</div>`;
+            html += `</div>`;
+            if (s) {
+                html += `<div class="rock-card glass-panel"><h3>${t('rock.siegeTitle')}</h3>
+                    <div class="rock-stat-grid">
+                        <div class="rock-stat">${t('rock.attackers')}<b>${t('rock.alive', { a: s.att_alive, t: s.att_total })}</b>${t('rock.players', { n: s.att_players })}</div>
+                        <div class="rock-stat">${t('rock.defenders')}<b>${t('rock.alive', { a: s.def_alive, t: s.def_total })}</b>&nbsp;</div>
+                    </div>
+                    <div class="rock-log">${(s.log || []).slice().reverse().map(l => t('rock.logLine', { r: l.round, a: l.att_lost, d: l.def_lost })).join('<br>')}</div>
+                </div>`;
+            }
+            if (r.last_siege) {
+                const ls = r.last_siege;
+                html += `<div class="rock-result ${ls.won ? 'won' : 'lost'}">${ls.won
+                    ? t('rock.lastWon', { att: huntEsc(rockFNameById(ls.attacker)), def: huntEsc(rockFNameById(ls.defender)) })
+                    : t('rock.lastLost', { att: huntEsc(rockFNameById(ls.attacker)), def: huntEsc(rockFNameById(ls.defender)) })}
+                    ${ls.my_merit ? `<div style="margin-top:4px">${t('rock.lastMine', { n: ls.my_merit })}</div>` : ''}</div>`;
+            }
+            const g = r.garrison;
+            html += `<div class="rock-card glass-panel" style="margin-top:12px"><h3>${t('rock.garrisonList')} <span class="rock-muted">${t('rock.garrison', { n: g ? g.count : 0, slots: r.garrison_slots })}</span></h3>
+                ${g && g.players && g.players.length ? g.players.map(p => `<div class="rock-row"><span>${huntEsc(p.name)}</span><span class="rock-muted">${t('rock.eagles', { n: p.eagles })}</span></div>`).join('')
+                    : `<div class="rock-muted">${t('rock.garrisonEmpty')}</div>`}
+            </div>`;
+            return html;
+        }
+
+        function renderRockFaction(r) {
+            const me = r.me, f = rockFaction(me.faction_id);
+            let html = `<div class="rock-card glass-panel" style="text-align:center; background:linear-gradient(160deg, ${rockRgba(f && f.color, 0.22)}, rgba(14,9,26,0.85))">
+                ${rockEmblem(f, 'big')}
+                <div class="rock-title" style="color:${rockRgba(f && f.color, 1)}">${huntEsc(rockFName(f))}</div>
+                <div class="rock-muted">${t('rock.members', { n: f ? f.members : 0, p: rockNum(f ? f.power : 0) })}</div>
+                <div style="margin-top:6px; font-weight:700">${f && f.leader ? t('rock.leader', { name: `👑 ${huntEsc(f.leader.name)}` }) : t('rock.noLeader')}</div>
+            </div>
+            <div class="rock-card glass-panel">
+                <div class="rock-merit"><span class="rock-medal">🪽</span><div><div class="rock-muted">${t('rock.merit')}</div><b>${rockNum(me.merit)}</b></div></div>
+                <div class="rock-muted" style="margin-top:8px">${t('rock.meritHint')}</div>
+                <div style="margin-top:8px; font-size:12.5px; font-weight:700; color:${f && f.rage_pct ? '#fb923c' : 'var(--text-muted)'}">${f && f.rage_pct ? t('rock.rage', { pct: f.rage_pct }) : t('rock.rageNone')}</div>
+            </div>
+            <div class="rock-card glass-panel">`;
+            if (me.is_leader) html += `<div style="font-weight:700">${t('rock.youLeader')}</div>`;
+            else if (r.challenge) {
+                html += `<button class="btn-primary" disabled style="width:100%">${t('rock.challenge')}</button>
+                    <div class="rock-busy" style="margin-top:8px">⚔️ ${t('rock.challengeBusy', { name: huntEsc(r.challenge.challenger_name) })} · ${rockUntil(r.challenge.ends_at)}</div>`;
+            } else {
+                const need = r.challenge_min_eagles;
+                const reason = me.challenge_used ? t('rock.challengeUsed')
+                    : (me.eligible < need ? t('rock.challengeNeed', { n: need, lvl: r.min_level, have: me.eligible }) : '');
+                html += `<button class="btn-primary" style="width:100%" ${reason || !(f && f.leader) ? 'disabled' : ''} onclick="rockAskChallenge()">${t('rock.challenge')}</button>
+                    ${reason ? `<div class="rock-muted" style="margin-top:6px; text-align:center">${reason}</div>` : ''}`;
+            }
+            if (!me.is_leader) html += `<div class="rock-muted" style="margin-top:8px">${t('rock.challengeHint', { lvl: r.min_level, pen: r.challenge_penalty })}</div>`;
+            const lc = r.last_challenge;
+            if (lc) html += `<div class="rock-result ${lc.won ? 'won' : 'lost'}">${lc.won
+                ? t('rock.challengeWon', { c: huntEsc(lc.challenger_name), l: huntEsc(lc.leader_name) })
+                : t('rock.challengeLost', { c: huntEsc(lc.challenger_name), l: huntEsc(lc.leader_name), pen: lc.penalty || 0 })}</div>`;
+            html += `</div>
+            <div class="rock-card glass-panel"><h3>${t('rock.feedTitle')}</h3><div class="rock-feed">
+                ${(r.feed || []).length ? r.feed.map(m => `<div><small>${rockClock(m.ts)}</small>${huntEsc(LANG === 'en' ? (m.text_en || m.text) : m.text)}</div>`).join('') : `<div class="rock-muted">${t('rock.feedEmpty')}</div>`}
+            </div></div>`;
+            return html;
+        }
+
+        function renderRockResearch(r) {
+            const me = r.me, b = me.research_bonus || {};
+            const lv = me.research_level || 0;
+            let html = `<div class="rock-scroll"><h3>${t('rock.researchTitle')}</h3>
+                <div class="rock-muted" style="margin-bottom:8px">${t('rock.researchSub')}</div>
+                <div class="rock-muted" style="font-weight:700; margin-bottom:8px">${t('rock.researchTotal', { atk: rockNum(b.atk), def: rockNum(b.def), hp: rockNum(b.hp), crit: rockNum(b.crit), spd: rockNum(b.spd) })}</div>
+                <div class="rock-merit" style="justify-content:center; margin-bottom:6px"><span class="rock-medal">🪽</span><b style="color:#7a4b00">${rockNum(me.merit)}</b></div>`;
+            (r.research || []).forEach(x => {
+                const done = x.level <= lv, next = x.level === lv + 1;
+                html += `<div class="rock-lvl ${done ? 'done' : (next ? '' : 'locked')}">
+                    <div class="rock-lvl-n">${x.level}</div>
+                    <div class="rock-lvl-txt">${t('rock.lvlBonus', { atk: rockNum(x.atk), def: rockNum(x.def), hp: rockNum(x.hp), crit: rockNum(x.crit), spd: rockNum(x.spd) })}</div>
+                    ${done ? `<span style="font-weight:800">${t('rock.learned')}</span>`
+                        : (next ? `<button class="btn-primary" ${me.merit < x.cost ? 'disabled' : ''} onclick="rockLearn(${lv})">${t('rock.learn', { cost: x.cost })}</button>`
+                            : `<span style="font-weight:700">${x.cost} 🏅</span>`)}
+                </div>`;
+            });
+            if (lv >= (r.research || []).length) html += `<div class="rock-muted" style="margin-top:8px; font-weight:800">${t('rock.researchMax')}</div>`;
+            return html + `</div>`;
+        }
+
+        async function rockPost(url, body, key) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            let ok = false;
+            rockLoadSeq++;   // ответ фонового опроса, начатого до действия, не перетрёт результат
+            try {
+                const response = await fetch(url, {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify(Object.assign({ user_id: state.userId }, body || {})),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    toast(data.detail || t('market.serverError')); haptic.notify('warning');
+                    loadRock(true);
+                    return null;
+                }
+                ok = true;
+                rockData = data;
+                renderRock();
+                haptic.notify('success');
+                return data;
+            } catch (e) {
+                toast(t('market.serverError'));
+                return null;
+            } finally {
+                if (ok) setTimeout(() => farmActionBusy.delete(key), 700); else farmActionBusy.delete(key);
+            }
+        }
+
+        async function rockDeclare() { if (await rockPost('api/rock/declare', {}, 'rock-declare')) toast(t('rock.toast.declared')); }
+        async function rockPlus() { if (await rockPost('api/rock/plus', {}, 'rock-plus')) toast(t('rock.toast.plus')); }
+        async function rockGarrison() {
+            const d = await rockPost('api/rock/garrison', {}, 'rock-garrison');
+            if (d) toast(t('rock.toast.garrison', { n: d.added || 0 }));
+        }
+        function rockAskChallenge() {
+            const f = rockFaction(rockData && rockData.me && rockData.me.faction_id);
+            const leader = f && f.leader ? f.leader.name : '';
+            huntConfirm(t('rock.challengeTitle'), t('rock.challengeText', { name: huntEsc(leader) }), t('rock.challenge'), async () => {
+                if (await rockPost('api/rock/challenge', {}, 'rock-challenge')) toast(t('rock.toast.challenge'));
+            });
+        }
+        async function rockLearn(level) {
+            if (await rockPost('api/rock/research', { expected_level: level }, 'rock-research')) toast(t('rock.toast.research', { n: level + 1 }));
         }
 
         function switchTab(tabId, element) {
@@ -9790,7 +10381,13 @@
                     x: old.baseX, y: old.baseY, facing: -1, size: old.size, stats: enemy.stats, idlePhase: old.idlePhase,
                 });
             }
+            if (arenaEnemyEagle && fightResult.enemy) {
+                arenaEnemyEagle.factionIcon = fightResult.enemy.faction_icon || null;
+                arenaEnemyEagle.factionColor = fightResult.enemy.faction_color || null;
+            }
             if (arenaPlayerEagle && fightResult.player) {
+                arenaPlayerEagle.factionIcon = fightResult.player.faction_icon || null;
+                arenaPlayerEagle.factionColor = fightResult.player.faction_color || null;
                 arenaPlayerEagle.stats = fightResult.player.stats;
                 arenaPlayerEagle.maxHp = fightResult.player.stats.hp;
                 arenaPlayerEagle.hp = fightResult.player.stats.hp;
@@ -9867,6 +10464,9 @@
                 label: `${myName} · ${monster.name}`, side: 'player', img: arenaGetImage(monster.sprite),
                 x: w * 0.24, y: groundY, facing: 1, size: 96, stats: playerStats, idlePhase: 0,
             });
+            // 🏔 свой герб фракции виден сразу (чужой — только после начала боя)
+            const myFaction = rockData && rockData.active && rockData.me && rockFaction(rockData.me.faction_id);
+            if (myFaction) { arenaPlayerEagle.factionIcon = myFaction.icon; arenaPlayerEagle.factionColor = myFaction.color; }
 
             arenaOpponentPending = preview;
             if (preview.isBot) {
@@ -9953,7 +10553,9 @@
                     ? 'linear-gradient(90deg, #22c55e, #86efac)'
                     : (pct > 0.22 ? 'linear-gradient(90deg, #eab308, #fde68a)' : 'linear-gradient(90deg, #dc2626, #ff8a8a)');
                 text.textContent = `${Math.max(0, Math.round(e.hp))} / ${e.maxHp}`;
-                name.textContent = e.label;
+                // 🏔 герб фракции рядом со шкалой здоровья (после запуска Орлиной Скалы)
+                if (e.factionIcon) name.innerHTML = rockBadge(e.factionIcon, e.factionColor) + escName(e.label);
+                else name.textContent = e.label;
             });
         }
 
@@ -10399,6 +11001,7 @@
                 return (data.top || []).map(e => ({
                     name: e.name, rating: e.pvp_rating,
                     isMe: e.user_id === state.userId,
+                    factionIcon: e.faction_icon || null, factionColor: e.faction_color || null,   // 🏔 герб фракции
                 }));
             } catch (error) {
                 return null;
@@ -10410,13 +11013,13 @@
                 const crown = rank === 1 ? '👑' : (rank === 2 ? '🥈' : '🥉');
                 return `<div class="lb-podium-row lb-rank-${rank} ${entry.isMe ? 'lb-me' : ''}">
                     <span class="lb-crown">${crown}</span>
-                    <span class="lb-name">${escName(entry.name)}</span>
+                    <span class="lb-name">${rockBadge(entry.factionIcon, entry.factionColor)}${escName(entry.name)}</span>
                     <span class="lb-rating">${entry.rating}</span>
                 </div>`;
             }
             return `<div class="lb-row ${entry.isMe ? 'lb-me' : ''}">
                 <span class="lb-rank">#${rank}</span>
-                <span class="lb-name">${escName(entry.name)}</span>
+                <span class="lb-name">${rockBadge(entry.factionIcon, entry.factionColor)}${escName(entry.name)}</span>
                 <span class="lb-rating">${entry.rating}</span>
             </div>`;
         }
@@ -14601,6 +15204,7 @@
             renderWallet();
             startLoops();
             initFogSwipe();
+            loadRock(true);         // 🏔 запущена ли Орлиная Скала — чтобы при свайпе сразу был хаб, а не туман
             raidHandleDeepLink();   // ⚔️ открыт кнопкой «Вступить в бой» из чата → сразу в лобби
 
             document.getElementById('boot').style.display = 'none';

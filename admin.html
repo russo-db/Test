@@ -255,6 +255,7 @@
             <button class="nav-btn" data-page="economy">📈 Экономика</button>
             <button class="nav-btn" data-page="retention">🔁 Удержание</button>
             <button class="nav-btn" data-page="auction">🏛️ Аукцион</button>
+            <button class="nav-btn" data-page="rock">🏔 Скала</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -604,6 +605,26 @@
                     <button id="botClanEquipBtn" title="Для ботов, созданных до появления снаряжения (то же делается само при перезапуске сервера)">🦅 Одеть старых ботов</button>
                     <button class="danger" id="botClanClearBtn">🗑 Удалить всех ботов</button>
                 </div>
+            </div>
+        </div>
+
+        <div class="page" id="page-rock">
+            <h2>🏔 Орлиная Скала (эндгейм, этап 1)</h2>
+            <div class="nft-interval-panel" id="rockAdminStatus"><span class="muted">Загрузка…</span></div>
+            <div class="nft-interval-panel" id="rockAdminLaunch" style="margin-top:12px;">
+                <p class="muted" style="margin:0 0 10px;">Пока Скала не запущена, игроки при свайпе вправо видят «Скоро...» и туман, а сервер не отдаёт никаких данных фракций.
+                    Запуск: ветераны (заходили за 7 дней, есть орлы 7 ур.) распределяются «змейкой» по силе по трём фракциям, сильнейший в каждой становится Лидером,
+                    Скала отдаётся самой сильной фракции, включаются начисления Очков Заслуг и окна штурма. Отменить распределение нельзя.</p>
+                <button id="rockLaunchBtn" style="font-weight:800; padding:12px 18px; background:#b45309;">🏔 ЗАПУСТИТЬ ОРЛИНУЮ СКАЛУ</button>
+                <button id="rockHideBtn" style="margin-left:8px;">🙈 Скрыть от игроков</button>
+                <button id="rockShowBtn" style="margin-left:8px;">👁️ Показать игрокам</button>
+            </div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <b>🧪 Тестовое окно штурма</b>
+                <p class="muted" style="margin:6px 0 8px; font-size:12px;">Открывает окно штурма прямо сейчас для выбранной фракции (кроме владельца) — чтобы проверить штурм, не дожидаясь расписания.</p>
+                <select id="rockTestFaction"></select>
+                <input id="rockTestMinutes" type="number" min="1" max="180" value="60" style="width:80px;"> мин
+                <button id="rockTestBtn">Открыть окно</button>
             </div>
         </div>
 
@@ -1058,8 +1079,71 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'hunt') loadHuntAdmin();
         if (btn.dataset.page === 'shares') loadSharesAdmin();
         if (btn.dataset.page === 'trades') loadTradesAdmin();
+        if (btn.dataset.page === 'rock') loadRockAdmin();
         else tournamentStopCountdowns();
     };
+});
+
+
+/* ---------- 🏔 Орлиная Скала ---------- */
+let rockAdminData = null;
+function rockAdminTime(ts) { return ts ? new Date(ts * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'; }
+function renderRockAdmin(d) {
+    rockAdminData = d;
+    const el = document.getElementById('rockAdminStatus');
+    if (!el) return;
+    const fname = id => { const f = (d.factions || []).find(x => x.id === id); return f ? `${f.icon} ${escHtml(f.name)}` : '—'; };
+    const status = d.active ? '<b style="color:#22c55e">🟢 Запущена и видна игрокам</b>'
+        : (d.initialized ? '<b style="color:#f59e0b">🙈 Запущена, но скрыта от игроков</b>' : '<b style="color:#9ca3af">⏸ Не запущена — игроки видят «Скоро...»</b>');
+    const s = d.siege;
+    el.innerHTML = `<div>${status}${d.activated_at ? ` <span class="muted">· запуск ${rockAdminTime(d.activated_at)}</span>` : ''}</div>
+        ${d.initialized ? `<div style="margin-top:8px">Скалу удерживает: <b>${fname(d.owner)}</b> · гарнизон ${d.garrison}/${d.garrison_slots}</div>
+        <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Фракция</th><th>Воинов</th><th>Сила</th><th>Лидер</th><th>Неудач подряд</th><th>Ярость</th><th>Вызов</th></tr></thead><tbody>
+            ${(d.factions || []).map(f => `<tr><td>${f.icon} ${escHtml(f.name)}</td><td>${f.members}</td><td>${Math.round(f.power)}</td>
+                <td>${f.leader ? `👑 ${escHtml(f.leader.name)} <span class="muted">(${f.leader.id})</span>` : '—'}</td>
+                <td>${f.fail_streak}</td><td>${f.rage_pct ? '+' + f.rage_pct + '%' : '—'}</td><td>${f.challenge ? '⚔️ идёт' : '—'}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div style="margin-top:8px">${s ? `⚔️ <b>Идёт штурм</b>: ${fname(s.attacker)} → ${fname(s.defender)} · раунд ${s.round}/${s.rounds_total} ·
+            атакующих живы ${s.att_alive}/${s.att_total} · защитников ${s.def_alive}/${s.def_total} · оборона ${Math.round(s.domination * 100)}% · до конца ${rockAdminTime(s.ends_at)}`
+            : 'Штурма сейчас нет.'}</div>
+        ${d.last_siege ? `<div class="muted" style="margin-top:4px">Последний штурм (${rockAdminTime(d.last_siege.ts)}): ${fname(d.last_siege.attacker)} → ${fname(d.last_siege.defender)} — ${d.last_siege.won ? 'Скала захвачена' : 'оборона устояла'}</div>` : ''}
+        <div style="margin-top:8px"><b>Ближайшие окна штурма</b> <span class="muted">(время — ваше локальное; в конфиге окна заданы по UTC+${d.utc_offset_hours})</span>:
+            ${(d.upcoming || []).map(w => `<div class="muted">${rockAdminTime(w.start)}–${rockAdminTime(w.end).slice(-5)} · ${fname(w.faction)}${w.test ? ' 🧪 тест' : ''}</div>`).join('') || '<div class="muted">—</div>'}</div>` : ''}`;
+    document.getElementById('rockLaunchBtn').style.display = d.initialized ? 'none' : '';
+    document.getElementById('rockHideBtn').style.display = d.active ? '' : 'none';
+    document.getElementById('rockShowBtn').style.display = d.initialized && !d.active ? '' : 'none';
+    const sel = document.getElementById('rockTestFaction');
+    const cur = sel.value;
+    sel.innerHTML = (d.factions || []).filter(f => f.id !== d.owner).map(f => `<option value="${escHtml(f.id)}">${f.icon} ${escHtml(f.name)}</option>`).join('');
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+async function loadRockAdmin() {
+    try { renderRockAdmin(await api('/admin/api/rock')); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); }
+}
+document.getElementById('rockLaunchBtn').onclick = e => {
+    if (!confirm('Запустить Орлиную Скалу? Ветераны будут распределены по фракциям, назначены Лидеры. Отменить распределение нельзя.')) return;
+    withBusyButton(e.currentTarget, 'Запуск…', async () => {
+        try { const d = await api('/admin/api/rock/activate', { method: 'POST' }); renderRockAdmin(d); toast(d.message || 'Скала запущена'); }
+        catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); loadRockAdmin(); }
+    });
+};
+document.getElementById('rockHideBtn').onclick = e => {
+    if (!confirm('Скрыть Скалу от игроков? Данные фракций сохранятся, вернуть можно кнопкой «Показать».')) return;
+    withBusyButton(e.currentTarget, '…', async () => {
+        try { renderRockAdmin(await api('/admin/api/rock/visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: false }) })); toast('Скала скрыта'); }
+        catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+    });
+};
+document.getElementById('rockShowBtn').onclick = e => withBusyButton(e.currentTarget, '…', async () => {
+    try { renderRockAdmin(await api('/admin/api/rock/visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: true }) })); toast('Скала снова видна игрокам'); }
+    catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+});
+document.getElementById('rockTestBtn').onclick = e => withBusyButton(e.currentTarget, '…', async () => {
+    const faction_id = document.getElementById('rockTestFaction').value;
+    const minutes = Number(document.getElementById('rockTestMinutes').value) || 60;
+    try { renderRockAdmin(await api('/admin/api/rock/test_window', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faction_id, minutes }) })); toast('Тестовое окно открыто'); }
+    catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 });
 
 /* ---------- обзор ---------- */

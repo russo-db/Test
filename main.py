@@ -321,6 +321,26 @@ def apply_config(cfg: dict):
     pay = RAID_CFG.get("payments") if isinstance(RAID_CFG.get("payments"), dict) else {}
     RAID_PAYMENTS = {k: _cfg_num(pay, k, d) for k, d in (("particles", 1), ("rock_crystal", 10), ("meat", 30))
                      if _cfg_num(pay, k, d) > 0}
+    # 🏔 ОРЛИНАЯ СКАЛА (эндгейм: фракции, осады, Очки Заслуг — см. раздел в конце)
+    global ROCK_CFG, ROCK_FACTIONS, ROCK_FACTION_ORDER, ROCK_RESEARCH
+    ROCK_CFG = CONFIG.get("eagle_rock") if isinstance(CONFIG.get("eagle_rock"), dict) else {}
+    ROCK_FACTIONS = {}
+    for f in _cfg_list(ROCK_CFG, "factions"):
+        fid = f.get("id")
+        if isinstance(fid, str) and re.match(r"^[a-z0-9_]{1,16}$", fid) and len(ROCK_FACTIONS) < 3:
+            ROCK_FACTIONS[fid] = {"id": fid, "name": str(f.get("name") or fid), "name_en": str(f.get("name_en") or f.get("name") or fid),
+                                  "color": str(f.get("color") or "#ffffff"), "icon": str(f.get("icon") or "🛡️")}
+    if len(ROCK_FACTIONS) != 3:
+        ROCK_FACTIONS = {
+            "sun": {"id": "sun", "name": "Легион Кровавого Солнца", "name_en": "Legion of the Blood Sun", "color": "#ef4444", "icon": "☀️"},
+            "steel": {"id": "steel", "name": "Орден Небесной Стали", "name_en": "Order of Heavenly Steel", "color": "#3b82f6", "icon": "⚔️"},
+            "storm": {"id": "storm", "name": "Племя Вечного Шторма", "name_en": "Tribe of the Eternal Storm", "color": "#22c55e", "icon": "🌪️"},
+        }
+    ROCK_FACTION_ORDER = list(ROCK_FACTIONS)
+    ROCK_RESEARCH = []
+    for lv in _cfg_list(ROCK_CFG, "research")[:20]:
+        ROCK_RESEARCH.append({"cost": max(1, int(_cfg_num(lv, "cost", 100))),
+                              **{k: max(0.0, _cfg_num(lv, k, 0)) for k in ("atk", "def", "hp", "crit", "spd")}})
 
 
 apply_config(load_config())
@@ -2533,6 +2553,9 @@ async def serve_config():
         # Таблицу уровней шахты игрокам не показываем: следующий уровень
         # (цена и скорость) приходит в /api/hunt/state, остальные скрыты.
         hunt_cfg.pop("mine_levels", None)
+        # Орлиная Скала скрыта до запуска из админки: фракции и параметры
+        # клиент получает только из /api/rock/state, и только когда она активна.
+        cfg.pop("eagle_rock", None)
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
@@ -4052,6 +4075,10 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_all.get(enemy_tier_id, {}), enemy_enchant.get(enemy_tier_id))
         enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
     enemy_fighter = {"stats": enemy_stats}
+    rock_on = await rock_is_active()
+    enemy_faction = None
+    if rock_on and not is_bot and opponent_row.get("faction_id") in ROCK_FACTIONS:
+        enemy_faction = opponent_row["faction_id"]
 
     result = arena_battle_simulate(seed, player_fighter, enemy_fighter)
     player_won = result["winner"] == "player"
@@ -4077,6 +4104,9 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
             "player": {"stats": player_fighter["stats"]},
             "enemy": {"name": enemy_name, "tier_id": enemy_tier_id, "is_bot": is_bot, "stats": enemy_stats},
         }
+        if rock_on:   # гербы фракций в окне поединка — только после запуска Орлиной Скалы
+            extra["player"].update(rock_faction_badge(row.get("faction_id")))
+            extra["enemy"].update(rock_faction_badge(enemy_faction))
         return fields, extra
 
     return await run_farm_action(user_id, compute)
@@ -4135,11 +4165,14 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     # arena_fight — построенный на той же идее). limit=None — в таблицу
     # попадают ВСЕ игроки, не только верхушка.
     top_docs = await store.get_leaderboard(None)
+    rock_on = await rock_is_active()
     top = [
         {
             "user_id": doc["user_id"],
             "name": doc["name"] or f"Игрок {doc['user_id']}",
             "pvp_rating": int(doc["pvp_rating"]),
+            # герб фракции Орлиной Скалы — только после её запуска
+            **(rock_faction_badge(doc.get("faction_id")) if rock_on else {}),
         }
         for doc in top_docs
     ]
@@ -10814,6 +10847,12 @@ async def ledger_maintenance():
                 print(f"[eggs] удалено старых записей журнала яиц: {removed}")
         except Exception as e:
             print(f"[eggs] egg log prune failed: {type(e).__name__}: {e}")
+        try:   # 🏔 Орлиная Скала: вести фракций — 30 дней, разнесённые выплаты — 90 дней
+            now = time.time()
+            await store.rock_feed.delete_many({"ts": {"$lt": now - 30 * 86400}})
+            await store.rock_history.delete_many({"paid": True, "ts": {"$lt": now - 90 * 86400}})
+        except Exception as e:
+            print(f"[rock] prune failed: {type(e).__name__}: {e}")
         await asyncio.sleep(6 * 3600)
 
 
@@ -11501,6 +11540,1188 @@ async def run_bot():
         await asyncio.sleep(3600)
 
 
+# =====================================================================
+# 🏔 ОРЛИНАЯ СКАЛА (эндгейм, этап 1): три фракции, Лидеры и вызовы на трон,
+# 30-минутные осады Скалы в «шахматные» окна, гарнизон и живые резервы,
+# Очки Заслуг (merit) и общая Ветка Исследований.
+#
+# До запуска из админки (кнопка «ЗАПУСТИТЬ ОРЛИНУЮ СКАЛУ») механика
+# полностью скрыта: /api/rock/state отвечает только {"active": false}, ни
+# одного фракционного поля клиент не получает, Арена гербов не показывает.
+#
+# Всё общее состояние — один документ eagle_rock/"state", запись — CAS по
+# версии v (rock_cas): параллельные нажатия игроков и фоновый тик воркера
+# не затирают друг друга. Личные поля игрока (faction_id, merit,
+# rock_research, суточные лимиты rock_attack_day / rock_challenge_day) —
+# только атомарные $inc / условные $set в его документе.
+#
+# В боях Скалы участвуют «проекции» орлов (снимок статов в момент записи):
+# орёл может одновременно летать в экспедиции; не участвуют орлы ниже
+# min_eagle_level и выставленные на P2P-рынок.
+# =====================================================================
+ROCK_STATE_ID = "state"
+ROCK_TICK_SECONDS = 5
+ROCK_ACTIVE_CACHE = {"at": 0.0, "active": False}
+ROCK_POWER_CACHE = {"at": 0.0, "data": None}
+
+
+def rock_num(key: str, default: float) -> float:
+    return _cfg_num(ROCK_CFG, key, default)
+
+
+def rock_int(key: str, default: int) -> int:
+    return int(rock_num(key, default))
+
+
+def rock_min_level() -> int:
+    return max(1, min(FEED_LEVELS, rock_int("min_eagle_level", 7)))
+
+
+def rock_faction_badge(fid: Optional[str]) -> dict:
+    """Герб фракции для Арены: {faction_id, faction_icon, faction_color} (или None)."""
+    f = ROCK_FACTIONS.get(fid or "")
+    if not f:
+        return {"faction_id": None, "faction_icon": None, "faction_color": None}
+    return {"faction_id": f["id"], "faction_icon": f["icon"], "faction_color": f["color"]}
+
+
+def rock_faction_name(fid: Optional[str], lang: str = "ru") -> str:
+    f = ROCK_FACTIONS.get(fid or "")
+    if not f:
+        return "—"
+    return f["name_en"] if lang == "en" else f["name"]
+
+
+def rock_research_level(row: dict) -> int:
+    try:
+        return max(0, min(len(ROCK_RESEARCH), int(row.get("rock_research") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def rock_merit(row: dict) -> int:
+    try:
+        return max(0, int(row.get("merit") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def rock_research_bonus(level: int) -> dict:
+    out = {"atk": 0.0, "def": 0.0, "hp": 0.0, "crit": 0.0, "spd": 0.0}
+    for lv in ROCK_RESEARCH[:max(0, level)]:
+        for k in out:
+            out[k] += lv[k]
+    return {k: round(v, 4) for k, v in out.items()}
+
+
+def rock_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict], enchant_for_tier: Optional[dict],
+                     research_level: int = 0, rage_pct: float = 0.0) -> dict:
+    """Статы орла в боях Скалы (ТЗ, п. 10): к БАЗЕ редкости прибавляются
+    плоские бонусы Ветки Исследований, поверх — проценты надетого шмота с
+    заточкой (когти → атака, броня → защита, амулет → HP и скорость);
+    крит — база + исследование + процент маски (потолок crit_cap_pct).
+    Ярость Аутсайдера — +rage_pct% к атаке и HP (только атакующим)."""
+    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
+    r = rock_research_bonus(research_level)
+    pct = {"atk": 0.0, "def": 0.0, "crit": 0.0, "hp": 0.0, "spd": 0.0}
+    eq = equipped_for_tier or {}
+    for item_type in NEST_TYPE_ORDER:
+        grade = eq.get(item_type)
+        if not grade:
+            continue
+        p = NEST_GRADE_BONUS.get(grade, 0.0) + nest_enchant_bonus(grade, (enchant_for_tier or {}).get(item_type, 0))
+        stat = (NEST_ITEM_TYPES.get(item_type) or {}).get("stat")
+        if stat in ("atk", "def", "crit"):
+            pct[stat] += p
+        elif stat == "hpspd":
+            pct["hp"] += p
+            pct["spd"] += p
+    rage = 1 + max(0.0, rage_pct) / 100
+    cap = max(0.0, rock_num("crit_cap_pct", 60))
+    return {
+        "atk": round((float(base["atk"]) + r["atk"]) * (1 + pct["atk"] / 100) * rage, 2),
+        "def": round((float(base["def"]) + r["def"]) * (1 + pct["def"] / 100), 2),
+        "hp": round((float(base["hp"]) + r["hp"]) * (1 + pct["hp"] / 100) * rage, 1),
+        "crit": round(min(cap, float(base["crit"]) + r["crit"] + pct["crit"]), 2),
+        "spd": round((float(base["spd"]) + r["spd"]) * (1 + pct["spd"] / 100), 2),
+    }
+
+
+def rock_power(stats: dict) -> float:
+    """Сила одного орла для балансировки фракций и сортировки."""
+    return stats["hp"] / 10 + stats["atk"] + stats["def"] + stats["spd"] + stats["crit"]
+
+
+def rock_eligible_slots(row: dict) -> list:
+    lvl = rock_min_level()
+    return [s for s in read_farm(row.get("monsters")) if s["feed_level"] >= lvl and not slot_listed(s)]
+
+
+def rock_snapshot(row: dict, rage_pct: float = 0.0) -> list:
+    """Боевые проекции всех подходящих орлов игрока, сильнейшие первыми."""
+    equipped = normalize_nest_equipped(row.get("nest_equipped"))
+    enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
+    research = rock_research_level(row)
+    uid = int(row.get("_id", row.get("user_id")))
+    name = str(row.get("name") or f"Игрок {uid}")[:40]
+    out = []
+    for slot in rock_eligible_slots(row):
+        tier = MONSTER_TIER.get(slot["id"])
+        if not tier:
+            continue
+        st = rock_eagle_stats(tier, equipped.get(tier), enchant.get(tier), research, rage_pct)
+        out.append({"uid": uid, "name": name, "tier": tier, **st, "max": st["hp"]})
+    out.sort(key=lambda e: -rock_power(e))
+    return out
+
+
+def rock_player_power(row: dict) -> float:
+    return round(sum(rock_power(e) for e in rock_snapshot(row)), 2)
+
+
+def rock_rage_pct(st: dict, fid: str) -> float:
+    streak = int((st.get("fail_streak") or {}).get(fid) or 0)
+    free = rock_int("rage_free_fails", 1)
+    return float(min(rock_num("rage_cap_pct", 200), max(0, streak - free) * rock_num("rage_step_pct", 20)))
+
+
+# --- состояние и CAS ---
+def rock_default_state() -> dict:
+    return {"_id": ROCK_STATE_ID, "v": 0, "active": False, "initialized": False, "initializing": False,
+            "owner": None, "leaders": {}, "challenges": {}, "last_challenge": {}, "fail_streak": {},
+            "garrison": [], "siege": None, "last_siege": None, "windows_used": [], "test_window": None,
+            "merit_hour": 0, "activated_at": 0}
+
+
+async def rock_get_state() -> dict:
+    doc = await store.rock.find_one({"_id": ROCK_STATE_ID})
+    if not doc:
+        base = rock_default_state()
+        await store.rock.update_one({"_id": ROCK_STATE_ID}, {"$setOnInsert": {k: v for k, v in base.items() if k != "_id"}}, upsert=True)
+        doc = await store.rock.find_one({"_id": ROCK_STATE_ID})
+    full = rock_default_state()
+    full.update(doc or {})
+    ROCK_ACTIVE_CACHE.update(at=time.time(), active=bool(full.get("active")))
+    return full
+
+
+async def rock_cas(mutate, attempts: int = 12):
+    """mutate(state) -> (изменения для $set | None, результат). Пишет только
+    если версия v не сдвинулась с момента чтения; иначе перечитывает и
+    повторяет. HTTPException из mutate отклоняет действие без записи."""
+    from pymongo import ReturnDocument
+    for i in range(attempts):
+        st = await rock_get_state()
+        changes, out = mutate(st)
+        if not changes:
+            return st, out
+        new = await store.rock.find_one_and_update(
+            {"_id": ROCK_STATE_ID, "v": st["v"]}, {"$set": {**changes, "v": st["v"] + 1}},
+            return_document=ReturnDocument.AFTER)
+        if new:
+            ROCK_ACTIVE_CACHE.update(at=time.time(), active=bool(new.get("active")))
+            full = rock_default_state()
+            full.update(new)
+            return full, out
+        await asyncio.sleep(0.01 + random.random() * 0.03 * (i + 1))
+    raise HTTPException(status_code=409, detail="Скала сейчас занята — попробуй ещё раз")
+
+
+async def rock_is_active() -> bool:
+    if time.time() - ROCK_ACTIVE_CACHE["at"] > 5:
+        try:
+            await rock_get_state()
+        except Exception as e:
+            print(f"[rock] state read failed: {type(e).__name__}: {e}")
+    return bool(ROCK_ACTIVE_CACHE["active"])
+
+
+async def rock_require_active() -> dict:
+    st = await rock_get_state()
+    if not st.get("active"):
+        raise HTTPException(status_code=403, detail="Скоро...")
+    return st
+
+
+async def rock_feed_add(factions, text: str, text_en: str = "") -> None:
+    try:
+        now = time.time()
+        docs = [{"faction": f, "ts": now, "text": text, "text_en": text_en or text} for f in factions]
+        if docs:
+            await store.rock_feed.insert_many(docs)
+    except Exception as e:
+        print(f"[rock] feed write failed: {type(e).__name__}: {e}")
+
+
+# --- окна штурма («шахматный» график) ---
+def rock_window_times() -> list:
+    out = []
+    for w in (ROCK_CFG.get("windows") or ["15:00", "20:00"]):
+        m = re.match(r"^(\d{1,2}):(\d{2})$", str(w).strip())
+        if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
+            out.append(int(m.group(1)) * 3600 + int(m.group(2)) * 60)
+    return out[:6] or [15 * 3600, 20 * 3600]
+
+
+def rock_window_faction(owner: Optional[str], idx: int) -> Optional[str]:
+    """Владелец Скалы обороняется; окно idx=0 — второй по кругу претендент
+    после владельца, idx=1 — первый (пример ТЗ: Скала у Ордена → 15:00
+    Легион, 20:00 Племя), дальше чередуются."""
+    if owner not in ROCK_FACTION_ORDER:
+        return None
+    o = ROCK_FACTION_ORDER.index(owner)
+    return ROCK_FACTION_ORDER[(o + (2 if idx % 2 == 0 else 1)) % 3]
+
+
+def rock_windows_around(st: dict, now: float) -> list:
+    offset = rock_num("utc_offset_hours", 3) * 3600
+    length = max(60.0, rock_num("window_minutes", 60) * 60)
+    local_day = int((now + offset) // 86400)
+    out = []
+    for d in (local_day - 1, local_day, local_day + 1, local_day + 2):
+        day_start = d * 86400 - offset
+        for idx, sec in enumerate(rock_window_times()):
+            start = day_start + sec
+            out.append({"key": f"{d}:{idx}", "idx": idx, "start": start, "end": start + length,
+                        "faction": rock_window_faction(st.get("owner"), idx)})
+    tw = st.get("test_window")
+    if isinstance(tw, dict) and tw.get("end", 0) > now - 86400:
+        out.append({"key": tw["key"], "idx": -1, "start": tw["start"], "end": tw["end"], "faction": tw["faction"], "test": True})
+    out.sort(key=lambda w: w["start"])
+    return out
+
+
+def rock_current_window(st: dict, now: float) -> Optional[dict]:
+    for w in rock_windows_around(st, now):
+        if w["start"] <= now < w["end"] and w["faction"] and w["faction"] != st.get("owner"):
+            return w
+    return None
+
+
+def rock_upcoming_windows(st: dict, now: float, n: int = 2) -> list:
+    return [w for w in rock_windows_around(st, now) if w["end"] > now and w["faction"]][:n]
+
+
+# --- симулятор боя (ТЗ, п. 8) ---
+def rock_hit(rng: random.Random, att: dict, dfn: dict) -> tuple:
+    """Атака → проверка крита (×crit_mult) → минус защита цели, минимум 1.
+    Возвращает (урон, крит, заблокировано защитой)."""
+    crit = rng.random() * 100 < att["crit"]
+    raw = att["atk"] * (rock_num("crit_mult", 2) if crit else 1)
+    dmg = max(1.0, raw - dfn["def"])
+    return round(dmg, 2), crit, round(max(0.0, raw - dmg), 2)
+
+
+def rock_exchange(rng: random.Random, side_a: list, side_b: list, turns: int, stats: Optional[dict] = None) -> None:
+    """turns ходов между двумя группами живых бойцов (hp меняется на месте).
+    В каждом ходе все живые ходят по убыванию скорости (быстрый может убить
+    цель до её хода), цель — случайный живой противник. stats[uid] копит
+    нанесённый (dmg) и впитанный/заблокированный (abs) урон."""
+    for _ in range(max(1, turns)):
+        order = [(f, "a") for f in side_a if f["hp"] > 0] + [(f, "b") for f in side_b if f["hp"] > 0]
+        rng.shuffle(order)
+        order.sort(key=lambda x: -x[0]["spd"])
+        for fighter, side in order:
+            if fighter["hp"] <= 0:
+                continue
+            enemies = [f for f in (side_b if side == "a" else side_a) if f["hp"] > 0]
+            if not enemies:
+                return
+            target = rng.choice(enemies)
+            dmg, _crit, blocked = rock_hit(rng, fighter, target)
+            dealt = min(dmg, target["hp"])
+            target["hp"] = round(max(0.0, target["hp"] - dmg), 2)
+            if stats is not None:
+                sa = stats.setdefault(str(fighter["uid"]), {"dmg": 0.0, "abs": 0.0})
+                sa["dmg"] = round(sa["dmg"] + dealt, 2)
+                sb = stats.setdefault(str(target["uid"]), {"dmg": 0.0, "abs": 0.0})
+                sb["abs"] = round(sb["abs"] + dealt + blocked, 2)
+        if not any(f["hp"] > 0 for f in side_a) or not any(f["hp"] > 0 for f in side_b):
+            return
+
+
+def rock_team_battle(seed: str, team_a: list, team_b: list, max_turns: int = 300) -> dict:
+    """Бой «все на всех» до последнего орла (вызов Лидеру). Ничья по ходам —
+    побеждает сторона с большим суммарным остатком HP, при равенстве —
+    защищающийся (team_b, Лидер)."""
+    rng = random.Random(seed)
+    a = [dict(f, hp=f["max"]) for f in team_a]
+    b = [dict(f, hp=f["max"]) for f in team_b]
+    if not a or not b:
+        return {"winner": "a" if a and not b else "b", "a_left": len(a), "b_left": len(b)}
+    rock_exchange(rng, a, b, max_turns)
+    a_hp = sum(f["hp"] for f in a if f["hp"] > 0)
+    b_hp = sum(f["hp"] for f in b if f["hp"] > 0)
+    winner = "a" if a_hp > b_hp else "b"
+    return {"winner": winner, "a_left": sum(1 for f in a if f["hp"] > 0), "b_left": sum(1 for f in b if f["hp"] > 0)}
+
+
+# --- осада ---
+def rock_siege_rounds_total() -> int:
+    return max(1, int(rock_num("siege_minutes", 30) * 60 // max(5.0, rock_num("round_seconds", 60))))
+
+
+def rock_alive(fighters: list) -> list:
+    return [f for f in fighters if f["hp"] > 0]
+
+
+def rock_siege_round(siege: dict) -> dict:
+    """Один фоновый микро-бой: волна (до wave_size) живых атакующих против
+    волны живых защитников; погибшие выбывают до конца осады. Детерминирован
+    сидом id+номер раунда — повтор после конфликта CAS даёт тот же итог."""
+    siege = json.loads(json.dumps(siege))
+    rnd = int(siege.get("round") or 0) + 1
+    rng = random.Random(f"{siege['id']}:{rnd}")
+    wave = max(1, rock_int("wave_size", 10))
+    att_alive, def_alive = rock_alive(siege["attackers"]), rock_alive(siege["defenders"])
+    entry = {"round": rnd, "att_lost": 0, "def_lost": 0}
+    if att_alive and def_alive:
+        wa = rng.sample(att_alive, min(wave, len(att_alive)))
+        wd = rng.sample(def_alive, min(wave, len(def_alive)))
+        rock_exchange(rng, wa, wd, rock_int("turns_per_round", 3), siege.setdefault("stats", {}))
+        entry["att_lost"] = sum(1 for f in wa if f["hp"] <= 0)
+        entry["def_lost"] = sum(1 for f in wd if f["hp"] <= 0)
+    siege["round"] = rnd
+    siege["log"] = (siege.get("log") or [])[-9:] + [entry]
+    if not rock_alive(siege["defenders"]) and rock_alive(siege["attackers"]):
+        siege["captured"] = True
+    return siege
+
+
+def rock_domination(siege: dict) -> float:
+    """Доля HP защитников среди всех живых — шкала доминирования (1 = Скала держится)."""
+    d = sum(f["hp"] for f in rock_alive(siege.get("defenders") or []))
+    a = sum(f["hp"] for f in rock_alive(siege.get("attackers") or []))
+    return 0.5 if d + a <= 0 else round(d / (d + a), 4)
+
+
+def rock_siege_payouts(siege: dict, won: bool) -> dict:
+    per = max(1.0, rock_num("merit_per_damage", 50))
+    cap = rock_int("merit_damage_cap", 20)
+    base = rock_int("merit_attack_win", 50) if won else rock_int("merit_attack_loss", 15)
+    stats = siege.get("stats") or {}
+    out = {}
+    for uid in {str(f["uid"]) for f in siege["attackers"]}:
+        out[uid] = base + min(cap, int((stats.get(uid) or {}).get("dmg", 0) // per))
+    for uid in {str(f["uid"]) for f in siege["defenders"]}:
+        bonus = min(cap, int((stats.get(uid) or {}).get("abs", 0) // per))
+        if bonus > 0:
+            out[uid] = out.get(uid, 0) + bonus
+    return out
+
+
+def rock_garrison_from(fighters: list) -> list:
+    """Выжившие — в гарнизон, со свежим HP; сильнейшие первыми, не больше мест."""
+    alive = sorted(rock_alive(fighters), key=lambda f: -rock_power(f))[:max(1, rock_int("garrison_slots", 50))]
+    return [dict({k: f[k] for k in ("uid", "name", "tier", "atk", "def", "crit", "spd", "max")}, hp=f["max"]) for f in alive]
+
+
+# --- выплаты Очков Заслуг (идемпотентно, через архив rock_history) ---
+async def rock_apply_history(doc: dict) -> None:
+    hid = doc["_id"]
+    if doc.get("kind") == "challenge":
+        tr = doc.get("transfer") or {}
+        amount = int(tr.get("amount") or 0)
+        if amount > 0 and not doc.get("debited"):
+            res = await store.users.update_one(
+                {"_id": tr["from"], "rock_paid": {"$ne": hid}, "merit": {"$gte": amount}},
+                {"$inc": {"merit": -amount}, "$push": {"rock_paid": {"$each": [hid], "$slice": -30}}})
+            ok = res.modified_count > 0
+            if not ok:
+                payer = await store.users.find_one({"_id": tr["from"]}, {"rock_paid": 1})
+                ok = hid in ((payer or {}).get("rock_paid") or [])
+            await store.rock_history.update_one({"_id": hid}, {"$set": {"debited": True, "debit_ok": ok}})
+            doc = dict(doc, debited=True, debit_ok=ok)
+        if amount > 0 and doc.get("debit_ok"):
+            await store.users.update_one(
+                {"_id": tr["to"], "rock_paid": {"$ne": hid}},
+                {"$inc": {"merit": amount}, "$push": {"rock_paid": {"$each": [hid], "$slice": -30}}})
+    else:
+        for uid, amount in (doc.get("payouts") or {}).items():
+            if int(amount) > 0:
+                await store.users.update_one(
+                    {"_id": int(uid), "rock_paid": {"$ne": hid}},
+                    {"$inc": {"merit": int(amount)}, "$push": {"rock_paid": {"$each": [hid], "$slice": -30}}})
+    await store.rock_history.update_one({"_id": hid}, {"$set": {"paid": True}})
+
+
+async def rock_pay_pending() -> None:
+    async for doc in store.rock_history.find({"paid": False}).sort("ts", 1).limit(50):
+        try:
+            await rock_apply_history(doc)
+        except Exception as e:
+            print(f"[rock] payout {doc.get('_id')} failed: {type(e).__name__}: {e}")
+
+
+# --- фоновый тик ---
+async def rock_tick_merit(st: dict, now: float) -> None:
+    hour = int(now // 3600)
+    if int(st.get("merit_hour") or 0) >= hour:
+        return
+    owner = st.get("owner")
+
+    def mutate(s):
+        if int(s.get("merit_hour") or 0) >= hour or not s.get("active"):
+            return None, False
+        return {"merit_hour": hour}, True
+
+    _, claimed = await rock_cas(mutate)
+    if not claimed:
+        return
+    if owner in ROCK_FACTIONS and rock_int("merit_owner_hourly", 1) > 0:
+        await store.users.update_many({"faction_id": owner}, {"$inc": {"merit": rock_int("merit_owner_hourly", 1)}})
+    siege = st.get("siege")
+    holders = siege["defenders"] if siege else (st.get("garrison") or [])
+    uids = sorted({int(f["uid"]) for f in holders if f.get("hp", 1) > 0})
+    if uids and rock_int("merit_garrison_hourly", 5) > 0:
+        await store.users.update_many({"_id": {"$in": uids}, "faction_id": owner},
+                                      {"$inc": {"merit": rock_int("merit_garrison_hourly", 5)}})
+
+
+async def rock_tick_challenges(st: dict, now: float) -> None:
+    for fid, ch in list((st.get("challenges") or {}).items()):
+        if not ch or float(ch.get("ends_at") or 0) > now:
+            continue
+        leader_row = await store.users.find_one({"_id": ch["leader_id"]})
+        leader_team = rock_snapshot(leader_row) if leader_row else []
+        result = rock_team_battle(ch["seed"], ch.get("att") or [], leader_team)
+        won = result["winner"] == "a"
+        hid = f"ch:{fid}:{ch['challenger_id']}:{int(ch['started_at'])}"
+        amount = 0
+        if not won:
+            ch_row = await store.users.find_one({"_id": ch["challenger_id"]}, {"merit": 1})
+            amount = min(rock_int("challenge_penalty", 15), rock_merit(ch_row or {}))
+        await store.rock_history.update_one({"_id": hid}, {"$setOnInsert": {
+            "kind": "challenge", "faction": fid, "ts": now, "paid": False, "won": won,
+            "challenger_id": ch["challenger_id"], "challenger_name": ch["challenger_name"],
+            "leader_id": ch["leader_id"], "leader_name": ch["leader_name"],
+            "a_left": result["a_left"], "b_left": result["b_left"],
+            "transfer": {"from": ch["challenger_id"], "to": ch["leader_id"], "amount": amount},
+        }}, upsert=True)
+
+        def mutate(s, fid=fid, ch=ch):
+            cur = (s.get("challenges") or {}).get(fid)
+            if not cur or cur.get("started_at") != ch["started_at"] or cur.get("challenger_id") != ch["challenger_id"]:
+                return None, False
+            challenges = dict(s.get("challenges") or {})
+            challenges[fid] = None
+            leaders = dict(s.get("leaders") or {})
+            if won and (leaders.get(fid) or {}).get("id") == ch["leader_id"]:
+                leaders[fid] = {"id": ch["challenger_id"], "name": ch["challenger_name"], "since": now}
+            last = dict(s.get("last_challenge") or {})
+            last[fid] = {"won": won, "challenger_name": ch["challenger_name"], "leader_name": ch["leader_name"],
+                         "challenger_id": ch["challenger_id"], "leader_id": ch["leader_id"], "ts": now, "penalty": amount}
+            return {"challenges": challenges, "leaders": leaders, "last_challenge": last}, True
+
+        _, done = await rock_cas(mutate)
+        if done:
+            if won:
+                await rock_feed_add([fid], f"👑 {ch['challenger_name']} сверг Лидера {ch['leader_name']} и занял трон фракции!",
+                                    f"👑 {ch['challenger_name']} overthrew Leader {ch['leader_name']} and took the throne!")
+            else:
+                await rock_feed_add([fid], f"🛡️ Лидер {ch['leader_name']} отстоял трон в бою против {ch['challenger_name']} (+{amount} Очков Заслуг)",
+                                    f"🛡️ Leader {ch['leader_name']} defended the throne against {ch['challenger_name']} (+{amount} Merit)")
+
+
+async def rock_finish_siege(st: dict, now: float) -> None:
+    siege = st["siege"]
+    won = bool(siege.get("captured"))
+    att, dfn = siege["attacker"], siege["defender"]
+    payouts = rock_siege_payouts(siege, won)
+    hid = f"siege:{siege['id']}"
+    await store.rock_history.update_one({"_id": hid}, {"$setOnInsert": {
+        "kind": "siege", "ts": now, "paid": False, "won": won, "attacker": att, "defender": dfn,
+        "started_at": siege["started_at"], "rounds": siege.get("round", 0),
+        "att_total": len(siege["attackers"]), "att_alive": len(rock_alive(siege["attackers"])),
+        "def_total": len(siege["defenders"]), "def_alive": len(rock_alive(siege["defenders"])),
+        "payouts": payouts, "stats": siege.get("stats") or {},
+    }}, upsert=True)
+
+    def mutate(s):
+        cur = s.get("siege")
+        if not cur or cur.get("id") != siege["id"]:
+            return None, False
+        streak = dict(s.get("fail_streak") or {})
+        changes = {"siege": None, "last_siege": {
+            "id": siege["id"], "won": won, "attacker": att, "defender": dfn, "ts": now,
+            "att_total": len(cur["attackers"]), "att_alive": len(rock_alive(cur["attackers"])),
+            "def_total": len(cur["defenders"]), "def_alive": len(rock_alive(cur["defenders"])),
+            "payouts": payouts}}
+        if won:
+            streak[att] = 0
+            changes["owner"] = att
+            changes["garrison"] = rock_garrison_from(cur["attackers"])
+        else:
+            streak[att] = int(streak.get(att) or 0) + 1
+            changes["garrison"] = rock_garrison_from(cur["defenders"])
+        changes["fail_streak"] = streak
+        return changes, True
+
+    _, done = await rock_cas(mutate)
+    if done:
+        an, dn = rock_faction_name(att), rock_faction_name(dfn)
+        ae, de = rock_faction_name(att, "en"), rock_faction_name(dfn, "en")
+        if won:
+            await rock_feed_add(list(ROCK_FACTION_ORDER), f"🏔 {an} захватил Орлиную Скалу у фракции «{dn}»!",
+                                f"🏔 {ae} captured the Eagle Rock from {de}!")
+        else:
+            await rock_feed_add(list(ROCK_FACTION_ORDER), f"🛡️ {dn} отстоял Орлиную Скалу: штурм фракции «{an}» отбит.",
+                                f"🛡️ {de} held the Eagle Rock: the assault of {ae} was repelled.")
+
+
+async def rock_tick_siege(st: dict, now: float) -> None:
+    siege = st.get("siege")
+    if not siege:
+        return
+    step = max(5.0, rock_num("round_seconds", 60))
+    total = rock_siege_rounds_total()
+    for _ in range(total + 1):
+        st = await rock_get_state()
+        siege = st.get("siege")
+        if not siege:
+            return
+        if siege.get("captured") or int(siege.get("round") or 0) >= total:
+            await rock_finish_siege(st, now)
+            return
+        due = float(siege["started_at"]) + (int(siege.get("round") or 0) + 1) * step
+        if due > now:
+            return
+        sid, rnd = siege["id"], int(siege.get("round") or 0)
+
+        def mutate(s, sid=sid, rnd=rnd):
+            cur = s.get("siege")
+            if not cur or cur.get("id") != sid or int(cur.get("round") or 0) != rnd:
+                return None, None
+            return {"siege": rock_siege_round(cur)}, True
+
+        await rock_cas(mutate)
+
+
+async def rock_tick(now: Optional[float] = None) -> None:
+    now = time.time() if now is None else now
+    st = await rock_get_state()
+    if st.get("active"):
+        await rock_tick_merit(st, now)
+        await rock_tick_challenges(st, now)
+        await rock_tick_siege(st, now)
+    await rock_pay_pending()
+
+
+async def rock_worker():
+    while True:
+        try:
+            await rock_tick()
+        except Exception as e:
+            print(f"[rock] worker error: {type(e).__name__}: {e}")
+        await asyncio.sleep(ROCK_TICK_SECONDS)
+
+
+# --- силы фракций и балансировщик новичков ---
+async def rock_faction_stats(force: bool = False) -> dict:
+    now = time.time()
+    if not force and ROCK_POWER_CACHE["data"] is not None and now - ROCK_POWER_CACHE["at"] < 30:
+        return ROCK_POWER_CACHE["data"]
+    data = {fid: {"members": 0, "power": 0.0} for fid in ROCK_FACTION_ORDER}
+    proj = {"faction_id": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "name": 1}
+    async for doc in store.users.find({"faction_id": {"$in": ROCK_FACTION_ORDER}}, proj):
+        fid = doc.get("faction_id")
+        if fid in data:
+            data[fid]["members"] += 1
+            data[fid]["power"] = round(data[fid]["power"] + rock_player_power(doc), 2)
+    ROCK_POWER_CACHE.update(at=now, data=data)
+    return data
+
+
+def rock_overloaded(data: dict, fid: str) -> bool:
+    others = [data[o]["power"] for o in ROCK_FACTION_ORDER if o != fid]
+    if not others:
+        return False
+    low = min(others)
+    gap = data[fid]["power"] - low
+    return gap > max(rock_num("overload_min_gap", 300), low * rock_num("overload_pct", 25) / 100)
+
+
+# --- представление для клиента ---
+def rock_public_leader(st: dict, fid: str) -> Optional[dict]:
+    ld = (st.get("leaders") or {}).get(fid)
+    return {"id": ld["id"], "name": ld["name"]} if ld else None
+
+
+async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict:
+    now = time.time() if now is None else now
+    if not st.get("active"):
+        return {"active": False}
+    row = await fetch_user(user_id)
+    fid = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
+    data = await rock_faction_stats()
+    today = day_index(now)
+    factions = []
+    for f in ROCK_FACTION_ORDER:
+        factions.append({**ROCK_FACTIONS[f], "members": data[f]["members"], "power": round(data[f]["power"]),
+                         "leader": rock_public_leader(st, f), "fail_streak": int((st.get("fail_streak") or {}).get(f) or 0),
+                         "rage_pct": rock_rage_pct(st, f), "overloaded": rock_overloaded(data, f) if not fid else False})
+    out = {"active": True, "now": now, "owner": st.get("owner"), "factions": factions,
+           "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
+           "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
+           "research": [{"level": i + 1, **lv} for i, lv in enumerate(ROCK_RESEARCH)],
+           "upcoming": [{"start": w["start"], "end": w["end"], "faction": w["faction"], "test": bool(w.get("test"))}
+                        for w in rock_upcoming_windows(st, now, 3)]}
+    snapshot = rock_snapshot(row)
+    research = rock_research_level(row)
+    me = {"faction_id": fid, "merit": rock_merit(row), "research_level": research,
+          "research_bonus": rock_research_bonus(research), "eligible": len(snapshot),
+          "power": round(sum(rock_power(e) for e in snapshot)),
+          "challenge_used": int(row.get("rock_challenge_day") or -1) == today,
+          "attack_used": int(row.get("rock_attack_day") or -1) == today}
+    out["me"] = me
+    if not fid:
+        return out
+    me["is_leader"] = (rock_public_leader(st, fid) or {}).get("id") == user_id
+    win = rock_current_window(st, now)
+    out["window"] = {"faction": win["faction"], "start": win["start"], "end": win["end"],
+                     "used": win["key"] in (st.get("windows_used") or [])} if win else None
+    siege = st.get("siege")
+    garrison = st.get("garrison") or []
+    g_holders = {}
+    for f in (siege["defenders"] if siege else garrison):
+        if f["hp"] > 0:
+            g_holders[f["name"]] = g_holders.get(f["name"], 0) + 1
+    out["garrison"] = {"count": sum(g_holders.values()), "slots": rock_int("garrison_slots", 50),
+                       "players": sorted(({"name": k, "eagles": v} for k, v in g_holders.items()), key=lambda x: -x["eagles"])[:30]}
+    me["in_garrison"] = sum(1 for f in (siege["defenders"] if siege else garrison) if f["uid"] == user_id and f["hp"] > 0)
+    me["can_declare"] = bool(me["is_leader"] and win and win["faction"] == fid and not siege
+                             and win["key"] not in (st.get("windows_used") or []))
+    if siege:
+        stats = (siege.get("stats") or {}).get(str(user_id)) or {}
+        mine_att = [f for f in siege["attackers"] if f["uid"] == user_id]
+        mine_def = [f for f in siege["defenders"] if f["uid"] == user_id]
+        out["siege"] = {
+            "attacker": siege["attacker"], "defender": siege["defender"], "started_at": siege["started_at"],
+            "ends_at": siege["ends_at"], "round": siege.get("round", 0), "rounds_total": rock_siege_rounds_total(),
+            "next_round_at": siege["started_at"] + (int(siege.get("round") or 0) + 1) * max(5.0, rock_num("round_seconds", 60)),
+            "att_total": len(siege["attackers"]), "att_alive": len(rock_alive(siege["attackers"])),
+            "def_total": len(siege["defenders"]), "def_alive": len(rock_alive(siege["defenders"])),
+            "att_players": len({f["uid"] for f in siege["attackers"]}),
+            "domination": rock_domination(siege), "log": (siege.get("log") or [])[-5:],
+            "mine": {"side": "a" if mine_att else ("d" if mine_def else None), "eagles": len(mine_att) + len(mine_def),
+                     "alive": len(rock_alive(mine_att + mine_def)), "dmg": round(stats.get("dmg", 0)), "abs": round(stats.get("abs", 0))},
+        }
+        me["can_plus"] = siege["attacker"] == fid and not mine_att and not me["attack_used"] and now < siege["ends_at"] and len(snapshot) > 0
+        me["can_reserve"] = (siege["defender"] == fid and user_id not in (siege.get("initial_defenders") or [])
+                             and not mine_def and len(snapshot) > 0
+                             and len(rock_alive(siege["defenders"])) < rock_int("garrison_slots", 50))
+    else:
+        out["siege"] = None
+        me["can_plus"] = False
+        me["can_reserve"] = (st.get("owner") == fid and me["in_garrison"] == 0 and len(snapshot) > 0
+                             and len(garrison) < rock_int("garrison_slots", 50))
+    out["last_siege"] = st.get("last_siege") if st.get("last_siege") and now - float(st["last_siege"].get("ts") or 0) < 6 * 3600 else None
+    if out["last_siege"]:
+        out["last_siege"] = dict({k: v for k, v in out["last_siege"].items() if k != "payouts"},
+                                 my_merit=int((st["last_siege"].get("payouts") or {}).get(str(user_id), 0)))
+    ch = (st.get("challenges") or {}).get(fid)
+    out["challenge"] = {"challenger_name": ch["challenger_name"], "challenger_id": ch["challenger_id"],
+                        "ends_at": ch["ends_at"]} if ch else None
+    last = (st.get("last_challenge") or {}).get(fid)
+    out["last_challenge"] = last if last and now - float(last.get("ts") or 0) < 24 * 3600 else None
+    out["feed"] = []
+    async for doc in store.rock_feed.find({"faction": fid}).sort("ts", -1).limit(20):
+        out["feed"].append({"ts": doc["ts"], "text": doc.get("text", ""), "text_en": doc.get("text_en", "")})
+    return out
+
+
+async def rock_response(user_id: int) -> dict:
+    st = await rock_get_state()
+    return await rock_view(st, user_id)
+
+
+@app.get("/api/rock/state")
+async def rock_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить Скалу — попробуй ещё раз")
+
+
+class RockAction(BaseModel):
+    user_id: int
+    faction_id: Optional[str] = None
+    expected_level: Optional[int] = None
+
+
+def rock_my_faction(row: dict) -> str:
+    fid = row.get("faction_id")
+    if fid not in ROCK_FACTIONS:
+        raise HTTPException(status_code=400, detail="Сначала выбери фракцию")
+    return fid
+
+
+@app.post("/api/rock/join")
+async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Выбор фракции — один раз и навсегда. Перегруженная фракция (перекос
+    суммарной силы орлов N ур. относительно слабейшей) — закрыта."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_active()
+        fid = request.faction_id
+        if fid not in ROCK_FACTIONS:
+            raise HTTPException(status_code=400, detail="Неизвестная фракция")
+        row = await fetch_user(user_id)
+        if row.get("faction_id") in ROCK_FACTIONS:
+            if row["faction_id"] == fid:
+                return await rock_response(user_id)
+            raise HTTPException(status_code=409, detail="Ты уже во фракции — сменить её нельзя")
+        data = await rock_faction_stats(force=True)
+        if rock_overloaded(data, fid):
+            raise HTTPException(status_code=400, detail="Эта фракция перегружена силами, выберите другую!")
+        res = await store.users.update_one({"_id": user_id, "faction_id": None},
+                                           {"$set": {"faction_id": fid, "faction_joined_at": time.time()}})
+        if res.modified_count == 0:
+            fresh = await fetch_user(user_id)
+            if fresh.get("faction_id") != fid:
+                raise HTTPException(status_code=409, detail="Ты уже во фракции — сменить её нельзя")
+        ROCK_POWER_CACHE["data"] = None
+        name = str(row.get("name") or f"Игрок {user_id}")[:40]
+
+        def mutate(s):
+            if (s.get("leaders") or {}).get(fid):
+                return None, False
+            leaders = dict(s.get("leaders") or {})
+            leaders[fid] = {"id": user_id, "name": name, "since": time.time()}
+            return {"leaders": leaders}, True
+
+        _, became = await rock_cas(mutate)
+        if became:
+            await rock_feed_add([fid], f"👑 {name} — первый Лидер фракции!", f"👑 {name} is the faction's first Leader!")
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось вступить во фракцию — попробуй ещё раз")
+
+
+@app.post("/api/rock/research")
+async def rock_research(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Следующий уровень Ветки Исследований за Очки Заслуг — одной атомарной
+    записью: уровень и списание сверяются в фильтре (двойной клик не купит
+    два уровня и не спишет дважды)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_active()
+        row = await fetch_user(user_id)
+        rock_my_faction(row)
+        level = rock_research_level(row)
+        if request.expected_level is not None and request.expected_level != level:
+            raise HTTPException(status_code=409, detail="Уровень уже изучен — экран обновлён")
+        if level >= len(ROCK_RESEARCH):
+            raise HTTPException(status_code=400, detail="Ветка Исследований изучена полностью")
+        cost = ROCK_RESEARCH[level]["cost"]
+        if rock_merit(row) < cost:
+            raise HTTPException(status_code=400, detail=f"Нужно {cost} Очков Заслуг")
+        flt = {"_id": user_id, "merit": {"$gte": cost}}
+        flt["rock_research"] = level if level > 0 else {"$in": [0, None]}
+        res = await store.users.update_one(flt, {"$inc": {"merit": -cost}, "$set": {"rock_research": level + 1}})
+        if res.modified_count == 0:
+            raise HTTPException(status_code=409, detail="Не хватило Очков Заслуг или уровень уже изучен — экран обновлён")
+        ROCK_POWER_CACHE["data"] = None
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось изучить уровень — попробуй ещё раз")
+
+
+async def rock_claim_daily(user_id: int, field: str, fid: str) -> Optional[int]:
+    """Атомарно занимает суточный лимит; None — уже использован сегодня."""
+    from pymongo import ReturnDocument
+    today = day_index()
+    before = await store.users.find_one_and_update(
+        {"_id": user_id, "faction_id": fid, field: {"$ne": today}}, {"$set": {field: today}},
+        projection={field: 1}, return_document=ReturnDocument.BEFORE)
+    if before is None:
+        return None
+    return int(before.get(field) or -1)
+
+
+async def rock_release_daily(user_id: int, field: str, prev: int) -> None:
+    await store.users.update_one({"_id": user_id, field: day_index()}, {"$set": {field: prev}})
+
+
+def rock_fighters(snapshot: list, side: str, start_index: int) -> list:
+    return [dict(e, id=f"{side}{start_index + i}", hp=e["max"]) for i, e in enumerate(snapshot)]
+
+
+async def rock_do_plus(user_id: int, row: dict, fid: str) -> None:
+    st = await rock_get_state()
+    siege = st.get("siege")
+    if not siege or siege["attacker"] != fid or time.time() >= float(siege["ends_at"]):
+        raise HTTPException(status_code=400, detail="Сейчас нет штурма твоей фракции")
+    snap = rock_snapshot(row, rock_rage_pct(st, fid))
+    if not snap:
+        raise HTTPException(status_code=400, detail=f"Нужен хотя бы один орёл {rock_min_level()} ур., не выставленный на рынок")
+    prev = await rock_claim_daily(user_id, "rock_attack_day", fid)
+    if prev is None:
+        raise HTTPException(status_code=409, detail="Ты уже записывался на штурм сегодня — снова завтра")
+    sid = siege["id"]
+
+    def mutate(s):
+        cur = s.get("siege")
+        if not cur or cur.get("id") != sid or cur.get("captured") or time.time() >= float(cur["ends_at"]):
+            raise HTTPException(status_code=409, detail="Штурм уже закончился")
+        if any(f["uid"] == user_id for f in cur["attackers"]):
+            raise HTTPException(status_code=409, detail="Ты уже в штурмовом отряде")
+        cur = dict(cur)
+        cur["attackers"] = cur["attackers"] + rock_fighters(snap, "a", len(cur["attackers"]))
+        return {"siege": cur}, True
+
+    try:
+        await rock_cas(mutate)
+    except Exception:
+        await rock_release_daily(user_id, "rock_attack_day", prev)
+        raise
+
+
+@app.post("/api/rock/declare")
+async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Объявить общий штурм Скалы» — строго Лидер фракции, чьё сейчас окно."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_active()
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        now = time.time()
+        sid = secrets.token_hex(5)
+
+        def mutate(s):
+            if (rock_public_leader(s, fid) or {}).get("id") != user_id:
+                raise HTTPException(status_code=403, detail="Объявить штурм может только Лидер фракции")
+            if s.get("siege"):
+                raise HTTPException(status_code=409, detail="Штурм уже идёт")
+            if s.get("owner") == fid:
+                raise HTTPException(status_code=400, detail="Скала уже у твоей фракции — вы обороняетесь")
+            win = rock_current_window(s, now)
+            if not win or win["faction"] != fid:
+                raise HTTPException(status_code=400, detail="Сейчас не окно штурма твоей фракции")
+            if win["key"] in (s.get("windows_used") or []):
+                raise HTTPException(status_code=409, detail="В этом окне штурм уже был")
+            defenders = [dict(g, id=f"d{i}", hp=g["max"]) for i, g in enumerate(s.get("garrison") or [])]
+            siege = {"id": sid, "attacker": fid, "defender": s.get("owner"), "window": win["key"],
+                     "started_at": now, "ends_at": now + rock_siege_rounds_total() * max(5.0, rock_num("round_seconds", 60)),
+                     "round": 0, "attackers": [], "defenders": defenders,
+                     "initial_defenders": sorted({g["uid"] for g in defenders}), "stats": {}, "log": [],
+                     "declared_by": user_id}
+            return {"siege": siege, "windows_used": ((s.get("windows_used") or []) + [win["key"]])[-30:]}, s.get("owner")
+
+        _, defender = await rock_cas(mutate)
+        an = rock_faction_name(fid)
+        await rock_feed_add([fid], "⚔️ Лидер объявил общий штурм Скалы! Жми «+», чтобы встать в отряд (30 мин).",
+                            "⚔️ The Leader declared a full assault on the Rock! Tap «+» to join (30 min).")
+        if defender:
+            await rock_feed_add([defender], f"🚨 {an} штурмует Скалу! Свежие силы — в резерв гарнизона!",
+                                f"🚨 {rock_faction_name(fid, 'en')} is storming the Rock! Send fresh reserves!")
+        try:
+            await rock_do_plus(user_id, row, fid)
+        except HTTPException:
+            pass
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось объявить штурм — попробуй ещё раз")
+
+
+@app.post("/api/rock/plus")
+async def rock_plus(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """«+» — в штурмовой отряд уходят ВСЕ подходящие орлы игрока (1 раз в сутки)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_active()
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        await rock_do_plus(user_id, row, fid)
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось записаться на штурм — попробуй ещё раз")
+
+
+@app.post("/api/rock/garrison")
+async def rock_garrison(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """Гарнизон / «Резерв подкреплений»: орлы фракции-владельца занимают
+    свободные места на Скале. Во время штурма — только те, чьих орлов не было
+    на Скале в момент его начала (свежие силы)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_active()
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        snap = rock_snapshot(row)
+        if not snap:
+            raise HTTPException(status_code=400, detail=f"Нужен хотя бы один орёл {rock_min_level()} ур., не выставленный на рынок")
+        slots = max(1, rock_int("garrison_slots", 50))
+
+        def mutate(s):
+            if s.get("owner") != fid:
+                raise HTTPException(status_code=400, detail="Скала не у твоей фракции")
+            siege = s.get("siege")
+            if siege:
+                if user_id in (siege.get("initial_defenders") or []):
+                    raise HTTPException(status_code=400, detail="Твои орлы стояли на Скале при начале штурма — резерв только для свежих сил")
+                if any(f["uid"] == user_id for f in siege["defenders"]):
+                    raise HTTPException(status_code=409, detail="Твои орлы уже в гарнизоне")
+                free = slots - len(rock_alive(siege["defenders"]))
+                if free <= 0:
+                    raise HTTPException(status_code=409, detail="Свободных мест в гарнизоне нет")
+                cur = dict(siege)
+                cur["defenders"] = cur["defenders"] + rock_fighters(snap[:free], "d", len(cur["defenders"]))
+                cur["reserves"] = sorted(set(cur.get("reserves") or []) | {user_id})
+                return {"siege": cur}, min(free, len(snap))
+            garrison = s.get("garrison") or []
+            if any(f["uid"] == user_id for f in garrison):
+                raise HTTPException(status_code=409, detail="Твои орлы уже в гарнизоне")
+            free = slots - len(garrison)
+            if free <= 0:
+                raise HTTPException(status_code=409, detail="Свободных мест в гарнизоне нет")
+            add = [dict(e, hp=e["max"]) for e in snap[:free]]
+            return {"garrison": garrison + add}, len(add)
+
+        _, added = await rock_cas(mutate)
+        return {**(await rock_response(user_id)), "added": added}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось отправить орлов на Скалу — попробуй ещё раз")
+
+
+@app.post("/api/rock/challenge")
+async def rock_challenge(request: RockAction, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Бросить вызов Лидеру»: 1 раз в сутки, нужно min N орлов. Пока идёт
+    1-минутный бой, вызовы остальных отклоняются (is_under_challenge)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        st = await rock_require_active()
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        leader = rock_public_leader(st, fid)
+        if not leader:
+            raise HTTPException(status_code=400, detail="Во фракции пока нет Лидера")
+        if leader["id"] == user_id:
+            raise HTTPException(status_code=400, detail="Ты и есть Лидер")
+        busy = (st.get("challenges") or {}).get(fid)
+        if busy:
+            raise HTTPException(status_code=409, detail=f"Лидер защищает трон в бою против {busy['challenger_name']}")
+        snap = rock_snapshot(row)
+        need = rock_int("challenge_min_eagles", 3)
+        if len(snap) < need:
+            raise HTTPException(status_code=400, detail=f"Нужно минимум {need} орла {rock_min_level()} ур. (не на рынке)")
+        prev = await rock_claim_daily(user_id, "rock_challenge_day", fid)
+        if prev is None:
+            raise HTTPException(status_code=409, detail="Бросить вызов можно 1 раз в сутки — снова завтра")
+        now = time.time()
+        name = str(row.get("name") or f"Игрок {user_id}")[:40]
+
+        def mutate(s):
+            cur = (s.get("challenges") or {}).get(fid)
+            if cur:
+                raise HTTPException(status_code=409, detail=f"Лидер защищает трон в бою против {cur['challenger_name']}")
+            ld = rock_public_leader(s, fid)
+            if not ld or ld["id"] == user_id:
+                raise HTTPException(status_code=409, detail="Лидер сменился — экран обновлён")
+            challenges = dict(s.get("challenges") or {})
+            challenges[fid] = {"challenger_id": user_id, "challenger_name": name, "leader_id": ld["id"],
+                               "leader_name": ld["name"], "started_at": now,
+                               "ends_at": now + max(5.0, rock_num("challenge_seconds", 60)),
+                               "seed": secrets.token_hex(8), "att": snap}
+            return {"challenges": challenges}, ld
+
+        try:
+            _, ld = await rock_cas(mutate)
+        except Exception:
+            await rock_release_daily(user_id, "rock_challenge_day", prev)
+            raise
+        await rock_feed_add([fid], f"⚔️ {name} бросил вызов Лидеру {ld['name']}! Бой идёт 1 минуту.",
+                            f"⚔️ {name} challenged Leader {ld['name']}! The duel lasts 1 minute.")
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось бросить вызов — попробуй ещё раз")
+
+
+# --- АДМИН: запуск Скалы ---
+async def rock_run_balancer(now: float) -> dict:
+    """Ветераны (заходили за veterans_active_days, есть орлы N ур.) по силе
+    «змейкой» раскладываются по трём фракциям; сильнейший в каждой — Лидер."""
+    cutoff = now - rock_num("veterans_active_days", 7) * 86400
+    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1, "last_seen": 1}
+    cands = []
+    async for doc in store.users.find({"is_bot": {"$ne": True}, "last_seen": {"$gte": cutoff}}, proj):
+        p = rock_player_power(doc)
+        if p > 0:
+            cands.append((p, doc["_id"], str(doc.get("name") or f"Игрок {doc['_id']}")[:40], doc.get("faction_id")))
+    cands.sort(key=lambda c: (-c[0], c[1]))
+    top = cands[:max(0, rock_int("veterans_top", 30))]
+    snake = []
+    while len(snake) < len(top):
+        snake += ROCK_FACTION_ORDER + ROCK_FACTION_ORDER[::-1]
+    totals = {f: 0.0 for f in ROCK_FACTION_ORDER}
+    leaders = {}
+    assigned = 0
+    for (power, uid, name, existing), fid in zip(top, snake):
+        if existing in ROCK_FACTIONS:
+            fid = existing
+        else:
+            res = await store.users.update_one({"_id": uid, "faction_id": None}, {"$set": {"faction_id": fid, "faction_joined_at": now}})
+            if res.modified_count == 0:
+                cur = await store.users.find_one({"_id": uid}, {"faction_id": 1})
+                fid = (cur or {}).get("faction_id")
+                if fid not in ROCK_FACTIONS:
+                    continue
+            assigned += 1
+        totals[fid] += power
+        if fid not in leaders:
+            leaders[fid] = {"id": uid, "name": name, "since": now}
+    owner = max(ROCK_FACTION_ORDER, key=lambda f: (totals[f], -ROCK_FACTION_ORDER.index(f))) if any(totals.values()) else ROCK_FACTION_ORDER[0]
+    return {"leaders": leaders, "owner": owner, "assigned": assigned, "veterans": len(top),
+            "totals": {k: round(v) for k, v in totals.items()}}
+
+
+class AdminRockVisibility(BaseModel):
+    active: bool
+
+
+class AdminRockTestWindow(BaseModel):
+    faction_id: str
+    minutes: int = 60
+
+
+async def admin_rock_view() -> dict:
+    st = await rock_get_state()
+    now = time.time()
+    data = await rock_faction_stats(force=True)
+    siege = st.get("siege")
+    return {
+        "active": st.get("active"), "initialized": st.get("initialized"), "initializing": st.get("initializing"),
+        "activated_at": st.get("activated_at"), "owner": st.get("owner"),
+        "factions": [{**ROCK_FACTIONS[f], **data[f], "leader": rock_public_leader(st, f),
+                      "fail_streak": int((st.get("fail_streak") or {}).get(f) or 0), "rage_pct": rock_rage_pct(st, f),
+                      "challenge": bool((st.get("challenges") or {}).get(f))} for f in ROCK_FACTION_ORDER],
+        "garrison": len(st.get("garrison") or []), "garrison_slots": rock_int("garrison_slots", 50),
+        "siege": {"attacker": siege["attacker"], "defender": siege["defender"], "round": siege.get("round", 0),
+                  "rounds_total": rock_siege_rounds_total(), "ends_at": siege["ends_at"],
+                  "att_alive": len(rock_alive(siege["attackers"])), "att_total": len(siege["attackers"]),
+                  "def_alive": len(rock_alive(siege["defenders"])), "def_total": len(siege["defenders"]),
+                  "domination": rock_domination(siege)} if siege else None,
+        "last_siege": {k: v for k, v in (st.get("last_siege") or {}).items() if k != "payouts"} or None,
+        "upcoming": rock_upcoming_windows(st, now, 4), "test_window": st.get("test_window"),
+        "now": now, "utc_offset_hours": rock_num("utc_offset_hours", 3),
+    }
+
+
+@app.get("/admin/api/rock")
+async def admin_rock(_: None = Depends(require_admin)):
+    try:
+        return await admin_rock_view()
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось прочитать состояние Скалы")
+
+
+@app.post("/admin/api/rock/activate")
+async def admin_rock_activate(_: None = Depends(require_admin)):
+    """«ЗАПУСТИТЬ ОРЛИНУЮ СКАЛУ»: первый запуск — балансировщик ветеранов,
+    стартовые Лидеры и владелец Скалы; повторный (после «Скрыть») — только
+    снова показывает Скалу игрокам. Двойной клик безопасен: запуск
+    захватывается CAS-флагом initializing."""
+    try:
+        now = time.time()
+        st = await rock_get_state()
+        if st.get("initialized"):
+            await rock_cas(lambda s: ({"active": True}, True) if not s.get("active") else (None, False))
+            return {**(await admin_rock_view()), "message": "Скала снова открыта игрокам"}
+
+        def claim(s):
+            if s.get("initialized") or s.get("initializing"):
+                raise HTTPException(status_code=409, detail="Запуск уже идёт или выполнен — обнови страницу")
+            return {"initializing": True}, True
+
+        await rock_cas(claim)
+        try:
+            bal = await rock_run_balancer(now)
+        except Exception:
+            await rock_cas(lambda s: ({"initializing": False}, True))
+            raise
+
+        def finish(s):
+            return {"active": True, "initialized": True, "initializing": False, "activated_at": now,
+                    "leaders": bal["leaders"], "owner": bal["owner"], "merit_hour": int(now // 3600),
+                    "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None}, True
+
+        await rock_cas(finish)
+        ROCK_POWER_CACHE["data"] = None
+        await rock_feed_add(list(ROCK_FACTION_ORDER),
+                            f"🏔 Орлиная Скала открыта! Её первым удерживает {rock_faction_name(bal['owner'])}.",
+                            f"🏔 The Eagle Rock is open! It is first held by {rock_faction_name(bal['owner'], 'en')}.")
+        return {**(await admin_rock_view()), "message": f"Скала запущена: ветеранов распределено {bal['assigned']} из {bal['veterans']}",
+                "balancer": bal}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось запустить Скалу")
+
+
+@app.post("/admin/api/rock/visibility")
+async def admin_rock_visibility(body: AdminRockVisibility, _: None = Depends(require_admin)):
+    try:
+        st = await rock_get_state()
+        if body.active and not st.get("initialized"):
+            raise HTTPException(status_code=400, detail="Сначала запусти Скалу кнопкой «ЗАПУСТИТЬ»")
+        await rock_cas(lambda s: ({"active": body.active}, True) if bool(s.get("active")) != body.active else (None, False))
+        return await admin_rock_view()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось переключить Скалу")
+
+
+@app.post("/admin/api/rock/test_window")
+async def admin_rock_test_window(body: AdminRockTestWindow, _: None = Depends(require_admin)):
+    """Тестовое окно штурма прямо сейчас (для проверки без ожидания 15:00/20:00)."""
+    try:
+        if body.faction_id not in ROCK_FACTIONS:
+            raise HTTPException(status_code=400, detail="Неизвестная фракция")
+        now = time.time()
+        minutes = max(1, min(180, int(body.minutes or 60)))
+
+        def mutate(s):
+            if not s.get("initialized"):
+                raise HTTPException(status_code=400, detail="Сначала запусти Скалу")
+            if s.get("owner") == body.faction_id:
+                raise HTTPException(status_code=400, detail="Эта фракция владеет Скалой — ей нечего штурмовать")
+            return {"test_window": {"key": f"test:{int(now)}", "faction": body.faction_id, "start": now, "end": now + minutes * 60}}, True
+
+        await rock_cas(mutate)
+        return await admin_rock_view()
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось открыть тестовое окно")
+
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -11532,6 +12753,7 @@ async def startup_event():
     asyncio.create_task(auction_worker())
     asyncio.create_task(auto_expedition_worker())
     asyncio.create_task(raid_worker())
+    asyncio.create_task(rock_worker())
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад
     except Exception as e:
