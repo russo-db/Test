@@ -2237,7 +2237,7 @@
     </div>
 
     <!-- LOCKED SLOT MODAL -->
-    <div class="modal-backdrop" id="huntModal" onclick="if (event.target === this) closeHuntModal()">
+    <div class="modal-backdrop" id="huntModal" onclick="if (event.target === this && Date.now() - huntModalOpenedAt > 350) closeHuntModal()">
         <div class="modal-box glass-panel" id="huntModalBody"></div>
     </div>
 
@@ -13199,7 +13199,7 @@
                 <h2>${rare ? t('hunt.loot.rare') : t('hunt.loot.title')}</h2>
                 ${rows}
                 <button class="btn-primary" style="margin-top:12px" onclick="closeHuntModal()">${t('hunt.loot.take')}</button>`);
-            document.getElementById('huntModal').classList.add('open');
+            openHuntModalEl();
         }
 
         // --- Склад / Алхимия ---
@@ -13213,7 +13213,7 @@
             haptic.select();
             huntModalItem = key;
             renderHuntModalItem();
-            document.getElementById('huntModal').classList.add('open');
+            openHuntModalEl();
         }
 
         function renderHuntModalItem() {
@@ -13240,6 +13240,31 @@
             renderNest();
         }
 
+        // Двойной тап: второй тап не должен ни закрыть только что открытое окно
+        // (он попадает в затемнённый фон), ни «провалиться» сквозь закрытое окно
+        // в кнопку под ним.
+        let huntModalOpenedAt = 0;
+        function openHuntModalEl() {
+            const m = document.getElementById('huntModal');
+            if (!m.classList.contains('open')) huntModalOpenedAt = Date.now();   // перерисовка открытого окна паузу не сбрасывает
+            m.classList.add('open');
+        }
+        // первые 350 мс после открытия окно не принимает нажатий: второй тап
+        // двойного тапа иначе попадает прямо в «Подтвердить» и действие
+        // проходит без подтверждения (или закрывает окно, попав в фон)
+        (function () {
+            const m = document.getElementById('huntModal');
+            if (m) m.addEventListener('click', e => {
+                if (Date.now() - huntModalOpenedAt < 350) { e.stopPropagation(); e.preventDefault(); }
+            }, true);
+        })();
+        function tapShield(ms) {
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:transparent;';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), ms);
+        }
+
         function huntConfirm(title, html, okText, onOk) {
             huntModalItem = null;
             document.getElementById('huntModalBody').innerHTML = goldify(`
@@ -13248,8 +13273,8 @@
                 <button class="btn-primary" style="margin-top:12px" id="huntConfirmOk">${okText}</button>
                 <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`);
             let fired = false;
-            document.getElementById('huntConfirmOk').onclick = () => { if (fired) return; fired = true; closeHuntModal(); onOk(); };
-            document.getElementById('huntModal').classList.add('open');
+            document.getElementById('huntConfirmOk').onclick = () => { if (fired) return; fired = true; tapShield(450); closeHuntModal(); onOk(); };
+            openHuntModalEl();
         }
 
         function closeHuntModal() {
@@ -13548,7 +13573,7 @@
                 <p class="slot-modal-sub" style="margin-top:6px">${t('raid.pickNote')}</p>
                 <button class="btn-primary" style="margin-top:10px" id="raidPickConfirm" ${ready ? '' : 'disabled'} onclick="raidConfirmPick()">${t(p.mode === 'create' ? 'raid.confirmCreate' : 'raid.confirmJoin')}</button>
                 <button class="btn-action roll-close" onclick="raidClosePick()">${t('common.cancel')}</button>`);
-            document.getElementById('huntModal').classList.add('open');
+            openHuntModalEl();
         }
 
         function raidPickEagle(i) { if (!raidPick) return; haptic.select(); raidPick.slot = i; renderRaidPick(); }
