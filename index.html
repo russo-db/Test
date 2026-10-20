@@ -9077,6 +9077,7 @@
                 if (seq !== rockLoadSeq) return;   // пришёл ответ старого запроса — пропускаем
                 rockData = data;
                 renderRock();
+                rockArmyRefresh();
             } catch (e) {
                 if (!silent) toast(t('market.serverError'));
             }
@@ -9091,7 +9092,8 @@
             rockLastPoll = Date.now();
             // во время штурма или вызова — каждые 4 с, иначе раз в 15 с
             rockPollTimer = setInterval(() => {
-                const fast = rockData && rockData.active && (rockData.siege || rockData.challenge);
+                const armyOpen = !!document.querySelector('#huntModal.open .rock-army-list');   // ждут объявления штурма в окне войска
+                const fast = rockData && rockData.active && (rockData.siege || rockData.challenge || armyOpen);
                 if (fast || Date.now() - rockLastPoll > 15000) { rockLastPoll = Date.now(); loadRock(true); }
             }, 4000);
             rockTickTimer = setInterval(tickRock, 1000);
@@ -9408,6 +9410,7 @@
                 </div>`;
             }).join('');
             const act = rockArmyAction(r);
+            rockArmyKey = JSON.stringify([act.btn || '', act.note || '', army.length]);
             document.getElementById('huntModalBody').innerHTML = goldify(`
                 <h2>${t('rock.army.title')}</h2>
                 <p class="slot-modal-sub">${t('rock.army.sub', { lvl: r.min_level, n: army.length })}</p>
@@ -9417,6 +9420,19 @@
                 <button class="btn-action roll-close" onclick="closeHuntModal()">${t('rock.army.close')}</button>`);
             openHuntModalEl();
             return true;
+        }
+
+        // окно войска открыто, а на сервере всё поменялось (Лидер объявил штурм, освободились
+        // места) — окно перерисовывается само; пока ничего не поменялось — не трогаем
+        let rockArmyKey = '';
+        function rockArmyRefresh() {
+            const body = document.getElementById('huntModalBody');
+            const modal = document.getElementById('huntModal');
+            if (!rockData || !modal || !modal.classList.contains('open') || !body || !body.querySelector('.rock-army-list')) return;
+            if (farmActionBusy.has('rock-plus') || farmActionBusy.has('rock-garrison')) return;
+            const act = rockArmyAction(rockData);
+            const key = JSON.stringify([act.btn || '', act.note || '', (rockData.me.army || []).length]);
+            if (key !== rockArmyKey) rockOpenArmy();
         }
 
         async function rockArmyConfirm(kind) {

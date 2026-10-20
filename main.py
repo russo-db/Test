@@ -10847,10 +10847,11 @@ async def ledger_maintenance():
                 print(f"[eggs] удалено старых записей журнала яиц: {removed}")
         except Exception as e:
             print(f"[eggs] egg log prune failed: {type(e).__name__}: {e}")
-        try:   # 🏔 Орлиная Скала: вести фракций — 30 дней, разнесённые выплаты — 90 дней
+        try:   # 🏔 Орлиная Скала: вести фракций — 30 дней, разнесённые выплаты — 90 дней, рассылки призыва — 7 дней
             now = time.time()
             await store.rock_feed.delete_many({"ts": {"$lt": now - 30 * 86400}})
             await store.rock_history.delete_many({"paid": True, "ts": {"$lt": now - 90 * 86400}})
+            await store.rock_calls.delete_many({"status": "done", "created_at": {"$lt": now - 7 * 86400}})
         except Exception as e:
             print(f"[rock] prune failed: {type(e).__name__}: {e}")
         await asyncio.sleep(6 * 3600)
@@ -12879,6 +12880,9 @@ ROCK_CALL_COOLDOWN = 3600
 ROCK_CALL_RATE = 25
 ROCK_CALL_PARAM = "faction_assault"
 ROCK_CALL_WORKER_ID = secrets.token_hex(4)
+# аренда пачки: с запасом на медленный Telegram (таймауты отправки — секунды),
+# чтобы второй процесс не счёл пачку брошенной и не разослал её повторно
+ROCK_CALL_LEASE = 180
 ROCK_CALL_TEXTS = {
     "sun": "☀️ Вас призывает Лидер Легиона Кровавого Солнца! Братья, обнажите когти! Наш вожак собирает "
            "Кровавую Стаю для сокрушительного штурма Орлиной Скалы! Подтвердите свое войско!",
@@ -13016,7 +13020,7 @@ def _retry_seconds(value) -> float:
 
 
 async def rock_call_step() -> bool:
-    """Одна пачка рассылки: берёт задание (аренда на 30 с — второй процесс его
+    """Одна пачка рассылки: берёт задание (аренда ROCK_CALL_LEASE — второй процесс его
     не тронет), шлёт до ROCK_CALL_RATE сообщений параллельно и держит пачку
     не короче секунды (не больше ROCK_CALL_RATE в секунду). Кому Telegram
     ответил «слишком часто» — переставляются в конец очереди, задание ждёт
@@ -13026,7 +13030,7 @@ async def rock_call_step() -> bool:
     t0 = time.time()
     job = await store.rock_calls.find_one_and_update(
         {"status": "pending", "lease_until": {"$lt": t0}},
-        {"$set": {"lease_until": t0 + 30, "lease_owner": ROCK_CALL_WORKER_ID}},
+        {"$set": {"lease_until": t0 + ROCK_CALL_LEASE, "lease_owner": ROCK_CALL_WORKER_ID}},
         sort=[("created_at", 1)], return_document=ReturnDocument.AFTER)
     if not job:
         return False
