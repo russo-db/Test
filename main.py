@@ -8768,7 +8768,11 @@ async def admin_login(body: AdminLogin, request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Неверный пароль")
 
     token = secrets.token_urlsafe(32)
-    ADMIN_SESSIONS[token] = time.time() + ADMIN_SESSION_TTL
+    now = time.time()
+    for t, exp in list(ADMIN_SESSIONS.items()):   # просроченные сессии — прочь
+        if exp < now:
+            ADMIN_SESSIONS.pop(t, None)
+    ADMIN_SESSIONS[token] = now + ADMIN_SESSION_TTL
     response.set_cookie(
         "admin_session", token, httponly=True, samesite="strict",
         max_age=ADMIN_SESSION_TTL, path="/admin",
@@ -10239,6 +10243,10 @@ async def fetch_collection_nfts(wallet: str) -> List[str]:
     if not report["ok"]:
         codes = ", ".join(f"{p['provider']}={p['status']}" for p in report["providers"])
         raise NftApiError(f"all TON providers failed ({codes})")
+    if len(_NFT_CHECK_CACHE) > 5000:   # кошельков много — выбрасываем просроченные, чтобы кэш не рос бесконечно
+        for w, (ts, _found) in list(_NFT_CHECK_CACHE.items()):
+            if now - ts >= NFT_CHECK_CACHE_SECONDS:
+                _NFT_CHECK_CACHE.pop(w, None)
     _NFT_CHECK_CACHE[wallet] = (now, report["found"])
     return report["found"]
 
