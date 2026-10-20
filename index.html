@@ -173,15 +173,16 @@
                        background: radial-gradient(120% 80% at 50% 0%, #f7e7bf, #e9cf93 60%, #d7b06a); box-shadow: inset 0 0 0 2px #a8793a, inset 0 0 24px rgba(120, 72, 10, 0.35), 0 8px 24px rgba(0,0,0,0.45); }
         .rock-scroll h3 { font-family: 'Orbitron', 'Poppins', sans-serif; text-align: center; color: #5a3608; margin: 0 0 4px; }
         .rock-scroll .rock-muted { color: #6b4a1a; text-align: center; }
-        .rock-lvl { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px dashed rgba(90, 54, 8, 0.35); font-size: 12px; }
+        .rock-lvl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 6px; border-bottom: 1px dashed rgba(90, 54, 8, 0.35); font-size: 12px; }
         .rock-lvl:last-child { border-bottom: none; }
         .rock-lvl .rock-lvl-n { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800;
                                 background: rgba(90, 54, 8, 0.14); border: 1px solid rgba(90, 54, 8, 0.45); }
         .rock-lvl.done .rock-lvl-n { background: #5a3608; color: #fde68a; }
-        .rock-lvl .rock-lvl-txt { flex: 1; min-width: 0; line-height: 1.4; }
-        .rock-lvl .btn-primary { flex: 0 0 auto; width: auto; padding: 8px 10px; font-size: 11.5px; white-space: nowrap; }
+        .rock-lvl .rock-lvl-txt { flex: 1 1 150px; min-width: 0; line-height: 1.4; }
+        .rock-lvl .btn-primary { flex: 0 0 auto; width: auto; margin-left: auto; padding: 8px 10px; font-size: 11.5px; white-space: nowrap; }
         .rock-busy { text-align: center; padding: 10px; border-radius: 12px; font-weight: 700; font-size: 13px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.45); }
         .rock-lvl.locked { opacity: 0.55; }
+        .rock-lvl .rock-lvl-side { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
 
         /* Big soft neon blobs drifting behind everything */
         .ambient-orb { position: absolute; border-radius: 50%; filter: blur(70px); z-index: 0; opacity: 0.45; animation: floatOrb 15s infinite alternate ease-in-out; pointer-events: none; }
@@ -9255,9 +9256,9 @@
                 html += `<div class="rock-lvl ${done ? 'done' : (next ? '' : 'locked')}">
                     <div class="rock-lvl-n">${x.level}</div>
                     <div class="rock-lvl-txt">${t('rock.lvlBonus', { atk: rockNum(x.atk), def: rockNum(x.def), hp: rockNum(x.hp), crit: rockNum(x.crit), spd: rockNum(x.spd) })}</div>
-                    ${done ? `<span style="font-weight:800">${t('rock.learned')}</span>`
+                    ${done ? `<span class="rock-lvl-side" style="font-weight:800">${t('rock.learned')}</span>`
                         : (next ? `<button class="btn-primary" ${me.merit < x.cost ? 'disabled' : ''} onclick="rockLearn(${lv})">${t('rock.learn', { cost: x.cost })}</button>`
-                            : `<span style="font-weight:700">${x.cost} 🏅</span>`)}
+                            : `<span class="rock-lvl-side" style="font-weight:700">${x.cost} 🏅</span>`)}
                 </div>`;
             });
             if (lv >= (r.research || []).length) html += `<div class="rock-muted" style="margin-top:8px; font-weight:800">${t('rock.researchMax')}</div>`;

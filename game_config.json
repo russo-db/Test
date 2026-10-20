@@ -724,16 +724,16 @@
     "crit_cap_pct": 60,
     "crit_mult": 2,
     "research": [
-      {"cost": 50, "atk": 0.5, "def": 0.5, "hp": 2, "crit": 0.25, "spd": 0.25},
-      {"cost": 80, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
-      {"cost": 110, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
-      {"cost": 150, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
-      {"cost": 200, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
-      {"cost": 260, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
-      {"cost": 330, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
-      {"cost": 410, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
-      {"cost": 500, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
-      {"cost": 610, "atk": 2.0, "def": 2.0, "hp": 10, "crit": 1.0, "spd": 1.0}
+      {"cost": 250, "atk": 0.5, "def": 0.5, "hp": 2, "crit": 0.25, "spd": 0.25},
+      {"cost": 400, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
+      {"cost": 550, "atk": 0.5, "def": 0.5, "hp": 3, "crit": 0.25, "spd": 0.25},
+      {"cost": 750, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 1000, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 1300, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 1650, "atk": 1.0, "def": 1.0, "hp": 5, "crit": 0.5, "spd": 0.5},
+      {"cost": 2050, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
+      {"cost": 2500, "atk": 1.5, "def": 1.5, "hp": 7, "crit": 0.75, "spd": 0.75},
+      {"cost": 3050, "atk": 2.0, "def": 2.0, "hp": 10, "crit": 1.0, "spd": 1.0}
     ]
   }
 }
