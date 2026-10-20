@@ -8823,6 +8823,25 @@ async def admin_get_player(user_id: int, _: None = Depends(require_admin)):
     return doc
 
 
+def admin_num(value, label: str, lo: float, hi: float, integer: bool = False):
+    """Число из админки: пустое, нечисло и бесконечность — 400 с понятным
+    текстом (раньше падали в 500, а бесконечность успевала записаться в
+    баланс игрока); остальное прижимается к [lo, hi]."""
+    if value is None:
+        raise HTTPException(status_code=400, detail=f"«{label}»: пустое значение")
+    try:
+        x = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=400, detail=f"«{label}»: нужно число")
+    if not math.isfinite(x):
+        raise HTTPException(status_code=400, detail=f"«{label}»: слишком большое число")
+    x = min(max(x, lo), hi)
+    return int(x) if integer else x
+
+
+ADMIN_MAX_BALANCE = 1e12
+
+
 @app.post("/admin/api/players/{user_id}")
 async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
                                _: None = Depends(require_admin)):
@@ -8834,16 +8853,24 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
     if not fields:
         raise HTTPException(status_code=400, detail="Нечего сохранять")
 
+    if "name" in fields:
+        fields["name"] = str(fields["name"] or "")[:64]
     if "coins" in fields:
-        fields["coins"] = max(0.0, float(fields["coins"]))
+        fields["coins"] = admin_num(fields["coins"], "GRAM", 0.0, ADMIN_MAX_BALANCE)
     if "mnstr" in fields:
-        fields["mnstr"] = max(0.0, float(fields["mnstr"]))
+        fields["mnstr"] = admin_num(fields["mnstr"], "Мясо", 0.0, ADMIN_MAX_BALANCE)
     if "gold" in fields:
-        fields["gold"] = max(0.0, float(fields["gold"]))
+        fields["gold"] = admin_num(fields["gold"], "Золото", 0.0, ADMIN_MAX_BALANCE)
     if "slots" in fields:
-        fields["slots"] = max(START_SLOTS, min(int(fields["slots"]), MAX_SLOTS))
+        fields["slots"] = admin_num(fields["slots"], "Слоты", START_SLOTS, MAX_SLOTS, integer=True)
     if "active_slot" in fields:
-        fields["active_slot"] = max(0, int(fields["active_slot"]))
+        fields["active_slot"] = admin_num(fields["active_slot"], "Активный слот", 0, 10_000, integer=True)
+    if "vip_tier" in fields:
+        if fields["vip_tier"] not in (None, "") and fields["vip_tier"] not in VIP_TIERS:
+            raise HTTPException(status_code=400, detail="Неизвестный уровень VIP")
+    if "vip_expires_at" in fields:
+        fields["vip_expires_at"] = admin_num(fields["vip_expires_at"] if fields["vip_expires_at"] is not None else 0,
+                                             "VIP до", 0.0, 4_102_444_800.0)
     if "monsters" in fields:
         fields["monsters"] = read_farm(fields["monsters"])
     if "eggs_board" in fields:
@@ -8851,7 +8878,7 @@ async def admin_update_player(user_id: int, body: AdminPlayerUpdate,
         board = normalize_eggs_board(fields["eggs_board"])
         fields["eggs_board"] = [min(max_level, v) for v in board]
     if "eggs_board_unlocked" in fields:
-        fields["eggs_board_unlocked"] = max(2, min(EGG_BOARD_SIZE, int(fields["eggs_board_unlocked"])))
+        fields["eggs_board_unlocked"] = admin_num(fields["eggs_board_unlocked"], "Открыто ячеек", 2, EGG_BOARD_SIZE, integer=True)
 
     def compute(row):
         out = dict(fields)
@@ -9713,8 +9740,8 @@ async def admin_create_bot_clan(body: AdminCreateBotClan, _: None = Depends(requ
     """Один тестовый клан-бот с заданной силой — для проверки конкретного
     сценария (например, клан ровно на нужном месте посева)."""
     name = (body.name or "").strip()[:24] or "Bot Clan"
-    power = max(0.0, float(body.clan_power))
-    count = max(1, min(int(body.member_count), CLAN_MEMBER_LIMIT))
+    power = admin_num(body.clan_power, "Сила клана", 0.0, 1e9)
+    count = admin_num(body.member_count, "Участников", 1, CLAN_MEMBER_LIMIT, integer=True)
     clan_id = await create_equipped_bot_clan(name, power, count)
     clan = await store.get_clan(clan_id)
     return {"status": "success", "clan_id": clan_id, "clan": clan_view(clan)}
@@ -9726,9 +9753,9 @@ async def admin_bulk_create_bot_clans(body: AdminBulkCreateBotClans, _: None = D
     [min_power, max_power] — быстрый способ набрать полное поле (напр. 31
     клан) для обкатки турнира Топ-32/16/8, не дожидаясь регистрации
     реальных кланов."""
-    count = max(1, min(int(body.count), 32))
-    member_count = max(1, min(int(body.member_count), CLAN_MEMBER_LIMIT))
-    lo, hi = float(body.min_power), float(body.max_power)
+    count = admin_num(body.count, "Кланов", 1, 32, integer=True)
+    member_count = admin_num(body.member_count, "Участников", 1, CLAN_MEMBER_LIMIT, integer=True)
+    lo, hi = admin_num(body.min_power, "Мин. сила", 0.0, 1e9), admin_num(body.max_power, "Макс. сила", 0.0, 1e9)
     if lo > hi:
         lo, hi = hi, lo
     created = 0
