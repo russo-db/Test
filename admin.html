@@ -1529,13 +1529,15 @@ async function openLedgerModal(userId) {
 async function loadLedger(more) {
     const st = ledgerState;
     if (!st) return;
+    // ответ устаревшей загрузки (фильтр сменили, пока шла подгрузка) не подмешиваем
+    const seq = st.seq = (st.seq || 0) + 1;
     const params = new URLSearchParams({ limit: '100' });
     if (st.currency) params.set('currency', st.currency);
     if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
     let data;
     try { data = await api(`/admin/api/players/${st.userId}/ledger?${params}`); }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
-    if (ledgerState !== st) return;
+    if (ledgerState !== st || st.seq !== seq) return;
     st.data = data;
     st.entries = more ? st.entries.concat(data.entries) : data.entries;
     st.hasMore = data.has_more;
@@ -1622,12 +1624,13 @@ async function openItemLogModal(userId) {
 }
 async function loadItemLog(more) {
     const st = itemLogState; if (!st) return;
+    const seq = st.seq = (st.seq || 0) + 1;
     const params = new URLSearchParams({ limit: '100' });
     if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
     let data;
     try { data = await api(`/admin/api/players/${st.userId}/items_log?${params}`); }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
-    if (itemLogState !== st) return;
+    if (itemLogState !== st || st.seq !== seq) return;
     st.data = data; st.entries = more ? st.entries.concat(data.entries) : data.entries; st.hasMore = data.has_more;
     renderItemLog();
 }
@@ -1654,7 +1657,7 @@ function renderItemLog() {
         <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Когда</th><th>Действие</th><th>Изменение</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="3" class="muted">Записей пока нет</td></tr>'}</tbody></table></div>
         ${st.hasMore ? '<button id="itemLogMore" style="margin-top:8px;">Показать ещё</button>' : ''}`;
-    const more = document.getElementById('itemLogMore'); if (more) more.onclick = () => loadItemLog(true);
+    const more = document.getElementById('itemLogMore'); if (more) more.onclick = () => withBusyButton(more, 'Загрузка…', () => loadItemLog(true));
 }
 
 async function openEggLogModal(userId) {
@@ -1676,13 +1679,14 @@ async function openEggLogModal(userId) {
 async function loadEggLog(more) {
     const st = eggLogState;
     if (!st) return;
+    const seq = st.seq = (st.seq || 0) + 1;
     const params = new URLSearchParams({ limit: '100' });
     if (st.kind) params.set('kind', st.kind);
     if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
     let data;
     try { data = await api(`/admin/api/players/${st.userId}/eggs?${params}`); }
     catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
-    if (eggLogState !== st) return;
+    if (eggLogState !== st || st.seq !== seq) return;
     st.data = data;
     st.entries = more ? st.entries.concat(data.entries) : data.entries;
     st.hasMore = data.has_more;
@@ -2155,10 +2159,12 @@ function renderTxRows() {
 }
 async function loadTransactions(more) {
     const offset = more ? txState.offset : 0;
+    const seq = txState.seq = (txState.seq || 0) + 1;   // поздний ответ старого поиска не смешиваем с новым
     try {
         const params = new URLSearchParams({ kind: document.getElementById('txKind').value,
             user_id: document.getElementById('txUser').value.trim(), limit: 100, offset });
         const d = await api('/admin/api/transactions?' + params);
+        if (txState.seq !== seq) return;
         txState.items = more ? txState.items.concat(d.items) : d.items;
         txState.offset = offset + d.items.length;
         renderTxTotals(d.totals);
@@ -2172,7 +2178,7 @@ document.getElementById('txSearch').onclick = () => loadTransactions();
 document.getElementById('txRefresh').onclick = () => loadTransactions();
 document.getElementById('txKind').onchange = () => loadTransactions();
 document.getElementById('txUser').addEventListener('keydown', e => { if (e.key === 'Enter') loadTransactions(); });
-document.getElementById('txMore').onclick = () => loadTransactions(true);
+document.getElementById('txMore').onclick = e => withBusyButton(e.currentTarget, 'Загрузка…', () => loadTransactions(true));
 
 /* ---------- экономика ---------- */
 /* ---------- удержание (Retention) ---------- */
