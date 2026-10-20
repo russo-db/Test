@@ -12263,13 +12263,20 @@ async def rock_faction_stats(force: bool = False) -> dict:
     if not force and ROCK_POWER_CACHE["data"] is not None and now - ROCK_POWER_CACHE["at"] < 30:
         return ROCK_POWER_CACHE["data"]
     data = {fid: {"members": 0, "power": 0.0} for fid in ROCK_FACTION_ORDER}
+    roster = {fid: [] for fid in ROCK_FACTION_ORDER}
     proj = {"faction_id": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "name": 1}
     async for doc in store.users.find({"faction_id": {"$in": ROCK_FACTION_ORDER}}, proj):
         fid = doc.get("faction_id")
         if fid in data:
+            snap = rock_snapshot(doc)
+            power = round(sum(rock_power(e) for e in snap), 2)
             data[fid]["members"] += 1
-            data[fid]["power"] = round(data[fid]["power"] + rock_player_power(doc), 2)
-    ROCK_POWER_CACHE.update(at=now, data=data)
+            data[fid]["power"] = round(data[fid]["power"] + power, 2)
+            roster[fid].append({"uid": doc["_id"], "name": str(doc.get("name") or f"Игрок {doc['_id']}")[:40],
+                                "power": round(power), "eagles": len(snap)})
+    for fid in roster:
+        roster[fid].sort(key=lambda m: (-m["power"], m["uid"]))
+    ROCK_POWER_CACHE.update(at=now, data=data, roster=roster)
     return data
 
 
@@ -12337,8 +12344,17 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     for f in (siege["defenders"] if siege else garrison):
         if f["hp"] > 0:
             g_holders[f["name"]] = g_holders.get(f["name"], 0) + 1
-    out["garrison"] = {"count": sum(g_holders.values()), "slots": rock_int("garrison_slots", 50),
-                       "players": sorted(({"name": k, "eagles": v} for k, v in g_holders.items()), key=lambda x: -x["eagles"])[:30]}
+    if st.get("owner") == fid:
+        out["garrison"] = {"count": sum(g_holders.values()), "slots": rock_int("garrison_slots", 50),
+                           "players": sorted(({"name": k, "eagles": v} for k, v in g_holders.items()), key=lambda x: -x["eagles"])[:30]}
+    else:
+        # состав и численность гарнизона противнику не отдаём вообще (не только на экране)
+        out["garrison"] = {"hidden": True, "slots": rock_int("garrison_slots", 50)}
+    # воины своей фракции — ники, сила и орлы 7 ур.; чужие фракции сюда не попадают
+    roster = (ROCK_POWER_CACHE.get("roster") or {}).get(fid) or []
+    leader_id = (rock_public_leader(st, fid) or {}).get("id")
+    out["roster"] = {"total": len(roster), "list": [{"name": m["name"], "power": m["power"], "eagles": m["eagles"],
+                                                      "leader": m["uid"] == leader_id, "me": m["uid"] == user_id} for m in roster[:100]]}
     me["in_garrison"] = sum(1 for f in (siege["defenders"] if siege else garrison) if f["uid"] == user_id and f["hp"] > 0)
     me["can_declare"] = bool(me["is_leader"] and win and win["faction"] == fid and not siege
                              and win["key"] not in (st.get("windows_used") or []))
@@ -12351,7 +12367,9 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
             "ends_at": siege["ends_at"], "round": siege.get("round", 0), "rounds_total": rock_siege_rounds_total(),
             "next_round_at": siege["started_at"] + (int(siege.get("round") or 0) + 1) * max(5.0, rock_num("round_seconds", 60)),
             "att_total": len(siege["attackers"]), "att_alive": len(rock_alive(siege["attackers"])),
-            "def_total": len(siege["defenders"]), "def_alive": len(rock_alive(siege["defenders"])),
+            # численность гарнизона видят только защитники
+            "def_total": len(siege["defenders"]) if fid == siege["defender"] else None,
+            "def_alive": len(rock_alive(siege["defenders"])) if fid == siege["defender"] else None,
             "att_players": len({f["uid"] for f in siege["attackers"]}),
             "domination": rock_domination(siege), "log": (siege.get("log") or [])[-5:],
             "mine": {"side": "a" if mine_att else ("d" if mine_def else None), "eagles": len(mine_att) + len(mine_def),
@@ -12368,7 +12386,8 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
                              and len(garrison) < rock_int("garrison_slots", 50))
     out["last_siege"] = st.get("last_siege") if st.get("last_siege") and now - float(st["last_siege"].get("ts") or 0) < 6 * 3600 else None
     if out["last_siege"]:
-        out["last_siege"] = dict({k: v for k, v in out["last_siege"].items() if k != "payouts"},
+        hide = () if st.get("owner") == fid else ("def_total", "def_alive")   # выжившие = новый гарнизон
+        out["last_siege"] = dict({k: v for k, v in out["last_siege"].items() if k != "payouts" and k not in hide},
                                  my_merit=int((st["last_siege"].get("payouts") or {}).get(str(user_id), 0)))
     ch = (st.get("challenges") or {}).get(fid)
     out["challenge"] = {"challenger_name": ch["challenger_name"], "challenger_id": ch["challenger_id"],

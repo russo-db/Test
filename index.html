@@ -171,6 +171,8 @@
         .rock-log { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
         .rock-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,0.07); font-size: 12.5px; }
         .rock-row:last-child { border-bottom: none; }
+        .rock-row-me span:first-child { color: #fcd34d; font-weight: 700; }
+        .rock-bar.rock-bar-hidden > i { background: repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0 8px, rgba(255,255,255,0.04) 8px 16px); }
         .rock-row span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rock-medal { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; vertical-align: middle;
                       background: radial-gradient(circle at 35% 30%, #fff3b0, #f5b301 55%, #a86b00); box-shadow: 0 0 0 2px #7a4b00 inset, 0 2px 8px rgba(245, 179, 1, 0.45); }
@@ -3293,6 +3295,14 @@
                 'rock.phrase.idle3': 'Над Скалой тихо… но ветер приносит запах битвы.',
                 'rock.arenaFaction': 'Фракция',
                 'rock.testBanner': '🧪 Закрытый тест: Скалу сейчас видят только админы',
+                'rock.garrisonHidden': 'Гарнизон: скрыт',
+                'rock.garrisonSecret': 'Гарнизон чужой фракции скрыт — кто и сколько орлов стоит на Скале, видят только её защитники.',
+                'rock.garrisonPrivate': '🔒 Противник не видит ваш гарнизон',
+                'rock.hidden': 'скрыт',
+                'rock.rosterTitle': '👥 Воины фракции ({n})',
+                'rock.rosterLine': '🦅 {e} · сила {p}',
+                'rock.rosterEmpty': 'Пока никого.',
+                'rock.rosterMore': '…и ещё {n}',
                 'rock.hiddenBanner': '🙈 Скала скрыта от игроков — сейчас её видят только админы',
             },
             en: {
@@ -4027,6 +4037,14 @@
                 'rock.phrase.idle3': 'The Rock is quiet… but the wind smells of battle.',
                 'rock.arenaFaction': 'Faction',
                 'rock.testBanner': '🧪 Closed test: only admins can see the Rock right now',
+                'rock.garrisonHidden': 'Garrison: hidden',
+                'rock.garrisonSecret': 'The enemy garrison is hidden — only the Rock\'s defenders see who holds it and with how many eagles.',
+                'rock.garrisonPrivate': '🔒 The enemy cannot see your garrison',
+                'rock.hidden': 'hidden',
+                'rock.rosterTitle': '👥 Faction warriors ({n})',
+                'rock.rosterLine': '🦅 {e} · power {p}',
+                'rock.rosterEmpty': 'Nobody yet.',
+                'rock.rosterMore': '…and {n} more',
                 'rock.hiddenBanner': '🙈 The Rock is hidden from players — only admins can see it now',
             },
         };
@@ -9212,9 +9230,14 @@
                     <div class="rock-timer">${t('rock.siegeTimer', { att: huntEsc(rockFName(att)), def: huntEsc(rockFName(def)), time: rockUntil(s.ends_at), r: s.round, total: s.rounds_total })}</div>`;
             } else {
                 const g = r.garrison || { count: 0, slots: r.garrison_slots };
-                const pct = Math.round(100 * (g.count || 0) / Math.max(1, g.slots || 1));
-                html += `<div class="rock-bar" style="--def:${rockRgba(owner && owner.color, 0.95)}"><i style="width:${pct}%"></i></div>
-                    <div class="rock-bar-legend"><span>${t('rock.garrison', { n: g.count || 0, slots: g.slots })}</span><span>${pct}%</span></div>`;
+                if (g.hidden) {
+                    html += `<div class="rock-bar rock-bar-hidden"><i style="width:100%"></i></div>
+                        <div class="rock-bar-legend"><span>${t('rock.garrisonHidden')}</span><span>🔒</span></div>`;
+                } else {
+                    const pct = Math.round(100 * (g.count || 0) / Math.max(1, g.slots || 1));
+                    html += `<div class="rock-bar" style="--def:${rockRgba(owner && owner.color, 0.95)}"><i style="width:${pct}%"></i></div>
+                        <div class="rock-bar-legend"><span>${t('rock.garrison', { n: g.count || 0, slots: g.slots })}</span><span>${pct}%</span></div>`;
+                }
                 if (r.window) html += `<div class="rock-timer">${t('rock.windowOpen', { name: huntEsc(rockFNameById(r.window.faction)), time: rockUntil(r.window.end) })}</div>`;
                 else {
                     const nxt = (r.upcoming || []).find(w => w.start > serverNow());
@@ -9249,7 +9272,7 @@
                 html += `<div class="rock-card glass-panel"><h3>${t('rock.siegeTitle')}</h3>
                     <div class="rock-stat-grid">
                         <div class="rock-stat">${t('rock.attackers')}<b>${t('rock.alive', { a: s.att_alive, t: s.att_total })}</b>${t('rock.players', { n: s.att_players })}</div>
-                        <div class="rock-stat">${t('rock.defenders')}<b>${t('rock.alive', { a: s.def_alive, t: s.def_total })}</b>&nbsp;</div>
+                        <div class="rock-stat">${t('rock.defenders')}<b>${s.def_total == null ? '🔒 ' + t('rock.hidden') : t('rock.alive', { a: s.def_alive, t: s.def_total })}</b>&nbsp;</div>
                     </div>
                     <div class="rock-log">${(s.log || []).slice().reverse().map(l => t('rock.logLine', { r: l.round, a: l.att_lost, d: l.def_lost })).join('<br>')}</div>
                 </div>`;
@@ -9262,10 +9285,16 @@
                     ${ls.my_merit ? `<div style="margin-top:4px">${t('rock.lastMine', { n: ls.my_merit })}</div>` : ''}</div>`;
             }
             const g = r.garrison;
-            html += `<div class="rock-card glass-panel" style="margin-top:12px"><h3>${t('rock.garrisonList')} <span class="rock-muted">${t('rock.garrison', { n: g ? g.count : 0, slots: r.garrison_slots })}</span></h3>
-                ${g && g.players && g.players.length ? g.players.map(p => `<div class="rock-row"><span>${huntEsc(p.name)}</span><span class="rock-muted">${t('rock.eagles', { n: p.eagles })}</span></div>`).join('')
-                    : `<div class="rock-muted">${t('rock.garrisonEmpty')}</div>`}
-            </div>`;
+            if (g && g.hidden) {
+                html += `<div class="rock-card glass-panel" style="margin-top:12px"><h3>${t('rock.garrisonList')}</h3>
+                    <div class="rock-muted">🔒 ${t('rock.garrisonSecret')}</div></div>`;
+            } else {
+                html += `<div class="rock-card glass-panel" style="margin-top:12px"><h3>${t('rock.garrisonList')} <span class="rock-muted">${t('rock.garrison', { n: g ? g.count : 0, slots: r.garrison_slots })}</span></h3>
+                    ${g && g.players && g.players.length ? g.players.map(p => `<div class="rock-row"><span>${huntEsc(p.name)}</span><span class="rock-muted">${t('rock.eagles', { n: p.eagles })}</span></div>`).join('')
+                        : `<div class="rock-muted">${t('rock.garrisonEmpty')}</div>`}
+                    <div class="rock-muted" style="margin-top:6px">${t('rock.garrisonPrivate')}</div>
+                </div>`;
+            }
             return html;
         }
 
@@ -9299,7 +9328,14 @@
             if (lc) html += `<div class="rock-result ${lc.won ? 'won' : 'lost'}">${lc.won
                 ? t('rock.challengeWon', { c: huntEsc(lc.challenger_name), l: huntEsc(lc.leader_name) })
                 : t('rock.challengeLost', { c: huntEsc(lc.challenger_name), l: huntEsc(lc.leader_name), pen: lc.penalty || 0 })}</div>`;
+            const ro = r.roster || { total: 0, list: [] };
             html += `</div>
+            <div class="rock-card glass-panel"><h3>${t('rock.rosterTitle', { n: ro.total })}</h3>
+                ${ro.list.length ? ro.list.map(m => `<div class="rock-row${m.me ? ' rock-row-me' : ''}"><span>${m.leader ? '👑 ' : ''}${huntEsc(m.name)}</span>
+                    <span class="rock-muted">${t('rock.rosterLine', { e: m.eagles, p: rockNum(m.power) })}</span></div>`).join('')
+                    : `<div class="rock-muted">${t('rock.rosterEmpty')}</div>`}
+                ${ro.total > ro.list.length ? `<div class="rock-muted" style="margin-top:6px">${t('rock.rosterMore', { n: ro.total - ro.list.length })}</div>` : ''}
+            </div>
             <div class="rock-card glass-panel"><h3>${t('rock.feedTitle')}</h3><div class="rock-feed">
                 ${(r.feed || []).length ? r.feed.map(m => `<div><small>${rockClock(m.ts)}</small>${huntEsc(LANG === 'en' ? (m.text_en || m.text) : m.text)}</div>`).join('') : `<div class="rock-muted">${t('rock.feedEmpty')}</div>`}
             </div></div>`;
