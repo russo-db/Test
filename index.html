@@ -9431,7 +9431,7 @@
             if (!rockData || !modal || !modal.classList.contains('open') || !body || !body.querySelector('.rock-army-list')) return;
             if (farmActionBusy.has('rock-plus') || farmActionBusy.has('rock-garrison')) return;
             // Скалу скрыли / игрок без фракции — окно войска больше не к месту
-            if (!rockData.active || !rockData.me || !rockData.me.faction_id) { closeHuntModal(); return; }
+            if (!rockData.active || !rockData.me || !rockData.me.faction_id) { tapShield(350); closeHuntModal(); return; }
             const act = rockArmyAction(rockData);
             const key = JSON.stringify([act.btn || '', act.note || '', (rockData.me.army || []).length]);
             if (key !== rockArmyKey) {
@@ -9443,16 +9443,17 @@
         }
 
         async function rockArmyConfirm(kind) {
-            if (!rockData || !rockData.active || !rockData.me || !rockData.me.faction_id) { closeHuntModal(); return; }
+            if (!rockData || !rockData.active || !rockData.me || !rockData.me.faction_id) { tapShield(350); closeHuntModal(); return; }
             const btn = document.getElementById('rockArmyConfirmBtn');
             if (btn) btn.disabled = true;
             const ok = kind === 'plus' ? await rockPost('api/rock/plus', {}, 'rock-plus') : await rockPost('api/rock/garrison', {}, 'rock-garrison');
             if (ok) {
+                tapShield(350);   // второй тап двойного тапа не проваливается под закрывшееся окно
                 closeHuntModal();
                 toast(kind === 'plus' ? t('rock.toast.plus') : t('rock.toast.garrison', { n: ok.added || 0 }));
             } else if (btn) {
                 // состояние изменилось — окно показывает актуальное (или закрывается, если Скала недоступна)
-                if (!rockOpenArmy()) closeHuntModal();
+                if (!rockOpenArmy()) { tapShield(350); closeHuntModal(); }
             }
         }
 
