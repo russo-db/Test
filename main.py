@@ -12689,17 +12689,17 @@ async def rock_run_balancer(now: float) -> dict:
     totals = {f: 0.0 for f in ROCK_FACTION_ORDER}
     leaders = {}
     assigned = 0
-    for (power, uid, name, existing), fid in zip(top, snake):
-        if existing in ROCK_FACTIONS:
-            fid = existing
-        else:
-            res = await store.users.update_one({"_id": uid, "faction_id": None}, {"$set": {"faction_id": fid, "faction_joined_at": now}})
-            if res.modified_count == 0:
-                cur = await store.users.find_one({"_id": uid}, {"faction_id": 1})
-                fid = (cur or {}).get("faction_id")
-                if fid not in ROCK_FACTIONS:
-                    continue
-            assigned += 1
+    for (power, uid, name, _existing), fid in zip(top, snake):
+        # Запуск происходит один раз, до него фракция могла появиться только
+        # у админа в закрытом тесте (в т.ч. гонкой в момент запуска) — ветеран
+        # всё равно получает фракцию по «змейке».
+        await store.users.update_one({"_id": uid, "faction_by": {"$ne": "balancer"}},
+                                     {"$set": {"faction_id": fid, "faction_joined_at": now, "faction_by": "balancer"}})
+        cur = await store.users.find_one({"_id": uid}, {"faction_id": 1})
+        fid = (cur or {}).get("faction_id")
+        if fid not in ROCK_FACTIONS:
+            continue
+        assigned += 1
         totals[fid] += power
         if fid not in leaders:
             leaders[fid] = {"id": uid, "name": name, "since": now}
@@ -12708,14 +12708,21 @@ async def rock_run_balancer(now: float) -> dict:
             "totals": {k: round(v) for k, v in totals.items()}}
 
 
-async def rock_wipe_test_data() -> None:
+async def rock_wipe_test_data(keep_balancer: bool = False) -> None:
     """Настоящий запуск после закрытого теста: фракции, Очки Заслуг,
     исследования и лимиты, набранные в тесте (а до запуска это могли быть
-    только админы), стираются — все стартуют на равных; лента и архив теста — тоже."""
-    await store.users.update_many(
-        {"$or": [{"faction_id": {"$exists": True}}, {"merit": {"$exists": True}}, {"rock_research": {"$exists": True}}]},
-        {"$unset": {"faction_id": "", "faction_joined_at": "", "merit": "", "rock_research": "",
-                    "rock_attack_day": "", "rock_challenge_day": "", "rock_paid": ""}})
+    только админы), стираются — все стартуют на равных; лента и архив теста — тоже.
+    keep_balancer — повторная чистка после балансировщика: его назначения
+    (faction_by = "balancer") остаются, всё остальное снова стирается."""
+    progress = {"merit": "", "rock_research": "", "rock_attack_day": "", "rock_challenge_day": "", "rock_paid": ""}
+    if keep_balancer:
+        await store.users.update_many({"faction_id": {"$exists": True}, "faction_by": {"$ne": "balancer"}},
+                                      {"$unset": {"faction_id": "", "faction_joined_at": ""}})
+        await store.users.update_many({"$or": [{k: {"$exists": True}} for k in progress]}, {"$unset": progress})
+    else:
+        await store.users.update_many(
+            {"$or": [{"faction_id": {"$exists": True}}, {"faction_by": {"$exists": True}}] + [{k: {"$exists": True}} for k in progress]},
+            {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": "", **progress}})
     await store.rock_feed.delete_many({})
     await store.rock_history.delete_many({})
     ROCK_POWER_CACHE["data"] = None
@@ -12784,8 +12791,11 @@ async def admin_rock_activate(_: None = Depends(require_admin)):
         st_claimed, _ = await rock_cas(claim)
         try:
             if st_claimed.get("test_mode"):
+                await asyncio.sleep(1.5)   # действия админов, начатые до запуска, успевают дописаться
                 await rock_wipe_test_data()
             bal = await rock_run_balancer(now)
+            if st_claimed.get("test_mode"):
+                await rock_wipe_test_data(keep_balancer=True)   # то, что всё же проскочило после первой чистки
         except Exception:
             await rock_cas(lambda s: ({"initializing": False}, True))
             raise
