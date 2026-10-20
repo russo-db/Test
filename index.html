@@ -9432,7 +9432,12 @@
             if (farmActionBusy.has('rock-plus') || farmActionBusy.has('rock-garrison')) return;
             const act = rockArmyAction(rockData);
             const key = JSON.stringify([act.btn || '', act.note || '', (rockData.me.army || []).length]);
-            if (key !== rockArmyKey) rockOpenArmy();
+            if (key !== rockArmyKey) {
+                // кнопки в окне сдвинулись — тап, начатый по старой раскладке (например, в «Закрыть»),
+                // не должен попасть в появившуюся «Подтвердить»: короткая пауза, как при открытии окна
+                huntModalOpenedAt = Date.now();
+                rockOpenArmy();
+            }
         }
 
         async function rockArmyConfirm(kind) {
