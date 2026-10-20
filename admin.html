@@ -1591,6 +1591,72 @@ function closeEggLogModal() {
     if (el) el.remove();
     eggLogState = null;
 }
+// 🛡️ Журнал снаряжения: что у игрока сейчас + история изменений вещей
+let itemLogState = null;
+function closeItemLogModal() { const el = document.getElementById('itemLogBackdrop'); if (el) el.remove(); itemLogState = null; }
+function itemName(type, grade) {
+    const meta = (nestConfig.item_types || {})[type] || {};
+    return `[${NEST_GRADE_LABELS[grade] || grade}] ${(meta.names || {})[grade] || meta.label || type}`;
+}
+function itemPlace(place) {
+    if (place === 'stack') return 'склад (+0)';
+    if (place === 'item') return 'склад (заточенная)';
+    if (place.startsWith('eagle:')) { const tier = place.slice(6); const tt = adminTierNames[tier] || tier; return `на орле: ${tt}`; }
+    return place;
+}
+async function openItemLogModal(userId) {
+    closeItemLogModal();
+    itemLogState = { userId, entries: [], hasMore: false, data: null };
+    const root = document.createElement('div');
+    root.className = 'modal-backdrop ledger-backdrop';
+    root.id = 'itemLogBackdrop';
+    root.innerHTML = `<div class="modal ledger-modal">
+        <button class="close-x" id="itemLogClose">✕</button>
+        <h3>Журнал снаряжения · игрок ${userId}</h3>
+        <div id="itemLogBody" class="muted">Загрузка…</div>
+    </div>`;
+    document.body.appendChild(root);
+    document.getElementById('itemLogClose').onclick = closeItemLogModal;
+    root.addEventListener('click', e => { if (e.target.id === 'itemLogBackdrop') closeItemLogModal(); });
+    await loadItemLog(false);
+}
+async function loadItemLog(more) {
+    const st = itemLogState; if (!st) return;
+    const params = new URLSearchParams({ limit: '100' });
+    if (more && st.entries.length) params.set('before', String(st.entries[st.entries.length - 1].ts));
+    let data;
+    try { data = await api(`/admin/api/players/${st.userId}/items_log?${params}`); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    if (itemLogState !== st) return;
+    st.data = data; st.entries = more ? st.entries.concat(data.entries) : data.entries; st.hasMore = data.has_more;
+    renderItemLog();
+}
+function renderItemLog() {
+    const st = itemLogState, d = st.data, body = document.getElementById('itemLogBody');
+    if (!body) return;
+    const now = [];
+    Object.entries(d.inventory || {}).forEach(([type, sub]) => Object.entries(sub || {}).forEach(([g, n]) => { if (n > 0) now.push(`${escHtml(itemName(type, g))} ×${n} — склад (+0)`); }));
+    (d.enchanted || []).forEach(it => now.push(`${escHtml(itemName(it.type, it.grade))} +${it.enchant} — склад (заточенная)`));
+    Object.entries(d.equipped || {}).forEach(([tier, sub]) => Object.entries(sub || {}).forEach(([type, g]) => {
+        if (g) now.push(`${escHtml(itemName(type, g))} +${((d.equipped_enchant || {})[tier] || {})[type] || 0} — ${escHtml(itemPlace('eagle:' + tier))}`);
+    }));
+    const rows = st.entries.map(e => `<tr>
+        <td style="white-space:nowrap">${new Date(e.ts * 1000).toLocaleString('ru-RU')}</td>
+        <td title="${escHtml(e.source || '')}">${escHtml(e.label || e.source || '')}</td>
+        <td>${(e.changes || []).map(c => `<span class="${c.delta > 0 ? 'ledger-plus' : 'ledger-minus'}">${c.delta > 0 ? '+' : ''}${c.delta}</span> ${escHtml(itemName(c.type, c.grade))}${c.enchant ? ' +' + c.enchant : ''} <span class="muted">(${escHtml(itemPlace(c.place))})</span>`).join('<br>')}</td>
+    </tr>`).join('');
+    body.className = '';
+    body.innerHTML = `
+        <h4 style="margin:4px 0 6px;">Сейчас у игрока</h4>
+        <div style="font-size:13px; line-height:1.6; margin-bottom:12px;">${now.length ? now.join('<br>') : '<span class="muted">Снаряжения нет</span>'}</div>
+        <h4 style="margin:4px 0 6px;">История (новые сверху)</h4>
+        <div class="muted" style="font-size:12px; margin-bottom:6px;">Журнал ведётся с этого обновления, записи хранятся 90 дней. Более ранние изменения в нём не видны.</div>
+        <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Когда</th><th>Действие</th><th>Изменение</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="muted">Записей пока нет</td></tr>'}</tbody></table></div>
+        ${st.hasMore ? '<button id="itemLogMore" style="margin-top:8px;">Показать ещё</button>' : ''}`;
+    const more = document.getElementById('itemLogMore'); if (more) more.onclick = () => loadItemLog(true);
+}
+
 async function openEggLogModal(userId) {
     closeEggLogModal();
     eggLogState = { userId, kind: '', entries: [], hasMore: false, data: null };
@@ -2382,6 +2448,7 @@ let editingPlayerMonstersOrig = "[]";   // орлы на момент откры
 let monsterCatalog = null;
 let fusionFeedLevels = 7;
 let nestConfig = {};
+let adminTierNames = {};   // id редкости → название (для «на орле: …» в журнале снаряжения)
 
 const NEST_GRADE_LABELS = { grey: 'Серый', green: 'Зелёный', blue: 'Синий', purple: 'Фиолетовый', gold: 'Золотой', mythic: 'Мифический' };
 
@@ -2392,6 +2459,7 @@ async function getMonsterCatalog() {
     cfg.tiers.forEach(tier => tier.monsters.forEach(m => monsterCatalog.push({ id: m.id, name: `${m.name} (${tier.name})` })));
     fusionFeedLevels = Number(cfg.fusion && cfg.fusion.feed_levels) || 7;
     nestConfig = cfg.nest || {};
+    adminTierNames = Object.fromEntries((cfg.tiers || []).map(t => [t.id, t.name]));
     return monsterCatalog;
 }
 
@@ -2419,7 +2487,8 @@ async function openPlayerModal(userId) {
             <div class="modal">
                 <button class="close-x" id="playerModalClose">✕</button>
                 <h3>Игрок ${doc.user_id} <button id="playerLedgerBtn" style="margin-left:10px; font-size:12px; padding:4px 10px;">📜 История балансов</button>
-                    <button id="playerEggLogBtn" style="margin-left:6px; font-size:12px; padding:4px 10px;">🥚 Журнал яиц</button></h3>
+                    <button id="playerEggLogBtn" style="margin-left:6px; font-size:12px; padding:4px 10px;">🥚 Журнал яиц</button>
+                    <button id="playerItemLogBtn" style="margin-left:6px; font-size:12px; padding:4px 10px;">🛡️ Журнал снаряжения</button></h3>
                 <div class="field-row">
                     <label>Имя <input id="fName" value="${escHtml(doc.name || '')}"></label>
                     <label>Кошелёк <input id="fWallet" value="${escHtml(doc.wallet || '')}"></label>
@@ -2554,6 +2623,7 @@ async function openPlayerModal(userId) {
     });
     document.getElementById('playerLedgerBtn').onclick = () => openLedgerModal(userId);
     document.getElementById('playerEggLogBtn').onclick = () => openEggLogModal(userId);
+    document.getElementById('playerItemLogBtn').onclick = () => openItemLogModal(userId);
     document.getElementById('playerModalClose').onclick = closePlayerModal;
     document.getElementById('playerModalCancel').onclick = closePlayerModal;
     document.getElementById('playerModalBackdrop').addEventListener('click', e => {

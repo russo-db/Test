@@ -10415,6 +10415,9 @@ LEDGER_LABELS = [
     ("/api/nest/shard/buy", "Покупка Небесного Осколка"),
     ("/api/nest/craft", "Крафт снаряжения"),
     ("/api/nest/upgrade", "Улучшение снаряжения"),
+    ("/api/nest/equip", "Надеть снаряжение на орла"),
+    ("/api/nest/unequip", "Снять снаряжение с орла"),
+    ("/api/nest/enchant", "Заточка снаряжения"),
     ("/api/nest/", "Гнездо Воинов"),
     ("/api/arena/buy_energy", "Энергия Арены"),
     ("/api/arena/fight", "Бой на Арене"),
@@ -10551,6 +10554,30 @@ async def admin_ledger_sources(hours: float = 24, field: str = "coins", _: None 
 
 
 LEDGER_FIELDS_ADMIN = ("coins", "mnstr", "gold")
+
+
+@app.get("/admin/api/players/{user_id}/items_log")
+async def admin_player_item_log(user_id: int, limit: int = 100, before: Optional[float] = None,
+                                _: None = Depends(require_admin)):
+    """Журнал снаряжения игрока: каждое изменение вещей (крафт, улучшение,
+    надеть/снять, заточка, рынок, выдача админом) и что лежит сейчас."""
+    try:
+        limit = max(1, min(500, int(limit)))
+        entries = await store.list_item_log(user_id, limit, before)
+        row = await store.get(user_id) or {}
+        equipped = normalize_nest_equipped(row.get("nest_equipped"))
+        return {
+            "user_id": user_id,
+            "inventory": normalize_nest_inventory(row.get("nest_inventory")),
+            "enchanted": normalize_nest_enchanted(row.get("nest_enchanted")),
+            "equipped": equipped,
+            "equipped_enchant": normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped),
+            "entries": [dict(e, label=ledger_label(e.get("source") or "")) for e in entries],
+            "has_more": len(entries) == limit,
+        }
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail=f"Не удалось загрузить журнал снаряжения: {type(e).__name__}: {e}")
 
 
 EGG_PLACED_LABELS = {"farm": "на ферму", "queue": "в очередь (слоты заняты)"}

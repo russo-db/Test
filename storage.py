@@ -98,6 +98,72 @@ LEDGER_RETENTION_SECONDS = 90 * 24 * 3600   # записи старше 90 дн�
 # кормления подряд — одна строка журнала, а не сто. Ключ записи — её _id,
 # поэтому запись не требует никаких дополнительных индексов в базе.
 LEDGER_BUCKET_SECONDS = 600
+# Журнал снаряжения (item_log): каждое изменение вещей игрока — стопки +0
+# (nest_inventory), заточенные вещи (nest_enchanted), надетое на орлов
+# (nest_equipped / nest_equipped_enchant) — пишется сюда же, в LedgerUsers:
+# {user_id, ts, source, changes: [{place, type, grade, enchant, delta}]}.
+# place: "stack" — стопка +0 на складе, "item" — заточенная вещь на складе,
+# "eagle:<редкость>" — надета на орла. Нужен для споров «скрафтил, а вещи нет».
+ITEM_FIELDS = ("nest_inventory", "nest_enchanted", "nest_equipped", "nest_equipped_enchant")
+ITEM_LOG_RETENTION_SECONDS = 90 * 24 * 3600
+
+
+def _touches_items(update: dict) -> bool:
+    for op in ("$set", "$inc", "$push", "$pull", "$unset", "$addToSet"):
+        for key in (update.get(op) or {}):
+            if key.split(".", 1)[0] in ITEM_FIELDS:
+                return True
+    return False
+
+
+def item_bag(doc: Optional[dict]) -> dict:
+    """{(place, type, grade, enchant): количество} — все вещи игрока."""
+    bag = {}
+
+    def add(key, n=1):
+        bag[key] = bag.get(key, 0) + n
+
+    doc = doc or {}
+    inv = doc.get("nest_inventory")
+    if isinstance(inv, dict):
+        for t, sub in inv.items():
+            if isinstance(sub, dict):
+                for g, n in sub.items():
+                    try:
+                        n = int(n or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if n > 0:
+                        add(("stack", str(t), str(g), 0), n)
+    for it in doc.get("nest_enchanted") or []:
+        if isinstance(it, dict):
+            try:
+                add(("item", str(it.get("type")), str(it.get("grade")), int(it.get("enchant") or 0)))
+            except (TypeError, ValueError):
+                pass
+    eq = doc.get("nest_equipped")
+    lv = doc.get("nest_equipped_enchant") if isinstance(doc.get("nest_equipped_enchant"), dict) else {}
+    if isinstance(eq, dict):
+        for tier, sub in eq.items():
+            if isinstance(sub, dict):
+                for t, g in sub.items():
+                    if g:
+                        try:
+                            lvl = int(((lv.get(tier) or {}) if isinstance(lv.get(tier), dict) else {}).get(t) or 0)
+                        except (TypeError, ValueError):
+                            lvl = 0
+                        add((f"eagle:{tier}", str(t), str(g), lvl))
+    return bag
+
+
+def item_changes(before: Optional[dict], after: Optional[dict]) -> list:
+    a, b = item_bag(before), item_bag(after)
+    out = []
+    for key in sorted(set(a) | set(b)):
+        d = b.get(key, 0) - a.get(key, 0)
+        if d:
+            out.append({"place": key[0], "type": key[1], "grade": key[2], "enchant": key[3], "delta": d})
+    return out
 EGG_LOG_RETENTION_SECONDS = 90 * 24 * 3600   # журнал вскрытия яиц — тоже 90 дней
 
 
@@ -142,9 +208,10 @@ class LedgerUsers:
     разница «было → стало» точная даже при параллельных запросах. Остальные
     методы — без изменений (проксируются в настоящую коллекцию)."""
 
-    def __init__(self, collection, ledger):
+    def __init__(self, collection, ledger, item_log=None):
         self._collection = collection
         self._ledger = ledger
+        self._item_log = item_log
 
     def __getattr__(self, name):
         return getattr(self._collection, name)
@@ -155,7 +222,8 @@ class LedgerUsers:
         inc = update.get("$inc") or {}
         set_ = update.get("$set") or {}
         touched = [f for f in LEDGER_FIELDS if f in inc or f in set_]
-        if upsert or not touched:
+        items = self._item_log is not None and not upsert and _touches_items(update)
+        if upsert or not (touched or items):
             result = await self._collection.update_one(filter, update, upsert=upsert, **kwargs)
             if upsert and result.upserted_id is not None:
                 start = {f: float(v) for f, v in ((update.get("$setOnInsert") or {}).items())
@@ -164,12 +232,15 @@ class LedgerUsers:
                     await self._record(result.upserted_id, start, start, source="start")
             return result
         from pymongo import ReturnDocument
+        projection = {f: 1 for f in LEDGER_FIELDS + (ITEM_FIELDS if items else ())}
         before = await self._collection.find_one_and_update(
-            filter, update, projection={f: 1 for f in LEDGER_FIELDS},
+            filter, update, projection=projection,
             return_document=ReturnDocument.BEFORE, **kwargs,
         )
         if before is None:
             return _LedgerUpdateResult(0)
+        if items:
+            await self._record_items(before)
         delta, balance = {}, {}
         for f in touched:
             old = float(before.get(f) or 0)
@@ -180,6 +251,27 @@ class LedgerUsers:
         if delta:
             await self._record(before["_id"], delta, balance)
         return _LedgerUpdateResult(1)
+
+    async def find_one_and_update(self, filter, update, *args, **kwargs):
+        """Как у коллекции; если меняются вещи — ещё и запись в журнал снаряжения."""
+        if self._item_log is None or not isinstance(update, dict) or not _touches_items(update) or kwargs.get("upsert"):
+            return await self._collection.find_one_and_update(filter, update, *args, **kwargs)
+        pre = await self._collection.find_one(filter, {f: 1 for f in ITEM_FIELDS})
+        result = await self._collection.find_one_and_update(filter, update, *args, **kwargs)
+        if result is not None and pre is not None:
+            await self._record_items(pre)
+        return result
+
+    async def _record_items(self, before: dict) -> None:
+        """Сравнивает вещи до записи и после неё. Сбой журнала не ломает действие."""
+        try:
+            after = await self._collection.find_one({"_id": before["_id"]}, {f: 1 for f in ITEM_FIELDS})
+            changes = item_changes(before, after)
+            if changes:
+                await self._item_log.insert_one({"user_id": before["_id"], "ts": time.time(),
+                                                 "source": LEDGER_SOURCE.get(), "changes": changes})
+        except Exception as e:
+            print(f"[item_log] write failed for {before.get('_id')}: {type(e).__name__}: {e}")
 
     async def _record(self, user_id, delta: dict, balance: dict, source: Optional[str] = None) -> None:
         """Сбой записи журнала никогда не ломает само действие игрока."""
@@ -209,7 +301,9 @@ class MongoStore:
             client = AsyncIOMotorClient(uri)
         # Журнал балансов (см. LedgerUsers) — пишется при каждом изменении coins/mnstr/gold.
         self.balance_ledger = client[db_name]["balance_ledger"]
-        self.users = LedgerUsers(client[db_name]["users"], self.balance_ledger)
+        # Журнал снаряжения: каждое изменение вещей игрока (см. ITEM_FIELDS, LedgerUsers).
+        self.item_log = client[db_name]["item_log"]
+        self.users = LedgerUsers(client[db_name]["users"], self.balance_ledger, self.item_log)
         self.deposits = client[db_name]["deposits"]
         self.withdrawals = client[db_name]["withdrawals"]
         self.market = client[db_name]["market_listings"]
@@ -288,6 +382,7 @@ class MongoStore:
             (self.market_trades, "seller_id", {}),
             (self.balance_ledger, [("source", 1), ("ts", -1)], {}),
             (self.balance_ledger, [("ts", -1)], {}),
+            (self.item_log, [("user_id", 1), ("ts", -1)], {}),
             (self.users, "auto_expedition_until", {"sparse": True}),
             (self.users, "raid_entry.lobby", {"sparse": True}),
             (self.raids, [("status", 1), ("expires_at", 1)], {}),
@@ -2075,7 +2170,21 @@ class MongoStore:
         """Удаляет записи журнала старше LEDGER_RETENTION_SECONDS."""
         cutoff = (time.time() if now is None else now) - LEDGER_RETENTION_SECONDS
         result = await self.balance_ledger.delete_many({"ts": {"$lt": cutoff}})
+        try:
+            await self.item_log.delete_many({"ts": {"$lt": (time.time() if now is None else now) - ITEM_LOG_RETENTION_SECONDS}})
+        except Exception as e:
+            print(f"[item_log] prune failed: {type(e).__name__}: {e}")
         return result.deleted_count
+
+    async def list_item_log(self, user_id: int, limit: int = 100, before: Optional[float] = None) -> list:
+        query = {"user_id": user_id}
+        if before:
+            query["ts"] = {"$lt": float(before)}
+        out = []
+        async for doc in self.item_log.find(query).sort("ts", -1).limit(limit):
+            doc.pop("_id", None)
+            out.append(doc)
+        return out
 
     # --- RETENTION: посещения по дням ---
 
