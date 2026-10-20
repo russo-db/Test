@@ -156,6 +156,53 @@ def item_bag(doc: Optional[dict]) -> dict:
     return bag
 
 
+def apply_item_update(before: dict, update: dict) -> Optional[dict]:
+    """Вещи игрока ПОСЛЕ update, посчитанные из атомарно прочитанного «до» —
+    без второго чтения, в которое могла бы попасть чужая параллельная запись.
+    None — форма update незнакома, тогда вызывающий перечитывает документ."""
+    import copy
+    doc = {f: copy.deepcopy(before.get(f)) for f in ITEM_FIELDS if f in before}
+    for op, body in update.items():
+        for path, val in (body or {}).items():
+            parts = path.split(".")
+            if parts[0] not in ITEM_FIELDS:
+                continue
+            if op in ("$set", "$unset", "$inc"):
+                node = doc
+                for key in parts[:-1]:
+                    if not isinstance(node.get(key), dict):
+                        if op == "$unset":
+                            node = None
+                            break
+                        node[key] = {}
+                    node = node[key]
+                if node is None:
+                    continue
+                last = parts[-1]
+                if op == "$set":
+                    node[last] = copy.deepcopy(val)
+                elif op == "$unset":
+                    node.pop(last, None)
+                else:
+                    try:
+                        node[last] = (node.get(last) or 0) + val
+                    except TypeError:
+                        return None
+            elif op == "$push" and len(parts) == 1:
+                each = isinstance(val, dict) and "$each" in val
+                if each and set(val) - {"$each"}:   # $slice/$sort/$position — не считаем сами
+                    return None
+                items = val["$each"] if each else [val]
+                doc[parts[0]] = list(doc.get(parts[0]) or []) + copy.deepcopy(list(items))
+            elif op == "$pull" and len(parts) == 1 and isinstance(val, dict) \
+                    and not any(str(k).startswith("$") for k in val):
+                doc[parts[0]] = [it for it in (doc.get(parts[0]) or [])
+                                 if not (isinstance(it, dict) and all(it.get(k) == v for k, v in val.items()))]
+            else:
+                return None
+    return doc
+
+
 def item_changes(before: Optional[dict], after: Optional[dict]) -> list:
     a, b = item_bag(before), item_bag(after)
     out = []
@@ -240,7 +287,7 @@ class LedgerUsers:
         if before is None:
             return _LedgerUpdateResult(0)
         if items:
-            await self._record_items(before)
+            await self._record_items(before, update)
         delta, balance = {}, {}
         for f in touched:
             old = float(before.get(f) or 0)
@@ -253,19 +300,34 @@ class LedgerUsers:
         return _LedgerUpdateResult(1)
 
     async def find_one_and_update(self, filter, update, *args, **kwargs):
-        """Как у коллекции; если меняются вещи — ещё и запись в журнал снаряжения."""
-        if self._item_log is None or not isinstance(update, dict) or not _touches_items(update) or kwargs.get("upsert"):
+        """Как у коллекции; если меняются вещи — ещё и запись в журнал снаряжения.
+        «До» берётся из самой операции (BEFORE) — атомарно, без отдельного чтения."""
+        from pymongo import ReturnDocument
+        if (self._item_log is None or args or not isinstance(update, dict) or not _touches_items(update)
+                or kwargs.get("upsert") or kwargs.get("return_document", ReturnDocument.BEFORE) != ReturnDocument.BEFORE):
             return await self._collection.find_one_and_update(filter, update, *args, **kwargs)
-        pre = await self._collection.find_one(filter, {f: 1 for f in ITEM_FIELDS})
-        result = await self._collection.find_one_and_update(filter, update, *args, **kwargs)
-        if result is not None and pre is not None:
-            await self._record_items(pre)
-        return result
+        projection = kwargs.get("projection")
+        if isinstance(projection, dict) and projection and all(v in (1, True) for v in projection.values()):
+            extra = [f for f in ITEM_FIELDS if f not in projection]
+            kwargs["projection"] = {**projection, **{f: 1 for f in extra}}
+        elif projection is not None:   # исключающая/непривычная проекция — без журнала
+            return await self._collection.find_one_and_update(filter, update, *args, **kwargs)
+        else:
+            extra = []
+        before = await self._collection.find_one_and_update(filter, update, **kwargs)
+        if before is None:
+            return None
+        await self._record_items(before, update)
+        for f in extra:   # вызывающему — ровно те поля, что он просил
+            before.pop(f, None)
+        return before
 
-    async def _record_items(self, before: dict) -> None:
+    async def _record_items(self, before: dict, update: dict) -> None:
         """Сравнивает вещи до записи и после неё. Сбой журнала не ломает действие."""
         try:
-            after = await self._collection.find_one({"_id": before["_id"]}, {f: 1 for f in ITEM_FIELDS})
+            after = apply_item_update(before, update)
+            if after is None:
+                after = await self._collection.find_one({"_id": before["_id"]}, {f: 1 for f in ITEM_FIELDS})
             changes = item_changes(before, after)
             if changes:
                 await self._item_log.insert_one({"user_id": before["_id"], "ts": time.time(),
