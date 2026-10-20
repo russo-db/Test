@@ -113,9 +113,12 @@
         .fog-page .rock-hub { display: none; }
         .fog-page.rock-on .fog-layer, .fog-page.rock-on .fog-title { display: none; }
         .fog-page.rock-on {
-            background: radial-gradient(90% 55% at 50% 0%, rgba(120, 90, 200, 0.25), transparent 70%),
-                        linear-gradient(180deg, rgba(14, 9, 30, 0.96), rgba(8, 5, 18, 0.98));
+            /* фон экрана Скалы — арт Цитадели с орлами, затемнён, чтобы читались текст и карточки */
+            background: linear-gradient(180deg, rgba(10, 6, 22, 0.42) 0%, rgba(10, 6, 22, 0.62) 40%, rgba(8, 5, 18, 0.86) 100%),
+                        url('assets/rock-bg.jpg') 62% center / cover no-repeat, #0b0716;
         }
+        .fog-page.rock-on .rock-title, .fog-page.rock-on .rock-sub { text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9); }
+        .fog-page.rock-on .rock-sub { color: #e7e2f5; }
         .fog-page.rock-on .rock-hub {
             display: block; position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
             padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(140px + env(safe-area-inset-bottom, 0px)); text-align: left;
