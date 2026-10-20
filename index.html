@@ -141,9 +141,17 @@
         .rock-fcard.disabled { opacity: 0.38; filter: grayscale(0.7); cursor: not-allowed; }
         .rock-fcard .rock-fname { font-weight: 800; font-size: 14.5px; }
         .rock-fcard .rock-finfo { flex: 1; min-width: 0; }
-        .rock-citadel { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px 0 6px; }
-        .rock-citadel svg { width: 150px; height: 112px; }
         .rock-owner { font-weight: 800; font-size: 14px; text-align: center; }
+        /* главная карточка: арт Цитадели сверху, ниже он уходит в темноту, текст — поверх затемнения */
+        .rock-card.rock-hero { position: relative; overflow: hidden; padding: 0; background: #130b23;
+                               border: 1.5px solid rgba(245, 158, 11, 0.75); box-shadow: 0 0 18px rgba(245, 158, 11, 0.22), inset 0 0 0 1px rgba(255, 215, 120, 0.12); }
+        .rock-hero-art { position: relative; height: clamp(190px, 56vw, 330px); background: #130b23 url('assets/rock-citadel.jpg') center top / cover no-repeat; }
+        .rock-hero-art::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 55%;
+                                background: linear-gradient(180deg, rgba(19, 11, 35, 0) 0%, rgba(19, 11, 35, 0.75) 55%, #130b23 100%); }
+        .rock-hero-body { position: relative; margin-top: -62px; padding: 0 14px 14px; }
+        .rock-hero .rock-owner { text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85); line-height: 1.35; }
+        .rock-hero .rock-owner .rock-emblem.mini { vertical-align: middle; width: 16px; height: 19px; font-size: 9px; margin-top: -3px; }
+        .rock-hero .rock-phrase { text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8); }
         .rock-phrase { min-height: 36px; text-align: center; font-size: 13px; font-weight: 700; color: #fde68a; margin: 6px 0 6px; line-height: 1.35; }
         .rock-bar { position: relative; height: 16px; border-radius: 999px; overflow: hidden; background: var(--att, rgba(255,255,255,0.08)); border: 1px solid rgba(255,255,255,0.18); }
         .rock-bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--def, #22c55e); transition: width 0.6s ease; }
@@ -9113,20 +9121,6 @@
             });
         }
 
-        function rockCitadelSvg(color) {
-            const c = rockRgba(color, 1), d = rockRgba(color, 0.55);
-            return `<svg viewBox="0 0 150 112" aria-hidden="true">
-                <defs><linearGradient id="rockMt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b7fa8"/><stop offset="1" stop-color="#2a2140"/></linearGradient></defs>
-                <path d="M0 112 L38 48 L58 70 L80 30 L112 74 L126 58 L150 112 Z" fill="url(#rockMt)"/>
-                <path d="M80 30 L72 44 L88 44 Z" fill="#e9e4ff" opacity="0.8"/>
-                <rect x="58" y="26" width="44" height="40" fill="${d}" stroke="${c}" stroke-width="2"/>
-                <rect x="66" y="12" width="12" height="20" fill="${c}"/><rect x="82" y="12" width="12" height="20" fill="${c}"/>
-                <path d="M66 12 h3 v-4 h3 v4 h3 v-4 h3 v4" fill="${c}"/><path d="M82 12 h3 v-4 h3 v4 h3 v-4 h3 v4" fill="${c}"/>
-                <path d="M74 66 v-14 a6 6 0 0 1 12 0 v14 Z" fill="#140c26"/>
-                <path d="M80 0 v12" stroke="#fcd34d" stroke-width="1.5"/><path d="M80 1 l14 4 l-14 4 Z" fill="${c}"/>
-            </svg>`;
-        }
-
         function rockPickPhrase(r) {
             const s = r.siege;
             const owner = rockFNameById(r.owner);
@@ -9143,10 +9137,10 @@
 
         function renderRockMain(r) {
             const me = r.me, owner = rockFaction(r.owner), s = r.siege;
-            let html = `<div class="rock-card glass-panel">
-                <div class="rock-citadel">${rockCitadelSvg(owner ? owner.color : '#9ca3af')}
-                    <div class="rock-owner">${owner ? rockEmblem(owner, 'mini') : ''}${t('rock.ownerLine', { name: `<span style="color:${owner ? rockRgba(owner.color, 1) : '#fff'}">${huntEsc(rockFName(owner))}</span>` })}</div>
-                </div>
+            let html = `<div class="rock-card glass-panel rock-hero">
+                <div class="rock-hero-art" role="img" aria-label="${huntEsc(t('rock.chooseTitle'))}"></div>
+                <div class="rock-hero-body">
+                <div class="rock-owner">${owner ? rockEmblem(owner, 'mini') : ''}${t('rock.ownerLine', { name: `<span style="color:${owner ? rockRgba(owner.color, 1) : '#fff'}">${huntEsc(rockFName(owner))}</span>` })}</div>
                 <div class="rock-phrase">${huntEsc(rockPickPhrase(r))}</div>`;
             if (s) {
                 const att = rockFaction(s.attacker), def = rockFaction(s.defender);
@@ -9182,7 +9176,7 @@
                 else if (!me.eligible && !me.in_garrison) acts.push(`<div class="rock-muted" style="text-align:center">${t('rock.needEagles', { lvl: r.min_level })}</div>`);
             }
             if (acts.length) html += `<div class="rock-actions">${acts.join('')}</div>`;
-            html += `</div>`;
+            html += `</div></div>`;
             if (s) {
                 html += `<div class="rock-card glass-panel"><h3>${t('rock.siegeTitle')}</h3>
                     <div class="rock-stat-grid">
