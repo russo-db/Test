@@ -9015,6 +9015,7 @@
         }
 
         let rockLastPoll = 0;
+        let rockExpiredLoadAt = 0;
         function rockStartPolling() {
             rockStopPolling();
             loadRock(true);
@@ -9041,8 +9042,9 @@
                 if (left <= 0 && el.dataset.rockDone !== '1') { el.dataset.rockDone = '1'; expired = true; }
                 el.textContent = formatCountdown(Math.max(0, left));
             });
-            // таймер дошёл до нуля (бой вызова, раунд, окно) — сразу свежие данные
-            if (expired) setTimeout(() => loadRock(true), 1200);
+            // таймер дошёл до нуля (бой вызова, раунд, окно) — свежие данные, но не чаще раза в 5 с
+            // (пока сервер не подвёл итог, тот же истёкший таймер рисуется заново)
+            if (expired && Date.now() - rockExpiredLoadAt > 5000) { rockExpiredLoadAt = Date.now(); setTimeout(() => loadRock(true), 1200); }
             if (rockData && rockData.active && rockData.me && rockData.me.faction_id && rockTab === 'rock' && Date.now() - rockPhrase.at > 180000) renderRock();
         }
 

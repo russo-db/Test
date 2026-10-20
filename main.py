@@ -11791,11 +11791,16 @@ def rock_windows_around(st: dict, now: float) -> list:
     return out
 
 
-def rock_current_window(st: dict, now: float) -> Optional[dict]:
+def rock_current_window(st: dict, now: float, fid: Optional[str] = None) -> Optional[dict]:
+    """Открытое сейчас окно штурма; с fid — окно именно этой фракции (тестовое
+    окно из админки может совпасть по времени с обычным окном другой фракции)."""
+    found = None
     for w in rock_windows_around(st, now):
         if w["start"] <= now < w["end"] and w["faction"] and w["faction"] != st.get("owner"):
-            return w
-    return None
+            if fid is None or w["faction"] == fid:
+                return w
+            found = found or w
+    return None if fid is not None else found
 
 
 def rock_upcoming_windows(st: dict, now: float, n: int = 2) -> list:
@@ -11910,6 +11915,54 @@ def rock_siege_payouts(siege: dict, won: bool) -> dict:
     return out
 
 
+async def rock_fresh_garrison(garrison: list, owner: Optional[str]) -> dict:
+    """{uid: орлы гарнизона по СВЕЖИМ данным игрока}: проданные и выставленные
+    на рынок орлы выбывают, статы — текущие (снаряжение, исследования, без
+    Ярости штурма). Игрок держит не больше орлов, чем стояло на Скале."""
+    counts = {}
+    for g in garrison or []:
+        counts[g["uid"]] = counts.get(g["uid"], 0) + 1
+    out = {}
+    proj = {"faction_id": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "name": 1}
+    for uid, n in counts.items():
+        row = await store.users.find_one({"_id": uid}, proj)
+        if not row or row.get("faction_id") != owner:
+            out[uid] = []
+            continue
+        out[uid] = [dict(e, hp=e["max"]) for e in rock_snapshot(row)[:n]]
+    return out
+
+
+def rock_merge_garrison(current: list, fresh: dict) -> list:
+    """Подставляет свежие проекции вместо записей игроков из fresh; тех, кто
+    встал в гарнизон уже после чтения, оставляет как есть."""
+    out, seen = [], set()
+    for g in current or []:
+        uid = g["uid"]
+        if uid in fresh:
+            if uid not in seen:
+                out.extend(fresh[uid])
+                seen.add(uid)
+        else:
+            out.append(g)
+    return out
+
+
+async def rock_refresh_garrison() -> None:
+    st = await rock_get_state()
+    if st.get("siege") or not st.get("garrison"):
+        return
+    fresh = await rock_fresh_garrison(st["garrison"], st.get("owner"))
+
+    def mutate(s):
+        if s.get("siege") or s.get("owner") != st.get("owner"):
+            return None, False
+        merged = rock_merge_garrison(s.get("garrison") or [], fresh)
+        return ({"garrison": merged}, True) if merged != (s.get("garrison") or []) else (None, False)
+
+    await rock_cas(mutate)
+
+
 def rock_garrison_from(fighters: list) -> list:
     """Выжившие — в гарнизон, со свежим HP; сильнейшие первыми, не больше мест."""
     alive = sorted(rock_alive(fighters), key=lambda f: -rock_power(f))[:max(1, rock_int("garrison_slots", 50))]
@@ -11968,6 +12021,11 @@ async def rock_tick_merit(st: dict, now: float) -> None:
     _, claimed = await rock_cas(mutate)
     if not claimed:
         return
+    try:   # гарнизон по свежим данным: +5/ч — только за орлов, которые реально стоят на Скале
+        await rock_refresh_garrison()
+        st = await rock_get_state()
+    except Exception as e:
+        print(f"[rock] garrison refresh failed: {type(e).__name__}: {e}")
     if owner in ROCK_FACTIONS and rock_int("merit_owner_hourly", 1) > 0:
         await store.users.update_many({"faction_id": owner}, {"$inc": {"merit": rock_int("merit_owner_hourly", 1)}})
     siege = st.get("siege")
@@ -12177,7 +12235,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     if not fid:
         return out
     me["is_leader"] = (rock_public_leader(st, fid) or {}).get("id") == user_id
-    win = rock_current_window(st, now)
+    win = rock_current_window(st, now, fid) or rock_current_window(st, now)
     out["window"] = {"faction": win["faction"], "start": win["start"], "end": win["end"],
                      "used": win["key"] in (st.get("windows_used") or [])} if win else None
     siege = st.get("siege")
@@ -12397,6 +12455,8 @@ async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] 
         fid = rock_my_faction(row)
         now = time.time()
         sid = secrets.token_hex(5)
+        st0 = await rock_get_state()
+        fresh = await rock_fresh_garrison(st0.get("garrison") or [], st0.get("owner"))
 
         def mutate(s):
             if (rock_public_leader(s, fid) or {}).get("id") != user_id:
@@ -12405,12 +12465,13 @@ async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] 
                 raise HTTPException(status_code=409, detail="Штурм уже идёт")
             if s.get("owner") == fid:
                 raise HTTPException(status_code=400, detail="Скала уже у твоей фракции — вы обороняетесь")
-            win = rock_current_window(s, now)
+            win = rock_current_window(s, now, fid)
             if not win or win["faction"] != fid:
                 raise HTTPException(status_code=400, detail="Сейчас не окно штурма твоей фракции")
             if win["key"] in (s.get("windows_used") or []):
                 raise HTTPException(status_code=409, detail="В этом окне штурм уже был")
-            defenders = [dict(g, id=f"d{i}", hp=g["max"]) for i, g in enumerate(s.get("garrison") or [])]
+            garrison = rock_merge_garrison(s.get("garrison") or [], fresh) if s.get("owner") == st0.get("owner") else (s.get("garrison") or [])
+            defenders = [dict(g, id=f"d{i}", hp=g["max"]) for i, g in enumerate(garrison)]
             siege = {"id": sid, "attacker": fid, "defender": s.get("owner"), "window": win["key"],
                      "started_at": now, "ends_at": now + rock_siege_rounds_total() * max(5.0, rock_num("round_seconds", 60)),
                      "round": 0, "attackers": [], "defenders": defenders,
