@@ -13111,6 +13111,45 @@ def rock_admin_player_row(doc: dict, st: dict) -> dict:
             "in_siege": bool(siege) and any(f["uid"] == doc["_id"] for f in siege["attackers"] + siege["defenders"])}
 
 
+async def rock_fill_missing_leaders(now: float) -> dict:
+    """Чинит Лидеров после переводов админом: фракция без Лидера при живом
+    составе — или с Лидером, которого в ней уже нет (два перевода разом:
+    Лидер и его преемник) — получает сильнейшего из своих; пустая фракция
+    остаётся без Лидера. Возвращает {fid: новый Лидер} назначенных."""
+    st = await rock_get_state()
+    leaders = st.get("leaders") or {}
+    cur = {f: ((leaders.get(f) or {}).get("id")) for f in ROCK_FACTION_ORDER}
+    ids = [i for i in cur.values() if i is not None]
+    where = {d["_id"]: d.get("faction_id") async for d in store.users.find({"_id": {"$in": ids}}, {"faction_id": 1})}
+    broken = [f for f in ROCK_FACTION_ORDER if cur[f] is None or where.get(cur[f]) != f]
+    if not broken:
+        return {}
+    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1}
+    best = {}
+    async for d in store.users.find({"faction_id": {"$in": broken}}, proj):
+        key = (rock_player_power(d), -d["_id"])
+        if d["faction_id"] not in best or key > best[d["faction_id"]][0]:
+            best[d["faction_id"]] = (key, {"id": d["_id"], "name": str(d.get("name") or f"Игрок {d['_id']}")[:40], "since": now})
+
+    def mutate(s):
+        ls = dict(s.get("leaders") or {})
+        done, changed = {}, False
+        for f in broken:
+            if ((ls.get(f) or {}).get("id")) != cur[f]:
+                continue   # Лидер уже сменился другим путём — не трогаем
+            if f in best:
+                ls[f] = done[f] = best[f][1]; changed = True
+            elif cur[f] is not None:
+                ls.pop(f, None); changed = True   # фракция опустела
+        return ({"leaders": ls}, done) if changed else (None, {})
+
+    _, done = await rock_cas(mutate)
+    for f, ld in done.items():
+        await rock_feed_add([f], f"👑 Совет Скалы назначил нового Лидера: {ld['name']}.",
+                            f"👑 The Rock Council appointed a new Leader: {ld['name']}.")
+    return done
+
+
 @app.get("/admin/api/rock/players")
 async def admin_rock_players(search: str = "", faction: str = "", _: None = Depends(require_admin)):
     """Поиск по ID / нику (до 50) или состав фракции по силе (до 200)."""
@@ -13237,7 +13276,12 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
             await store.users.update_one({"_id": uid, "faction_id": target}, back)
             raise
         ROCK_POWER_CACHE["data"] = None
-        if "heir" in notes:
+        try:
+            filled = await rock_fill_missing_leaders(now)
+        except Exception as e:   # перевод уже сделан — не валим ответ админу
+            print(f"[rock] fill leaders failed: {type(e).__name__}: {e}")
+            filled = {}
+        if "heir" in notes and (notes["heir"] or notes["led"] not in filled):
             h = notes["heir"]
             await rock_feed_add([notes["led"]], f"👑 Совет Скалы назначил нового Лидера: {h['name']}." if h else "👑 Фракция осталась без Лидера.",
                                 f"👑 The Rock Council appointed a new Leader: {h['name']}." if h else "👑 The faction has no Leader.")
@@ -13246,13 +13290,15 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         print(f"[rock] admin move: {uid} {old} -> {target} notes={notes}")
         fname = lambda f: rock_faction_name(f) if f else "без фракции"
         msg = f"{name}: {fname(old)} → {fname(target)}"
-        if "heir" in notes:
+        if "heir" in notes and (notes["heir"] or notes["led"] not in filled):
             msg += (f" · новый Лидер «{fname(notes['led'])}»: {notes['heir']['name']}" if notes["heir"]
                     else f" · «{fname(notes['led'])}» без Лидера")
         if notes.get("new_leader"):
             msg += " · стал Лидером новой фракции"
         if notes.get("garrison_removed"):
             msg += f" · снят с гарнизона ({notes['garrison_removed']} орл.)"
+        for f, ld in filled.items():
+            msg += f" · новый Лидер «{fname(f)}»: {ld['name']}"
         return {"ok": True, "message": msg, "player": rock_admin_player_row(await store.users.find_one({"_id": uid}), await rock_get_state())}
     except HTTPException:
         raise
