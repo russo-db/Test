@@ -1261,31 +1261,32 @@ function renderRockMove(r) {
             if (!ok) return;
             rockMoveBusy = true;
             el.querySelectorAll('.rock-move-btn').forEach(b => { if (b !== btn) b.disabled = true; });   // свою кнопку гасит withBusyButton
-            withBusyButton(btn, '…', async () => {
+            const last = rockMoveLast;
+            // снятие блокировки — и когда withBusyButton вообще не запустил запрос
+            Promise.resolve(withBusyButton(btn, '…', async () => {
                 try {
                     const res = await api('/admin/api/rock/move_player', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: uid, faction_id: to }) });
                     toast(res.message || 'Переведён');
                     await loadRockAdmin();
-                    if (rockMoveLast) await rockMoveFind();
+                    if (last) await rockMoveFind(last);   // тот же список, даже если поле поиска уже изменили
                 } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
-                finally {
-                    rockMoveBusy = false;
-                    rockMoveLockUntil = Math.max(rockMoveLockUntil, Date.now() + 700);
-                    document.querySelectorAll('#rockMoveResult .rock-move-btn').forEach(b => { b.disabled = false; });
-                }
+            })).finally(() => {
+                rockMoveBusy = false;
+                rockMoveLockUntil = Math.max(rockMoveLockUntil, Date.now() + 700);
+                document.querySelectorAll('#rockMoveResult .rock-move-btn').forEach(b => { if (b !== btn) b.disabled = false; });
             });
         };
     });
 }
-async function rockMoveFind() {
-    const search = document.getElementById('rockMoveSearch').value.trim();
-    const faction = document.getElementById('rockMoveFilter').value;
+async function rockMoveFind(params) {
+    const search = params && typeof params.search === 'string' ? params.search : document.getElementById('rockMoveSearch').value.trim();
+    const faction = params && typeof params.faction === 'string' ? params.faction : document.getElementById('rockMoveFilter').value;
     if (!search && (!faction || faction === 'none')) { toast('Введи ID или ник — или выбери фракцию', true); return; }
     rockMoveLast = { search, faction };
     try { renderRockMove(await api(`/admin/api/rock/players?search=${encodeURIComponent(search)}&faction=${encodeURIComponent(faction)}`)); }
     catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 }
-document.getElementById('rockMoveFindBtn').onclick = e => withBusyButton(e.currentTarget, '…', rockMoveFind);
+document.getElementById('rockMoveFindBtn').onclick = e => withBusyButton(e.currentTarget, '…', () => rockMoveFind());
 document.getElementById('rockMoveSearch').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('rockMoveFindBtn').click(); });
 
 /* ---------- обзор ---------- */
