@@ -638,6 +638,16 @@
                 <button id="rockRebApplyBtn" style="margin-left:8px; background:#b45309;">⚖️ Применить</button>
                 <div id="rockRebResult" style="margin-top:10px;"></div>
             </div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <b>🔀 Перевод игрока между фракциями</b>
+                <p class="muted" style="margin:6px 0 8px; font-size:12px;">Найди игрока по ID или нику — или выбери фракцию, чтобы увидеть весь её состав (по силе).
+                    Очки Заслуг и исследования остаются у игрока. Ушедший из фракции-владельца снимается с гарнизона.
+                    Если переводишь Лидера — его прежнюю фракцию возглавит сильнейший из оставшихся. Игрока в штурме или в бою за трон перевести нельзя.</p>
+                <input id="rockMoveSearch" placeholder="ID или ник" style="width:200px;">
+                <select id="rockMoveFilter"></select>
+                <button id="rockMoveFindBtn">🔎 Найти</button>
+                <div id="rockMoveResult" style="margin-top:10px;"></div>
+            </div>
         </div>
 
         <div class="page" id="page-auction">
@@ -1130,6 +1140,11 @@ function renderRockAdmin(d) {
     const cur = sel.value;
     sel.innerHTML = (d.factions || []).filter(f => f.id !== d.owner).map(f => `<option value="${escHtml(f.id)}">${f.icon} ${escHtml(f.name)}</option>`).join('');
     if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    const msel = document.getElementById('rockMoveFilter');
+    const mcur = msel.value;
+    msel.innerHTML = `<option value="">Все фракции</option>` + (d.factions || []).map(f => `<option value="${escHtml(f.id)}">${f.icon} ${escHtml(f.name)} (${f.members})</option>`).join('')
+        + `<option value="none">— без фракции —</option>`;
+    if ([...msel.options].some(o => o.value === mcur)) msel.value = mcur;
     const wsel = document.getElementById('rockRebWeak');
     const wcur = wsel.value || 'sun';
     wsel.innerHTML = (d.factions || []).map(f => `<option value="${escHtml(f.id)}">${f.icon} ${escHtml(f.name)}</option>`).join('');
@@ -1205,6 +1220,58 @@ document.getElementById('rockRebApplyBtn').onclick = e => {
         } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
     });
 };
+
+let rockMoveLast = null;
+function rockMoveFname(id) {
+    const f = ((rockAdminData && rockAdminData.factions) || []).find(x => x.id === id);
+    return f ? `${f.icon} ${escHtml(f.name)}` : '<span class="muted">без фракции</span>';
+}
+function renderRockMove(r) {
+    const el = document.getElementById('rockMoveResult');
+    const fs = (rockAdminData && rockAdminData.factions) || [];
+    if (!r.items.length) { el.innerHTML = '<div class="muted">Никого не найдено.</div>'; return; }
+    el.innerHTML = `<div class="muted" style="margin-bottom:6px">Найдено: ${r.total}${r.total > r.items.length ? ` (показаны ${r.items.length} сильнейших)` : ''}</div>
+        <div class="table-wrap"><table><thead><tr><th>Игрок</th><th>Фракция</th><th>Сила</th><th>Орлов 7 ур.</th><th>Перевести в</th></tr></thead><tbody>
+        ${r.items.map(p => `<tr data-uid="${p.id}">
+            <td>${p.leads ? '👑 ' : ''}${escHtml(p.name)} <span class="muted">(${p.id})</span>${p.leads ? `<div class="muted" style="font-size:11px">Лидер: ${rockMoveFname(p.leads)}</div>` : ''}
+                ${p.garrison ? `<div class="muted" style="font-size:11px">🛡️ в гарнизоне: ${p.garrison}</div>` : ''}${p.in_siege ? '<div style="font-size:11px;color:#f59e0b">⚔️ в штурме</div>' : ''}</td>
+            <td>${rockMoveFname(p.faction_id)}</td><td>${p.power}</td><td>${p.eagles}</td>
+            <td><select class="rock-move-to">${fs.filter(f => f.id !== p.faction_id).map(f => `<option value="${escHtml(f.id)}">${f.icon} ${escHtml(f.name)}</option>`).join('')}
+                ${p.faction_id ? '<option value="">— убрать из фракции —</option>' : ''}</select>
+                <button class="rock-move-btn" style="margin-left:6px">Перевести</button></td></tr>`).join('')}
+        </tbody></table></div>`;
+    el.querySelectorAll('.rock-move-btn').forEach(btn => {
+        btn.onclick = e => {
+            const tr = btn.closest('tr');
+            const uid = Number(tr.dataset.uid);
+            const p = r.items.find(x => x.id === uid);
+            const to = tr.querySelector('.rock-move-to').value || null;
+            const toName = to ? tr.querySelector('.rock-move-to').selectedOptions[0].textContent : 'без фракции';
+            let msg = `Перевести ${p.name} (${uid}) → ${toName}?`;
+            if (p.leads) msg += `\n\n⚠️ Это Лидер фракции. Её возглавит сильнейший из оставшихся.`;
+            if (p.garrison && to !== (rockAdminData && rockAdminData.owner)) msg += `\n\nИгрок будет снят с гарнизона Скалы.`;
+            if (!confirm(msg)) return;
+            withBusyButton(e.currentTarget, '…', async () => {
+                try {
+                    const res = await api('/admin/api/rock/move_player', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: uid, faction_id: to }) });
+                    toast(res.message || 'Переведён');
+                    await loadRockAdmin();
+                    if (rockMoveLast) await rockMoveFind();
+                } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+            });
+        };
+    });
+}
+async function rockMoveFind() {
+    const search = document.getElementById('rockMoveSearch').value.trim();
+    const faction = document.getElementById('rockMoveFilter').value;
+    if (!search && (!faction || faction === 'none')) { toast('Введи ID или ник — или выбери фракцию', true); return; }
+    rockMoveLast = { search, faction };
+    try { renderRockMove(await api(`/admin/api/rock/players?search=${encodeURIComponent(search)}&faction=${encodeURIComponent(faction)}`)); }
+    catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+}
+document.getElementById('rockMoveFindBtn').onclick = e => withBusyButton(e.currentTarget, '…', rockMoveFind);
+document.getElementById('rockMoveSearch').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('rockMoveFindBtn').click(); });
 
 /* ---------- обзор ---------- */
 const STAT_LABELS = [

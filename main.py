@@ -13093,6 +13093,166 @@ async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(requi
         raise HTTPException(status_code=500, detail="Не удалось перераспределить фракции")
 
 
+# --- АДМИН: перевод одного игрока между фракциями ---
+class AdminRockMove(BaseModel):
+    user_id: int
+    faction_id: Optional[str] = None   # None — убрать из фракции (выберет сам заново)
+
+
+def rock_admin_player_row(doc: dict, st: dict) -> dict:
+    snap = rock_snapshot(doc)
+    leads = next((f for f, v in (st.get("leaders") or {}).items() if isinstance(v, dict) and v.get("id") == doc["_id"]), None)
+    siege = st.get("siege")
+    return {"id": doc["_id"], "name": str(doc.get("name") or f"Игрок {doc['_id']}")[:40],
+            "faction_id": doc.get("faction_id") if doc.get("faction_id") in ROCK_FACTIONS else None,
+            "power": round(sum(rock_power(e) for e in snap)), "eagles": len(snap), "leads": leads,
+            "garrison": sum(1 for g in (st.get("garrison") or []) if g["uid"] == doc["_id"]),
+            "in_siege": bool(siege) and any(f["uid"] == doc["_id"] for f in siege["attackers"] + siege["defenders"])}
+
+
+@app.get("/admin/api/rock/players")
+async def admin_rock_players(search: str = "", faction: str = "", _: None = Depends(require_admin)):
+    """Поиск по ID / нику (до 50) или состав фракции по силе (до 200)."""
+    try:
+        st = await rock_get_state()
+        search = search.strip()[:60]
+        proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1}
+        q = {"is_bot": {"$ne": True}}
+        if faction in ROCK_FACTIONS:
+            q["faction_id"] = faction
+        elif faction == "none":
+            q["faction_id"] = None
+        if search:
+            ids = [int(search.lstrip("@"))] if search.lstrip("@").isdigit() and len(search) < 19 else []
+            name_q = {"name": {"$regex": re.escape(search.lstrip("@")), "$options": "i"}}
+            q = {**q, "$or": [{"_id": {"$in": ids}}, name_q] if ids else [name_q]}
+            limit = 50
+        elif faction in ROCK_FACTIONS:
+            limit = 5000
+        else:
+            raise HTTPException(status_code=400, detail="Введи ID или ник — или выбери фракцию")
+        rows = [rock_admin_player_row(d, st) async for d in store.users.find(q, proj).limit(limit)]
+        rows.sort(key=lambda r: (-r["power"], r["id"]))
+        return {"total": len(rows), "items": rows[:200]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось найти игроков")
+
+
+@app.post("/admin/api/rock/move_player")
+async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_admin)):
+    """Перевод игрока. Не трогает Очки Заслуг и исследования (они личные).
+    Гарнизон: ушедший из фракции-владельца снимается со Скалы. Лидер: его
+    прежнюю фракцию возглавит сильнейший из оставшихся; в фракции без Лидера
+    Лидером становится переведённый (как при обычном вступлении)."""
+    try:
+        target = body.faction_id or None
+        if target is not None and target not in ROCK_FACTIONS:
+            raise HTTPException(status_code=400, detail="Неизвестная фракция")
+        st = await rock_get_state()
+        if not st.get("initialized") and not st.get("test_mode"):
+            raise HTTPException(status_code=400, detail="Скала ещё не запущена")
+        if rock_rebalancing(st) or st.get("initializing"):
+            raise HTTPException(status_code=409, detail="Сейчас идёт перераспределение — попробуй через минуту")
+        uid = int(body.user_id)
+        row = await store.users.find_one({"_id": uid}, {"name": 1, "faction_id": 1})
+        if not row:
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        old = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
+        if old == target:
+            raise HTTPException(status_code=400, detail="Игрок уже в этой фракции" if target else "Игрок и так без фракции")
+
+        def busy(s):
+            sg = s.get("siege")
+            if sg and any(f["uid"] == uid for f in sg["attackers"] + sg["defenders"]):
+                return "Игрок сейчас в штурме — переведи после его конца"
+            for ch in (s.get("challenges") or {}).values():
+                if ch and uid in (ch.get("challenger_id"), ch.get("leader_id")):
+                    return "Игрок сейчас в бою за трон Лидера — подожди минуту"
+            return None
+
+        why = busy(st)
+        if why:
+            raise HTTPException(status_code=409, detail=why)
+        now = time.time()
+        upd = ({"$set": {"faction_id": target, "faction_joined_at": now, "faction_by": "admin"}} if target
+               else {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""}})
+        res = await store.users.update_one({"_id": uid, "faction_id": old if old else None}, upd)
+        if res.modified_count == 0:
+            raise HTTPException(status_code=409, detail="Фракция игрока только что изменилась — обнови список")
+        # преемник Лидера — сильнейший из оставшихся в прежней фракции
+        heir = None
+        if old:
+            proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1}
+            best = None
+            async for d in store.users.find({"faction_id": old, "_id": {"$ne": uid}}, proj):
+                pw = rock_player_power(d)
+                if best is None or (pw, -d["_id"]) > (best[0], -best[1]):
+                    best = (pw, d["_id"], str(d.get("name") or f"Игрок {d['_id']}")[:40])
+            if best:
+                heir = {"id": best[1], "name": best[2], "since": now}
+        name = str(row.get("name") or f"Игрок {uid}")[:40]
+
+        def mutate(s):
+            why = busy(s)
+            if why:
+                raise HTTPException(status_code=409, detail=why)
+            leaders = dict(s.get("leaders") or {})
+            notes = {}
+            if old and (leaders.get(old) or {}).get("id") == uid:
+                if heir:
+                    leaders[old] = heir
+                else:
+                    leaders.pop(old, None)
+                notes["heir"] = heir
+            if target and not (leaders.get(target) or {}).get("id"):
+                leaders[target] = {"id": uid, "name": name, "since": now}
+                notes["new_leader"] = True
+            garrison = s.get("garrison") or []
+            if target != s.get("owner"):
+                garrison = [g for g in garrison if g["uid"] != uid]
+            notes["garrison_removed"] = len(s.get("garrison") or []) - len(garrison)
+            changes = {}
+            if leaders != (s.get("leaders") or {}):
+                changes["leaders"] = leaders
+            if notes["garrison_removed"]:
+                changes["garrison"] = garrison
+            return changes or None, notes
+
+        try:
+            _, notes = await rock_cas(mutate)
+        except HTTPException:
+            # игрок успел попасть в штурм/бой — возвращаем как было
+            back = ({"$set": {"faction_id": old, "faction_joined_at": now}} if old
+                    else {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""}})
+            await store.users.update_one({"_id": uid}, back)
+            raise
+        ROCK_POWER_CACHE["data"] = None
+        if "heir" in notes:
+            h = notes["heir"]
+            await rock_feed_add([old], f"👑 Совет Скалы назначил нового Лидера: {h['name']}." if h else "👑 Фракция осталась без Лидера.",
+                                f"👑 The Rock Council appointed a new Leader: {h['name']}." if h else "👑 The faction has no Leader.")
+        if notes.get("new_leader"):
+            await rock_feed_add([target], f"👑 {name} — Лидер фракции!", f"👑 {name} is the faction's Leader!")
+        print(f"[rock] admin move: {uid} {old} -> {target} notes={notes}")
+        fname = lambda f: rock_faction_name(f) if f else "без фракции"
+        msg = f"{name}: {fname(old)} → {fname(target)}"
+        if "heir" in notes:
+            msg += f" · новый Лидер прежней фракции: {notes['heir']['name']}" if notes["heir"] else " · прежняя фракция без Лидера"
+        if notes.get("new_leader"):
+            msg += " · стал Лидером новой фракции"
+        if notes.get("garrison_removed"):
+            msg += f" · снят с гарнизона ({notes['garrison_removed']} орл.)"
+        return {"ok": True, "message": msg, "player": rock_admin_player_row(await store.users.find_one({"_id": uid}), await rock_get_state())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось перевести игрока")
+
+
 # --- 📣 ВЕЛИКИЙ ПРИЗЫВ ЛИДЕРА: бот пишет всем воинам фракции (сначала самым
 # сильным) с кнопкой «⚔️ Вступить в бой!» → игра открывается сразу в окне
 # подтверждения войска (start_param faction_assault). Кулдаун — 60 минут на
