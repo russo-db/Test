@@ -12124,6 +12124,11 @@ async def rock_tick_merit(st: dict, now: float) -> None:
         st = await rock_get_state()
     except Exception as e:
         print(f"[rock] garrison refresh failed: {type(e).__name__}: {e}")
+    try:   # страховка: фракция без Лидера (или с ушедшим) получает сильнейшего — раз в час
+        if not rock_rebalancing(st):
+            await rock_fill_missing_leaders(now)
+    except Exception as e:
+        print(f"[rock] leader repair failed: {type(e).__name__}: {e}")
     if owner in ROCK_FACTIONS and rock_int("merit_owner_hourly", 1) > 0:
         await store.users.update_many({"faction_id": owner}, {"$inc": {"merit": rock_int("merit_owner_hourly", 1)}})
     siege = st.get("siege")
@@ -12177,6 +12182,10 @@ async def rock_tick_challenges(st: dict, now: float) -> None:
             else:
                 await rock_feed_add([fid], f"🛡️ Лидер {ch['leader_name']} отстоял трон в бою против {ch['challenger_name']} (+{amount} Очков Заслуг)",
                                     f"🛡️ Leader {ch['leader_name']} defended the throne against {ch['challenger_name']} (+{amount} Merit)")
+            try:   # починка ждала конца боя: Лидер, которого во фракции нет, сменяется сразу
+                await rock_fill_missing_leaders(now)
+            except Exception as e:
+                print(f"[rock] leader repair after duel failed: {type(e).__name__}: {e}")
 
 
 async def rock_finish_siege(st: dict, now: float) -> None:
@@ -13082,6 +13091,10 @@ async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(requi
             await rock_cas(lambda s: ({"rebalancing": None}, True))
             raise
         ROCK_POWER_CACHE["data"] = None
+        try:   # Лидер без фракции (или вне своей) в перебалансировку не попадает — чиним после
+            await rock_fill_missing_leaders(now)
+        except Exception as e:
+            print(f"[rock] leader repair after rebalance failed: {type(e).__name__}: {e}")
         await rock_feed_add(list(ROCK_FACTION_ORDER), "⚖️ Совет Скалы перераспределил воинов между фракциями.",
                             "⚖️ The Rock Council has redistributed warriors between the factions.")
         print(f"[rock] rebalance: weak={body.weak} elite={n_elite}/{len(plan)} moved={moved} garrison_removed={g_removed}")
