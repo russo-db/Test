@@ -1222,6 +1222,10 @@ document.getElementById('rockRebApplyBtn').onclick = e => {
 };
 
 let rockMoveLast = null;
+// Кнопки «Перевести» в перерисованном списке оказываются под пальцем на месте
+// прежних: повторный клик попадал по ДРУГОМУ игроку. Пока идёт перевод и
+// ещё 0,7 с после перерисовки (0,4 с после окна подтверждения) клики игнорируются.
+let rockMoveBusy = false, rockMoveLockUntil = 0;
 function rockMoveFname(id) {
     const f = ((rockAdminData && rockAdminData.factions) || []).find(x => x.id === id);
     return f ? `${f.icon} ${escHtml(f.name)}` : '<span class="muted">без фракции</span>';
@@ -1240,8 +1244,10 @@ function renderRockMove(r) {
                 ${p.faction_id ? '<option value="">— убрать из фракции —</option>' : ''}</select>
                 <button class="rock-move-btn" style="margin-left:6px">Перевести</button></td></tr>`).join('')}
         </tbody></table></div>`;
+    rockMoveLockUntil = Date.now() + 700;
     el.querySelectorAll('.rock-move-btn').forEach(btn => {
         btn.onclick = e => {
+            if (rockMoveBusy || Date.now() < rockMoveLockUntil) return;
             const tr = btn.closest('tr');
             const uid = Number(tr.dataset.uid);
             const p = r.items.find(x => x.id === uid);
@@ -1250,14 +1256,23 @@ function renderRockMove(r) {
             let msg = `Перевести ${p.name} (${uid}) → ${toName}?`;
             if (p.leads) msg += `\n\n⚠️ Это Лидер фракции. Её возглавит сильнейший из оставшихся.`;
             if (p.garrison && to !== (rockAdminData && rockAdminData.owner)) msg += `\n\nИгрок будет снят с гарнизона Скалы.`;
-            if (!confirm(msg)) return;
-            withBusyButton(e.currentTarget, '…', async () => {
+            const ok = confirm(msg);
+            rockMoveLockUntil = Date.now() + 400;
+            if (!ok) return;
+            rockMoveBusy = true;
+            el.querySelectorAll('.rock-move-btn').forEach(b => { if (b !== btn) b.disabled = true; });   // свою кнопку гасит withBusyButton
+            withBusyButton(btn, '…', async () => {
                 try {
                     const res = await api('/admin/api/rock/move_player', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: uid, faction_id: to }) });
                     toast(res.message || 'Переведён');
                     await loadRockAdmin();
                     if (rockMoveLast) await rockMoveFind();
                 } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+                finally {
+                    rockMoveBusy = false;
+                    rockMoveLockUntil = Math.max(rockMoveLockUntil, Date.now() + 700);
+                    document.querySelectorAll('#rockMoveResult .rock-move-btn').forEach(b => { b.disabled = false; });
+                }
             });
         };
     });
