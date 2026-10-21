@@ -13158,7 +13158,9 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         if rock_rebalancing(st) or st.get("initializing"):
             raise HTTPException(status_code=409, detail="Сейчас идёт перераспределение — попробуй через минуту")
         uid = int(body.user_id)
-        row = await store.users.find_one({"_id": uid}, {"name": 1, "faction_id": 1})
+        if not 0 < uid < 2 ** 63:   # больше int64 Mongo не принимает — это не 500, а «нет такого»
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        row = await store.users.find_one({"_id": uid}, {"name": 1, "faction_id": 1, "faction_joined_at": 1, "faction_by": 1})
         if not row:
             raise HTTPException(status_code=404, detail="Игрок не найден")
         old = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
@@ -13183,12 +13185,14 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         res = await store.users.update_one({"_id": uid, "faction_id": old if old else None}, upd)
         if res.modified_count == 0:
             raise HTTPException(status_code=409, detail="Фракция игрока только что изменилась — обнови список")
-        # преемник Лидера — сильнейший из оставшихся в прежней фракции
+        # Лидер уходит из фракции, которую возглавляет (обычно это прежняя; у
+        # старых данных Лидер мог числиться в чужой) — преемник: сильнейший из её состава
+        led = next((f for f, v in (st.get("leaders") or {}).items() if isinstance(v, dict) and v.get("id") == uid), None)
         heir = None
-        if old:
+        if led and led != target:
             proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1}
             best = None
-            async for d in store.users.find({"faction_id": old, "_id": {"$ne": uid}}, proj):
+            async for d in store.users.find({"faction_id": led, "_id": {"$ne": uid}}, proj):
                 pw = rock_player_power(d)
                 if best is None or (pw, -d["_id"]) > (best[0], -best[1]):
                     best = (pw, d["_id"], str(d.get("name") or f"Игрок {d['_id']}")[:40])
@@ -13202,12 +13206,13 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
                 raise HTTPException(status_code=409, detail=why)
             leaders = dict(s.get("leaders") or {})
             notes = {}
-            if old and (leaders.get(old) or {}).get("id") == uid:
-                if heir:
-                    leaders[old] = heir
+            for f in [f for f, v in leaders.items() if f != target and isinstance(v, dict) and v.get("id") == uid]:
+                if heir and f == led:
+                    leaders[f] = heir
                 else:
-                    leaders.pop(old, None)
-                notes["heir"] = heir
+                    leaders.pop(f, None)
+                notes["heir"] = heir if f == led else None
+                notes["led"] = f
             if target and not (leaders.get(target) or {}).get("id"):
                 leaders[target] = {"id": uid, "name": name, "since": now}
                 notes["new_leader"] = True
@@ -13224,16 +13229,17 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
 
         try:
             _, notes = await rock_cas(mutate)
-        except HTTPException:
-            # игрок успел попасть в штурм/бой — возвращаем как было
-            back = ({"$set": {"faction_id": old, "faction_joined_at": now}} if old
-                    else {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""}})
-            await store.users.update_one({"_id": uid}, back)
+        except Exception:
+            # игрок успел попасть в штурм/бой (или сбой записи) — возвращаем ровно как было
+            orig = {k: row[k] for k in ("faction_id", "faction_joined_at", "faction_by") if row.get(k) is not None}
+            gone = {k: "" for k in ("faction_id", "faction_joined_at", "faction_by") if k not in orig}
+            back = {**({"$set": orig} if orig else {}), **({"$unset": gone} if gone else {})}
+            await store.users.update_one({"_id": uid, "faction_id": target}, back)
             raise
         ROCK_POWER_CACHE["data"] = None
         if "heir" in notes:
             h = notes["heir"]
-            await rock_feed_add([old], f"👑 Совет Скалы назначил нового Лидера: {h['name']}." if h else "👑 Фракция осталась без Лидера.",
+            await rock_feed_add([notes["led"]], f"👑 Совет Скалы назначил нового Лидера: {h['name']}." if h else "👑 Фракция осталась без Лидера.",
                                 f"👑 The Rock Council appointed a new Leader: {h['name']}." if h else "👑 The faction has no Leader.")
         if notes.get("new_leader"):
             await rock_feed_add([target], f"👑 {name} — Лидер фракции!", f"👑 {name} is the faction's Leader!")
@@ -13241,7 +13247,8 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         fname = lambda f: rock_faction_name(f) if f else "без фракции"
         msg = f"{name}: {fname(old)} → {fname(target)}"
         if "heir" in notes:
-            msg += f" · новый Лидер прежней фракции: {notes['heir']['name']}" if notes["heir"] else " · прежняя фракция без Лидера"
+            msg += (f" · новый Лидер «{fname(notes['led'])}»: {notes['heir']['name']}" if notes["heir"]
+                    else f" · «{fname(notes['led'])}» без Лидера")
         if notes.get("new_leader"):
             msg += " · стал Лидером новой фракции"
         if notes.get("garrison_removed"):
