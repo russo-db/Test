@@ -611,6 +611,16 @@
         <div class="page" id="page-rock">
             <h2>🏔 Орлиная Скала (эндгейм, этап 1)</h2>
             <div class="nft-interval-panel" id="rockAdminStatus"><span class="muted">Загрузка…</span></div>
+            <div class="nft-interval-panel" style="margin-top:12px;">
+                <b>🔀 Перевод игрока между фракциями</b>
+                <p class="muted" style="margin:6px 0 8px; font-size:12px;">Найди игрока по ID или нику — или выбери фракцию, чтобы увидеть весь её состав (по силе).
+                    Очки Заслуг и исследования остаются у игрока. Ушедший из фракции-владельца снимается с гарнизона.
+                    Если переводишь Лидера — его прежнюю фракцию возглавит сильнейший из оставшихся. Игрока в штурме или в бою за трон перевести нельзя.</p>
+                <input id="rockMoveSearch" placeholder="ID или ник" style="width:200px;">
+                <select id="rockMoveFilter"></select>
+                <button id="rockMoveFindBtn">🔎 Найти</button>
+                <div id="rockMoveResult" style="margin-top:10px;"></div>
+            </div>
             <div class="nft-interval-panel" id="rockAdminLaunch" style="margin-top:12px;">
                 <p class="muted" style="margin:0 0 10px;">Пока Скала не запущена, игроки при свайпе вправо видят «Скоро...» и туман, а сервер не отдаёт никаких данных фракций.
                     Запуск: ветераны (заходили за 7 дней, есть орлы 7 ур.) распределяются «змейкой» по силе по трём фракциям, сильнейший в каждой становится Лидером,
@@ -637,16 +647,6 @@
                 <button id="rockRebPreviewBtn">👁️ Предпросмотр</button>
                 <button id="rockRebApplyBtn" style="margin-left:8px; background:#b45309;">⚖️ Применить</button>
                 <div id="rockRebResult" style="margin-top:10px;"></div>
-            </div>
-            <div class="nft-interval-panel" style="margin-top:12px;">
-                <b>🔀 Перевод игрока между фракциями</b>
-                <p class="muted" style="margin:6px 0 8px; font-size:12px;">Найди игрока по ID или нику — или выбери фракцию, чтобы увидеть весь её состав (по силе).
-                    Очки Заслуг и исследования остаются у игрока. Ушедший из фракции-владельца снимается с гарнизона.
-                    Если переводишь Лидера — его прежнюю фракцию возглавит сильнейший из оставшихся. Игрока в штурме или в бою за трон перевести нельзя.</p>
-                <input id="rockMoveSearch" placeholder="ID или ник" style="width:200px;">
-                <select id="rockMoveFilter"></select>
-                <button id="rockMoveFindBtn">🔎 Найти</button>
-                <div id="rockMoveResult" style="margin-top:10px;"></div>
             </div>
         </div>
 

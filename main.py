@@ -2564,8 +2564,9 @@ async def serve_config():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def serve_admin():
+    # без кэша: после деплоя админка сразу открывается в новой версии
     with open(os.path.join(BASE_DIR, "admin.html"), "r", encoding="utf-8") as f:
-        return f.read()
+        return HTMLResponse(f.read(), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/load/{user_id}")
