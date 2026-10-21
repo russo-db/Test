@@ -11818,11 +11818,21 @@ async def rock_require_access(user_id: int) -> dict:
     if st.get("initializing"):
         # идёт настоящий запуск: тестовые данные стираются, ветераны распределяются
         raise HTTPException(status_code=409, detail="Скала запускается — попробуй через минуту")
+    if rock_rebalancing(st):
+        raise HTTPException(status_code=409, detail="Фракции перераспределяются — попробуй через минуту")
     if st.get("active"):
         return st
     if rock_tester(user_id):
         return await rock_ensure_test_mode()
     raise HTTPException(status_code=403, detail="Скоро...")
+
+
+ROCK_REBALANCE_LOCK = 300   # с; флаг старше — остаток упавшего процесса, не держит Скалу
+
+
+def rock_rebalancing(st: dict) -> bool:
+    ts = st.get("rebalancing")
+    return bool(ts) and time.time() - float(ts) < ROCK_REBALANCE_LOCK
 
 
 async def rock_feed_add(factions, text: str, text_en: str = "") -> None:
@@ -12923,6 +12933,150 @@ async def admin_rock_test_window(body: AdminRockTestWindow, _: None = Depends(re
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось открыть тестовое окно")
+
+
+# --- АДМИН: ручная перебалансировка фракций ---
+# Лидеры всех фракций остаются на месте. Остальные воины фракций сортируются
+# по силе орлов N ур. (та же сила, что в таблице фракций); первые elite_pct %
+# по очереди уходят в две «сильные» фракции, слабая из этой элиты не получает
+# никого; остальные раздаются по кругу на все три (сильные первыми в круге).
+class AdminRockRebalance(BaseModel):
+    weak: str = "sun"
+    elite_pct: float = 20
+    dry_run: bool = True
+
+
+def rock_rebalance_assign(pool: list, weak: str, elite_pct: float) -> tuple:
+    """pool — [(power, uid, name, old_fid)] по убыванию силы → ([(..., new_fid)], число элиты)."""
+    strong = [f for f in ROCK_FACTION_ORDER if f != weak]
+    n_elite = min(len(pool), math.ceil(len(pool) * elite_pct / 100 - 1e-9)) if elite_pct > 0 else 0
+    ring = strong + [weak]
+    out = []
+    for i, (power, uid, name, old) in enumerate(pool):
+        fid = strong[i % 2] if i < n_elite else ring[(i - n_elite) % 3]
+        out.append((power, uid, name, old, fid))
+    return out, n_elite
+
+
+async def rock_rebalance_collect(st: dict) -> tuple:
+    """Лидеры (остаются во фракции, которую возглавляют) и пул остальных
+    воинов фракций по убыванию силы. kept — [(power, uid, name, old, led_fid)]."""
+    led = {int(v["id"]): f for f, v in (st.get("leaders") or {}).items()
+           if f in ROCK_FACTIONS and isinstance(v, dict) and v.get("id") is not None}
+    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1}
+    pool, kept = [], []
+    async for doc in store.users.find({"faction_id": {"$in": ROCK_FACTION_ORDER}}, proj):
+        item = (rock_player_power(doc), doc["_id"], str(doc.get("name") or f"Игрок {doc['_id']}")[:40], doc["faction_id"])
+        if doc["_id"] in led:
+            kept.append(item + (led[doc["_id"]],))
+        else:
+            pool.append(item)
+    pool.sort(key=lambda c: (-c[0], c[1]))
+    return pool, kept
+
+
+def rock_rebalance_summary(kept: list, plan: list) -> dict:
+    before = {f: {"members": 0, "power": 0.0} for f in ROCK_FACTION_ORDER}
+    after = {f: {"members": 0, "power": 0.0} for f in ROCK_FACTION_ORDER}
+    for power, uid, name, old, new in kept + plan:
+        before[old]["members"] += 1; before[old]["power"] += power
+        after[new]["members"] += 1; after[new]["power"] += power
+    return {f: {"before": {"members": before[f]["members"], "power": round(before[f]["power"])},
+                "after": {"members": after[f]["members"], "power": round(after[f]["power"])}} for f in ROCK_FACTION_ORDER}
+
+
+@app.post("/admin/api/rock/rebalance")
+async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(require_admin)):
+    """dry_run=true — только предпросмотр; false — переносит игроков. На время
+    переноса действия Скалы закрыты флагом rebalancing; во время штурма или
+    вызова Лидеру переносить нельзя (ломается состав отрядов)."""
+    try:
+        if body.weak not in ROCK_FACTIONS:
+            raise HTTPException(status_code=400, detail="Неизвестная фракция")
+        elite_pct = admin_num(body.elite_pct, "Доля элиты, %", 0, 100)
+        st = await rock_get_state()
+        if not st.get("initialized"):
+            raise HTTPException(status_code=400, detail="Скала ещё не запущена — распределять некого")
+
+        def busy(s):
+            if s.get("siege"):
+                return "Идёт штурм — дождись его конца"
+            if any((s.get("challenges") or {}).values()):
+                return "Идёт вызов Лидеру — дождись конца боя (1 мин)"
+            if s.get("initializing"):
+                return "Скала запускается"
+            return None
+
+        def report(plan, kept, n_elite, moved=None):
+            return {"weak": body.weak, "elite_pct": elite_pct, "pool": len(plan), "elite": n_elite,
+                    "leaders": [{"id": u, "name": n, "faction": f, "power": round(p)} for p, u, n, o, f in kept],
+                    "factions": rock_rebalance_summary(kept, plan),
+                    "moves": sum(1 for x in kept + plan if x[3] != x[4]) if moved is None else moved,
+                    "elite_list": [{"name": n, "power": round(p), "from": o, "to": f} for p, u, n, o, f in plan[:n_elite][:60]]}
+
+        if body.dry_run:
+            pool, kept = await rock_rebalance_collect(st)
+            plan, n_elite = rock_rebalance_assign(pool, body.weak, elite_pct)
+            return {**report(plan, kept, n_elite), "dry_run": True, "busy": busy(st)}
+
+        now = time.time()
+
+        def claim(s):
+            why = busy(s)
+            if why:
+                raise HTTPException(status_code=409, detail=why)
+            if rock_rebalancing(s):
+                raise HTTPException(status_code=409, detail="Перераспределение уже идёт — обнови страницу")
+            return {"rebalancing": now}, True
+
+        await rock_cas(claim)
+        try:
+            await asyncio.sleep(1.5)   # действия игроков, начатые до флага, успевают дописаться
+            st = await rock_get_state()
+            why = busy(st)
+            if why:
+                raise HTTPException(status_code=409, detail=why)
+            pool, kept = await rock_rebalance_collect(st)
+            plan, n_elite = rock_rebalance_assign(pool, body.weak, elite_pct)
+            moved = 0
+            for power, uid, name, old, new in kept + plan:
+                if old == new:
+                    continue
+                res = await store.users.update_one({"_id": uid, "faction_id": old},
+                                                   {"$set": {"faction_id": new, "faction_joined_at": now, "faction_by": "rebalance"}})
+                moved += res.modified_count
+            # гарнизон: ушедшие из фракции-владельца больше Скалу не держат
+            g_uids = list({g["uid"] for g in (st.get("garrison") or [])})
+            facs = {d["_id"]: d.get("faction_id") async for d in store.users.find({"_id": {"$in": g_uids}}, {"faction_id": 1})}
+            # фракция без Лидера получает сильнейшего из своих
+            best = {}
+            for power, uid, name, old, new in plan:
+                if new not in best and power > 0:
+                    best[new] = {"id": uid, "name": name, "since": now}
+        except Exception:
+            await rock_cas(lambda s: ({"rebalancing": None}, True))
+            raise
+
+        def finish(s):
+            garrison = [g for g in (s.get("garrison") or []) if facs.get(g["uid"], s.get("owner")) == s.get("owner")]
+            leaders = dict(s.get("leaders") or {})
+            for f, ld in best.items():
+                if not (leaders.get(f) or {}).get("id"):
+                    leaders[f] = ld
+            return {"rebalancing": None, "garrison": garrison, "leaders": leaders}, len(s.get("garrison") or []) - len(garrison)
+
+        _, g_removed = await rock_cas(finish)
+        ROCK_POWER_CACHE["data"] = None
+        await rock_feed_add(list(ROCK_FACTION_ORDER), "⚖️ Совет Скалы перераспределил воинов между фракциями.",
+                            "⚖️ The Rock Council has redistributed warriors between the factions.")
+        print(f"[rock] rebalance: weak={body.weak} elite={n_elite}/{len(plan)} moved={moved} garrison_removed={g_removed}")
+        return {**report(plan, kept, n_elite, moved), "dry_run": False, "garrison_removed": g_removed,
+                "message": f"Перераспределено: перенесено {moved} из {len(plan) + len(kept)}, элита {n_elite}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось перераспределить фракции")
 
 
 # --- 📣 ВЕЛИКИЙ ПРИЗЫВ ЛИДЕРА: бот пишет всем воинам фракции (сначала самым
