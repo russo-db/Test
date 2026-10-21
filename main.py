@@ -11751,6 +11751,10 @@ async def rock_cas(mutate, attempts: int = 12):
         changes, out = mutate(st)
         if not changes:
             return st, out
+        if rock_rebalancing(st) and "rebalancing" not in changes and ROCK_REBALANCE_GUARDED & set(changes):
+            # действие игрока, начатое до флага переноса, но дописывающееся во время
+            # него: состав отрядов/гарнизона сейчас пересчитывается — не пишем
+            raise HTTPException(status_code=409, detail="Фракции перераспределяются — попробуй через минуту")
         new = await store.rock.find_one_and_update(
             {"_id": ROCK_STATE_ID, "v": st["v"]}, {"$set": {**changes, "v": st["v"] + 1}},
             return_document=ReturnDocument.AFTER)
@@ -11828,6 +11832,7 @@ async def rock_require_access(user_id: int) -> dict:
 
 
 ROCK_REBALANCE_LOCK = 300   # с; флаг старше — остаток упавшего процесса, не держит Скалу
+ROCK_REBALANCE_GUARDED = {"siege", "challenges", "garrison", "leaders"}
 
 
 def rock_rebalancing(st: dict) -> bool:
@@ -12042,13 +12047,13 @@ def rock_merge_garrison(current: list, fresh: dict) -> list:
 
 async def rock_refresh_garrison() -> None:
     st = await rock_get_state()
-    if st.get("siege") or not st.get("garrison"):
+    if st.get("siege") or not st.get("garrison") or rock_rebalancing(st):
         return
     fresh = await rock_fresh_garrison(st["garrison"], st.get("owner"))
 
     def mutate(s):
-        if s.get("siege") or s.get("owner") != st.get("owner"):
-            return None, False
+        if s.get("siege") or s.get("owner") != st.get("owner") or rock_rebalancing(s):
+            return None, False   # во время переноса гарнизон чистит сам перенос
         merged = rock_merge_garrison(s.get("garrison") or [], fresh)
         return ({"garrison": merged}, True) if merged != (s.get("garrison") or []) else (None, False)
 
@@ -13038,13 +13043,18 @@ async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(requi
                 raise HTTPException(status_code=409, detail=why)
             pool, kept = await rock_rebalance_collect(st)
             plan, n_elite = rock_rebalance_assign(pool, body.weak, elite_pct)
-            moved = 0
+            # группами «откуда → куда» (≤ 6 запросов вместо одного на игрока): на
+            # тысячах игроков перенос укладывается в секунды, а не в минуты
+            groups = {}
             for power, uid, name, old, new in kept + plan:
-                if old == new:
-                    continue
-                res = await store.users.update_one({"_id": uid, "faction_id": old},
-                                                   {"$set": {"faction_id": new, "faction_joined_at": now, "faction_by": "rebalance"}})
-                moved += res.modified_count
+                if old != new:
+                    groups.setdefault((old, new), []).append(uid)
+            moved = 0
+            for (old, new), uids in groups.items():
+                for i in range(0, len(uids), 1000):
+                    res = await store.users.update_many({"_id": {"$in": uids[i:i + 1000]}, "faction_id": old},
+                                                        {"$set": {"faction_id": new, "faction_joined_at": now, "faction_by": "rebalance"}})
+                    moved += res.modified_count
             # гарнизон: ушедшие из фракции-владельца больше Скалу не держат
             g_uids = list({g["uid"] for g in (st.get("garrison") or [])})
             facs = {d["_id"]: d.get("faction_id") async for d in store.users.find({"_id": {"$in": g_uids}}, {"faction_id": 1})}
@@ -13065,7 +13075,11 @@ async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(requi
                     leaders[f] = ld
             return {"rebalancing": None, "garrison": garrison, "leaders": leaders}, len(s.get("garrison") or []) - len(garrison)
 
-        _, g_removed = await rock_cas(finish)
+        try:
+            _, g_removed = await rock_cas(finish)
+        except Exception:
+            await rock_cas(lambda s: ({"rebalancing": None}, True))
+            raise
         ROCK_POWER_CACHE["data"] = None
         await rock_feed_add(list(ROCK_FACTION_ORDER), "⚖️ Совет Скалы перераспределил воинов между фракциями.",
                             "⚖️ The Rock Council has redistributed warriors between the factions.")

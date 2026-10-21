@@ -1184,12 +1184,18 @@ function renderRockReb(r) {
         ${r.elite_list.length ? `<details style="margin-top:6px"><summary>Элита (${r.elite})</summary>
             ${r.elite_list.map((e, i) => `<div class="muted">${i + 1}. ${escHtml(e.name)} · сила ${e.power} · ${fname(e.from)} → <b>${fname(e.to)}</b></div>`).join('')}</details>` : ''}`;
 }
-document.getElementById('rockRebPreviewBtn').onclick = e => withBusyButton(e.currentTarget, '…', async () => {
+function rockRebValid(prm) {
+    const raw = document.getElementById('rockRebPct').value.trim();
+    if (raw === '' || !Number.isFinite(prm.elite_pct) || prm.elite_pct < 0 || prm.elite_pct > 100) { toast('Укажи долю элиты от 0 до 100 %', true); return false; }
+    return true;
+}
+document.getElementById('rockRebPreviewBtn').onclick = e => rockRebValid(rockRebParams()) && withBusyButton(e.currentTarget, '…', async () => {
     try { renderRockReb(await api('/admin/api/rock/rebalance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...rockRebParams(), dry_run: true }) })); }
     catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 });
 document.getElementById('rockRebApplyBtn').onclick = e => {
     const prm = rockRebParams();
+    if (!rockRebValid(prm)) return;
     const wname = (document.getElementById('rockRebWeak').selectedOptions[0] || {}).textContent || prm.weak;
     if (!confirm(`Перераспределить воинов фракций?\n\nЭлита: ${prm.elite_pct}% сильнейших — только в две фракции, кроме «${wname}».\nОстальные — поровну на три фракции. Лидеры остаются.\n\nОтменить нельзя.`)) return;
     withBusyButton(e.currentTarget, 'Перенос…', async () => {
