@@ -13135,8 +13135,8 @@ async def rock_fill_missing_leaders(now: float) -> dict:
         ls = dict(s.get("leaders") or {})
         done, changed = {}, False
         for f in broken:
-            if ((ls.get(f) or {}).get("id")) != cur[f]:
-                continue   # Лидер уже сменился другим путём — не трогаем
+            if ((ls.get(f) or {}).get("id")) != cur[f] or (s.get("challenges") or {}).get(f):
+                continue   # Лидер уже сменился другим путём / идёт бой за трон — его итог решит сам
             if f in best:
                 ls[f] = done[f] = best[f][1]; changed = True
             elif cur[f] is not None:
@@ -13281,7 +13281,7 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         except Exception as e:   # перевод уже сделан — не валим ответ админу
             print(f"[rock] fill leaders failed: {type(e).__name__}: {e}")
             filled = {}
-        if "heir" in notes and (notes["heir"] or notes["led"] not in filled):
+        if "heir" in notes and notes["led"] not in filled:   # иначе итоговый Лидер — от починки, без двойной записи
             h = notes["heir"]
             await rock_feed_add([notes["led"]], f"👑 Совет Скалы назначил нового Лидера: {h['name']}." if h else "👑 Фракция осталась без Лидера.",
                                 f"👑 The Rock Council appointed a new Leader: {h['name']}." if h else "👑 The faction has no Leader.")
@@ -13290,7 +13290,7 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         print(f"[rock] admin move: {uid} {old} -> {target} notes={notes}")
         fname = lambda f: rock_faction_name(f) if f else "без фракции"
         msg = f"{name}: {fname(old)} → {fname(target)}"
-        if "heir" in notes and (notes["heir"] or notes["led"] not in filled):
+        if "heir" in notes and notes["led"] not in filled:
             msg += (f" · новый Лидер «{fname(notes['led'])}»: {notes['heir']['name']}" if notes["heir"]
                     else f" · «{fname(notes['led'])}» без Лидера")
         if notes.get("new_leader"):
