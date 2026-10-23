@@ -4534,6 +4534,19 @@ def strongest_eagle_info(row: dict) -> Optional[dict]:
     return {"tier_id": MONSTER_TIER.get(best["id"]), "feed_level": int(best.get("feed_level") or 1)}
 
 
+def js_round(x: float) -> int:
+    """Округление как Math.round на клиенте (половинка — вверх). Python round()
+    округляет половинку к чётному (22.5 → 22), а экран показывал 23 — боевые
+    статы должны совпадать с цифрами в Гнезде и на Арене."""
+    return int(math.floor(float(x) + 0.5))
+
+
+def js_fixed1(x: float) -> float:
+    """Как Number(x.toFixed(1)) на клиенте — точное значение double, половинка вверх."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return float(Decimal(float(x)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
 def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict],
                        enchant_for_tier: Optional[dict] = None, research_level: int = 0) -> dict:
     """Итоговые боевые статы орла редкости tier_id — серверный порт
@@ -4565,11 +4578,11 @@ def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict],
             bonus["hp"] += pct
             bonus["spd"] += pct
     return {
-        "hp": round(base["hp"] * (1 + bonus["hp"] / 100)),
-        "atk": round(base["atk"] * (1 + bonus["atk"] / 100)),
-        "def": round(base["def"] * (1 + bonus["def"] / 100)),
-        "crit": round(base["crit"] * (1 + bonus["crit"] / 100), 1),
-        "spd": round(base["spd"] * (1 + bonus["spd"] / 100)),
+        "hp": js_round(base["hp"] * (1 + bonus["hp"] / 100)),
+        "atk": js_round(base["atk"] * (1 + bonus["atk"] / 100)),
+        "def": js_round(base["def"] * (1 + bonus["def"] / 100)),
+        "crit": js_fixed1(base["crit"] * (1 + bonus["crit"] / 100)),
+        "spd": js_round(base["spd"] * (1 + bonus["spd"] / 100)),
     }
 
 
