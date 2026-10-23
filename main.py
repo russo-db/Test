@@ -12124,6 +12124,11 @@ async def rock_tick_merit(st: dict, now: float) -> None:
         st = await rock_get_state()
     except Exception as e:
         print(f"[rock] garrison refresh failed: {type(e).__name__}: {e}")
+    try:   # неактивные (> inactive_kick_hours без входа) освобождают место во фракции — до начисления заслуг
+        await rock_kick_inactive(now)
+        st = await rock_get_state()
+    except Exception as e:
+        print(f"[rock] inactive kick failed: {type(e).__name__}: {e}")
     try:   # страховка: фракция без Лидера (или с ушедшим) получает сильнейшего — раз в час
         if not rock_rebalancing(st):
             await rock_fill_missing_leaders(now)
@@ -12350,6 +12355,9 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
           "power": round(sum(rock_power(e) for e in snapshot)),
           "challenge_used": int(row.get("rock_challenge_day") or -1) == today,
           "attack_used": int(row.get("rock_attack_day") or -1) == today}
+    left = row.get("faction_left") if not fid and isinstance(row.get("faction_left"), dict) else None
+    me["left"] = ({"from": left.get("from"), "reason": left.get("reason"), "at": left.get("at"),
+                   "hours": rock_int("inactive_kick_hours", 72)} if left else None)
     out["me"] = me
     # войско для окна «Подтвердить войско» (переход из Великого призыва)
     me["army"] = [{k: e[k] for k in ("tier", "atk", "def", "hp", "crit", "spd")} for e in snapshot[:60]]
@@ -12476,7 +12484,8 @@ async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = H
         if st_access.get("active") and rock_overloaded(data, fid):
             raise HTTPException(status_code=400, detail="Эта фракция перегружена силами, выберите другую!")
         res = await store.users.update_one({"_id": user_id, "faction_id": None},
-                                           {"$set": {"faction_id": fid, "faction_joined_at": time.time()}})
+                                           {"$set": {"faction_id": fid, "faction_joined_at": time.time()},
+                                            "$unset": {"faction_left": ""}})
         if res.modified_count == 0:
             fresh = await fetch_user(user_id)
             if fresh.get("faction_id") != fid:
@@ -12826,6 +12835,15 @@ class AdminRockTestWindow(BaseModel):
     minutes: int = 60
 
 
+async def admin_rock_inactive_info(st: dict, now: float) -> dict:
+    hours = rock_num("inactive_kick_hours", 72)
+    cutoff = rock_inactive_cutoff(now)
+    if cutoff is None or not rock_runs(st):
+        return {"hours": hours, "pending": None}
+    q = rock_inactive_query(cutoff, rock_kick_protected(st))
+    return {"hours": hours, "pending": await store.users.count_documents(q)}
+
+
 async def admin_rock_view() -> dict:
     st = await rock_get_state()
     now = time.time()
@@ -12847,6 +12865,7 @@ async def admin_rock_view() -> dict:
         "last_siege": {k: v for k, v in (st.get("last_siege") or {}).items() if k != "payouts"} or None,
         "upcoming": rock_upcoming_windows(st, now, 4), "test_window": st.get("test_window"),
         "now": now, "utc_offset_hours": rock_num("utc_offset_hours", 3),
+        "inactive": await admin_rock_inactive_info(st, now),
     }
 
 
@@ -13124,6 +13143,97 @@ def rock_admin_player_row(doc: dict, st: dict) -> dict:
             "in_siege": bool(siege) and any(f["uid"] == doc["_id"] for f in siege["attackers"] + siege["defenders"])}
 
 
+# --- исключение неактивных: не заходил в игру дольше inactive_kick_hours
+# (по last_seen — он обновляется при каждом открытии игры) и не Лидер →
+# faction_id снимается, орлы уходят из гарнизона и из силы фракции. Орлы,
+# уровни, Очки Заслуг и исследования остаются; вернувшись, игрок снова
+# выбирает фракцию обычным экраном выбора. ---
+def rock_inactive_cutoff(now: float) -> Optional[float]:
+    hours = rock_num("inactive_kick_hours", 72)
+    return now - hours * 3600 if hours > 0 else None
+
+
+def rock_kick_protected(st: dict) -> set:
+    """Кого не трогаем: Лидеров и тех, кто прямо сейчас в штурме или в бою за трон."""
+    out = {int(v["id"]) for v in (st.get("leaders") or {}).values() if isinstance(v, dict) and v.get("id") is not None}
+    sg = st.get("siege")
+    if sg:
+        out |= {int(f["uid"]) for f in sg.get("attackers", []) + sg.get("defenders", [])}
+    for ch in (st.get("challenges") or {}).values():
+        if ch:
+            out |= {int(ch.get("challenger_id") or 0), int(ch.get("leader_id") or 0)}
+    return out
+
+
+def rock_inactive_query(cutoff: float, protected: set) -> dict:
+    return {"faction_id": {"$in": ROCK_FACTION_ORDER}, "is_bot": {"$ne": True}, "_id": {"$nin": sorted(protected)},
+            "$or": [{"last_seen": {"$lt": cutoff}}, {"last_seen": {"$exists": False}}, {"last_seen": None}]}
+
+
+async def rock_kick_inactive(now: float, dry_run: bool = False) -> dict:
+    st = await rock_get_state()
+    cutoff = rock_inactive_cutoff(now)
+    if cutoff is None or not rock_runs(st) or rock_rebalancing(st):
+        return {"kicked": 0, "by_faction": {}, "skipped": True}
+    q = rock_inactive_query(cutoff, rock_kick_protected(st))
+    cand = {}
+    async for d in store.users.find(q, {"faction_id": 1}):
+        cand.setdefault(d["faction_id"], []).append(d["_id"])
+    if dry_run:
+        return {"kicked": sum(len(v) for v in cand.values()), "by_faction": {f: len(v) for f, v in cand.items()}, "dry_run": True}
+    kicked = {}
+    run = secrets.token_hex(6)   # метка прогона: параллельный прогон (часовой + кнопка) не припишет себе чужих
+    for f, ids in cand.items():
+        for i in range(0, len(ids), 1000):
+            # условие неактивности — в самом запросе: зашедший за эти миллисекунды игрок не пострадает
+            await store.users.update_many({**q, "_id": {"$in": ids[i:i + 1000], "$nin": q["_id"]["$nin"]}, "faction_id": f},
+                                          {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""},
+                                           "$set": {"faction_left": {"from": f, "at": now, "reason": "inactive", "run": run}}})
+        kicked[f] = [d["_id"] async for d in store.users.find({"_id": {"$in": ids}, "faction_left.run": run}, {"_id": 1})]
+    gone = {u for v in kicked.values() for u in v}
+    if gone:
+        def mutate(s):
+            g = s.get("garrison") or []
+            keep = [x for x in g if x["uid"] not in gone]
+            return ({"garrison": keep}, len(g) - len(keep)) if len(keep) != len(g) else (None, 0)
+        try:
+            _, g_removed = await rock_cas(mutate)
+        except HTTPException:
+            g_removed = 0   # гарнизон занят (перенос/штурм) — почистит часовое обновление гарнизона
+        ROCK_POWER_CACHE["data"] = None
+        hours = rock_int("inactive_kick_hours", 72)
+        for f, v in kicked.items():
+            if v:
+                await rock_feed_add([f], f"🍂 Фракцию покинули неактивные воины ({len(v)}): не заходили в игру больше {hours} ч.",
+                                    f"🍂 {len(v)} inactive warriors left the faction: offline for over {hours} h.")
+        print(f"[rock] inactive kick: {dict((f, len(v)) for f, v in kicked.items())} garrison_removed={g_removed}")
+    return {"kicked": len(gone), "by_faction": {f: len(v) for f, v in kicked.items()}}
+
+
+@app.post("/admin/api/rock/kick_inactive")
+async def admin_rock_kick_inactive(dry_run: bool = False, _: None = Depends(require_admin)):
+    try:
+        st = await rock_get_state()
+        if not rock_runs(st):
+            raise HTTPException(status_code=400, detail="Скала ещё не запущена")
+        if rock_rebalancing(st):
+            raise HTTPException(status_code=409, detail="Сейчас идёт перераспределение — попробуй через минуту")
+        if rock_inactive_cutoff(time.time()) is None:
+            raise HTTPException(status_code=400, detail="Исключение неактивных выключено (inactive_kick_hours = 0)")
+        res = await rock_kick_inactive(time.time(), dry_run=dry_run)
+        if not dry_run:
+            try:
+                await rock_fill_missing_leaders(time.time())
+            except Exception as e:
+                print(f"[rock] leader repair after kick failed: {type(e).__name__}: {e}")
+        return {**res, "view": await admin_rock_view()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось исключить неактивных")
+
+
 async def rock_fill_missing_leaders(now: float) -> dict:
     """Чинит Лидеров после переводов админом: фракция без Лидера при живом
     составе — или с Лидером, которого в ней уже нет (два перевода разом:
@@ -13137,10 +13247,12 @@ async def rock_fill_missing_leaders(now: float) -> dict:
     broken = [f for f in ROCK_FACTION_ORDER if cur[f] is None or where.get(cur[f]) != f]
     if not broken:
         return {}
-    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1}
+    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "faction_id": 1, "last_seen": 1}
     best = {}
+    cutoff = rock_inactive_cutoff(now)
     async for d in store.users.find({"faction_id": {"$in": broken}}, proj):
-        key = (rock_player_power(d), -d["_id"])
+        # сначала активные: неактивный Лидер — та же пустая фракция
+        key = (cutoff is None or float(d.get("last_seen") or 0) >= cutoff, rock_player_power(d), -d["_id"])
         if d["faction_id"] not in best or key > best[d["faction_id"]][0]:
             best[d["faction_id"]] = (key, {"id": d["_id"], "name": str(d.get("name") or f"Игрок {d['_id']}")[:40], "since": now})
 
@@ -13242,12 +13354,13 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         led = next((f for f, v in (st.get("leaders") or {}).items() if isinstance(v, dict) and v.get("id") == uid), None)
         heir = None
         if led and led != target:
-            proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1}
+            proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "last_seen": 1}
             best = None
+            cutoff = rock_inactive_cutoff(now)
             async for d in store.users.find({"faction_id": led, "_id": {"$ne": uid}}, proj):
-                pw = rock_player_power(d)
-                if best is None or (pw, -d["_id"]) > (best[0], -best[1]):
-                    best = (pw, d["_id"], str(d.get("name") or f"Игрок {d['_id']}")[:40])
+                key = (cutoff is None or float(d.get("last_seen") or 0) >= cutoff, rock_player_power(d), -d["_id"])
+                if best is None or key > best[0]:
+                    best = (key, d["_id"], str(d.get("name") or f"Игрок {d['_id']}")[:40])
             if best:
                 heir = {"id": best[1], "name": best[2], "since": now}
         name = str(row.get("name") or f"Игрок {uid}")[:40]

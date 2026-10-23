@@ -1127,12 +1127,22 @@ function renderRockAdmin(d) {
                 <td>${f.leader ? `👑 ${escHtml(f.leader.name)} <span class="muted">(${f.leader.id})</span>` : '—'}</td>
                 <td>${f.fail_streak}</td><td>${f.rage_pct ? '+' + f.rage_pct + '%' : '—'}</td><td>${f.challenge ? '⚔️ идёт' : '—'}</td></tr>`).join('')}
         </tbody></table></div>
+        ${d.inactive ? `<div style="margin-top:8px">🍂 Исключение неактивных: ${d.inactive.hours > 0 ? `не заходили больше <b>${d.inactive.hours} ч</b> (кроме Лидеров и тех, кто сейчас в штурме или бою за трон) — раз в час автоматически.
+            ${d.inactive.pending != null ? `Сейчас под исключение попадают: <b>${d.inactive.pending}</b>. ${d.inactive.pending ? '<button id="rockKickBtn" style="margin-left:6px">🍂 Исключить сейчас</button>' : ''}` : ''}` : '<b>выключено</b> (inactive_kick_hours = 0)'}</div>` : ''}
         <div style="margin-top:8px">${s ? `⚔️ <b>Идёт штурм</b>: ${fname(s.attacker)} → ${fname(s.defender)} · раунд ${s.round}/${s.rounds_total} ·
             атакующих живы ${s.att_alive}/${s.att_total} · защитников ${s.def_alive}/${s.def_total} · оборона ${Math.round(s.domination * 100)}% · до конца ${rockAdminTime(s.ends_at)}`
             : 'Штурма сейчас нет.'}</div>
         ${d.last_siege ? `<div class="muted" style="margin-top:4px">Последний штурм (${rockAdminTime(d.last_siege.ts)}): ${fname(d.last_siege.attacker)} → ${fname(d.last_siege.defender)} — ${d.last_siege.won ? 'Скала захвачена' : 'оборона устояла'}</div>` : ''}
         <div style="margin-top:8px"><b>Ближайшие окна штурма</b> <span class="muted">(время — ваше локальное; в конфиге окна заданы по UTC+${d.utc_offset_hours})</span>:
             ${(d.upcoming || []).map(w => `<div class="muted">${rockAdminTime(w.start)}–${rockAdminTime(w.end).slice(-5)} · ${fname(w.faction)}${w.test ? ' 🧪 тест' : ''}</div>`).join('') || '<div class="muted">—</div>'}</div>` : ''}`;
+    const kb = document.getElementById('rockKickBtn');
+    if (kb) kb.onclick = e => {
+        if (!confirm(`Исключить из фракций неактивных игроков (${d.inactive.pending})? Орлы, Очки Заслуг и исследования у них останутся — вернувшись, они выберут фракцию заново.`)) return;
+        withBusyButton(e.currentTarget, '…', async () => {
+            try { const res = await api('/admin/api/rock/kick_inactive', { method: 'POST' }); toast(`Исключено: ${res.kicked}`); renderRockAdmin(res.view); }
+            catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+        });
+    };
     document.getElementById('rockLaunchBtn').style.display = d.initialized ? 'none' : '';
     document.getElementById('rockHideBtn').style.display = d.active ? '' : 'none';
     document.getElementById('rockShowBtn').style.display = d.initialized && !d.active ? '' : 'none';

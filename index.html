@@ -3190,6 +3190,7 @@
                 'hunt.nest.discountNote': '📜 Свиток Крафта: этот крафт — {gold} 🪙 вместо {full} 🪙',
                 'rock.loading': 'Загрузка Орлиной Скалы…',
                 'rock.chooseTitle': '🏔 Орлиная Скала',
+                'rock.leftInactive': '🍂 Ты не заходил в игру больше {h} ч — место во фракции «{name}» освободили для активных воинов. Твои орлы, Очки Заслуг и исследования на месте: выбери фракцию заново.',
                 'rock.chooseSub': 'Выбери фракцию — навсегда. С ней ты будешь штурмовать и оборонять Скалу, а её герб появится рядом с твоим ником на Арене.',
                 'rock.members': 'Воинов: {n} · Сила: {p}',
                 'rock.leader': 'Лидер: {name}',
@@ -3932,6 +3933,7 @@
                 'hunt.nest.discountNote': '📜 Crafting Scroll: this craft costs {gold} 🪙 instead of {full} 🪙',
                 'rock.loading': 'Loading the Eagle Rock…',
                 'rock.chooseTitle': '🏔 Eagle Rock',
+                'rock.leftInactive': '🍂 You were offline for over {h} h, so your place in «{name}» went to active warriors. Your eagles, Merit and research are safe: choose a faction again.',
                 'rock.chooseSub': 'Choose a faction — forever. With it you will storm and defend the Rock, and its crest will appear next to your name in the Arena.',
                 'rock.members': 'Warriors: {n} · Power: {p}',
                 'rock.leader': 'Leader: {name}',
@@ -9177,7 +9179,9 @@
         function rockSwitchTab(k) { haptic.select(); rockTab = k; renderRock(); }
 
         function renderRockChoose(r) {
+            const left = r.me && r.me.left;
             return `<div class="rock-title">${t('rock.chooseTitle')}</div>
+                ${left && left.reason === 'inactive' ? `<div class="rock-result lost" style="margin-bottom:10px">${t('rock.leftInactive', { name: huntEsc(rockFNameById(left.from)), h: left.hours })}</div>` : ''}
                 <div class="rock-sub">${t('rock.chooseSub')}</div>
                 ${(r.factions || []).map(f => `<div class="rock-fcard ${f.overloaded ? 'disabled' : ''}" data-faction="${huntEsc(f.id)}"
                         style="background:linear-gradient(135deg, ${rockRgba(f.color, 0.24)}, rgba(14,9,26,0.88)); border-color:${rockRgba(f.color, 0.6)}"

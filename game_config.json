@@ -710,6 +710,7 @@
     "challenge_penalty": 15,
     "veterans_top": 30,
     "veterans_active_days": 7,
+    "inactive_kick_hours": 72,
     "overload_pct": 25,
     "overload_min_gap": 300,
     "merit_owner_hourly": 1,
