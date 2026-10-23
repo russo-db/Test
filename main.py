@@ -2642,6 +2642,9 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "show_hunt_module": await hunt_enabled_for(request),
         "gold_eagle_vip": gold_eagle_vip(row),
         "auto_expedition": auto_expedition_view(row),
+        # 🧬 Исследования: новая база HP/Атаки/Защиты = база × (1 + ур. × pct%) —
+        # Гнездо, Арена и все экраны показывают уже её (см. get_modified_base_stats)
+        "research_level": rock_research_level(row), "research_pct": research_pct_per_level(),
         # Время сервера: по нему клиент считает таймеры Охоты на ферме — часы
         # телефона могут спешить или отставать на часы.
         "server_time": time.time(),
@@ -4055,7 +4058,8 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
 
     equipped = normalize_nest_equipped(row.get("nest_equipped"))
     enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
-    player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id), enchant.get(request.tier_id))}
+    player_fighter = {"stats": combat_eagle_stats(request.tier_id, equipped.get(request.tier_id), enchant.get(request.tier_id),
+                                                  rock_research_level(row))}
     # Зелья Охоты: +HUNT_POTION_PCT% к атаке (Ярость) и/или защите (Стальная
     # Кожа) ровно на ОДИН бой — списываются в той же CAS-записи, что и энергия.
     buff_rage, buff_skin = bool(row.get("buff_rage")), bool(row.get("buff_skin"))
@@ -4080,7 +4084,8 @@ async def arena_fight(request: ArenaFightRequest, x_telegram_init_data: Optional
         enemy_tier_id = best_owned_tier(opponent_row.get("monsters"))
         enemy_all = normalize_nest_equipped(opponent_row.get("nest_equipped"))
         enemy_enchant = normalize_nest_equipped_enchant(opponent_row.get("nest_equipped_enchant"), enemy_all)
-        enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_all.get(enemy_tier_id, {}), enemy_enchant.get(enemy_tier_id))
+        enemy_stats = combat_eagle_stats(enemy_tier_id, enemy_all.get(enemy_tier_id, {}), enemy_enchant.get(enemy_tier_id),
+                                         rock_research_level(opponent_row))
         enemy_name = opponent_row.get("name") or f"Игрок {opponent_id}"
     enemy_fighter = {"stats": enemy_stats}
     rock_on = await rock_is_active() or rock_tester(user_id)
@@ -4530,15 +4535,17 @@ def strongest_eagle_info(row: dict) -> Optional[dict]:
 
 
 def combat_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict],
-                       enchant_for_tier: Optional[dict] = None) -> dict:
+                       enchant_for_tier: Optional[dict] = None, research_level: int = 0) -> dict:
     """Итоговые боевые статы орла редкости tier_id — серверный порт
     nestComputeStatsFromEquipped (index.html): та же формула бонуса
     снаряжения (когти->atk, броня->def, маска->crit, амулет->hp+spd),
     только источник базовых статов — COMBAT_BASE_STATS, а не клиентский
     NEST_EAGLE_BASE_STATS. Нужен для авторитетной серверной симуляции
     боя кланов (см. clan_battle_simulate), которая, в отличие от 1v1
-    Арены, должна разрешаться сама — без участия чьего-либо клиента."""
-    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
+    Арены, должна разрешаться сама — без участия чьего-либо клиента.
+    Порядок: сначала база с исследованиями (get_modified_base_stats), потом
+    поверх неё — проценты снаряжения и заточки."""
+    base = get_modified_base_stats(tier_id, research_level)
     equipped = equipped_for_tier or {}
     bonus = {"hp": 0.0, "atk": 0.0, "def": 0.0, "crit": 0.0, "spd": 0.0}
     for item_type in NEST_TYPE_ORDER:
@@ -4917,7 +4924,7 @@ async def _clan_roster_fighters(clan: Optional[dict]) -> list:
         enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
         fighters.append({
             "user_id": user_id, "name": row.get("name") or "",
-            "tier_id": tier_id, "stats": combat_eagle_stats(tier_id, equipped.get(tier_id), enchant.get(tier_id)),
+            "tier_id": tier_id, "stats": combat_eagle_stats(tier_id, equipped.get(tier_id), enchant.get(tier_id), rock_research_level(row)),
         })
     return fighters
 
@@ -6515,7 +6522,7 @@ def raid_member_damage(row: dict, tier_id: str) -> dict:
     equipped = normalize_nest_equipped(row.get("nest_equipped"))
     enchant = normalize_nest_equipped_enchant(row.get("nest_equipped_enchant"), equipped)
     eq, en = equipped.get(tier_id) or {}, enchant.get(tier_id) or {}
-    atk = round(float(combat_eagle_stats(tier_id, eq, en)["atk"]), 4)
+    atk = round(float(combat_eagle_stats(tier_id, eq, en, rock_research_level(row))["atk"]), 4)
     return {"atk": atk, "damage": atk}
 
 
@@ -11668,12 +11675,32 @@ def rock_merit(row: dict) -> int:
         return 0
 
 
+def research_pct_per_level() -> float:
+    """Ветка Исследований: каждый уровень — +N% к базовым HP, Атаке и Защите
+    (eagle_rock.research_pct_per_level, по умолчанию 2)."""
+    return max(0.0, rock_num("research_pct_per_level", 2))
+
+
+def get_modified_base_stats(tier_id: str, research_level: int = 0) -> dict:
+    """getModifiedBaseStats — НОВАЯ БАЗА орла с учётом исследований:
+    ModifiedBase = TrueBase × (1 + researchLevel × 0.02) для HP, Атаки и
+    Защиты (крит и скорость — без изменений). Это фундамент для ВСЕХ боёв и
+    экранов: снаряжение и всё остальное накладываются уже поверх неё.
+    100 HP при 1 уровне → 102 HP."""
+    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
+    try:
+        lvl = max(0, min(len(ROCK_RESEARCH), int(research_level or 0)))
+    except (TypeError, ValueError):
+        lvl = 0
+    k = 1 + lvl * research_pct_per_level() / 100
+    return {"hp": float(base["hp"]) * k, "atk": float(base["atk"]) * k, "def": float(base["def"]) * k,
+            "crit": float(base["crit"]), "spd": float(base["spd"])}
+
+
 def rock_research_bonus(level: int) -> dict:
-    out = {"atk": 0.0, "def": 0.0, "hp": 0.0, "crit": 0.0, "spd": 0.0}
-    for lv in ROCK_RESEARCH[:max(0, level)]:
-        for k in out:
-            out[k] += lv[k]
-    return {k: round(v, 4) for k, v in out.items()}
+    """Суммарный бонус исследований в процентах к базе (для экранов)."""
+    pct = round(max(0, min(len(ROCK_RESEARCH), int(level or 0))) * research_pct_per_level(), 2)
+    return {"pct": pct, "hp": pct, "atk": pct, "def": pct, "crit": 0.0, "spd": 0.0}
 
 
 def rock_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict], enchant_for_tier: Optional[dict],
@@ -11683,8 +11710,7 @@ def rock_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict], enchant_fo
     заточкой (когти → атака, броня → защита, амулет → HP и скорость);
     крит — база + исследование + процент маски (потолок crit_cap_pct).
     Ярость Аутсайдера — +rage_pct% к атаке и HP (только атакующим)."""
-    base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
-    r = rock_research_bonus(research_level)
+    base = get_modified_base_stats(tier_id, research_level)   # исследования → новая база
     pct = {"atk": 0.0, "def": 0.0, "crit": 0.0, "hp": 0.0, "spd": 0.0}
     eq = equipped_for_tier or {}
     for item_type in NEST_TYPE_ORDER:
@@ -11701,11 +11727,11 @@ def rock_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict], enchant_fo
     rage = 1 + max(0.0, rage_pct) / 100
     cap = max(0.0, rock_num("crit_cap_pct", 60))
     return {
-        "atk": round((float(base["atk"]) + r["atk"]) * (1 + pct["atk"] / 100) * rage, 2),
-        "def": round((float(base["def"]) + r["def"]) * (1 + pct["def"] / 100), 2),
-        "hp": round((float(base["hp"]) + r["hp"]) * (1 + pct["hp"] / 100) * rage, 1),
-        "crit": round(min(cap, float(base["crit"]) + r["crit"] + pct["crit"]), 2),
-        "spd": round((float(base["spd"]) + r["spd"]) * (1 + pct["spd"] / 100), 2),
+        "atk": round(base["atk"] * (1 + pct["atk"] / 100) * rage, 2),
+        "def": round(base["def"] * (1 + pct["def"] / 100), 2),
+        "hp": round(base["hp"] * (1 + pct["hp"] / 100) * rage, 1),
+        "crit": round(min(cap, base["crit"] + pct["crit"]), 2),
+        "spd": round(base["spd"] * (1 + pct["spd"] / 100), 2),
     }
 
 
@@ -12376,7 +12402,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
            "now": now, "owner": st.get("owner"), "factions": factions,
            "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
            "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
-           "research": [{"level": i + 1, **lv} for i, lv in enumerate(ROCK_RESEARCH)],
+           "research": [{"level": i + 1, "cost": lv["cost"], "pct": research_pct_per_level()} for i, lv in enumerate(ROCK_RESEARCH)],
            "upcoming": [{"start": w["start"], "end": w["end"], "faction": w["faction"], "test": bool(w.get("test"))}
                         for w in rock_upcoming_windows(st, now, 3)]}
     snapshot = rock_snapshot(row)
