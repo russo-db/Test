@@ -9372,7 +9372,7 @@
             for (const eagle of list) total += displayedEaglePowerRaw(eagle, researchLevel);
             return Math.round(total);
         }
-        function rockShown(x) { return x ? (x.shown != null ? x.shown : x.power) : 0; }
+        function rockShown(x) { return x ? Math.round(Number(x.shown != null ? x.shown : x.power) || 0) : 0; }   // на экране — целое
         function rockFactionShownPower(f) { return f ? (f.display_power != null ? f.display_power : f.power) : 0; }
 
         function renderRockChoose(r) {
@@ -9553,7 +9553,7 @@
             const can = me.eligible > 0 || (n > 0 && !rd.pulled);   // без орлов — можно хотя бы отменить старое подтверждение
             return `<div class="rock-card glass-panel" id="rockReadyCard"><h3>${t('rock.ready.title')}</h3>
                 <div class="rock-ready-row"><div class="rock-ready-n">${n}</div>
-                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_shown != null ? rd.pre_shown : formatDisplayedPower((me.army || []).slice(0, n))) }) : t('rock.ready.none')}
+                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_shown != null ? Math.round(rd.pre_shown) : formatDisplayedPower((me.army || []).slice(0, n))) }) : t('rock.ready.none')}
                         ${rd.pulled ? `<div class="rock-ready-ok">${t('rock.ready.pulled')}</div>` : ''}
                         ${rd.live ? `<div style="color:#fdba74; font-weight:700">${t('rock.ready.live', { n: rd.live })}</div>` : ''}</div></div>
                 <button class="btn-primary" style="width:100%" ${can ? '' : 'disabled'} onclick="rockReadyOpen()">${n ? t('rock.ready.change') : t('rock.ready.btn')}</button>
