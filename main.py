@@ -2642,9 +2642,9 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "show_hunt_module": await hunt_enabled_for(request),
         "gold_eagle_vip": gold_eagle_vip(row),
         "auto_expedition": auto_expedition_view(row),
-        # 🧬 Исследования: новая база HP/Атаки/Защиты = база × (1 + ур. × pct%) —
+        # 🧬 Исследования: новая база = база + прибавка уровней ветки —
         # Гнездо, Арена и все экраны показывают уже её (см. get_modified_base_stats)
-        "research_level": rock_research_level(row), "research_pct": research_pct_per_level(),
+        "research_level": rock_research_level(row), "research_bonus": rock_research_bonus(rock_research_level(row)),
         # Время сервера: по нему клиент считает таймеры Охоты на ферме — часы
         # телефона могут спешить или отставать на часы.
         "server_time": time.time(),
@@ -11688,32 +11688,29 @@ def rock_merit(row: dict) -> int:
         return 0
 
 
-def research_pct_per_level() -> float:
-    """Ветка Исследований: каждый уровень — +N% к базовым HP, Атаке и Защите
-    (eagle_rock.research_pct_per_level, по умолчанию 2)."""
-    return max(0.0, rock_num("research_pct_per_level", 2))
+def rock_research_bonus(level: int) -> dict:
+    """Суммарная прибавка Ветки Исследований к БАЗЕ на уровне level — свои
+    конкретные цифры у каждого уровня (eagle_rock.research в game_config),
+    уровни складываются: ур. 3 = ур. 1 + ур. 2 + ур. 3. Уровень 0 — нули."""
+    out = {"atk": 0.0, "def": 0.0, "hp": 0.0, "crit": 0.0, "spd": 0.0}
+    try:
+        lvl = max(0, min(len(ROCK_RESEARCH), int(level or 0)))
+    except (TypeError, ValueError):
+        lvl = 0
+    for lv in ROCK_RESEARCH[:lvl]:
+        for k in out:
+            out[k] += float(lv.get(k) or 0)
+    return {k: round(v, 4) for k, v in out.items()}
 
 
 def get_modified_base_stats(tier_id: str, research_level: int = 0) -> dict:
-    """getModifiedBaseStats — НОВАЯ БАЗА орла с учётом исследований:
-    ModifiedBase = TrueBase × (1 + researchLevel × 0.02) для HP, Атаки и
-    Защиты (крит и скорость — без изменений). Это фундамент для ВСЕХ боёв и
-    экранов: снаряжение и всё остальное накладываются уже поверх неё.
-    100 HP при 1 уровне → 102 HP."""
+    """getModifiedBaseStats — НОВАЯ БАЗА орла: системная база редкости ПЛЮС
+    прибавка исследований (ModifiedBase.hp = TrueBase.hp + research.hp и т.д.).
+    Это фундамент для ВСЕХ боёв и экранов: снаряжение и заточка
+    накладываются уже поверх неё. Уровень 0 — чистая база без изменений."""
     base = COMBAT_BASE_STATS.get(tier_id) or {"hp": 100, "atk": 10, "def": 8, "crit": 5, "spd": 10}
-    try:
-        lvl = max(0, min(len(ROCK_RESEARCH), int(research_level or 0)))
-    except (TypeError, ValueError):
-        lvl = 0
-    k = 1 + lvl * research_pct_per_level() / 100
-    return {"hp": float(base["hp"]) * k, "atk": float(base["atk"]) * k, "def": float(base["def"]) * k,
-            "crit": float(base["crit"]), "spd": float(base["spd"])}
-
-
-def rock_research_bonus(level: int) -> dict:
-    """Суммарный бонус исследований в процентах к базе (для экранов)."""
-    pct = round(max(0, min(len(ROCK_RESEARCH), int(level or 0))) * research_pct_per_level(), 2)
-    return {"pct": pct, "hp": pct, "atk": pct, "def": pct, "crit": 0.0, "spd": 0.0}
+    r = rock_research_bonus(research_level)
+    return {k: float(base[k]) + r[k] for k in ("hp", "atk", "def", "crit", "spd")}
 
 
 def rock_eagle_stats(tier_id: str, equipped_for_tier: Optional[dict], enchant_for_tier: Optional[dict],
@@ -12415,7 +12412,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
            "now": now, "owner": st.get("owner"), "factions": factions,
            "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
            "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
-           "research": [{"level": i + 1, "cost": lv["cost"], "pct": research_pct_per_level()} for i, lv in enumerate(ROCK_RESEARCH)],
+           "research": [{"level": i + 1, **lv, "total": rock_research_bonus(i + 1)} for i, lv in enumerate(ROCK_RESEARCH)],
            "upcoming": [{"start": w["start"], "end": w["end"], "faction": w["faction"], "test": bool(w.get("test"))}
                         for w in rock_upcoming_windows(st, now, 3)]}
     snapshot = rock_snapshot(row)

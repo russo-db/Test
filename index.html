@@ -3223,7 +3223,7 @@
                 'hunt.nest.discountNote': '📜 Свиток Крафта: этот крафт — {gold} 🪙 вместо {full} 🪙',
                 'rock.loading': 'Загрузка Орлиной Скалы…',
                 'rock.chooseTitle': '🏔 Орлиная Скала',
-                'nest.researchNote': '🧬 Исследования ур. {lv}: база HP, Атаки и Защиты +{p}% — цифры ниже уже с ней, снаряжение добавляется поверх',
+                'nest.researchNote': '🧬 Исследования ур. {lv}: к базе +{hp} HP, +{atk} атаки, +{def} защиты, +{crit}% крита, +{spd} скорости — цифры ниже уже с ней, снаряжение добавляется поверх',
                 'arena.act.title': '🛰 Онлайн сервера (видят только админы)',
                 'arena.act.total': 'Всего игроков',
                 'arena.act.lt24': '< 24 ч',
@@ -3343,9 +3343,9 @@
                 'rock.feedTitle': '📜 Вести фракции',
                 'rock.feedEmpty': 'Пока тихо…',
                 'rock.researchTitle': '🧬 Древний Свиток Исследований',
-                'rock.researchSub': 'Каждый уровень навсегда поднимает БАЗУ всех твоих орлов на {p}% (HP, Атака, Защита) — на Скале, Арене, в Битвах Кланов, рейдах и в Гнезде. Снаряжение добавляется уже поверх новой базы.',
-                'rock.researchTotal': 'Сейчас: +{p}% к базовым HP, Атаке и Защите — во всех боях и экранах',
-                'rock.lvlBonus': '+{p}% к HP · Атаке · Защите (всего {total}%)',
+                'rock.researchSub': 'Каждый уровень навсегда ПРИБАВЛЯЕТ свои цифры к БАЗЕ всех твоих орлов — на Скале, Арене, в Битвах Кланов, рейдах и в Гнезде. Снаряжение добавляется уже поверх новой базы.',
+                'rock.researchTotal': 'Сейчас к базе: +{hp} HP, +{atk} атака, +{def} защита, +{crit}% крит, +{spd} скорость',
+                'rock.lvlBonus': '+{hp} HP · +{atk} атк · +{def} защ · +{crit}% крит · +{spd} скор',
                 'rock.learn': 'Изучить · {cost} 🏅',
                 'rock.learned': '✓ изучено',
                 'rock.researchMax': 'Ветка изучена полностью!',
@@ -4023,7 +4023,7 @@
                 'hunt.nest.discountNote': '📜 Crafting Scroll: this craft costs {gold} 🪙 instead of {full} 🪙',
                 'rock.loading': 'Loading the Eagle Rock…',
                 'rock.chooseTitle': '🏔 Eagle Rock',
-                'nest.researchNote': '🧬 Research lvl {lv}: base HP, Attack and Defense +{p}% — the numbers below include it, gear is added on top',
+                'nest.researchNote': '🧬 Research lvl {lv}: base +{hp} HP, +{atk} attack, +{def} defense, +{crit}% crit, +{spd} speed — the numbers below include it, gear is added on top',
                 'arena.act.title': '🛰 Server online (admins only)',
                 'arena.act.total': 'Players total',
                 'arena.act.lt24': '< 24 h',
@@ -4143,9 +4143,9 @@
                 'rock.feedTitle': '📜 Faction news',
                 'rock.feedEmpty': 'All quiet so far…',
                 'rock.researchTitle': '🧬 Ancient Scroll of Research',
-                'rock.researchSub': 'Each level permanently raises the BASE of all your eagles by {p}% (HP, Attack, Defense) — on the Rock, in the Arena, Clan Battles, raids and the Nest. Gear is added on top of the new base.',
-                'rock.researchTotal': 'Now: +{p}% to base HP, Attack and Defense — in every battle and screen',
-                'rock.lvlBonus': '+{p}% HP · Attack · Defense (total {total}%)',
+                'rock.researchSub': 'Each level permanently ADDS its own numbers to the BASE of all your eagles — on the Rock, in the Arena, Clan Battles, raids and the Nest. Gear is added on top of the new base.',
+                'rock.researchTotal': 'Added to base now: +{hp} HP, +{atk} attack, +{def} defense, +{crit}% crit, +{spd} speed',
+                'rock.lvlBonus': '+{hp} HP · +{atk} atk · +{def} def · +{crit}% crit · +{spd} spd',
                 'rock.learn': 'Learn · {cost} 🏅',
                 'rock.learned': '✓ learned',
                 'rock.researchMax': 'The branch is fully researched!',
@@ -9287,7 +9287,7 @@
         }
 
         function renderRock() {
-            if (rockData && rockData.me && typeof rockData.me.research_level === 'number') applyResearch(rockData.me.research_level);
+            if (rockData && rockData.me && typeof rockData.me.research_level === 'number') applyResearch(rockData.me.research_level, rockData.me.research_bonus);
             const page = document.getElementById('fogPage');
             const hub = document.getElementById('rockHub');
             if (!page || !hub) return;
@@ -9628,17 +9628,16 @@
 
         function renderRockResearch(r) {
             const me = r.me, b = me.research_bonus || {};
-            const step = ((r.research || [])[0] || {}).pct || 2;
             const lv = me.research_level || 0;
             let html = `<div class="rock-scroll"><h3>${t('rock.researchTitle')}</h3>
-                <div class="rock-muted" style="margin-bottom:8px">${t('rock.researchSub', { p: rockNum(step) })}</div>
-                <div class="rock-muted" style="font-weight:700; margin-bottom:8px">${t('rock.researchTotal', { p: rockNum(b.pct || 0) })}</div>
+                <div class="rock-muted" style="margin-bottom:8px">${t('rock.researchSub')}</div>
+                <div class="rock-muted" style="font-weight:700; margin-bottom:8px">${t('rock.researchTotal', { atk: rockNum(b.atk), def: rockNum(b.def), hp: rockNum(b.hp), crit: rockNum(b.crit), spd: rockNum(b.spd) })}</div>
                 <div class="rock-merit" style="justify-content:center; margin-bottom:6px"><span class="rock-medal">🪽</span><b style="color:#7a4b00">${rockNum(me.merit)}</b></div>`;
             (r.research || []).forEach(x => {
                 const done = x.level <= lv, next = x.level === lv + 1;
                 html += `<div class="rock-lvl ${done ? 'done' : (next ? '' : 'locked')}">
                     <div class="rock-lvl-n">${x.level}</div>
-                    <div class="rock-lvl-txt">${t('rock.lvlBonus', { p: rockNum(x.pct || step), total: rockNum((x.pct || step) * x.level) })}</div>
+                    <div class="rock-lvl-txt">${t('rock.lvlBonus', { atk: rockNum(x.atk), def: rockNum(x.def), hp: rockNum(x.hp), crit: rockNum(x.crit), spd: rockNum(x.spd) })}</div>
                     ${done ? `<span class="rock-lvl-side" style="font-weight:800">${t('rock.learned')}</span>`
                         : (next ? `<button class="btn-primary" ${me.merit < x.cost ? 'disabled' : ''} onclick="rockLearn(${lv})">${t('rock.learn', { cost: x.cost })}</button>`
                             : `<span class="rock-lvl-side" style="font-weight:700">${x.cost} 🏅</span>`)}
@@ -10310,21 +10309,31 @@
         // карте надетого снаряжения ({claws:'green', armor:null, ...}) —
         // общая формула для своего орла (nestEagleComputedStats) и для орла
         // соперника на Арене, чьё снаряжение приходит с сервера.
-        // 🧬 Исследования (getModifiedBaseStats): НОВАЯ БАЗА = база × (1 + ур. × 2%)
-        // для HP, Атаки, Защиты — та же формула, что get_modified_base_stats на
-        // сервере. Снаряжение накладывается уже поверх неё.
-        function applyResearch(level, pct) {
+        // 🧬 Исследования (getModifiedBaseStats): НОВАЯ БАЗА = база редкости ПЛЮС
+        // прибавка изученных уровней ветки (у каждого уровня свои цифры, уровни
+        // складываются) — та же формула, что get_modified_base_stats на сервере.
+        // Снаряжение накладывается уже поверх неё.
+        const RESEARCH_ZERO = { hp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
+        function applyResearch(level, bonus) {
             const lv = Math.max(0, Number(level) || 0);
-            const p = typeof pct === 'number' ? pct : (state.researchPct != null ? state.researchPct : 2);
-            const changed = lv !== (state.researchLevel || 0) || p !== state.researchPct;
-            state.researchLevel = lv; state.researchPct = p;
+            const b = bonus && typeof bonus === 'object' ? { ...RESEARCH_ZERO, ...bonus } : (lv === (state.researchLevel || 0) ? state.researchBonus : null);
+            const next = b || RESEARCH_ZERO;
+            const changed = lv !== (state.researchLevel || 0) || JSON.stringify(next) !== JSON.stringify(state.researchBonus || RESEARCH_ZERO);
+            state.researchLevel = lv; state.researchBonus = next;
             if (changed && typeof renderNestEagles === 'function') { try { renderNestEagles(); } catch (e) {} }
+        }
+        function researchBonusFor(level) {
+            // прибавка для чужого уровня (соперник) — сумма уровней из списка ветки, если он известен
+            if (level == null || level === (state.researchLevel || 0)) return state.researchBonus || RESEARCH_ZERO;
+            const list = (rockData && rockData.research) || [];
+            const row = list.find(x => x.level === level);
+            return row && row.total ? row.total : RESEARCH_ZERO;
         }
         function getModifiedBaseStats(tierId, researchLevel) {
             const base = NEST_EAGLE_BASE_STATS[tierId] || { hp: 100, atk: 10, def: 8, crit: 5, spd: 10 };
-            const lv = researchLevel == null ? (state.researchLevel || 0) : researchLevel;
-            const k = 1 + lv * (state.researchPct != null ? state.researchPct : 2) / 100;
-            return { hp: base.hp * k, atk: base.atk * k, def: base.def * k, crit: base.crit, spd: base.spd };
+            const r = researchLevel === 0 ? RESEARCH_ZERO : researchBonusFor(researchLevel);
+            return { hp: base.hp + (r.hp || 0), atk: base.atk + (r.atk || 0), def: base.def + (r.def || 0),
+                     crit: base.crit + (r.crit || 0), spd: base.spd + (r.spd || 0) };
         }
         function nestComputeStatsFromEquipped(tierId, equippedForTier, enchantForTier, researchLevel) {
             const base = getModifiedBaseStats(tierId, researchLevel);
@@ -10363,8 +10372,8 @@
             const list = document.getElementById('nestEagleList');
             if (!list) return;
             const types = nestTypeOrder();
-            const rl = state.researchLevel || 0;
-            const researchNote = rl > 0 ? `<div class="glass-panel nest-research-note">${t('nest.researchNote', { lv: rl, p: +(rl * (state.researchPct != null ? state.researchPct : 2)).toFixed(2) })}</div>` : '';
+            const rl = state.researchLevel || 0, rb = state.researchBonus || RESEARCH_ZERO;
+            const researchNote = rl > 0 ? `<div class="glass-panel nest-research-note">${t('nest.researchNote', { lv: rl, hp: rockNum(rb.hp), atk: rockNum(rb.atk), def: rockNum(rb.def), crit: rockNum(rb.crit), spd: rockNum(rb.spd) })}</div>` : '';
             list.innerHTML = researchNote + CONFIG.tiers.map(tier => {
                 const monster = tier.monsters[0];
                 const equipped = state.nest.equipped[tier.id] || {};
@@ -12800,7 +12809,7 @@
             state.gold = data.gold || 0;
             state.vip = { tier: data.vip_tier || null, expiresAt: data.vip_expires_at || 0, lastMeatAt: data.vip_last_meat_at || 0 };
             applyAutoExp(data.auto_expedition);
-            applyResearch(data.research_level, data.research_pct);
+            applyResearch(data.research_level, data.research_bonus);
             state.merchant = readMerchantState(data.merchant);
             applyWheelState(data.wheel);
             state.farm = readFarm(data.monsters);
