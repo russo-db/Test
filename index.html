@@ -9533,7 +9533,8 @@
                 const send = async (count) => {
                     if (fired) return; fired = true; tapShield(450); closeHuntModal();
                     const d = await rockPost('api/rock/ready', { eagles_count: count }, 'rock-ready');
-                    if (d) toast(count ? t('rock.ready.toast', { n: count }) : t('rock.ready.toastCancel'));
+                    // число — из ответа сервера: орлов могло стать меньше, чем выбрано в окне
+                    if (d) toast(count ? t('rock.ready.toast', { n: ((d.me || {}).ready || {}).pre || count }) : t('rock.ready.toastCancel'));
                 };
                 const okBtn = document.getElementById('rockReadyOk');
                 if (okBtn) okBtn.onclick = () => send(rockReadyPick);

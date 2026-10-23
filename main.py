@@ -13700,7 +13700,11 @@ async def rock_ready_confirm(request: RockReadyRequest, x_telegram_init_data: Op
         row = await fetch_user(user_id)
         fid = rock_my_faction(row)
         snap = rock_snapshot(row)
-        want = max(0, min(int(request.eagles_count or 0), len(snap)))
+        asked = int(request.eagles_count or 0)
+        if asked > 0 and not snap:
+            # просили подтвердить, а орлов уже нет — это не отмена прежнего подтверждения
+            raise HTTPException(status_code=400, detail=f"Нужен хотя бы один орёл {rock_min_level()} ур., не выставленный на рынок")
+        want = max(0, min(asked, len(snap)))
         now = time.time(); day = rock_ready_day(now)
         key = rock_ready_id(day, user_id, ROCK_READY_PRE)
         if want <= 0:
