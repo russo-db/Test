@@ -2620,6 +2620,13 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
             break
         row = await fetch_user(user_id)
         farm = read_farm(row["monsters"])
+    else:
+        # ферма не записалась (параллельные тапы) — вход всё равно отмечаем:
+        # по last_seen неактивных исключают из фракций Скалы
+        try:
+            await store.users.update_one({"_id": user_id}, {"$max": {"last_seen": int(time.time())}})
+        except Exception as e:
+            print(f"[load] last_seen {user_id}: {type(e).__name__}: {e}")
 
     return {
         "user_id": user_id,
@@ -12330,6 +12337,12 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     if not st.get("active") and not (rock_tester(user_id) and (st.get("test_mode") or st.get("initialized"))):
         return {"active": False}
     row = await fetch_user(user_id)
+    if now - float(row.get("last_seen") or 0) > 3600:
+        # кто заходит в Скалу (игра могла не перезагружаться днями) — активен; не чаще раза в час
+        try:
+            await store.users.update_one({"_id": user_id}, {"$max": {"last_seen": int(now)}})
+        except Exception as e:
+            print(f"[rock] last_seen {user_id}: {type(e).__name__}: {e}")
     fid = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
     data = await rock_faction_stats()
     today = day_index(now)
@@ -13324,7 +13337,7 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         uid = int(body.user_id)
         if not 0 < uid < 2 ** 63:   # больше int64 Mongo не принимает — это не 500, а «нет такого»
             raise HTTPException(status_code=404, detail="Игрок не найден")
-        row = await store.users.find_one({"_id": uid}, {"name": 1, "faction_id": 1, "faction_joined_at": 1, "faction_by": 1})
+        row = await store.users.find_one({"_id": uid}, {"name": 1, "faction_id": 1, "faction_joined_at": 1, "faction_by": 1, "faction_left": 1})
         if not row:
             raise HTTPException(status_code=404, detail="Игрок не найден")
         old = row.get("faction_id") if row.get("faction_id") in ROCK_FACTIONS else None
@@ -13344,8 +13357,9 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
         if why:
             raise HTTPException(status_code=409, detail=why)
         now = time.time()
-        upd = ({"$set": {"faction_id": target, "faction_joined_at": now, "faction_by": "admin"}} if target
-               else {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""}})
+        # пометка «исключён за неактивность» после решения админа больше не актуальна
+        upd = ({"$set": {"faction_id": target, "faction_joined_at": now, "faction_by": "admin"}, "$unset": {"faction_left": ""}} if target
+               else {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": "", "faction_left": ""}})
         res = await store.users.update_one({"_id": uid, "faction_id": old if old else None}, upd)
         if res.modified_count == 0:
             raise HTTPException(status_code=409, detail="Фракция игрока только что изменилась — обнови список")
@@ -13396,8 +13410,9 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
             _, notes = await rock_cas(mutate)
         except Exception:
             # игрок успел попасть в штурм/бой (или сбой записи) — возвращаем ровно как было
-            orig = {k: row[k] for k in ("faction_id", "faction_joined_at", "faction_by") if row.get(k) is not None}
-            gone = {k: "" for k in ("faction_id", "faction_joined_at", "faction_by") if k not in orig}
+            keys = ("faction_id", "faction_joined_at", "faction_by", "faction_left")
+            orig = {k: row[k] for k in keys if row.get(k) is not None}
+            gone = {k: "" for k in keys if k not in orig}
             back = {**({"$set": orig} if orig else {}), **({"$unset": gone} if gone else {})}
             await store.users.update_one({"_id": uid, "faction_id": target}, back)
             raise
