@@ -13805,8 +13805,10 @@ async def rock_pull_ready(fid: str, now: float) -> dict:
 
 
 def rock_member_status(uid: int, last_seen: float, now: float, pre: Optional[dict], live: Optional[dict],
-                       in_fight: set, battle_today: bool) -> str:
-    if live or uid in in_fight:
+                       in_fight: set, battle_today: bool, siege_id: Optional[str] = None) -> str:
+    # подтянутый призывом — это «офлайн-кулак», а не живой досыл
+    pulled_here = bool(pre and siege_id and siege_id in (pre.get("pulled_sieges") or []))
+    if live or (uid in in_fight and not pulled_here):
         return "live"
     if now - last_seen > 72 * 3600:
         return "inactive"
@@ -13836,7 +13838,7 @@ async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) 
         r = ready.get(uid, {})
         pre, live = r.get(ROCK_READY_PRE), r.get(ROCK_READY_LIVE)
         seen = float(d.get("last_seen") or 0)
-        status = rock_member_status(uid, seen, now, pre, live, in_fight, battle_today)
+        status = rock_member_status(uid, seen, now, pre, live, in_fight, battle_today, siege["id"] if in_fight else None)
         troops = int((live or {}).get("eagles_count") or 0) + (0 if live else int((pre or {}).get("eagles_count") or 0))
         rows.append({"id": uid, "name": str(d.get("name") or f"Игрок {uid}")[:40], "power": round(rock_player_power(d)),
                      "troops": troops, "pre": int((pre or {}).get("eagles_count") or 0), "live": int((live or {}).get("eagles_count") or 0),
@@ -13844,7 +13846,7 @@ async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) 
                      "leader": uid == leader_id})
     rows.sort(key=lambda x: (not x["leader"], -x["power"], x["id"]))
     return {"faction_id": fid, "day": day, "battle_today": battle_today,
-            "stats": {"total": len(rows), "pre": sum(1 for x in rows if x["pre"]), "live": sum(1 for x in rows if x["live"] or x["status"] == "live"),
+            "stats": {"total": len(rows), "pre": sum(1 for x in rows if x["pre"]), "live": sum(1 for x in rows if x["status"] == "live"),
                       "inactive": sum(1 for x in rows if x["status"] == "inactive"), "truant": sum(1 for x in rows if x["status"] == "truant")},
             "rows": rows[:500], "more": max(0, len(rows) - 500)}
 
@@ -13895,22 +13897,33 @@ async def rock_leader_kick(request: RockKickRequest, x_telegram_init_data: Optio
                 raise HTTPException(status_code=409, detail="Игрок сейчас в бою за трон — подожди минуту")
         now = time.time()
         lname = str(row.get("name") or f"Игрок {user_id}")[:40]
+        prev = await store.users.find_one({"_id": target}, {"faction_joined_at": 1, "faction_by": 1, "faction_left": 1})
         res = await store.users.update_one(
             {"_id": target, "faction_id": fid},
             {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""},
              "$set": {"faction_left": {"from": fid, "at": now, "reason": "leader_kick", "by": lname}}})
         if res.modified_count == 0:
             raise HTTPException(status_code=409, detail="Игрок уже не в твоей фракции — список обновлён")
-        await store.rock_ready.delete_many({"user_id": target, "day": day_index(now)})
 
         def mutate(s):
+            # игрок мог встать в штурм/бой ровно в момент кика — тогда кик откатывается
+            sg2 = s.get("siege")
+            if sg2 and any(f["uid"] == target for f in sg2["attackers"] + sg2["defenders"]):
+                raise HTTPException(status_code=409, detail="Игрок только что вступил в штурм — исключить можно после его конца")
+            for ch2 in (s.get("challenges") or {}).values():
+                if ch2 and target in (ch2.get("challenger_id"), ch2.get("leader_id")):
+                    raise HTTPException(status_code=409, detail="Игрок сейчас в бою за трон — подожди минуту")
             g = s.get("garrison") or []
             keep = [x for x in g if x["uid"] != target]
             return ({"garrison": keep}, True) if len(keep) != len(g) else (None, False)
         try:
             await rock_cas(mutate)
-        except HTTPException:
-            pass   # гарнизон почистит часовое обновление (чужаков оно снимает)
+        except Exception:
+            back = {"faction_id": fid, **{k: prev[k] for k in ("faction_joined_at", "faction_by") if (prev or {}).get(k) is not None}}
+            await store.users.update_one({"_id": target, "faction_id": None},
+                                         {"$set": back, **({"$unset": {"faction_left": ""}} if not (prev or {}).get("faction_left") else {"$set": {**back, "faction_left": prev["faction_left"]}})})
+            raise
+        await store.rock_ready.delete_many({"user_id": target, "day": day_index(now)})
         ROCK_POWER_CACHE["data"] = None
         tname = str(trow.get("name") or f"Игрок {target}")[:40]
         await rock_feed_add([fid], f"🚪 Лидер {lname} исключил {tname} из фракции.", f"🚪 Leader {lname} removed {tname} from the faction.")
