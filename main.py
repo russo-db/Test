@@ -12434,26 +12434,34 @@ async def rock_worker():
 # --- силы фракций и балансировщик новичков ---
 # --- Отображаемая сила (ТОЛЬКО для экранов Скалы; бой, балансировщик и
 # админка считают реальную силу rock_power). «Серые» орлы — редкость
-# «Обычный»: их сила на экране = min(сила × 10%, 5) за отряд игрока,
-# чтобы толпа слабых птиц не раздувала цифры. Клиент считает так же —
-# formatDisplayedPower в index.html. ---
+# «Обычный»: на экране их база (с исследованиями) заменяется ровно на 5,
+# а всё, что даёт надетое снаряжение с заточкой, прибавляется сверху:
+# DisplayGreyPower = 5 + gearBonusPower. Остальные орлы — 100% как есть.
+# Клиент считает так же — formatDisplayedPower в index.html. ---
 def rock_grey_tiers() -> set:
     v = ROCK_CFG.get("display_grey_tiers")
     return set(v) if isinstance(v, list) else {"common"}
 
 
-def rock_power_parts(snap: list) -> tuple:
-    """(сила не-серых орлов, сила серых орлов) отряда — реальные числа."""
-    grey = rock_grey_tiers()
-    main_p = sum(rock_power(e) for e in snap if e.get("tier") not in grey)
-    grey_p = sum(rock_power(e) for e in snap if e.get("tier") in grey)
-    return round(main_p, 2), round(grey_p, 2)
+def rock_shown_power(e: dict, research_level: int = 0, _base_cache: Optional[dict] = None) -> float:
+    """Сила одного орла на экране. e — запись rock_snapshot (без Ярости)."""
+    p = rock_power(e)
+    tier = e.get("tier")
+    if tier not in rock_grey_tiers():
+        return p
+    key = (tier, research_level)
+    base = _base_cache.get(key) if _base_cache is not None else None
+    if base is None:
+        base = rock_power(rock_eagle_stats(tier, None, None, research_level))   # та же птица без снаряжения
+        if _base_cache is not None:
+            _base_cache[key] = base
+    return rock_num("display_grey_base", 5) + max(0.0, p - base)
 
 
-def rock_display_power(main_p: float, grey_p: float) -> float:
-    """Сила для экрана: не-серые 100%, серые — min(сила × pct%, cap) за отряд."""
-    shown_grey = min(grey_p * rock_num("display_grey_pct", 10) / 100, rock_num("display_grey_cap", 5))
-    return main_p + max(0.0, shown_grey)
+def rock_shown_sum(snap: list, research_level: int = 0) -> float:
+    """Отображаемая сила отряда игрока."""
+    cache: dict = {}
+    return round(sum(rock_shown_power(e, research_level, cache) for e in snap), 2)
 
 
 async def rock_faction_stats(force: bool = False) -> dict:
@@ -12491,13 +12499,12 @@ async def _rock_faction_stats_compute() -> dict:
         if fid in data:
             snap = rock_snapshot(doc)
             power = round(sum(rock_power(e) for e in snap), 2)
-            p_main, p_grey = rock_power_parts(snap)
+            shown = rock_shown_sum(snap, rock_research_level(doc))
             data[fid]["members"] += 1
             data[fid]["power"] = round(data[fid]["power"] + power, 2)
-            data[fid]["display_power"] = round(data[fid]["display_power"] + rock_display_power(p_main, p_grey), 2)
+            data[fid]["display_power"] = round(data[fid]["display_power"] + shown, 2)
             roster[fid].append({"uid": doc["_id"], "name": str(doc.get("name") or f"Игрок {doc['_id']}")[:40],
-                                "power": round(power), "power_main": p_main, "power_grey": p_grey,
-                                "shown": rock_display_power(p_main, p_grey), "eagles": len(snap)})
+                                "power": round(power), "shown": shown, "eagles": len(snap)})
     for fid in roster:
         roster[fid].sort(key=lambda m: (-m["shown"], m["uid"]))   # на экране — по отображаемой силе
     if ROCK_POWER_CACHE["ver"] == ver:
@@ -12550,7 +12557,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
            "hidden": bool(st.get("initialized")) and not st.get("active"),   # запущена, но скрыта кнопкой «Скрыть» (видят админы)
            "now": now, "owner": st.get("owner"), "factions": factions,
            "min_level": rock_min_level(), "garrison_slots": rock_int("garrison_slots", 50),
-           "display_grey": {"pct": rock_num("display_grey_pct", 10), "cap": rock_num("display_grey_cap", 5)},
+           "display_grey": {"tiers": sorted(rock_grey_tiers()), "base": rock_num("display_grey_base", 5)},
            "challenge_min_eagles": rock_int("challenge_min_eagles", 3), "challenge_penalty": rock_int("challenge_penalty", 15),
            "research": [{"level": i + 1, **lv, "total": rock_research_bonus(i + 1)} for i, lv in enumerate(ROCK_RESEARCH)],
            "upcoming": [{"start": w["start"], "end": w["end"], "faction": w["faction"], "test": bool(w.get("test"))}
@@ -12574,8 +12581,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     rd = await rock_ready_today(user_id)
     pre, live = rd.get(ROCK_READY_PRE), rd.get(ROCK_READY_LIVE)
     pre_n = int((pre or {}).get("eagles_count") or 0) if pre and pre.get("faction_id") == fid else 0
-    pm, pg = rock_power_parts(snapshot[:pre_n]) if pre_n else (0.0, 0.0)
-    me["ready"] = {"pre": pre_n, "pre_power_main": pm, "pre_power_grey": pg,
+    me["ready"] = {"pre": pre_n, "pre_shown": rock_shown_sum(snapshot[:pre_n], research) if pre_n else 0.0,
                    "pre_power": round(float((pre or {}).get("total_power") or 0)) if pre and pre.get("faction_id") == fid else 0,
                    "pulled": bool((pre or {}).get("pulled_sieges")), "live": int((live or {}).get("eagles_count") or 0),
                    "has_contributed": bool(pre or live)}
@@ -12602,7 +12608,7 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     roster = (ROCK_POWER_CACHE.get("roster") or {}).get(fid) or []
     leader_id = (rock_public_leader(st, fid) or {}).get("id")
     out["roster"] = {"total": len(roster), "list": [{"name": m["name"], "power": m["power"], "eagles": m["eagles"],
-                                                      "power_main": m.get("power_main", m["power"]), "power_grey": m.get("power_grey", 0),
+                                                      "shown": m.get("shown", m["power"]),
                                                       "leader": m["uid"] == leader_id, "me": m["uid"] == user_id} for m in roster[:100]]}
     me["in_garrison"] = sum(1 for f in (siege["defenders"] if siege else garrison) if f["uid"] == user_id and f["hp"] > 0)
     me["can_declare"] = bool(me["is_leader"] and win and win["faction"] == fid and not siege
@@ -14038,9 +14044,8 @@ async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) 
         status = rock_member_status(uid, seen, now, pre, live, in_fight, battle_today, siege["id"] if in_fight else None)
         troops = int((live or {}).get("eagles_count") or 0) + (0 if live else int((pre or {}).get("eagles_count") or 0))
         snap_d = rock_snapshot(d)
-        p_main, p_grey = rock_power_parts(snap_d)
-        rows.append({"id": uid, "name": str(d.get("name") or f"Игрок {uid}")[:40], "power": round(p_main + p_grey),
-                     "power_main": p_main, "power_grey": p_grey, "shown": rock_display_power(p_main, p_grey),
+        rows.append({"id": uid, "name": str(d.get("name") or f"Игрок {uid}")[:40], "power": round(sum(rock_power(e) for e in snap_d)),
+                     "shown": rock_shown_sum(snap_d, rock_research_level(d)),
                      "troops": troops, "pre": int((pre or {}).get("eagles_count") or 0), "live": int((live or {}).get("eagles_count") or 0),
                      "pulled": bool((pre or {}).get("pulled_sieges")), "status": status, "last_seen": seen or None,
                      "leader": uid == leader_id})

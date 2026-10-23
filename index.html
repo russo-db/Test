@@ -9341,15 +9341,30 @@
 
         function rockSwitchTab(k) { haptic.select(); rockTab = k; renderRock(); }
 
-        // 🖥️ Отображаемая сила (ТОЛЬКО экран; бой и балансировщик считают реальную).
-        // «Серые» (Обычные) орлы 7 ур. не раздувают рейтинг: их сила на экране —
-        // min(сила × 10%, 5) за отряд игрока, остальные орлы — 100%.
-        // Сумма по фракции считается так же на сервере (display_power).
-        function formatDisplayedPower(lvl7Power, baseGreyPower) {
-            const rule = (rockData && rockData.display_grey) || { pct: 10, cap: 5 };
-            const displayedGreyPower = Math.min((Number(baseGreyPower) || 0) * rule.pct / 100, rule.cap);
-            return Math.round((Number(lvl7Power) || 0) + Math.max(0, displayedGreyPower));
+        // 🖥️ Отображаемая сила (ТОЛЬКО экран; бой, урон и балансировщик считают реальную).
+        // «Серый» (Обычный) орёл: его база (с исследованиями) на экране заменяется
+        // ровно на 5, всё надетое снаряжение с заточкой плюсуется сверху:
+        //   DisplayGreyPower = 5 + gearBonusPower
+        // Остальные орлы — 100% как есть. Сила орла = HP/10 + атака + защита + скорость + крит
+        // (как rock_power на сервере). Суммы по игрокам и фракциям приходят с сервера (shown).
+        // eagle — итоговые статы со снаряжением: { tier, hp, atk, def, spd, crit }.
+        function rockEaglePower(st) {
+            return (Number(st.hp) || 0) / 10 + (Number(st.atk) || 0) + (Number(st.def) || 0) + (Number(st.spd) || 0) + (Number(st.crit) || 0);
         }
+        function displayedEaglePowerRaw(eagle, researchLevel) {
+            if (!eagle) return 0;
+            const full = rockEaglePower(eagle);
+            const rule = (rockData && rockData.display_grey) || {};
+            const greyTiers = Array.isArray(rule.tiers) ? rule.tiers : ['common'];
+            if (!greyTiers.includes(eagle.tier)) return full;                       // орлы 7 ур. — как есть
+            const lvl = researchLevel != null ? researchLevel : (state.researchLevel || 0);
+            const gearBonusPower = Math.max(0, full - rockEaglePower(getModifiedBaseStats(eagle.tier, lvl)));
+            return (rule.base != null ? Number(rule.base) : 5) + gearBonusPower;
+        }
+        function formatDisplayedPower(eagle, researchLevel) {
+            return Math.round(displayedEaglePowerRaw(eagle, researchLevel));
+        }
+        function rockShown(x) { return x ? (x.shown != null ? x.shown : x.power) : 0; }
         function rockFactionShownPower(f) { return f ? (f.display_power != null ? f.display_power : f.power) : 0; }
 
         function renderRockChoose(r) {
@@ -9513,7 +9528,7 @@
             html += `</div>
             <div class="rock-card glass-panel"><h3>${t('rock.rosterTitle', { n: ro.total })}</h3>
                 ${ro.list.length ? ro.list.map(m => `<div class="rock-row${m.me ? ' rock-row-me' : ''}"><span>${m.leader ? '👑 ' : ''}${huntEsc(m.name)}</span>
-                    <span class="rock-muted">${t('rock.rosterLine', { e: m.eagles, p: rockNum(m.power_main != null ? formatDisplayedPower(m.power_main, m.power_grey) : m.power) })}</span></div>`).join('')
+                    <span class="rock-muted">${t('rock.rosterLine', { e: m.eagles, p: rockNum(rockShown(m)) })}</span></div>`).join('')
                     : `<div class="rock-muted">${t('rock.rosterEmpty')}</div>`}
                 ${ro.total > ro.list.length ? `<div class="rock-muted" style="margin-top:6px">${t('rock.rosterMore', { n: ro.total - ro.list.length })}</div>` : ''}
             </div>
@@ -9530,7 +9545,7 @@
             const can = me.eligible > 0 || (n > 0 && !rd.pulled);   // без орлов — можно хотя бы отменить старое подтверждение
             return `<div class="rock-card glass-panel" id="rockReadyCard"><h3>${t('rock.ready.title')}</h3>
                 <div class="rock-ready-row"><div class="rock-ready-n">${n}</div>
-                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_power_main != null ? formatDisplayedPower(rd.pre_power_main, rd.pre_power_grey) : (rd.pre_power || 0)) }) : t('rock.ready.none')}
+                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_shown != null ? rd.pre_shown : (me.army || []).slice(0, n).reduce((a, e) => a + displayedEaglePowerRaw(e), 0)) }) : t('rock.ready.none')}
                         ${rd.pulled ? `<div class="rock-ready-ok">${t('rock.ready.pulled')}</div>` : ''}
                         ${rd.live ? `<div style="color:#fdba74; font-weight:700">${t('rock.ready.live', { n: rd.live })}</div>` : ''}</div></div>
                 <button class="btn-primary" style="width:100%" ${can ? '' : 'disabled'} onclick="rockReadyOpen()">${n ? t('rock.ready.change') : t('rock.ready.btn')}</button>
@@ -9615,7 +9630,7 @@
             if (rockDash.tableKey !== key) {
             const rows = d.rows.map(m => `<tr>
                     <td><div class="rock-dash-name">${m.leader ? '👑 ' : ''}${huntEsc(m.name)}</div></td>
-                    <td class="num">${rockNum(m.power_main != null ? formatDisplayedPower(m.power_main, m.power_grey) : m.power)}</td>
+                    <td class="num">${rockNum(rockShown(m))}</td>
                     <td class="num">${m.troops ? '🦅 ' + m.troops : '0'}</td>
                     <td>${rockStatusLabel(m.status)}</td>
                     <td>${m.leader ? '' : `<button class="rock-kick" data-uid="${m.id}" aria-label="${t('rock.cmd.kick')}" onclick="rockAskKick(${m.id})">❌<span class="kick-txt"> ${t('rock.cmd.kickWord')}</span></button>`}</td>
