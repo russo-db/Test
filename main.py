@@ -2180,7 +2180,24 @@ class AdminClanMatchTime(BaseModel):
 
 # --- FASTAPI SETUP ---
 app = FastAPI(title="SkyLords GRAMM")
-app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
+class CachedStaticFiles(StaticFiles):
+    """Картинки игры браузер держит час без перепроверки (раньше — запрос
+    «не изменилось ли» на каждую картинку при каждом входе); дальше — по ETag."""
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if resp.status_code in (200, 304):
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+
+
+app.mount("/assets", CachedStaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
+# Сжатие ответов (JSON, HTML): страница игры весит ~1 МБ, таблицы — сотни КБ;
+# gzip уменьшает их в 4–6 раз. Картинки и уже сжатое не трогаются.
+try:
+    from starlette.middleware.gzip import GZipMiddleware
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+except Exception as _gz_e:   # старый Starlette без параметров — просто без сжатия
+    print(f"[gzip] off: {type(_gz_e).__name__}: {_gz_e}")
 
 # Пока включены техработы, все /api/* эндпоинты (кроме самой проверки статуса)
 # отвечают 503 — админка и статика (страница, конфиг, ассеты) продолжают
@@ -2527,10 +2544,24 @@ async def maintenance_status(request: Request):
     }
 
 
+INDEX_CACHE = {"mtime": None, "raw": b"", "gz": b""}
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_webapp():
-    with open(os.path.join(BASE_DIR, "index.html"), "r", encoding="utf-8") as f:
-        return f.read()
+async def serve_webapp(request: Request):
+    """index.html (~1 МБ) читается и сжимается один раз на версию файла, а не
+    на каждый вход игрока; клиенту с поддержкой gzip уходит сжатая копия."""
+    import gzip
+    path = os.path.join(BASE_DIR, "index.html")
+    mtime = os.path.getmtime(path)
+    if INDEX_CACHE["mtime"] != mtime:
+        with open(path, "rb") as f:
+            raw = f.read()
+        INDEX_CACHE.update(mtime=mtime, raw=raw, gz=gzip.compress(raw, compresslevel=6))
+    if "gzip" in (request.headers.get("accept-encoding") or "").lower():
+        return Response(INDEX_CACHE["gz"], media_type="text/html; charset=utf-8",
+                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(INDEX_CACHE["raw"], media_type="text/html; charset=utf-8")
 
 
 @app.get("/game_config.json")
@@ -4159,8 +4190,47 @@ async def arena_buy_energy(request: ArenaBuyEnergy, x_telegram_init_data: Option
     return result
 
 
+ARENA_LB_CACHE = {"at": 0.0, "docs": None, "ver": 0, "task": None, "task_ver": -1}
+ARENA_LB_TTL = 10.0          # с: общий отсортированный список на всех игроков
+ARENA_LB_PAGE = 100
+
+
+def arena_leaderboard_invalidate() -> None:
+    """Сменились фракции (гербы) — следующее открытие таблицы ждёт свежий список."""
+    ARENA_LB_CACHE["ver"] += 1
+    ARENA_LB_CACHE["at"] = 0.0
+
+
+async def _arena_leaderboard_refresh() -> list:
+    ver, started = ARENA_LB_CACHE["ver"], time.time()
+    docs = await store.get_leaderboard(None)
+    if ARENA_LB_CACHE["ver"] == ver:
+        ARENA_LB_CACHE.update(docs=docs, at=started)
+    elif ARENA_LB_CACHE["docs"] is None:
+        ARENA_LB_CACHE.update(docs=docs, at=0.0)
+    return docs
+
+
+async def arena_leaderboard_docs() -> list:
+    """Вся таблица по рейтингу — одна сортировка на всех раз в ARENA_LB_TTL
+    вместо полной сортировки коллекции на КАЖДОЕ открытие таблицы; пока
+    список обновляется по сроку, остальные получают прошлый (без очереди
+    пересчётов). После сброса (сменились фракции) — ждут свежий."""
+    c = ARENA_LB_CACHE
+    if c["docs"] is not None and time.time() - c["at"] <= ARENA_LB_TTL:
+        return c["docs"]
+    task = c.get("task")
+    if task is None or task.done() or c.get("task_ver") != c["ver"]:
+        task = asyncio.ensure_future(_arena_leaderboard_refresh())
+        c["task"], c["task_ver"] = task, c["ver"]
+    if c["docs"] is not None and c["at"] > 0:
+        return c["docs"]
+    return await task
+
+
 @app.get("/api/arena/leaderboard")
-async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+async def arena_leaderboard(user_id: int, offset: int = 0, limit: int = ARENA_LB_PAGE,
+                            x_telegram_init_data: Optional[str] = Header(None)):
     """Общая Таблица лидеров Арены — ВСЕ игроки по pvp_rating (никаких
     сгенерированных ботов), плюс место текущего игрока. Открытие таблицы —
     такая же точка проверки смены сезона, как и /api/load (см.
@@ -4180,7 +4250,12 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     # заходя в бой (см. также двухфазный подбор соперника — arena_opponent/
     # arena_fight — построенный на той же идее). limit=None — в таблицу
     # попадают ВСЕ игроки, не только верхушка.
-    top_docs = await store.get_leaderboard(None)
+    all_docs = await arena_leaderboard_docs()
+    offset = max(0, int(offset or 0))
+    limit = max(1, min(int(limit or ARENA_LB_PAGE), 500))
+    # страницами: вся таблица по-прежнему доступна («Показать ещё»), но телефон
+    # не качает и не рисует тысячи строк разом
+    top_docs = all_docs[offset:offset + limit]
     rock_on = await rock_is_active() or rock_tester(user_id)   # админы видят гербы и в закрытом тесте
     top = [
         {
@@ -4194,14 +4269,14 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
         for doc in top_docs
     ]
 
-    my_index = next((i for i, e in enumerate(top) if e["user_id"] == user_id), None)
-    if my_index is not None:
+    my_index = next((i for i, d in enumerate(all_docs) if d["user_id"] == user_id), None)
+    if my_index is not None and float(all_docs[my_index]["pvp_rating"]) == float(my_rating):
         my_rank = my_index + 1
-    else:
-        my_rank = await store.count_higher_rating(my_rating) + 1
+    else:   # рейтинг сменился после сборки списка — место по свежему рейтингу
+        my_rank = sum(1 for d in all_docs if d["user_id"] != user_id and float(d["pvp_rating"]) > float(my_rating)) + 1
 
     out = {
-        "top": top,
+        "top": top, "offset": offset, "total": len(all_docs),
         "my_rank": my_rank,
         "my_rating": my_rating,
         "season": arena_season_view(),
@@ -11644,7 +11719,15 @@ async def run_bot():
 ROCK_STATE_ID = "state"
 ROCK_TICK_SECONDS = 5
 ROCK_ACTIVE_CACHE = {"at": 0.0, "active": False}
-ROCK_POWER_CACHE = {"at": 0.0, "data": None}
+ROCK_POWER_CACHE = {"at": 0.0, "data": None, "ver": 0, "task": None, "task_ver": -1}
+
+
+def rock_power_invalidate() -> None:
+    """Состав фракций изменился (вступление, перевод, кик…) — следующий
+    запрос посчитает силы заново, а не отдаст старые."""
+    ROCK_POWER_CACHE["ver"] += 1
+    ROCK_POWER_CACHE["data"] = None
+    arena_leaderboard_invalidate()   # гербы фракций в таблице Арены — тоже свежие
 
 
 def rock_num(key: str, default: float) -> float:
@@ -12350,13 +12433,36 @@ async def rock_worker():
 
 # --- силы фракций и балансировщик новичков ---
 async def rock_faction_stats(force: bool = False) -> dict:
+    """Силы и составы фракций, кэш 30 с. Пересчёт идёт ОДИН на всех: раньше
+    при истечении кэша каждый игрок на экране Скалы запускал свой полный
+    обход всех воинов — десятки одновременных пересчётов подвешивали сервер.
+    Пока идёт пересчёт, остальные получают прошлые цифры."""
     now = time.time()
-    if not force and ROCK_POWER_CACHE["data"] is not None and now - ROCK_POWER_CACHE["at"] < 30:
-        return ROCK_POWER_CACHE["data"]
+    c = ROCK_POWER_CACHE
+    if not force and c["data"] is not None and now - c["at"] < 30:
+        return c["data"]
+    if force:
+        return await _rock_faction_stats_compute()
+    task = c.get("task")
+    if task is None or task.done() or c.get("task_ver") != c["ver"]:
+        task = asyncio.ensure_future(_rock_faction_stats_compute())
+        c["task"], c["task_ver"] = task, c["ver"]
+    if c["data"] is not None:
+        return c["data"]
+    return await task
+
+
+async def _rock_faction_stats_compute() -> dict:
+    now = time.time()
+    ver = ROCK_POWER_CACHE["ver"]
     data = {fid: {"members": 0, "power": 0.0} for fid in ROCK_FACTION_ORDER}
     roster = {fid: [] for fid in ROCK_FACTION_ORDER}
     proj = {"faction_id": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "name": 1}
+    seen = 0
     async for doc in store.users.find({"faction_id": {"$in": ROCK_FACTION_ORDER}}, proj):
+        seen += 1
+        if seen % 200 == 0:
+            await asyncio.sleep(0)   # не держим сервер: другие запросы идут между пачками
         fid = doc.get("faction_id")
         if fid in data:
             snap = rock_snapshot(doc)
@@ -12367,7 +12473,12 @@ async def rock_faction_stats(force: bool = False) -> dict:
                                 "power": round(power), "eagles": len(snap)})
     for fid in roster:
         roster[fid].sort(key=lambda m: (-m["power"], m["uid"]))
-    ROCK_POWER_CACHE.update(at=now, data=data, roster=roster)
+    if ROCK_POWER_CACHE["ver"] == ver:
+        ROCK_POWER_CACHE.update(at=now, data=data, roster=roster)
+    elif ROCK_POWER_CACHE["data"] is None:
+        # состав сменился, пока считали: цифры отдаём, но кэш сразу устаревший
+        # (и не затираем ими более свежий пересчёт, если тот успел закончиться)
+        ROCK_POWER_CACHE.update(at=0.0, data=data, roster=roster)
     return data
 
 
@@ -12568,7 +12679,7 @@ async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = H
             fresh = await fetch_user(user_id)
             if fresh.get("faction_id") != fid:
                 raise HTTPException(status_code=409, detail="Ты уже во фракции — сменить её нельзя")
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         name = str(row.get("name") or f"Игрок {user_id}")[:40]
 
         def mutate(s):
@@ -12612,7 +12723,7 @@ async def rock_research(request: RockAction, x_telegram_init_data: Optional[str]
         res = await store.users.update_one(flt, {"$inc": {"merit": -cost}, "$set": {"rock_research": level + 1}})
         if res.modified_count == 0:
             raise HTTPException(status_code=409, detail="Не хватило Очков Заслуг или уровень уже изучен — экран обновлён")
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         return await rock_response(user_id)
     except HTTPException:
         raise
@@ -12913,7 +13024,7 @@ async def rock_wipe_test_data(keep_balancer: bool = False) -> None:
             {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": "", **progress}})
     await store.rock_feed.delete_many({})
     await store.rock_history.delete_many({})
-    ROCK_POWER_CACHE["data"] = None
+    rock_power_invalidate()
 
 
 class AdminRockVisibility(BaseModel):
@@ -13006,7 +13117,7 @@ async def admin_rock_activate(_: None = Depends(require_admin)):
                     "calls": {}}, True
 
         await rock_cas(finish)
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         await rock_feed_add(list(ROCK_FACTION_ORDER),
                             f"🏔 Орлиная Скала открыта! Её первым удерживает {rock_faction_name(bal['owner'])}.",
                             f"🏔 The Eagle Rock is open! It is first held by {rock_faction_name(bal['owner'], 'en')}.")
@@ -13199,7 +13310,7 @@ async def admin_rock_rebalance(body: AdminRockRebalance, _: None = Depends(requi
         except Exception:
             await rock_cas(lambda s: ({"rebalancing": None}, True))
             raise
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         try:   # Лидер без фракции (или вне своей) в перебалансировку не попадает — чиним после
             await rock_fill_missing_leaders(now)
         except Exception as e:
@@ -13290,7 +13401,7 @@ async def rock_kick_inactive(now: float, dry_run: bool = False) -> dict:
             _, g_removed = await rock_cas(mutate)
         except HTTPException:
             g_removed = 0   # гарнизон занят (перенос/штурм) — почистит часовое обновление гарнизона
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         hours = rock_int("inactive_kick_hours", 72)
         for f, v in kicked.items():
             if v:
@@ -13493,7 +13604,7 @@ async def admin_rock_move_player(body: AdminRockMove, _: None = Depends(require_
             back = {**({"$set": orig} if orig else {}), **({"$unset": gone} if gone else {})}
             await store.users.update_one({"_id": uid, "faction_id": target}, back)
             raise
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         try:
             filled = await rock_fill_missing_leaders(now)
         except Exception as e:   # перевод уже сделан — не валим ответ админу
@@ -13883,7 +13994,11 @@ async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) 
         ready.setdefault(d["user_id"], {})[d["type"]] = d
     proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "last_seen": 1}
     rows = []
+    seen = 0
     async for d in store.users.find({"faction_id": fid}, proj):
+        seen += 1
+        if seen % 200 == 0:
+            await asyncio.sleep(0)   # большая фракция не держит сервер целиком
         uid = d["_id"]
         r = ready.get(uid, {})
         pre, live = r.get(ROCK_READY_PRE), r.get(ROCK_READY_LIVE)
@@ -13984,7 +14099,7 @@ async def rock_leader_kick(request: RockKickRequest, x_telegram_init_data: Optio
                                          {"$set": back, **({"$unset": {"faction_left": ""}} if not (prev or {}).get("faction_left") else {"$set": {**back, "faction_left": prev["faction_left"]}})})
             raise
         await store.rock_ready.delete_many({"user_id": target, "day": rock_ready_day(now)})
-        ROCK_POWER_CACHE["data"] = None
+        rock_power_invalidate()
         tname = str(trow.get("name") or f"Игрок {target}")[:40]
         await rock_feed_add([fid], f"🚪 Лидер {lname} исключил {tname} из фракции.", f"🚪 Leader {lname} removed {tname} from the faction.")
         return {"ok": True, "message": f"{tname} исключён из фракции",

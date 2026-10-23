@@ -469,6 +469,8 @@ class MongoStore:
             (self.raids, [("status", 1), ("battle_ends_at", 1)], {}),
             (self.raids, [("status", 1), ("created_at", -1)], {}),
             (self.users, "faction_id", {"sparse": True}),
+            # «онлайн/неактивные»: счётчики админки и Арены, исключение неактивных из фракций
+            (self.users, "last_seen", {}),
             (self.rock_feed, [("faction", 1), ("ts", -1)], {}),
             (self.rock_history, [("paid", 1), ("ts", 1)], {}),
             (self.rock_history, [("ts", -1)], {}),

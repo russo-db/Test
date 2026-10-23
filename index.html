@@ -105,6 +105,11 @@
         @keyframes fogDrift1 { from { transform: translate3d(-6%, -3%, 0) scale(1); } to { transform: translate3d(6%, 4%, 0) scale(1.12); } }
         @keyframes fogDrift2 { from { transform: translate3d(5%, 4%, 0) scale(1.08); } to { transform: translate3d(-5%, -4%, 0) scale(1); } }
         @keyframes fogPulse { 0%, 100% { opacity: 0.75; filter: blur(0.6px); } 50% { opacity: 1; filter: blur(0); } }
+        /* Скала закрыта (страница скрыта за фермой) — туман не анимируем: размытые
+           слои перерисовывались каждый кадр на ВСЕХ экранах игры и съедали до 90%
+           времени главного потока на слабых телефонах. */
+        .fog-page:not(.open):not(.dragging) .fog-layer,
+        .fog-page:not(.open):not(.dragging) .fog-title { animation-play-state: paused; }
         @media (prefers-reduced-motion: reduce) {
             .fog-page .fog-layer, .fog-page .fog-title { animation: none; }
         }
@@ -1288,6 +1293,7 @@
         .lb-reward-items { flex: 1; display: flex; align-items: center; gap: 10px; font-weight: 700; }
         .lb-reward-icon { width: 16px; height: 16px; object-fit: contain; vertical-align: -3px; margin-right: 3px; }
         .lb-top3 { flex: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .lb-more { margin: 4px auto 2px; padding: 9px 14px; font-size: 12.5px; }
         .lb-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 16px; background: rgba(5, 3, 16, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--glass-border); }
         .lb-row, .lb-podium-row {
             display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px;
@@ -2697,6 +2703,7 @@
                 'arena.seasonEndsIn': 'Сезон закончится через {days} дн. — награды получит Топ-50',
                 'arena.seasonRewardsBtn': '🏆 Награды сезона',
                 'arena.leaderboardLoading': 'Загрузка таблицы лидеров…',
+                'arena.lbMore': 'Показать ещё {n} (осталось {left})',
                 'arena.leaderboardOnlineOnly': 'Таблица лидеров доступна только при подключении к серверу',
                 'arena.energyLabel': 'Энергия Арены', 'arena.noEnergy': 'Нет энергии',
                 'arena.energyResetIn': 'Пополнение через {time}',
@@ -3497,6 +3504,7 @@
                 'arena.seasonEndsIn': 'Season ends in {days}d — the Top 50 get rewarded',
                 'arena.seasonRewardsBtn': '🏆 Season rewards',
                 'arena.leaderboardLoading': 'Loading leaderboard…',
+                'arena.lbMore': 'Show {n} more ({left} left)',
                 'arena.leaderboardOnlineOnly': 'The leaderboard is only available when connected to the server',
                 'arena.energyLabel': 'Arena Energy', 'arena.noEnergy': 'No energy',
                 'arena.energyResetIn': 'Refills in {time}',
@@ -9311,7 +9319,13 @@
                 else html += renderRockMain(r);
             }
             if (r.test_mode || r.hidden) html = `<div class="rock-busy" style="margin-bottom:10px; font-size:12px">${t(r.test_mode ? 'rock.testBanner' : 'rock.hiddenBanner')}</div>` + html;
-            setHTMLIfChanged(hub, goldify(html));
+            const withTable = html.includes('id="rockCmdTableSlot"');
+            setHTMLIfChanged(hub, goldify(html), withTable ? { allowInnerUpdates: true } : undefined);
+            const slot = withTable && document.getElementById('rockCmdTableSlot');
+            if (slot && rockDash.tableEl && rockDash.tableEl.parentNode !== slot) {
+                const sx = rockDash.tableEl.scrollLeft;
+                slot.appendChild(rockDash.tableEl); rockDash.tableEl.scrollLeft = sx;
+            }
         }
 
         // верхняя панель с балансами лежит поверх правого экрана — хаб начинается под ней
@@ -9583,6 +9597,10 @@
                     <div class="rock-muted">${rockDash.err ? huntEsc(rockDash.err) : t('rock.cmd.loading')}</div></div>`;
             }
             const s = d.stats;
+            // Таблица до 500 строк строится заново только при новых данных
+            // (раз в 30 с или после кика), а не при каждом опросе Скалы раз в 4 с.
+            const key = rockDash.at + ':' + LANG;
+            if (rockDash.tableKey !== key) {
             const rows = d.rows.map(m => `<tr>
                     <td><div class="rock-dash-name">${m.leader ? '👑 ' : ''}${huntEsc(m.name)}</div></td>
                     <td class="num">${rockNum(m.power)}</td>
@@ -9590,6 +9608,14 @@
                     <td>${rockStatusLabel(m.status)}</td>
                     <td>${m.leader ? '' : `<button class="rock-kick" data-uid="${m.id}" aria-label="${t('rock.cmd.kick')}" onclick="rockAskKick(${m.id})">❌<span class="kick-txt"> ${t('rock.cmd.kickWord')}</span></button>`}</td>
                 </tr>`).join('');
+                const el = document.createElement('div');
+                el.className = 'rock-dash-wrap';
+                el.innerHTML = goldify(`<table class="rock-dash-table">
+                    <thead><tr><th>${t('rock.cmd.colName')}</th><th style="text-align:right">${t('rock.cmd.colPower')}</th><th style="text-align:right">${t('rock.cmd.colTroops')}</th><th>${t('rock.cmd.colStatus')}</th><th></th></tr></thead>
+                    <tbody>${rows || `<tr><td colspan="5" class="rock-muted">${t('rock.rosterEmpty')}</td></tr>`}</tbody>
+                </table>`);
+                rockDash.tableEl = el; rockDash.tableKey = key;
+            }
             return `<div class="rock-card glass-panel" id="rockCommand">
                 <h3 style="display:flex; justify-content:space-between; align-items:center">${t('rock.cmd.title')}
                     <button class="btn-action" style="padding:4px 10px; font-size:12px" onclick="rockDashLoad(true)">🔄</button></h3>
@@ -9599,10 +9625,7 @@
                     <div class="rock-stat rock-dash-stat live">${t('rock.cmd.live')}<b>${s.live}</b></div>
                     <div class="rock-stat rock-dash-stat dead">${t('rock.cmd.dead')}<b>${s.inactive}</b></div>
                 </div>
-                <div class="rock-dash-wrap"><table class="rock-dash-table">
-                    <thead><tr><th>${t('rock.cmd.colName')}</th><th style="text-align:right">${t('rock.cmd.colPower')}</th><th style="text-align:right">${t('rock.cmd.colTroops')}</th><th>${t('rock.cmd.colStatus')}</th><th></th></tr></thead>
-                    <tbody>${rows || `<tr><td colspan="5" class="rock-muted">${t('rock.rosterEmpty')}</td></tr>`}</tbody>
-                </table></div>
+                <div id="rockCmdTableSlot"></div>
                 ${d.more ? `<div class="rock-muted" style="margin-top:6px">${t('rock.rosterMore', { n: d.more })}</div>` : ''}
                 <div class="rock-muted" style="margin-top:8px; line-height:1.6">${['live', 'pre', 'truant', 'inactive', 'away', 'idle'].map(k => t('rock.st.' + k)).join(' · ')}</div>
                 <div class="rock-muted" style="margin-top:6px">${t('rock.cmd.hint')}</div>
@@ -11261,9 +11284,25 @@
             arenaCtx.restore();
         }
 
+        let arenaLastDrawTs = 0;
         function arenaFrame(ts) {
             const tab = document.getElementById('arena');
             if (!tab || !tab.classList.contains('active')) { arenaFrameHandle = null; return; }
+            // Вне боя орлы лишь покачиваются — хватает ~30 кадров/с. Раньше холст
+            // перерисовывался на частоте экрана (60–120 Гц) и в простое грузил
+            // слабые телефоны; в бою — как прежде, каждый кадр.
+            if (!arenaBattleActive && arenaLastDrawTs && ts - arenaLastDrawTs < 32) {
+                arenaFrameHandle = requestAnimationFrame(arenaFrame);
+                return;
+            }
+            // Арену закрывает страница Скалы или полноэкранное окно (таблица
+            // лидеров, магазин энергии…) — холст не видно, не перерисовываем.
+            if (!arenaBattleActive && (fogOpen || document.querySelector('.modal-backdrop.open'))) {
+                arenaLastTs = 0;
+                arenaFrameHandle = requestAnimationFrame(arenaFrame);
+                return;
+            }
+            arenaLastDrawTs = ts;
             if (!arenaLastTs) arenaLastTs = ts;
             const dt = Math.min(0.05, (ts - arenaLastTs) / 1000) * arenaSpeedMultiplier;
             arenaLastTs = ts;
@@ -11278,7 +11317,7 @@
 
         function arenaStartLoop() {
             if (arenaFrameHandle) return;
-            arenaLastTs = 0;
+            arenaLastTs = 0; arenaLastDrawTs = 0;
             arenaFrameHandle = requestAnimationFrame(arenaFrame);
         }
 
@@ -11548,16 +11587,18 @@
         // массив записей top-листа (с меткой isMe) или null, если таблица
         // недоступна (офлайн-режим/нет соединения) — renderLeaderboard сам
         // покажет соответствующее сообщение.
-        async function updateLeaderboard() {
+        let leaderboardTotal = 0, leaderboardLoaded = 0, leaderboardLoading = false;
+        async function updateLeaderboard(offset = 0) {
             if (offlineOnly || !state.userId) return null;
             try {
-                const response = await fetch(`api/arena/leaderboard?user_id=${state.userId}`, { headers: apiHeaders() });
+                const response = await fetch(`api/arena/leaderboard?user_id=${state.userId}&offset=${offset}`, { headers: apiHeaders() });
                 if (!response.ok) throw new Error('leaderboard fetch failed');
                 const data = await response.json();
                 leaderboardMyRank = data.my_rank;
                 if (typeof data.my_rating === 'number') state.pvpRating = data.my_rating;
                 if (data.season && typeof data.season.ends_at === 'number') state.arenaSeasonEndsAt = data.season.ends_at;
                 leaderboardAdmin = data.admin || null;   // только админам — онлайн сервера
+                leaderboardTotal = data.total || (data.top || []).length;
                 // Только место, никнейм и рейтинг — редкость/грейд орла
                 // сервер больше вообще не присылает (см. arena_leaderboard в
                 // main.py), чтобы через Топ-100 нельзя было подсмотреть силу
@@ -11652,9 +11693,29 @@
             renderLeaderboardSeasonLine();
             renderLeaderboardAdmin();
             document.getElementById('lbTop3').innerHTML = top.slice(0, 3).map((e, i) => arenaLeaderboardRowHtml(e, i + 1)).join('');
-            // Топ-100 отменён — сервер отдаёт ВСЕХ игроков (см. arena_leaderboard
-            // в main.py), поэтому список не срезается верхней границей.
-            document.getElementById('lbRest').innerHTML = top.slice(3).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('');
+            // Видны ВСЕ игроки, но страницами по 100 (кнопка «Показать ещё»):
+            // тысячи строк разом тормозили открытие таблицы на телефонах.
+            leaderboardLoaded = top.length;
+            document.getElementById('lbRest').innerHTML = top.slice(3).map((e, i) => arenaLeaderboardRowHtml(e, i + 4)).join('') + leaderboardMoreHtml();
+        }
+        function leaderboardMoreHtml() {
+            const left = leaderboardTotal - leaderboardLoaded;
+            return left > 0 ? `<button class="btn-action lb-more" id="lbMoreBtn" onclick="leaderboardLoadMore()">${t('arena.lbMore', { n: Math.min(100, left), left })}</button>` : '';
+        }
+        async function leaderboardLoadMore() {
+            if (leaderboardLoading) return;
+            leaderboardLoading = true;
+            const btn = document.getElementById('lbMoreBtn');
+            if (btn) { btn.disabled = true; btn.textContent = t('arena.leaderboardLoading'); }
+            try {
+                const page = await updateLeaderboard(leaderboardLoaded);
+                const rest = document.getElementById('lbRest');
+                if (btn) btn.remove();
+                if (!page || !rest) return;
+                const start = leaderboardLoaded;
+                leaderboardLoaded += page.length;
+                rest.insertAdjacentHTML('beforeend', page.map((e, i) => arenaLeaderboardRowHtml(e, start + i + 1)).join('') + leaderboardMoreHtml());
+            } finally { leaderboardLoading = false; }
         }
 
         async function openLeaderboard() {
@@ -11673,6 +11734,11 @@
 
         function closeLeaderboard() {
             document.getElementById('leaderboardModal').classList.remove('open');
+            // тысячи строк не держим в документе — они утяжеляли каждый пересчёт стилей
+            setTimeout(() => {
+                if (document.getElementById('leaderboardModal').classList.contains('open')) return;
+                document.getElementById('lbRest').innerHTML = ''; document.getElementById('lbTop3').innerHTML = '';
+            }, 400);
         }
 
         // Тап по предмету в лесенке улучшений Кузницы — быстрая подсказка, какой
@@ -12766,7 +12832,12 @@
         // действия (см. /api/farm/*, /api/eggs/*, /api/vip/*). Здесь сохраняется
         // только active_slot — какой орёл показан на сцене, чисто визуальный
         // выбор без влияния на баланс.
+        let lastSaveSlot = null, lastSaveAt = 0;
+        function saveIfNeeded() {
+            if (state.activeSlot !== lastSaveSlot || Date.now() - lastSaveAt >= 30000) saveNow();
+        }
         function saveNow() {
+            lastSaveSlot = state.activeSlot; lastSaveAt = Date.now();
             if (offlineOnly || !state.userId) {
                 saveLocally();
                 return;
@@ -13033,7 +13104,9 @@
                 }
             }, 1000);
 
-            setInterval(saveNow, 10000);
+            // раньше — запрос на сервер каждые 10 с у каждого игрока; теперь только
+            // если сменился орёл на сцене, иначе — отметка «в сети» раз в 30 с
+            setInterval(saveIfNeeded, 10000);
             window.addEventListener('pagehide', saveNow);
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) saveNow(); else syncVipMeatIfDue();
