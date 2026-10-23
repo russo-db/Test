@@ -9497,14 +9497,14 @@
         function renderRockReady(r) {
             const me = r.me, rd = me.ready || {};
             const n = rd.pre || 0;
-            const can = me.eligible > 0;
+            const can = me.eligible > 0 || (n > 0 && !rd.pulled);   // без орлов — можно хотя бы отменить старое подтверждение
             return `<div class="rock-card glass-panel" id="rockReadyCard"><h3>${t('rock.ready.title')}</h3>
                 <div class="rock-ready-row"><div class="rock-ready-n">${n}</div>
                     <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_power || 0) }) : t('rock.ready.none')}
                         ${rd.pulled ? `<div class="rock-ready-ok">${t('rock.ready.pulled')}</div>` : ''}
                         ${rd.live ? `<div style="color:#fdba74; font-weight:700">${t('rock.ready.live', { n: rd.live })}</div>` : ''}</div></div>
                 <button class="btn-primary" style="width:100%" ${can ? '' : 'disabled'} onclick="rockReadyOpen()">${n ? t('rock.ready.change') : t('rock.ready.btn')}</button>
-                ${can ? '' : `<div class="rock-muted" style="margin-top:6px; text-align:center">${t('rock.army.empty', { lvl: r.min_level })}</div>`}
+                ${me.eligible > 0 ? '' : `<div class="rock-muted" style="margin-top:6px; text-align:center">${t('rock.army.empty', { lvl: r.min_level })}</div>`}
                 <div class="rock-muted" style="margin-top:8px">${t('rock.ready.hint')}</div>
             </div>`;
         }
@@ -9514,18 +9514,19 @@
             const r = rockData; if (!r || !r.me) return;
             const me = r.me, rd = me.ready || {};
             const max = me.eligible || 0;
-            if (!max) return;
-            rockReadyPick = Math.min(max, rd.pre || max);
+            if (!max && !(rd.pre && !rd.pulled)) return;
+            rockReadyPick = Math.max(max ? 1 : 0, Math.min(max, rd.pre || max));
             huntModalItem = null;
             const draw = () => {
                 document.getElementById('huntModalBody').innerHTML = goldify(`
                     <h2>${t('rock.ready.title')}</h2>
                     <p class="slot-modal-sub">${t('rock.ready.pick', { lvl: r.min_level, max })}</p>
-                    <div class="rock-count-row"><button class="btn-action" onclick="rockReadyStep(-1)" ${rockReadyPick <= 1 ? 'disabled' : ''}>−</button>
+                    ${max ? `<div class="rock-count-row"><button class="btn-action" onclick="rockReadyStep(-1)" ${rockReadyPick <= 1 ? 'disabled' : ''}>−</button>
                         <b id="rockReadyPickN">${rockReadyPick}</b>
                         <button class="btn-action" onclick="rockReadyStep(1)" ${rockReadyPick >= max ? 'disabled' : ''}>+</button></div>
                     <button class="btn-action" style="width:100%; margin-bottom:8px" onclick="rockReadyStep(${max})">${t('rock.ready.all', { n: max })}</button>
-                    <button class="btn-primary" style="width:100%" id="rockReadyOk">${t('rock.ready.confirm')}</button>
+                    <button class="btn-primary" style="width:100%" id="rockReadyOk">${t('rock.ready.confirm')}</button>`
+                        : `<div class="rock-muted" style="margin:8px 0">${t('rock.army.empty', { lvl: r.min_level })}</div>`}
                     ${rd.pre && !rd.pulled ? `<button class="btn-action" style="width:100%; margin-top:8px" id="rockReadyCancel">${t('rock.ready.cancel')}</button>` : ''}
                     <button class="btn-action roll-close" onclick="closeHuntModal()">${t('common.cancel')}</button>`);
                 let fired = false;
@@ -9534,7 +9535,8 @@
                     const d = await rockPost('api/rock/ready', { eagles_count: count }, 'rock-ready');
                     if (d) toast(count ? t('rock.ready.toast', { n: count }) : t('rock.ready.toastCancel'));
                 };
-                document.getElementById('rockReadyOk').onclick = () => send(rockReadyPick);
+                const okBtn = document.getElementById('rockReadyOk');
+                if (okBtn) okBtn.onclick = () => send(rockReadyPick);
                 const c = document.getElementById('rockReadyCancel');
                 if (c) c.onclick = () => send(0);
             };
