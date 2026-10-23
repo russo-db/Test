@@ -13652,6 +13652,16 @@ class RockKickRequest(BaseModel):
     target_id: int
 
 
+def rock_ready_day(moment: Optional[float] = None) -> int:
+    """Сутки готовности — по местному времени Скалы (utc_offset_hours, МСК), как и
+    окна штурма: подтверждение в 01:00 по Москве — на этот день, а не на вчерашний UTC."""
+    return int(((moment if moment is not None else time.time()) + rock_num("utc_offset_hours", 3) * 3600) // 86400)
+
+
+def rock_ready_day_start(day: int) -> float:
+    return day * 86400 - rock_num("utc_offset_hours", 3) * 3600
+
+
 def rock_ready_id(day: int, uid: int, typ: str) -> str:
     return f"{day}:{uid}:{typ}"
 
@@ -13661,7 +13671,7 @@ async def rock_ready_live(uid: int, fid: str, fighters: list, siege_id: Optional
     if not fighters:
         return
     try:
-        day, now = day_index(), time.time()
+        now = time.time(); day = rock_ready_day(now)
         await store.rock_ready.update_one(
             {"_id": rock_ready_id(day, uid, ROCK_READY_LIVE)},
             {"$set": {"faction_id": fid, "user_id": uid, "day": day, "type": ROCK_READY_LIVE, "has_contributed": True, "updated_at": now},
@@ -13673,7 +13683,7 @@ async def rock_ready_live(uid: int, fid: str, fighters: list, siege_id: Optional
 
 
 async def rock_ready_today(uid: int) -> dict:
-    day = day_index()
+    day = rock_ready_day()
     out = {}
     async for d in store.rock_ready.find({"user_id": uid, "day": day}):
         out[d["type"]] = d
@@ -13691,7 +13701,7 @@ async def rock_ready_confirm(request: RockReadyRequest, x_telegram_init_data: Op
         fid = rock_my_faction(row)
         snap = rock_snapshot(row)
         want = max(0, min(int(request.eagles_count or 0), len(snap)))
-        day, now = day_index(), time.time()
+        now = time.time(); day = rock_ready_day(now)
         key = rock_ready_id(day, user_id, ROCK_READY_PRE)
         if want <= 0:
             cur = await store.rock_ready.find_one({"_id": key})
@@ -13726,7 +13736,7 @@ async def rock_pull_ready(fid: str, now: float) -> dict:
         return {"players": 0, "eagles": 0}
     side = "a" if siege["attacker"] == fid else "d"
     sid = siege["id"]
-    day = day_index()
+    day = rock_ready_day()
     in_fight = {f["uid"] for f in siege["attackers"] + siege["defenders"]}
     initial = set(siege.get("initial_defenders") or [])
     rage = rock_rage_pct(st, fid) if side == "a" else 0.0
@@ -13821,13 +13831,13 @@ def rock_member_status(uid: int, last_seen: float, now: float, pre: Optional[dic
 
 async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) -> dict:
     """getLeaderDashboard: карточки и состав фракции со статусом участия за сутки."""
-    day = day_index(now)
+    day = rock_ready_day(now)
     siege = st.get("siege")
     in_fight = {f["uid"] for f in (siege["attackers"] + siege["defenders"])} if siege and fid in (siege["attacker"], siege["defender"]) else set()
     battle_today = bool(in_fight) or bool(siege and fid in (siege["attacker"], siege["defender"]))
     if not battle_today:
         battle_today = bool(await store.rock_history.find_one(
-            {"kind": "siege", "ts": {"$gte": day * 86400}, "$or": [{"attacker": fid}, {"defender": fid}]}, {"_id": 1}))
+            {"kind": "siege", "ts": {"$gte": rock_ready_day_start(day)}, "$or": [{"attacker": fid}, {"defender": fid}]}, {"_id": 1}))
     ready = {}
     async for d in store.rock_ready.find({"faction_id": fid, "day": day}):
         ready.setdefault(d["user_id"], {})[d["type"]] = d
@@ -13845,10 +13855,20 @@ async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) 
                      "pulled": bool((pre or {}).get("pulled_sieges")), "status": status, "last_seen": seen or None,
                      "leader": uid == leader_id})
     rows.sort(key=lambda x: (not x["leader"], -x["power"], x["id"]))
+    if len(rows) > 500:
+        # в большой фракции слабые «мёртвые души» не должны выпадать за край списка — их и кикают
+        bad = [x for x in rows if x["status"] in ("inactive", "truant")][:250]
+        keep = {x["id"] for x in bad}
+        rest = [x for x in rows if x["id"] not in keep][:500 - len(bad)]
+        shown = sorted(bad + rest, key=lambda x: (not x["leader"], -x["power"], x["id"]))
+        more = len(rows) - len(shown)
+        rows_all, rows = rows, shown
+    else:
+        rows_all, more = rows, 0
     return {"faction_id": fid, "day": day, "battle_today": battle_today,
-            "stats": {"total": len(rows), "pre": sum(1 for x in rows if x["pre"]), "live": sum(1 for x in rows if x["status"] == "live"),
-                      "inactive": sum(1 for x in rows if x["status"] == "inactive"), "truant": sum(1 for x in rows if x["status"] == "truant")},
-            "rows": rows[:500], "more": max(0, len(rows) - 500)}
+            "stats": {"total": len(rows_all), "pre": sum(1 for x in rows_all if x["pre"]), "live": sum(1 for x in rows_all if x["status"] == "live"),
+                      "inactive": sum(1 for x in rows_all if x["status"] == "inactive"), "truant": sum(1 for x in rows_all if x["status"] == "truant")},
+            "rows": rows, "more": more}
 
 
 async def rock_leader_guard(user_id: int) -> tuple:
@@ -13923,7 +13943,7 @@ async def rock_leader_kick(request: RockKickRequest, x_telegram_init_data: Optio
             await store.users.update_one({"_id": target, "faction_id": None},
                                          {"$set": back, **({"$unset": {"faction_left": ""}} if not (prev or {}).get("faction_left") else {"$set": {**back, "faction_left": prev["faction_left"]}})})
             raise
-        await store.rock_ready.delete_many({"user_id": target, "day": day_index(now)})
+        await store.rock_ready.delete_many({"user_id": target, "day": rock_ready_day(now)})
         ROCK_POWER_CACHE["data"] = None
         tname = str(trow.get("name") or f"Игрок {target}")[:40]
         await rock_feed_add([fid], f"🚪 Лидер {lname} исключил {tname} из фракции.", f"🚪 Leader {lname} removed {tname} from the faction.")
