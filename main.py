@@ -4161,10 +4161,13 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     такая же точка проверки смены сезона, как и /api/load (см.
     reconcile_arena_season), чтобы сезон сменился не только у тех, кто
     успел перезайти в приложение."""
-    authenticate(x_telegram_init_data, user_id)
+    user_id = authenticate(x_telegram_init_data, user_id)
     await reconcile_arena_season()
     row = await fetch_user(user_id)
     my_rating = pvp_rating_of(row)
+    # getArenaPlayersAnalytics: админам (подписанный Telegram ID из
+    # MAINTENANCE_WHITELIST) — ещё онлайн сервера и время последнего входа.
+    is_admin = rock_tester(user_id)
 
     # Абсолютная анонимность: только место, ник и очки — редкость/грейд
     # орла (best_tier) намеренно не отдаём вообще, иначе по нему можно
@@ -4181,6 +4184,7 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
             "pvp_rating": int(doc["pvp_rating"]),
             # герб фракции Орлиной Скалы — только после её запуска
             **(rock_faction_badge(doc.get("faction_id")) if rock_on else {}),
+            **({"last_login_at": int(doc.get("last_seen") or 0) or None} if is_admin else {}),
         }
         for doc in top_docs
     ]
@@ -4191,12 +4195,26 @@ async def arena_leaderboard(user_id: int, x_telegram_init_data: Optional[str] = 
     else:
         my_rank = await store.count_higher_rating(my_rating) + 1
 
-    return {
+    out = {
         "top": top,
         "my_rank": my_rank,
         "my_rating": my_rating,
         "season": arena_season_view(),
     }
+    if is_admin:
+        try:
+            now = time.time()
+            human = {"is_bot": {"$ne": True}}
+            out["admin"] = {
+                "now": now,
+                "total": await store.users.count_documents(human),
+                "active_24h": await store.users.count_documents({**human, "last_seen": {"$gte": now - 86400}}),
+                "inactive_72h": await store.users.count_documents({**human, "$or": [{"last_seen": {"$lt": now - 72 * 3600}},
+                                                                                   {"last_seen": {"$exists": False}}, {"last_seen": None}]}),
+            }
+        except Exception as e:
+            print(f"[arena] admin stats: {type(e).__name__}: {e}")
+    return out
 
 
 # --- ПРИЗЫ ТУРНИРА АРЕНЫ (награда по итоговым местам Топ-50) ---
@@ -12377,6 +12395,12 @@ async def rock_view(st: dict, user_id: int, now: Optional[float] = None) -> dict
     if not fid:
         return out
     me["is_leader"] = (rock_public_leader(st, fid) or {}).get("id") == user_id
+    rd = await rock_ready_today(user_id)
+    pre, live = rd.get(ROCK_READY_PRE), rd.get(ROCK_READY_LIVE)
+    me["ready"] = {"pre": int((pre or {}).get("eagles_count") or 0) if pre and pre.get("faction_id") == fid else 0,
+                   "pre_power": round(float((pre or {}).get("total_power") or 0)) if pre and pre.get("faction_id") == fid else 0,
+                   "pulled": bool((pre or {}).get("pulled_sieges")), "live": int((live or {}).get("eagles_count") or 0),
+                   "has_contributed": bool(pre or live)}
     if me["is_leader"]:
         last_call = float((st.get("calls") or {}).get(fid) or 0)
         me["call_ready_at"] = last_call + ROCK_CALL_COOLDOWN if last_call else 0
@@ -12493,6 +12517,11 @@ async def rock_join(request: RockAction, x_telegram_init_data: Optional[str] = H
             if row["faction_id"] == fid:
                 return await rock_response(user_id)
             raise HTTPException(status_code=409, detail="Ты уже во фракции — сменить её нельзя")
+        left = row.get("faction_left") if isinstance(row.get("faction_left"), dict) else {}
+        block_h = rock_num("leader_kick_rejoin_hours", 24)
+        if left.get("reason") == "leader_kick" and left.get("from") == fid and time.time() - float(left.get("at") or 0) < block_h * 3600:
+            wait_h = max(1, math.ceil((float(left["at"]) + block_h * 3600 - time.time()) / 3600))
+            raise HTTPException(status_code=400, detail=f"Лидер исключил тебя из этой фракции — вернуться можно через {wait_h} ч. Выбери другую фракцию.")
         data = await rock_faction_stats(force=True)
         if st_access.get("active") and rock_overloaded(data, fid):
             raise HTTPException(status_code=400, detail="Эта фракция перегружена силами, выберите другую!")
@@ -12604,6 +12633,7 @@ async def rock_do_plus(user_id: int, row: dict, fid: str) -> None:
     except Exception:
         await rock_release_daily(user_id, "rock_attack_day", prev)
         raise
+    await rock_ready_live(user_id, fid, snap, sid)
 
 
 @app.post("/api/rock/declare")
@@ -12640,7 +12670,13 @@ async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] 
                      "declared_by": user_id}
             return {"siege": siege, "windows_used": ((s.get("windows_used") or []) + [win["key"]])[-30:]}, s.get("owner")
 
-        _, defender = await rock_cas(mutate)
+        st_new, defender = await rock_cas(mutate)
+        if defender and st_new.get("siege"):   # стоявшие на Скале при начале штурма — тоже в бою
+            by_uid = {}
+            for f in st_new["siege"]["defenders"]:
+                by_uid.setdefault(f["uid"], []).append(f)
+            for uid, fl in by_uid.items():
+                await rock_ready_live(uid, defender, fl, st_new["siege"]["id"])
         an = rock_faction_name(fid)
         await rock_feed_add([fid], "⚔️ Лидер объявил общий штурм Скалы! Жми «+», чтобы встать в отряд (30 мин).",
                             "⚔️ The Leader declared a full assault on the Rock! Tap «+» to join (30 min).")
@@ -12690,8 +12726,10 @@ async def rock_garrison(request: RockAction, x_telegram_init_data: Optional[str]
         if not snap:
             raise HTTPException(status_code=400, detail=f"Нужен хотя бы один орёл {rock_min_level()} ур., не выставленный на рынок")
         slots = max(1, rock_int("garrison_slots", 50))
+        mode = {}
 
         def mutate(s):
+            mode.clear()
             if s.get("owner") != fid:
                 raise HTTPException(status_code=400, detail="Скала не у твоей фракции")
             siege = s.get("siege")
@@ -12706,6 +12744,7 @@ async def rock_garrison(request: RockAction, x_telegram_init_data: Optional[str]
                 cur = dict(siege)
                 cur["defenders"] = cur["defenders"] + rock_fighters(snap[:free], "d", len(cur["defenders"]))
                 cur["reserves"] = sorted(set(cur.get("reserves") or []) | {user_id})
+                mode["siege"] = siege["id"]
                 return {"siege": cur}, min(free, len(snap))
             garrison = s.get("garrison") or []
             if any(f["uid"] == user_id for f in garrison):
@@ -12717,6 +12756,8 @@ async def rock_garrison(request: RockAction, x_telegram_init_data: Optional[str]
             return {"garrison": garrison + add}, len(add)
 
         _, added = await rock_cas(mutate)
+        if mode.get("siege"):   # резерв во время штурма — живое участие
+            await rock_ready_live(user_id, fid, snap[:added], mode["siege"])
         return {**(await rock_response(user_id)), "added": added}
     except HTTPException:
         raise
@@ -13573,7 +13614,12 @@ async def faction_great_call(request: GreatCallRequest, x_telegram_init_data: Op
             raise
         await rock_feed_add([fid], "📣 Лидер объявил Великий призыв! Подтвердите своё войско.",
                             "📣 The Leader issued the Great Call! Confirm your army.")
-        return {"success": True, "recipients": len(queue), "cooldown_until": now + ROCK_CALL_COOLDOWN,
+        try:   # во время штурма — подтягиваем подтвердивших готовность заранее
+            pulled = await rock_pull_ready(fid, now)
+        except Exception as e:
+            print(f"[rock] pull ready failed: {type(e).__name__}: {e}")
+            pulled = {"players": 0, "eagles": 0}
+        return {"success": True, "recipients": len(queue), "cooldown_until": now + ROCK_CALL_COOLDOWN, "pulled": pulled,
                 **(await rock_response(user_id))}
     except RockCallCooldown as e:
         msg = rock_call_cooldown_message(e.retry_after)
@@ -13584,6 +13630,297 @@ async def faction_great_call(request: GreatCallRequest, x_telegram_init_data: Op
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         raise HTTPException(status_code=500, detail="Не удалось объявить призыв — попробуй ещё раз")
+
+
+# --- 🛡️ БОЕВАЯ ГОТОВНОСТЬ НА СУТКИ И КОМАНДНЫЙ ЦЕНТР ЛИДЕРА ---
+# Надстройка над штурмом (сам штурм не меняется): игрок в любое время суток
+# заранее подтверждает отряд (pre_confirmed). Когда во время идущего штурма
+# Лидер жмёт «📣 Великий призыв», подтверждённые орлы тех, кого ещё нет в
+# бою, сами встают в отряд/резерв — по тем же правилам, что «+» и резерв
+# гарнизона. Вход в бой своими руками пишется как live_assault — по этим
+# записям Лидер видит, кто воюет, кто подтвердил заранее, кто прогуливает.
+ROCK_READY_PRE, ROCK_READY_LIVE = "pre_confirmed", "live_assault"
+
+
+class RockReadyRequest(BaseModel):
+    user_id: Optional[int] = None
+    eagles_count: int = 0
+
+
+class RockKickRequest(BaseModel):
+    user_id: Optional[int] = None
+    target_id: int
+
+
+def rock_ready_id(day: int, uid: int, typ: str) -> str:
+    return f"{day}:{uid}:{typ}"
+
+
+async def rock_ready_live(uid: int, fid: str, fighters: list, siege_id: Optional[str]) -> None:
+    """Игрок сам вошёл в штурм/резерв (или стоял в гарнизоне при начале штурма)."""
+    if not fighters:
+        return
+    try:
+        day, now = day_index(), time.time()
+        await store.rock_ready.update_one(
+            {"_id": rock_ready_id(day, uid, ROCK_READY_LIVE)},
+            {"$set": {"faction_id": fid, "user_id": uid, "day": day, "type": ROCK_READY_LIVE, "has_contributed": True, "updated_at": now},
+             "$inc": {"eagles_count": len(fighters), "total_power": round(sum(rock_power(e) for e in fighters), 2)},
+             "$addToSet": {"sieges": siege_id}, "$setOnInsert": {"created_at": now}},
+            upsert=True)
+    except Exception as e:
+        print(f"[rock] live record {uid}: {type(e).__name__}: {e}")
+
+
+async def rock_ready_today(uid: int) -> dict:
+    day = day_index()
+    out = {}
+    async for d in store.rock_ready.find({"user_id": uid, "day": day}):
+        out[d["type"]] = d
+    return out
+
+
+@app.post("/api/rock/ready")
+async def rock_ready_confirm(request: RockReadyRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """«➕ Подтвердить отряд на сегодня» (confirmDailyEagles): в любое время
+    суток. eagles_count — сколько сильнейших орлов N ур. отдать (0 — отменить)."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await rock_require_access(user_id)
+        row = await fetch_user(user_id)
+        fid = rock_my_faction(row)
+        snap = rock_snapshot(row)
+        want = max(0, min(int(request.eagles_count or 0), len(snap)))
+        day, now = day_index(), time.time()
+        key = rock_ready_id(day, user_id, ROCK_READY_PRE)
+        if want <= 0:
+            cur = await store.rock_ready.find_one({"_id": key})
+            if cur and cur.get("pulled_sieges"):
+                raise HTTPException(status_code=409, detail="Твои орлы уже подтянуты в бой — отменить нельзя")
+            await store.rock_ready.delete_one({"_id": key, "$or": [{"pulled_sieges": {"$size": 0}}, {"pulled_sieges": {"$exists": False}}]})
+            return await rock_response(user_id)
+        if not snap:
+            raise HTTPException(status_code=400, detail=f"Нужен хотя бы один орёл {rock_min_level()} ур., не выставленный на рынок")
+        await store.rock_ready.update_one(
+            {"_id": key},
+            {"$set": {"faction_id": fid, "user_id": user_id, "day": day, "type": ROCK_READY_PRE, "eagles_count": want,
+                      "total_power": round(sum(rock_power(e) for e in snap[:want]), 2), "has_contributed": True, "updated_at": now},
+             "$setOnInsert": {"created_at": now, "pulled_sieges": []}},
+            upsert=True)
+        return await rock_response(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось подтвердить отряд — попробуй ещё раз")
+
+
+async def rock_pull_ready(fid: str, now: float) -> dict:
+    """Великий призыв во время идущего штурма: подтверждённые заранее орлы
+    тех, кого ещё нет в бою, встают в штурмовой отряд (атака: суточный лимит
+    штурма, как у «+») или в резерв гарнизона (оборона: не стоявшие на Скале
+    при начале штурма, в пределах свободных мест)."""
+    st = await rock_get_state()
+    siege = st.get("siege")
+    if not siege or siege.get("captured") or now >= float(siege["ends_at"]) or fid not in (siege["attacker"], siege["defender"]):
+        return {"players": 0, "eagles": 0}
+    side = "a" if siege["attacker"] == fid else "d"
+    sid = siege["id"]
+    day = day_index()
+    in_fight = {f["uid"] for f in siege["attackers"] + siege["defenders"]}
+    initial = set(siege.get("initial_defenders") or [])
+    rage = rock_rage_pct(st, fid) if side == "a" else 0.0
+    cand = []
+    async for d in store.rock_ready.find({"faction_id": fid, "day": day, "type": ROCK_READY_PRE, "pulled_sieges": {"$ne": sid}}):
+        uid = d["user_id"]
+        if uid in in_fight or (side == "d" and uid in initial):
+            continue
+        row = await store.users.find_one({"_id": uid})
+        if not row or row.get("faction_id") != fid:
+            continue
+        snap = rock_snapshot(row, rage)[:max(1, int(d.get("eagles_count") or 0))]
+        if snap:
+            cand.append((sum(rock_power(e) for e in snap), uid, snap))
+    cand.sort(key=lambda c: (-c[0], c[1]))   # сильнейшие первыми — им достаются места резерва
+    claimed = {}
+    if side == "a":
+        ok = []
+        for c in cand:
+            prev = await rock_claim_daily(c[1], "rock_attack_day", fid)
+            if prev is not None:
+                claimed[c[1]] = prev
+                ok.append(c)
+        cand = ok
+    if not cand:
+        return {"players": 0, "eagles": 0}
+    slots = max(1, rock_int("garrison_slots", 50))
+
+    def mutate(s):
+        cur = s.get("siege")
+        if not cur or cur.get("id") != sid or cur.get("captured") or time.time() >= float(cur["ends_at"]):
+            return None, {}
+        cur = dict(cur)
+        present = {f["uid"] for f in cur["attackers"] + cur["defenders"]}
+        added = {}
+        if side == "a":
+            fighters = list(cur["attackers"])
+            for _, uid, snap in cand:
+                if uid not in present:
+                    new = rock_fighters(snap, "a", len(fighters))
+                    fighters += new
+                    added[uid] = new
+            cur["attackers"] = fighters
+        else:
+            fighters = list(cur["defenders"])
+            free = slots - len(rock_alive(fighters))
+            reserves = set(cur.get("reserves") or [])
+            for _, uid, snap in cand:
+                if free <= 0:
+                    break
+                if uid in present or uid in (cur.get("initial_defenders") or []):
+                    continue
+                new = rock_fighters(snap[:free], "d", len(fighters))
+                fighters += new
+                free -= len(new)
+                reserves.add(uid)
+                added[uid] = new
+            cur["defenders"] = fighters
+            cur["reserves"] = sorted(reserves)
+        return ({"siege": cur}, added) if added else (None, {})
+
+    try:
+        _, added = await rock_cas(mutate)
+    except Exception:
+        added = {}
+    for uid, prev in claimed.items():   # лимит штурма — только тем, кто реально встал в отряд
+        if uid not in added:
+            await rock_release_daily(uid, "rock_attack_day", prev)
+    for uid in added:
+        await store.rock_ready.update_one({"_id": rock_ready_id(day, uid, ROCK_READY_PRE)}, {"$addToSet": {"pulled_sieges": sid}})
+    n_e = sum(len(v) for v in added.values())
+    if added:
+        await rock_feed_add([fid], f"🛡️ По призыву в бой подтянуто {n_e} орл. от {len(added)} воинов, подтвердивших готовность заранее.",
+                            f"🛡️ The Call pulled {n_e} eagles from {len(added)} warriors who confirmed readiness in advance.")
+    return {"players": len(added), "eagles": n_e}
+
+
+def rock_member_status(uid: int, last_seen: float, now: float, pre: Optional[dict], live: Optional[dict],
+                       in_fight: set, battle_today: bool) -> str:
+    if live or uid in in_fight:
+        return "live"
+    if now - last_seen > 72 * 3600:
+        return "inactive"
+    if pre:
+        return "pre"
+    if battle_today and now - last_seen <= 24 * 3600:
+        return "truant"
+    return "idle" if now - last_seen <= 24 * 3600 else "away"
+
+
+async def rock_leader_dashboard(st: dict, fid: str, leader_id: int, now: float) -> dict:
+    """getLeaderDashboard: карточки и состав фракции со статусом участия за сутки."""
+    day = day_index(now)
+    siege = st.get("siege")
+    in_fight = {f["uid"] for f in (siege["attackers"] + siege["defenders"])} if siege and fid in (siege["attacker"], siege["defender"]) else set()
+    battle_today = bool(in_fight) or bool(siege and fid in (siege["attacker"], siege["defender"]))
+    if not battle_today:
+        battle_today = bool(await store.rock_history.find_one(
+            {"kind": "siege", "ts": {"$gte": day * 86400}, "$or": [{"attacker": fid}, {"defender": fid}]}, {"_id": 1}))
+    ready = {}
+    async for d in store.rock_ready.find({"faction_id": fid, "day": day}):
+        ready.setdefault(d["user_id"], {})[d["type"]] = d
+    proj = {"name": 1, "monsters": 1, "nest_equipped": 1, "nest_equipped_enchant": 1, "rock_research": 1, "last_seen": 1}
+    rows = []
+    async for d in store.users.find({"faction_id": fid}, proj):
+        uid = d["_id"]
+        r = ready.get(uid, {})
+        pre, live = r.get(ROCK_READY_PRE), r.get(ROCK_READY_LIVE)
+        seen = float(d.get("last_seen") or 0)
+        status = rock_member_status(uid, seen, now, pre, live, in_fight, battle_today)
+        troops = int((live or {}).get("eagles_count") or 0) + (0 if live else int((pre or {}).get("eagles_count") or 0))
+        rows.append({"id": uid, "name": str(d.get("name") or f"Игрок {uid}")[:40], "power": round(rock_player_power(d)),
+                     "troops": troops, "pre": int((pre or {}).get("eagles_count") or 0), "live": int((live or {}).get("eagles_count") or 0),
+                     "pulled": bool((pre or {}).get("pulled_sieges")), "status": status, "last_seen": seen or None,
+                     "leader": uid == leader_id})
+    rows.sort(key=lambda x: (not x["leader"], -x["power"], x["id"]))
+    return {"faction_id": fid, "day": day, "battle_today": battle_today,
+            "stats": {"total": len(rows), "pre": sum(1 for x in rows if x["pre"]), "live": sum(1 for x in rows if x["live"] or x["status"] == "live"),
+                      "inactive": sum(1 for x in rows if x["status"] == "inactive"), "truant": sum(1 for x in rows if x["status"] == "truant")},
+            "rows": rows[:500], "more": max(0, len(rows) - 500)}
+
+
+async def rock_leader_guard(user_id: int) -> tuple:
+    st = await rock_require_access(user_id)
+    row = await fetch_user(user_id)
+    fid = rock_my_faction(row)
+    if (rock_public_leader(st, fid) or {}).get("id") != user_id:
+        raise HTTPException(status_code=403, detail="Командный центр доступен только Лидеру фракции")
+    return st, row, fid
+
+
+@app.get("/api/rock/leader_dashboard")
+async def rock_leader_dashboard_api(user_id: Optional[int] = None, x_telegram_init_data: Optional[str] = Header(None)):
+    user_id = authenticate(x_telegram_init_data, user_id)
+    try:
+        st, row, fid = await rock_leader_guard(user_id)
+        return await rock_leader_dashboard(st, fid, user_id, time.time())
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось загрузить командный центр")
+
+
+@app.post("/api/rock/kick")
+async def rock_leader_kick(request: RockKickRequest, x_telegram_init_data: Optional[str] = Header(None)):
+    """kickPlayerFromFaction: строго Лидер, только из своей фракции. Снимает
+    faction_id, удаляет записи готовности за сегодня, снимает с гарнизона.
+    Вернуться в эту фракцию игрок сможет через leader_kick_rejoin_hours."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        st, row, fid = await rock_leader_guard(user_id)
+        target = int(request.target_id)
+        if target == user_id:
+            raise HTTPException(status_code=400, detail="Себя исключить нельзя")
+        if not 0 < target < 2 ** 63:
+            raise HTTPException(status_code=404, detail="Игрок не найден")
+        trow = await store.users.find_one({"_id": target}, {"name": 1, "faction_id": 1})
+        if not trow or trow.get("faction_id") != fid:
+            raise HTTPException(status_code=409, detail="Игрок уже не в твоей фракции — список обновлён")
+        sg = st.get("siege")
+        if sg and any(f["uid"] == target for f in sg["attackers"] + sg["defenders"]):
+            raise HTTPException(status_code=409, detail="Игрок сейчас в штурме — исключить можно после его конца")
+        for ch in (st.get("challenges") or {}).values():
+            if ch and target in (ch.get("challenger_id"), ch.get("leader_id")):
+                raise HTTPException(status_code=409, detail="Игрок сейчас в бою за трон — подожди минуту")
+        now = time.time()
+        lname = str(row.get("name") or f"Игрок {user_id}")[:40]
+        res = await store.users.update_one(
+            {"_id": target, "faction_id": fid},
+            {"$unset": {"faction_id": "", "faction_joined_at": "", "faction_by": ""},
+             "$set": {"faction_left": {"from": fid, "at": now, "reason": "leader_kick", "by": lname}}})
+        if res.modified_count == 0:
+            raise HTTPException(status_code=409, detail="Игрок уже не в твоей фракции — список обновлён")
+        await store.rock_ready.delete_many({"user_id": target, "day": day_index(now)})
+
+        def mutate(s):
+            g = s.get("garrison") or []
+            keep = [x for x in g if x["uid"] != target]
+            return ({"garrison": keep}, True) if len(keep) != len(g) else (None, False)
+        try:
+            await rock_cas(mutate)
+        except HTTPException:
+            pass   # гарнизон почистит часовое обновление (чужаков оно снимает)
+        ROCK_POWER_CACHE["data"] = None
+        tname = str(trow.get("name") or f"Игрок {target}")[:40]
+        await rock_feed_add([fid], f"🚪 Лидер {lname} исключил {tname} из фракции.", f"🚪 Leader {lname} removed {tname} from the faction.")
+        return {"ok": True, "message": f"{tname} исключён из фракции",
+                "dashboard": await rock_leader_dashboard(await rock_get_state(), fid, user_id, now)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось исключить игрока — попробуй ещё раз")
 
 
 def _retry_seconds(value) -> float:

@@ -429,6 +429,11 @@ class MongoStore:
         # убыванию силы], next (сколько обработано), status pending|done,
         # lease_until (кто сейчас шлёт), sent, failed, created_at}.
         self.rock_calls = client[db_name]["rock_calls"]
+        # 🛡️ Готовность к бою на сутки: _id "{day}:{user_id}:{type}", поля
+        # faction_id, user_id, day, type pre_confirmed (заранее, для подтягивания
+        # при призыве) | live_assault (сам вошёл в штурм/резерв), eagles_count,
+        # total_power, has_contributed, pulled_sieges [id осад, куда подтянут], updated_at.
+        self.rock_ready = client[db_name]["faction_daily_readiness"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -468,6 +473,8 @@ class MongoStore:
             (self.rock_history, [("paid", 1), ("ts", 1)], {}),
             (self.rock_history, [("ts", -1)], {}),
             (self.rock_calls, [("status", 1), ("created_at", 1)], {}),
+            (self.rock_ready, [("faction_id", 1), ("day", 1)], {}),
+            (self.rock_ready, [("user_id", 1), ("day", 1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
@@ -1559,12 +1566,13 @@ class MongoStore:
         ]
         if limit is not None:
             pipeline.append({"$limit": limit})
-        pipeline.append({"$project": {"name": 1, "pvp_rating": "$_rating", "faction_id": 1}})
+        pipeline.append({"$project": {"name": 1, "pvp_rating": "$_rating", "faction_id": 1, "last_seen": 1}})
         docs = []
         async for doc in self.users.aggregate(pipeline):
             docs.append({
                 "user_id": doc["_id"], "name": doc.get("name") or "",
                 "pvp_rating": doc.get("pvp_rating"), "faction_id": doc.get("faction_id"),
+                "last_seen": doc.get("last_seen"),   # наружу — только админам (см. arena_leaderboard)
             })
         return docs
 
