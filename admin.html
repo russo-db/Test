@@ -1109,6 +1109,15 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
 
 /* ---------- 🏔 Орлиная Скала ---------- */
 let rockAdminData = null;
+// Второй клик двойного клика приходит уже после закрытия окна подтверждения:
+// после «Отмена» окно открывалось снова. 0,4 с после окна клики не открывают его.
+let rockConfirmUntil = 0;
+function rockConfirm(msg) {
+    if (Date.now() < rockConfirmUntil) return false;
+    const ok = confirm(msg);
+    rockConfirmUntil = Date.now() + 400;
+    return ok;
+}
 function rockAdminTime(ts) { return ts ? new Date(ts * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'; }
 function renderRockAdmin(d) {
     rockAdminData = d;
@@ -1137,7 +1146,7 @@ function renderRockAdmin(d) {
             ${(d.upcoming || []).map(w => `<div class="muted">${rockAdminTime(w.start)}–${rockAdminTime(w.end).slice(-5)} · ${fname(w.faction)}${w.test ? ' 🧪 тест' : ''}</div>`).join('') || '<div class="muted">—</div>'}</div>` : ''}`;
     const kb = document.getElementById('rockKickBtn');
     if (kb) kb.onclick = e => {
-        if (!confirm(`Исключить из фракций неактивных игроков (${d.inactive.pending})? Орлы, Очки Заслуг и исследования у них останутся — вернувшись, они выберут фракцию заново.`)) return;
+        if (!rockConfirm(`Исключить из фракций неактивных игроков (${d.inactive.pending})? Орлы, Очки Заслуг и исследования у них останутся — вернувшись, они выберут фракцию заново.`)) return;
         withBusyButton(e.currentTarget, '…', async () => {
             try { const res = await api('/admin/api/rock/kick_inactive', { method: 'POST' }); toast(`Исключено: ${res.kicked}`); renderRockAdmin(res.view); }
             catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
@@ -1166,14 +1175,14 @@ async function loadRockAdmin() {
 }
 document.getElementById('rockLaunchBtn').onclick = e => {
     const extra = rockAdminData && rockAdminData.test_mode ? '\n\nВсё из закрытого теста (фракции админов, Очки Заслуг, исследования, лента) будет стёрто.' : '';
-    if (!confirm('Запустить Орлиную Скалу для всех? Ветераны будут распределены по фракциям, назначены Лидеры. Отменить распределение нельзя.' + extra)) return;
+    if (!rockConfirm('Запустить Орлиную Скалу для всех? Ветераны будут распределены по фракциям, назначены Лидеры. Отменить распределение нельзя.' + extra)) return;
     withBusyButton(e.currentTarget, 'Запуск…', async () => {
         try { const d = await api('/admin/api/rock/activate', { method: 'POST' }); renderRockAdmin(d); toast(d.message || 'Скала запущена'); }
         catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); loadRockAdmin(); }
     });
 };
 document.getElementById('rockHideBtn').onclick = e => {
-    if (!confirm('Скрыть Скалу от игроков? Данные фракций сохранятся, вернуть можно кнопкой «Показать».')) return;
+    if (!rockConfirm('Скрыть Скалу от игроков? Данные фракций сохранятся, вернуть можно кнопкой «Показать».')) return;
     withBusyButton(e.currentTarget, '…', async () => {
         try { renderRockAdmin(await api('/admin/api/rock/visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: false }) })); toast('Скала скрыта'); }
         catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
@@ -1222,7 +1231,7 @@ document.getElementById('rockRebApplyBtn').onclick = e => {
     const prm = rockRebParams();
     if (!rockRebValid(prm)) return;
     const wname = (document.getElementById('rockRebWeak').selectedOptions[0] || {}).textContent || prm.weak;
-    if (!confirm(`Перераспределить воинов фракций?\n\nЭлита: ${prm.elite_pct}% сильнейших — только в две фракции, кроме «${wname}».\nОстальные — поровну на три фракции. Лидеры остаются.\n\nОтменить нельзя.`)) return;
+    if (!rockConfirm(`Перераспределить воинов фракций?\n\nЭлита: ${prm.elite_pct}% сильнейших — только в две фракции, кроме «${wname}».\nОстальные — поровну на три фракции. Лидеры остаются.\n\nОтменить нельзя.`)) return;
     withBusyButton(e.currentTarget, 'Перенос…', async () => {
         try {
             const r = await api('/admin/api/rock/rebalance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...prm, dry_run: false }) });
