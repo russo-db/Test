@@ -3371,6 +3371,7 @@
                 'rock.toast.call': '📣 Призыв отправлен: воинов в очереди — {n}',
                 'rock.army.title': '⚔️ Подтвердите своё войско',
                 'rock.army.sub': 'Твои орлы {lvl} ур. (не на рынке): {n}',
+                'rock.army.power': 'сила {p}',
                 'rock.army.empty': 'Нет орлов {lvl} ур. — в бой идти некому.',
                 'rock.army.plus': '⚔️ Подтвердить войско — в штурм',
                 'rock.army.reserve': '🛡️ Подтвердить войско — в резерв',
@@ -4172,6 +4173,7 @@
                 'rock.toast.call': '📣 Call sent: warriors in the queue — {n}',
                 'rock.army.title': '⚔️ Confirm your army',
                 'rock.army.sub': 'Your level {lvl} eagles (not on the market): {n}',
+                'rock.army.power': 'power {p}',
                 'rock.army.empty': 'No level {lvl} eagles — nobody to send into battle.',
                 'rock.army.plus': '⚔️ Confirm army — to the assault',
                 'rock.army.reserve': '🛡️ Confirm army — as reserves',
@@ -9361,8 +9363,14 @@
             const gearBonusPower = Math.max(0, full - rockEaglePower(getModifiedBaseStats(eagle.tier, lvl)));
             return (rule.base != null ? Number(rule.base) : 5) + gearBonusPower;
         }
-        function formatDisplayedPower(eagle, researchLevel) {
-            return Math.round(displayedEaglePowerRaw(eagle, researchLevel));
+        // Отряд (массив орлов): каждый орёл считается ПОШТУЧНО и складывается —
+        // 3 голых серых = 3 × 5 = 15, серый со шмотом = 5 + его бонус, орлы 7 ур. — как есть.
+        // Можно передать и одного орла.
+        function formatDisplayedPower(eagles, researchLevel) {
+            const list = Array.isArray(eagles) ? eagles : (eagles ? [eagles] : []);
+            let total = 0;
+            for (const eagle of list) total += displayedEaglePowerRaw(eagle, researchLevel);
+            return Math.round(total);
         }
         function rockShown(x) { return x ? (x.shown != null ? x.shown : x.power) : 0; }
         function rockFactionShownPower(f) { return f ? (f.display_power != null ? f.display_power : f.power) : 0; }
@@ -9545,7 +9553,7 @@
             const can = me.eligible > 0 || (n > 0 && !rd.pulled);   // без орлов — можно хотя бы отменить старое подтверждение
             return `<div class="rock-card glass-panel" id="rockReadyCard"><h3>${t('rock.ready.title')}</h3>
                 <div class="rock-ready-row"><div class="rock-ready-n">${n}</div>
-                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_shown != null ? rd.pre_shown : (me.army || []).slice(0, n).reduce((a, e) => a + displayedEaglePowerRaw(e), 0)) }) : t('rock.ready.none')}
+                    <div class="rock-muted">${n ? t('rock.ready.have', { p: rockNum(rd.pre_shown != null ? rd.pre_shown : formatDisplayedPower((me.army || []).slice(0, n))) }) : t('rock.ready.none')}
                         ${rd.pulled ? `<div class="rock-ready-ok">${t('rock.ready.pulled')}</div>` : ''}
                         ${rd.live ? `<div style="color:#fdba74; font-weight:700">${t('rock.ready.live', { n: rd.live })}</div>` : ''}</div></div>
                 <button class="btn-primary" style="width:100%" ${can ? '' : 'disabled'} onclick="rockReadyOpen()">${n ? t('rock.ready.change') : t('rock.ready.btn')}</button>
@@ -9787,7 +9795,7 @@
             rockArmyKey = JSON.stringify([act.btn || '', act.note || '', army.length]);
             document.getElementById('huntModalBody').innerHTML = goldify(`
                 <h2>${t('rock.army.title')}</h2>
-                <p class="slot-modal-sub">${t('rock.army.sub', { lvl: r.min_level, n: army.length })}</p>
+                <p class="slot-modal-sub">${t('rock.army.sub', { lvl: r.min_level, n: army.length })}${army.length ? ' · ' + t('rock.army.power', { p: rockNum(formatDisplayedPower(army)) }) : ''}</p>
                 <div class="rock-army-list">${rows || `<div class="rock-muted">${t('rock.army.empty', { lvl: r.min_level })}</div>`}</div>
                 ${act.btn ? `<button class="btn-primary rock-army-confirm" id="rockArmyConfirmBtn" onclick='${act.fn}'>${act.btn}</button>`
                     : `<div class="rock-busy" style="margin-top:10px">${act.note}</div>`}

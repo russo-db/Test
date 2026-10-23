@@ -2560,8 +2560,9 @@ async def serve_webapp(request: Request):
         INDEX_CACHE.update(mtime=mtime, raw=raw, gz=gzip.compress(raw, compresslevel=6))
     if "gzip" in (request.headers.get("accept-encoding") or "").lower():
         return Response(INDEX_CACHE["gz"], media_type="text/html; charset=utf-8",
-                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
-    return Response(INDEX_CACHE["raw"], media_type="text/html; charset=utf-8")
+                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding", "Cache-Control": "no-cache"})
+    # no-cache: Telegram не держит старую страницу после обновления игры
+    return Response(INDEX_CACHE["raw"], media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/game_config.json")
