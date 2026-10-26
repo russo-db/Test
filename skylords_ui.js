@@ -186,7 +186,7 @@
             try {
                 const r = await skyGet('api/skylords/state');
                 if (r.ok) { sky.data = r.data; sky.syncedAt = Date.now(); }
-                else if (r.status === 403) { sky.data = null; sky.off = true; }
+                else if (r.status === 403) { sky.data = null; sky.off = true; teardown(); }
             } catch (e) { /* сеть — оставляем прошлое */ }
             sky.loading = null;
             refreshAll();
@@ -203,11 +203,26 @@
             try { return await fn.apply(this, a); } finally { setTimeout(() => farmActionBusy.delete(key), 600); }
         };
     }
-    function fail(r) { toast((r && r.data && r.data.detail) || tt('serverError')); haptic.notify('warning'); }
+    function fail(r) {
+        if (r && r.status === 403) { sky.off = true; teardown(); toast(tt('serverError')); return; }
+        toast((r && r.data && r.data.detail) || tt('serverError')); haptic.notify('warning');
+    }
+    // админ выключил токен, пока игра открыта: убираем весь интерфейс модуля
+    function teardown() {
+        ['skyEntry', 'skyMerchant', 'skyStakeModal', 'skyBurnModal', 'skySellModal'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+        const dt = document.querySelector('#marketDeptBar [data-dept="sky"]'); if (dt) dt.remove();
+        const panel = document.getElementById('marketDeptSky'); if (panel) panel.remove();
+        const di = gameHooks.marketDepts.findIndex(d => d.id === 'sky'); if (di >= 0) gameHooks.marketDepts.splice(di, 1);
+        const fi = gameHooks.fusionModes.findIndex(m => m.id === 'token'); if (fi >= 0) gameHooks.fusionModes.splice(fi, 1);
+        if (typeof marketDept !== 'undefined' && marketDept === 'sky' && document.getElementById('market').classList.contains('active')) switchMarketDept('eagles');
+        else if (typeof marketDept !== 'undefined' && marketDept === 'sky') marketDept = 'eagles';
+        const fm = document.getElementById('fusionModal');
+        if (fm && fm.classList.contains('open') && fusionTab === 'token') { fusionTab = 'meat'; renderFusionModal(); }
+    }
 
     // --- кнопка над главным орлом ---
     function renderEntry() {
-        if (sky.off) { const e = document.getElementById('skyEntry'); if (e) e.remove(); return; }
+        if (sky.off) return;
         const area = document.querySelector('#farm .farm-area');
         const row = area && area.querySelector('.farm-hero-row');
         if (!row) return;
@@ -426,6 +441,7 @@
 
     // --- Купец ---
     function renderMerchant() {
+        if (sky.off) return;
         const host = document.getElementById('merchant');
         const shop = document.getElementById('merchantBody');
         if (!host || !shop) return;
