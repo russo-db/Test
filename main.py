@@ -11964,7 +11964,8 @@ async def rock_ensure_test_mode() -> dict:
             return None, False
         return {"test_mode": True, "owner": ROCK_FACTION_ORDER[0], "leaders": {}, "challenges": {}, "last_challenge": {},
                 "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None, "last_siege": None,
-                "windows_used": [], "test_window": None, "merit_hour": int(time.time() // 3600)}, True
+                "windows_used": [], "test_window": None, "merit_hour": int(time.time() // 3600),
+                "window_plan": {str(rock_local_day(time.time())): ROCK_FACTION_ORDER[0]}}, True
 
     st, _ = await rock_cas(mutate)
     return st
@@ -12035,6 +12036,22 @@ def rock_window_faction(owner: Optional[str], idx: int) -> Optional[str]:
     return ROCK_FACTION_ORDER[(o + (2 if idx % 2 == 0 else 1)) % 3]
 
 
+def rock_local_day(now: float) -> int:
+    return int((now + rock_num("utc_offset_hours", 3) * 3600) // 86400)
+
+
+def rock_day_owner(st: dict, d: int, local_day: int) -> Optional[str]:
+    """Владелец, от которого считаются окна дня d. Расписание дня фиксируется
+    в его начале (window_plan, см. rock_tick_plan): захват Скалы в 15:00 не
+    перекраивает окна того же дня — остаток окна 15:00 не «переезжает» к
+    другой фракции (а штурм в нём уже был), и окно 20:00 остаётся за той
+    фракцией, которой было назначено утром. Будущие дни — от текущего владельца."""
+    plan = st.get("window_plan") if isinstance(st.get("window_plan"), dict) else {}
+    if d <= local_day and plan.get(str(d)) in ROCK_FACTIONS:
+        return plan[str(d)]
+    return st.get("owner")
+
+
 def rock_windows_around(st: dict, now: float) -> list:
     offset = rock_num("utc_offset_hours", 3) * 3600
     length = max(60.0, rock_num("window_minutes", 60) * 60)
@@ -12042,10 +12059,11 @@ def rock_windows_around(st: dict, now: float) -> list:
     out = []
     for d in (local_day - 1, local_day, local_day + 1, local_day + 2):
         day_start = d * 86400 - offset
+        day_owner = rock_day_owner(st, d, local_day)
         for idx, sec in enumerate(rock_window_times()):
             start = day_start + sec
             out.append({"key": f"{d}:{idx}", "idx": idx, "start": start, "end": start + length,
-                        "faction": rock_window_faction(st.get("owner"), idx)})
+                        "faction": rock_window_faction(day_owner, idx)})
     tw = st.get("test_window")
     if isinstance(tw, dict) and tw.get("end", 0) > now - 86400:
         out.append({"key": tw["key"], "idx": -1, "start": tw["start"], "end": tw["end"], "faction": tw["faction"], "test": True})
@@ -12066,7 +12084,11 @@ def rock_current_window(st: dict, now: float, fid: Optional[str] = None) -> Opti
 
 
 def rock_upcoming_windows(st: dict, now: float, n: int = 2) -> list:
-    return [w for w in rock_windows_around(st, now) if w["end"] > now and w["faction"]][:n]
+    """Ближайшие окна, в которых ещё можно штурмовать: не своё (владелец не
+    штурмует сам себя) и не то, где штурм уже был."""
+    used = set(st.get("windows_used") or [])
+    return [w for w in rock_windows_around(st, now)
+            if w["end"] > now and w["faction"] and w["faction"] != st.get("owner") and w["key"] not in used][:n]
 
 
 # --- симулятор боя (ТЗ, п. 8) ---
@@ -12431,10 +12453,44 @@ async def rock_tick_siege(st: dict, now: float) -> None:
         await rock_cas(mutate)
 
 
+async def rock_tick_plan(st: dict, now: float) -> dict:
+    """Фиксирует расписание окон на сегодня (по Москве): владелец Скалы на
+    начало суток. Если сервер стартовал посреди дня, а штурмы сегодня уже
+    были, — владелец на начало суток = обороняющийся в первом из них."""
+    day = rock_local_day(now)
+    plan = st.get("window_plan") if isinstance(st.get("window_plan"), dict) else {}
+    if plan.get(str(day)) in ROCK_FACTIONS or st.get("owner") not in ROCK_FACTIONS:
+        return st
+    day_start = day * 86400 - rock_num("utc_offset_hours", 3) * 3600
+    first = None
+    cur = st.get("siege")
+    if cur and float(cur.get("started_at") or 0) >= day_start:
+        first = (float(cur["started_at"]), cur.get("defender"))
+    async for h in store.rock_history.find({"kind": "siege", "started_at": {"$gte": day_start}}, {"started_at": 1, "defender": 1}).sort("started_at", 1).limit(1):
+        if first is None or float(h.get("started_at") or 0) < first[0]:
+            first = (float(h.get("started_at") or 0), h.get("defender"))
+    owner0 = first[1] if first and first[1] in ROCK_FACTIONS else st.get("owner")
+
+    def mutate(s):
+        p = s.get("window_plan") if isinstance(s.get("window_plan"), dict) else {}
+        if p.get(str(day)) in ROCK_FACTIONS:
+            return None, False
+        keep = {k: v for k, v in p.items() if k.lstrip("-").isdigit() and int(k) >= day - 3}
+        keep[str(day)] = owner0
+        return {"window_plan": keep}, True
+
+    _, changed = await rock_cas(mutate)
+    return await rock_get_state() if changed else st
+
+
 async def rock_tick(now: Optional[float] = None) -> None:
     now = time.time() if now is None else now
     st = await rock_get_state()
     if rock_runs(st):
+        try:
+            st = await rock_tick_plan(st, now)
+        except Exception as e:
+            print(f"[rock] window plan failed: {type(e).__name__}: {e}")
         await rock_tick_merit(st, now)
         await rock_tick_challenges(st, now)
         await rock_tick_siege(st, now)
@@ -13172,7 +13228,7 @@ async def admin_rock_activate(_: None = Depends(require_admin)):
                     "leaders": bal["leaders"], "owner": bal["owner"], "merit_hour": int(now // 3600),
                     "fail_streak": {f: 0 for f in ROCK_FACTION_ORDER}, "garrison": [], "siege": None,
                     "challenges": {}, "last_challenge": {}, "last_siege": None, "windows_used": [], "test_window": None,
-                    "calls": {}}, True
+                    "calls": {}, "window_plan": {str(rock_local_day(now)): bal["owner"]}}, True
 
         await rock_cas(finish)
         rock_power_invalidate()
