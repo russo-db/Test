@@ -21,7 +21,7 @@
             claimBtn: 'Забрать {n}', reinvestBtn: 'Реинвест {n}', noReward: 'Награда начисляется раз в сутки',
             ladder: 'Лесенка — шаги строго по очереди снизу вверх',
             stepStart: 'Старт: от {n} токенов', stepAmount: 'Докинуть до {n} токенов', stepBurn: '🔥 Сжечь орла: {tier}',
-            stepMax: ' (макс.)', burnBtn: '🔥 Сжечь', done: 'выполнено', notCounted: 'не считается — сначала шаги ниже',
+            stepMax: ' (максимум)', stepN: 'Шаг {n}: ', burnBtn: '🔥 Сжечь', done: 'выполнено', notCounted: 'не считается — сначала шаги ниже',
             ladderHint: 'Ставка — по последнему шагу, до которого всё выполнено по порядку. Нарушен порядок — базовая ставка.',
             pickTitle: '🔥 Какого орла сжечь?', pickSub: 'Нужна редкость «{tier}». Орёл исчезнет навсегда.',
             pickEmpty: 'Нет свободного орла редкости «{tier}» (не на рынке, не в экспедиции, не на охоте).',
@@ -57,7 +57,7 @@
             claimBtn: 'Claim {n}', reinvestBtn: 'Reinvest {n}', noReward: 'Rewards are paid once a day',
             ladder: 'Ladder — steps strictly in order, bottom to top',
             stepStart: 'Start: from {n} tokens', stepAmount: 'Top up to {n} tokens', stepBurn: '🔥 Burn an eagle: {tier}',
-            stepMax: ' (max)', burnBtn: '🔥 Burn', done: 'done', notCounted: 'not counted — finish the steps below first',
+            stepMax: ' (max)', stepN: 'Step {n}: ', burnBtn: '🔥 Burn', done: 'done', notCounted: 'not counted — finish the steps below first',
             ladderHint: 'Your rate is the last step reached with every step below done. Out of order — base rate.',
             pickTitle: '🔥 Which eagle to burn?', pickSub: 'Rarity “{tier}” needed. The eagle is gone forever.',
             pickEmpty: 'No free “{tier}” eagle (not on the market, expedition or hunt).',
@@ -282,8 +282,10 @@
     window.skyCloseStake = function () { const m = document.getElementById('skyStakeModal'); if (m) m.classList.remove('open'); };
 
     function stepTitle(s, i, n) {
-        if (s.kind === 'amount') return i === 0 ? tt('stepStart', { n: fmt(s.min) }) : tt('stepAmount', { n: fmt(s.min) });
-        return tt('stepBurn', { tier: `<span style="color:${tierColor(s.tier)}">${esc(tierName(s.tier))}</span>` }) + (i === n - 1 ? tt('stepMax') : '');
+        if (i === 0) return tt('stepStart', { n: fmt(s.min) });
+        const pre = tt('stepN', { n: i });
+        if (s.kind === 'amount') return pre + tt('stepAmount', { n: fmt(s.min) }) + (i === n - 1 ? tt('stepMax') : '');
+        return pre + tt('stepBurn', { tier: `<span style="color:${tierColor(s.tier)}">${esc(tierName(s.tier))}</span>` }) + (i === n - 1 ? tt('stepMax') : '');
     }
     function renderStake() {
         const body = document.getElementById('skyStakeModalBody');
@@ -301,7 +303,7 @@
             const sub = s.counted ? tt('done') : (s.done ? tt('notCounted') : '');
             const btn = s.kind === 'burn' && !s.done && s.available ? `<button class="btn-action" onclick="skyPickBurn(${s.i})">${tt('burnBtn')}</button>` : '';
             return `<div class="sky-step ${cls} ${s.current ? 'current' : ''}">
-                <div class="sky-step-n">${s.counted ? '✓' : s.i + 1}</div>
+                <div class="sky-step-n">${s.counted ? '✓' : (s.i === 0 ? '▶' : s.i)}</div>
                 <div class="sky-step-t">${stepTitle(s, s.i, steps.length)}${sub ? `<small>${sub}</small>` : ''}</div>
                 <div class="sky-step-r">${fmt(s.rate)}%</div>${btn}</div>`;
         }).join('');

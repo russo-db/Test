@@ -14256,12 +14256,11 @@ SKY_DEFAULT_LADDER = [
     {"kind": "amount", "min": 1000, "rate": 0.2},
     {"kind": "burn", "tier": "common", "rate": 0.4},
     {"kind": "amount", "min": 10000, "rate": 0.6},
-    {"kind": "burn", "tier": "uncommon", "rate": 1.0},
+    {"kind": "burn", "tier": "uncommon", "rate": 0.9},
     {"kind": "amount", "min": 30000, "rate": 1.4},
-    {"kind": "burn", "tier": "rare", "rate": 3.5},
-    {"kind": "amount", "min": 70000, "rate": 1.0},
-    {"kind": "burn", "tier": "epic", "rate": 0.5},
-    {"kind": "burn", "tier": "legendary", "rate": 0.01},
+    {"kind": "burn", "tier": "rare", "rate": 1.9},
+    {"kind": "amount", "min": 70000, "rate": 2.3},
+    {"kind": "burn", "tier": "epic", "rate": 3.0},
 ]
 SKY_FORBIDDEN = "Forbidden"
 
@@ -14394,7 +14393,7 @@ async def sky_user_inc(user_id: int, units: int) -> bool:
     return r.matched_count > 0
 
 
-# --- стейкинг: лесенка из 9 ступеней ---
+# --- стейкинг: лесенка из 8 ступеней (старт + 7 шагов) ---
 def sky_ladder() -> list:
     raw = SKY_CFG.get("stake_ladder")
     out = []
