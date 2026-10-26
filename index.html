@@ -8543,6 +8543,7 @@
             updateWheelButton();
             renderHunt();
             renderArenaHuntBuffs();
+            placeFogEdgeBtn();
             runGameHooks('afterRender');
         }
 
@@ -9268,6 +9269,17 @@
         // в формат касаний. После настоящего касания эмулированные браузером события
         // мыши игнорируются. Если экран реально тянули, следующий клик гасится,
         // чтобы отпускание кнопки не нажало орла или кнопку под курсором.
+        // Кнопка «Скала» на компьютере — на уровне главного орла: слева от него
+        // свободная полоса (медали VIP стоят правее), текст и кнопки она не закрывает.
+        function placeFogEdgeBtn() {
+            const btn = document.getElementById('fogEdgeOpen'), stage = document.getElementById('monsterStage');
+            if (!btn || !stage || getComputedStyle(btn).display === 'none') return;
+            const r = stage.getBoundingClientRect();
+            if (!r.height) return;
+            const top = Math.round(r.top + r.height / 2);
+            if (btn.style.top !== top + 'px') btn.style.top = top + 'px';
+        }
+        window.addEventListener('resize', () => placeFogEdgeBtn());
         let fogLastTouchAt = 0;
         function fogMouseDown(e, onFog) {
             if (e.button !== 0 || Date.now() - fogLastTouchAt < 800) return;
