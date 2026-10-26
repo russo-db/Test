@@ -9617,12 +9617,14 @@ async def admin_simulate_new_day(user_id: int, _: None = Depends(require_admin))
 MARKET_BUY_SOURCES = {
     "/api/market/buy": "eagles", "/api/market/equip/buy": "equip", "/api/market/resources/buy": "resources",
 }
-MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resources": "Ресурсы", "alchemy": "Алхимия"}
+MARKET_LABELS = {"eagles": "Орлы", "equip": "Снаряжение", "resources": "Ресурсы", "alchemy": "Алхимия",
+                 "skylords": "Токен SkyLords"}
 
 
 def _market_commission(market: str) -> float:
     return {"eagles": MARKET_COMMISSION, "equip": EQUIP_MARKET_COMMISSION,
-            "resources": RESOURCE_MARKET_COMMISSION, "alchemy": ALCHEMY_MARKET_COMMISSION}.get(market, 0.1)
+            "resources": RESOURCE_MARKET_COMMISSION, "alchemy": ALCHEMY_MARKET_COMMISSION,
+            "skylords": sky_market_cfg()["commission"]}.get(market, 0.1)
 
 
 def market_trade_item_label(t: dict) -> str:
@@ -9637,6 +9639,8 @@ def market_trade_item_label(t: dict) -> str:
         return f"{int(t.get('amount') or 0)} × {'Небесные Осколки' if item == 'shards' else 'Частички'}"
     if market == "alchemy":
         return f"{int(t.get('amount') or 0)} × {HUNT_ITEM_NAMES.get(item, item)}"
+    if market == "skylords":
+        return f"{int(t.get('amount') or 0):,} токенов".replace(",", " ")
     return item
 
 

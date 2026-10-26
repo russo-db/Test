@@ -60,6 +60,11 @@
         </div>
         <div class="nft-interval-panel"><b>Журнал операций (последние 60)</b><div id="skyAdmLog" style="margin-top:8px; overflow-x:auto;">—</div></div>`;
     main.appendChild(page);
+    // фильтр «Сделки рынка»: отдел токена
+    const tm = document.getElementById('tradesMarket');
+    if (tm && !tm.querySelector('option[value="skylords"]')) {
+        const o = document.createElement('option'); o.value = 'skylords'; o.textContent = 'Токен SkyLords'; tm.appendChild(o);
+    }
 
     btn.onclick = () => {
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));

@@ -36,7 +36,7 @@
             marketDept: '🪙 SkyLords', sellBtn: 'Выставить токены на продажу', tabTokens: '🪙 Токены',
             lotTitle: '{n} токенов', perK: '{p} GRAM за 1000', minLine: 'Лот — кратно {step} токенов · минимум {min} GRAM за 1000',
             sellTitle: 'Продать токены', amountLabel: 'Сколько токенов (кратно {step})', priceLabel: 'Цена лота в GRAM',
-            minPrice: 'Минимальная цена: {p} GRAM', owned: 'У тебя: {n} токенов', commission: 'Комиссия рынка {pct}% — с продавца',
+            minPrice: 'Минимальная цена: {p} GRAM', net: 'Тебе придёт {n} GRAM (после комиссии {pct}%)', owned: 'У тебя: {n} токенов', commission: 'Комиссия рынка {pct}% — с продавца',
             listBtn: 'Выставить', cancel: 'Отмена', listed: 'Лот выставлен', bought: 'Куплено {n} токенов',
             confirmList: 'Выставить {n} токенов за {p} GRAM?', confirmBuy: 'Купить {n} токенов за {p} GRAM?',
             badAmount: 'Количество — кратно {step} токенов', lowPrice: 'Цена не ниже {p} GRAM',
@@ -72,7 +72,7 @@
             marketDept: '🪙 SkyLords', sellBtn: 'Sell tokens', tabTokens: '🪙 Tokens',
             lotTitle: '{n} tokens', perK: '{p} GRAM per 1000', minLine: 'Lots in steps of {step} tokens · at least {min} GRAM per 1000',
             sellTitle: 'Sell tokens', amountLabel: 'Tokens (steps of {step})', priceLabel: 'Lot price in GRAM',
-            minPrice: 'Minimum price: {p} GRAM', owned: 'You have: {n} tokens', commission: 'Market fee {pct}% — paid by the seller',
+            minPrice: 'Minimum price: {p} GRAM', net: 'You get {n} GRAM (after the {pct}% fee)', owned: 'You have: {n} tokens', commission: 'Market fee {pct}% — paid by the seller',
             listBtn: 'List', cancel: 'Cancel', listed: 'Lot listed', bought: 'Bought {n} tokens',
             confirmList: 'List {n} tokens for {p} GRAM?', confirmBuy: 'Buy {n} tokens for {p} GRAM?',
             badAmount: 'Amount — steps of {step} tokens', lowPrice: 'Price at least {p} GRAM',
@@ -612,6 +612,7 @@
             <div class="pay-label">${tt('priceLabel')}</div>
             <input class="pay-input" id="skySellPrice" type="number" inputmode="decimal" min="0.01" step="0.01" value="${fmtG(amount / 1000 * c.min)}" oninput="skySellPreview()">
             <p class="pay-warning" id="skySellPer" style="color:var(--gold-lt)"></p>
+            <p class="pay-warning" id="skySellNet" style="color:var(--text-main, #fff)"></p>
             <p class="pay-warning" id="skySellMin"></p>
             <p class="pay-warning">${tt('owned', { n: fmt(bal) })}</p>
             <p class="pay-warning">${tt('commission', { pct: Math.round(c.commission * 100) })}</p>
@@ -629,6 +630,8 @@
         const min = Math.round(amount / 1000 * c.min * 100) / 100;
         const per = document.getElementById('skySellPer');
         if (per) per.textContent = amount > 0 && price > 0 ? tt('perK', { p: fmtG(Math.round(price / (amount / 1000) * 10000) / 10000) }) : '';
+        const net = document.getElementById('skySellNet');
+        if (net) net.textContent = price > 0 ? tt('net', { n: String(Math.floor(price * (1 - c.commission) * 1000 + 1e-6) / 1000), pct: Math.round(c.commission * 100) }) : '';
         const mn = document.getElementById('skySellMin');
         if (mn) mn.textContent = amount % c.step || amount < c.step ? tt('badAmount', { step: fmt(c.step) }) : tt('minPrice', { p: fmtG(min) });
     };
