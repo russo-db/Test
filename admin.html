@@ -1042,10 +1042,26 @@ function renderOwnerBanner(me) {
     }
 }
 
+// 🧩 Модули админки: код раздела приходит с сервера только после входа.
+const adminModulesLoaded = new Set();
+async function loadAdminModules() {
+    try {
+        const data = await api('/admin/api/modules');
+        (data.modules || []).forEach(m => {
+            if (!m || !m.code || adminModulesLoaded.has(m.name)) return;
+            adminModulesLoaded.add(m.name);
+            const el = document.createElement('script');
+            el.textContent = m.code;
+            document.body.appendChild(el);
+        });
+    } catch (e) { /* без модулей админка работает как обычно */ }
+}
+
 async function checkAuth() {
     try {
         renderOwnerBanner(await api('/admin/api/me'));
         showApp();
+        loadAdminModules();
         loadOverview();
     } catch (e) {
         showLogin();

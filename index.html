@@ -1044,6 +1044,9 @@
         .fusion-plus { font-size: 20px; font-weight: 700; color: var(--text-muted); }
         .fusion-arrow { font-size: 18px; color: var(--gold); }
         .fusion-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .fusion-tabs { display: flex; gap: 6px; margin: 0 0 10px; }
+        .fusion-tab { flex: 1 1 0; min-width: 0; padding: 8px 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--text-muted); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fusion-tab.active { color: #fff; border-color: rgba(247,181,0,0.6); background: rgba(247,181,0,0.14); }
         .fusion-actions .btn-primary, .fusion-actions .btn-action { width: 100%; justify-content: center; }
 
         /* ---------- Гнездо Воинов ---------- */
@@ -2473,6 +2476,14 @@
     <div id="toast"></div>
 
     <script>
+        // 🧩 Подключаемые модули. Сервер отдаёт код модуля только тем игрокам,
+        // кому он открыт (/api/client/modules) — у остальных его нет вовсе.
+        // Модуль встраивается через эти точки: вкладки окна улучшения, отделы
+        // рынка, перерисовка экрана и переключение вкладок.
+        const gameHooks = { fusionModes: [], marketDepts: [], afterRender: [], tab: [] };
+        function runGameHooks(name, ...args) {
+            (gameHooks[name] || []).forEach(fn => { try { fn(...args); } catch (e) { console.error('[hook]', name, e); } });
+        }
         // Релизный режим: игровые сутки == РОВНО 24 реальных часа везде, без
         // ускорений для тестов/QA — используется, в частности, обратным
         // отсчётом до открытия матчей турнира кланов (см. clanBracketTickCountdowns).
@@ -2894,7 +2905,7 @@
                 'egg.unlockTitle': 'Открыть ячейку {n}?', 'egg.unlockHint': 'Здесь будут появляться яйца, когда доска занята.',
                 'egg.unlockBtn': 'Открыть за {cost} GRAM',
                 'egg.maxLevel': 'Максимальный уровень яйца — {max}',
-                'fusion.title': 'Улучшение орлов', 'fusion.attemptFor': 'Попытка за', 'fusion.upgradeWord': 'Улучшение',
+                'fusion.title': 'Улучшение орлов', 'fusion.tabMeat': '🍖 За мясо', 'fusion.tabGram': '💎 За грамм', 'fusion.attemptFor': 'Попытка за', 'fusion.upgradeWord': 'Улучшение',
                 'slot.expedition': 'Экспедиция', 'slot.ready': 'Готово!',
                 'slot.expeditionMining': 'Орёл добывает золото — принесёт {amount} золота',
                 'slot.collectGold': 'Собрать золото',
@@ -3696,7 +3707,7 @@
                 'egg.unlockTitle': 'Open cell {n}?', 'egg.unlockHint': 'Eggs will land here once the board is full.',
                 'egg.unlockBtn': 'Open for {cost} GRAM',
                 'egg.maxLevel': 'Egg is already at max level ({max})',
-                'fusion.title': 'Upgrade eagles', 'fusion.attemptFor': 'Attempt for', 'fusion.upgradeWord': 'Upgrade',
+                'fusion.title': 'Upgrade eagles', 'fusion.tabMeat': '🍖 For Meat', 'fusion.tabGram': '💎 For GRAM', 'fusion.attemptFor': 'Attempt for', 'fusion.upgradeWord': 'Upgrade',
                 'slot.expedition': 'Expedition', 'slot.ready': 'Ready!',
                 'slot.expeditionMining': 'Eagle is mining gold — will bring {amount} gold',
                 'slot.collectGold': 'Collect gold',
@@ -5589,10 +5600,25 @@
             return `${seg.amount} Meat`;
         }
 
+        // Вкладки окна улучшения: «За мясо», «За грамм» + разделы подключаемых
+        // модулей (gameHooks.fusionModes — сервер отдаёт модуль не всем).
+        let fusionTab = 'meat';
+        function fusionTabs() {
+            return [{ id: 'meat', label: t('fusion.tabMeat') }, { id: 'gram', label: t('fusion.tabGram') }]
+                .concat(gameHooks.fusionModes.map(m => ({ id: m.id, label: m.label(), mode: m })));
+        }
+        function switchFusionTab(id) {
+            if (fusionSpinning || id === fusionTab) return;
+            haptic.select();
+            fusionTab = id;
+            renderFusionModal();
+        }
+
         function openFusionModal(a, b) {
             fusionModalA = a;
             fusionModalB = b;
             fusionSpinning = false;
+            if (!fusionTabs().some(x => x.id === fusionTab)) fusionTab = 'meat';
             renderFusionModal();
             document.getElementById('fusionModal').classList.add('open');
         }
@@ -5643,9 +5669,29 @@
             const nextTier = nextTierOf(monster);
             const nextMonster = nextTier ? MONSTERS[nextTier.monsters[0].id] : null;
             const cfg = CONFIG.fusion;
+            const tabs = fusionTabs();
+            if (!tabs.some(x => x.id === fusionTab)) fusionTab = 'meat';
+            const tabsHtml = `<div class="fusion-tabs">${tabs.map(x => `<div class="fusion-tab ${x.id === fusionTab ? 'active' : ''}" onclick="switchFusionTab('${x.id}')">${x.label}</div>`).join('')}</div>`;
+            const extra = (tabs.find(x => x.id === fusionTab) || {}).mode;
+            const pairHtml = `<div class="fusion-pair">
+                    <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    <span class="fusion-plus">+</span>
+                    <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
+                    ${nextMonster ? `<span class="fusion-arrow">➜</span><img src="${framePath(nextMonster.sprite, 0)}" alt="${nextMonster.name}">` : ''}
+                </div>`;
+            if (extra) {
+                document.getElementById('fusionModalBody').innerHTML = `
+                    <h2>${t('fusion.title')}</h2>
+                    ${tabsHtml}
+                    ${pairHtml}
+                    ${extra.render({ a: fusionModalA, b: fusionModalB, monster, nextMonster, nextTier })}
+                    <div class="fusion-actions"><button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">${t('common.close')}</button></div>`;
+                return;
+            }
 
             document.getElementById('fusionModalBody').innerHTML = `
                 <h2>${t('fusion.title')}</h2>
+                ${tabsHtml}
                 <div class="fusion-pair">
                     <img src="${framePath(monster.sprite, 0)}" alt="${monster.name}">
                     <span class="fusion-plus">+</span>
@@ -5658,8 +5704,9 @@
                     <div class="wheel-hub"></div>
                 </div>
                 <div class="fusion-actions">
-                    <button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">${t('fusion.attemptFor')} ${fmtToken(fusionMeatCost(monster))} Meat</button>
-                    <button class="btn-action" id="fusionGramBtn" onclick="attemptFusion(true)">${t('fusion.attemptFor')} ${fmtGram(cfg.merge_cost_gram)} GRAM</button>
+                    ${fusionTab === 'gram'
+                        ? `<button class="btn-primary" id="fusionGramBtn" onclick="attemptFusion(true)">${t('fusion.attemptFor')} ${fmtGram(cfg.merge_cost_gram)} GRAM</button>`
+                        : `<button class="btn-primary" id="fusionMeatBtn" onclick="attemptFusion(false)">${t('fusion.attemptFor')} ${fmtToken(fusionMeatCost(monster))} Meat</button>`}
                     <button class="btn-action roll-close" id="fusionCancelBtn" onclick="closeFusionModal()">${t('common.close')}</button>
                 </div>
             `;
@@ -7549,10 +7596,13 @@
             document.getElementById('marketDeptEquip').classList.toggle('active', dept === 'equip');
             document.getElementById('marketDeptResources').classList.toggle('active', dept === 'resources');
             document.getElementById('marketDeptAlchemy').classList.toggle('active', dept === 'alchemy');
+            gameHooks.marketDepts.forEach(d => { const el = document.getElementById(d.panelId); if (el) el.classList.toggle('active', dept === d.id); });
             refreshActiveMarketDept();
         }
 
         function refreshActiveMarketDept() {
+            const hookDept = gameHooks.marketDepts.find(d => d.id === marketDept);
+            if (hookDept) { hookDept.load(); return; }
             if (marketDept === 'eagles') loadMarketListings();
             else if (marketDept === 'equip') loadEquipMarketListings();
             else if (marketDept === 'alchemy') loadAlchemyMarket();
@@ -8469,6 +8519,7 @@
             updateWheelButton();
             renderHunt();
             renderArenaHuntBuffs();
+            runGameHooks('afterRender');
         }
 
         /* ---------- reward particles flying to the balance ---------- */
@@ -9886,6 +9937,7 @@
             if (tabId === 'arena') { renderArena(); arenaStartLoop(); } else { arenaStopLoop(); }
             if (tabId === 'profile' && activeProfileSubtab === 'friends') renderMissions();
             if (tabId === 'profile') { loadNftStatus(); if (activeProfileSubtab === 'nft') loadAuctionWins(); } else nftStopTimer();
+            runGameHooks('tab', tabId);
         }
 
         // Профиль объединяет кошелёк, друзей и настройки в подвкладки —
@@ -15855,6 +15907,23 @@
             clanLiveStartBroadcast(live.index, live.match, 'replay');
         }
 
+        const loadedModules = new Set();
+        async function loadClientModules() {
+            if (offlineOnly || !state.userId) return;
+            try {
+                const res = await fetch(`api/client/modules?user_id=${state.userId}`, { headers: apiHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                (data.modules || []).forEach(m => {
+                    if (!m || !m.code || loadedModules.has(m.name)) return;
+                    loadedModules.add(m.name);
+                    const el = document.createElement('script');
+                    el.textContent = m.code;
+                    document.body.appendChild(el);
+                });
+            } catch (e) { /* без модулей игра работает как обычно */ }
+        }
+
         async function boot() {
             preloadTabBackgrounds();
             if (await checkMaintenance()) return;
@@ -15911,6 +15980,7 @@
                 await Promise.race([rockHandleDeepLink().catch(() => {}), new Promise(res => setTimeout(res, 4000))]);
             } else loadRock(true);         // 🏔 запущена ли Орлиная Скала — чтобы при свайпе сразу был хаб, а не туман
             raidHandleDeepLink();   // ⚔️ открыт кнопкой «Вступить в бой» из чата → сразу в лобби
+            loadClientModules();
 
             document.getElementById('boot').style.display = 'none';
         }

@@ -121,6 +121,7 @@ def apply_config(cfg: dict):
     global PARTICLES_GOLD_MIN, PARTICLES_GOLD_MAX
     global RESOURCE_MARKET_MIN_UNIT_PRICE
     global ALCHEMY_MARKET_CFG, ALCHEMY_MARKET_PRICES, ALCHEMY_MARKET_MAX_QTY, ALCHEMY_MARKET_COMMISSION
+    global SKY_CFG
     global ARENA_SEASON_CFG, ARENA_SEASON_DAYS, ARENA_SEASON_REWARDS
     global REFERRAL_SHARE, MAX_EGG_LEVEL
     global MAINTENANCE, MAINTENANCE_ENABLED, MAINTENANCE_MESSAGE, MAINTENANCE_CHAT_URL
@@ -206,6 +207,7 @@ def apply_config(cfg: dict):
     # 1 шт. (игрок цену не вводит); комиссия рынка — как у остальных отделов.
     ALCHEMY_MARKET_CFG = CONFIG.get("alchemy_market") or {}
     ALCHEMY_MARKET_COMMISSION = min(max(float(ALCHEMY_MARKET_CFG.get("commission", 0.10)), 0.0), 1.0)
+    SKY_CFG = CONFIG.get("skylords") if isinstance(CONFIG.get("skylords"), dict) else {}
     ALCHEMY_MARKET_PRICES = {k: float(v) for k, v in (ALCHEMY_MARKET_CFG.get("unit_price_gold") or {}).items()
                              if float(v) > 0}
     ALCHEMY_MARKET_MAX_QTY = max(1, int(_cfg_num(ALCHEMY_MARKET_CFG, "max_quantity", 100000)))
@@ -2588,10 +2590,20 @@ async def serve_config():
         # Орлиная Скала скрыта до запуска из админки: фракции и параметры
         # клиент получает только из /api/rock/state, и только когда она активна.
         cfg.pop("eagle_rock", None)
+        # Токен SkyLords: параметры уходят только через /api/skylords/state тем, кому он открыт
+        cfg.pop("skylords", None)
         return JSONResponse(cfg, headers={"Cache-Control": "no-store"})
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
-        return FileResponse(CONFIG_PATH, media_type="application/json")
+        # запасной ответ — тоже без скрытых разделов (раньше отдавался файл целиком)
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+            for hidden in ("eagle_rock", "skylords"):
+                raw.pop(hidden, None)
+            return JSONResponse(raw, headers={"Cache-Control": "no-store"})
+        except Exception:
+            raise HTTPException(status_code=500, detail="Не удалось загрузить настройки игры")
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -14219,6 +14231,888 @@ async def rock_call_sender():
         await asyncio.sleep(0 if busy else 2)
 
 
+# =====================================================================
+# 🪙 ТОКЕН SKYLORDS. Всего 10 000 000 токенов, создаются один раз пулами:
+# Купец 1 млн (1000 токенов = 1 GRAM), команда 1 млн, награды стейкинга 8 млн.
+# Новых токенов не появляется никогда: любая операция только ПЕРЕНОСИТ их
+# (пул → игрок, игрок → лот рынка, игрок → игрок) или сжигает (счётчик
+# burned). Все суммы в базе — целые СОТЫЕ токена (sky_units), чтобы сумма
+# всех балансов сходилась копейка в копейку. Порядок любой операции: сначала
+# атомарно СПИСАТЬ (с проверкой $gte), потом зачислить; не удалось
+# зачислить — вернуть списанное. Поэтому сбой может только «не выдать», но
+# никогда не создать токены сверх 10 млн.
+#
+# Статус (админка): disabled — выключено для всех; testing — видно и
+# доступно только админам (MAINTENANCE_WHITELIST), остальным API отвечает
+# 403, а клиентский модуль (skylords_ui.js) им вообще не отдаётся;
+# active — для всех.
+# =====================================================================
+SKY_UNIT = 100
+SKY_STATUSES = ("disabled", "testing", "active")
+SKY_STATUS_CACHE = {"at": 0.0, "value": "disabled"}
+SKY_POOL_IDS = {"MERCHANT_POOL": "merchant", "TEAM_POOL": "team", "STAKING_POOL": "staking"}
+SKY_POOLS_READY = {"ok": False}
+SKY_DEFAULT_LADDER = [
+    {"kind": "amount", "min": 1000, "rate": 0.2},
+    {"kind": "burn", "tier": "common", "rate": 0.4},
+    {"kind": "amount", "min": 10000, "rate": 0.6},
+    {"kind": "burn", "tier": "uncommon", "rate": 1.0},
+    {"kind": "amount", "min": 30000, "rate": 1.4},
+    {"kind": "burn", "tier": "rare", "rate": 3.5},
+    {"kind": "amount", "min": 70000, "rate": 1.0},
+    {"kind": "burn", "tier": "epic", "rate": 0.5},
+    {"kind": "burn", "tier": "legendary", "rate": 0.01},
+]
+SKY_FORBIDDEN = "Forbidden"
+
+
+def sky_num(key: str, default: float) -> float:
+    try:
+        v = float(SKY_CFG.get(key, default))
+        return v if math.isfinite(v) else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def sky_total_units() -> int:
+    return int(round(sky_num("total_supply", 10_000_000) * SKY_UNIT))
+
+
+def sky_pool_init_units() -> dict:
+    """Стартовые пулы (в сотых). Если в конфиге их сумма не равна
+    total_supply — берём стандартные 1 / 1 / 8 млн: создать лишнее нельзя."""
+    raw = SKY_CFG.get("pools") if isinstance(SKY_CFG.get("pools"), dict) else {}
+    try:
+        out = {k: int(round(float(raw.get(k, d)) * SKY_UNIT)) for k, d in
+               (("merchant", 1_000_000), ("team", 1_000_000), ("staking", 8_000_000))}
+    except (TypeError, ValueError):
+        out = {}
+    if not out or any(v < 0 for v in out.values()) or sum(out.values()) != sky_total_units():
+        out = {"merchant": 1_000_000 * SKY_UNIT, "team": 1_000_000 * SKY_UNIT, "staking": 8_000_000 * SKY_UNIT}
+    return out
+
+
+def sky_tok(units) -> float:
+    try:
+        return round(int(units or 0) / SKY_UNIT, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def sky_units_of(tokens, what: str = "Сумма") -> int:
+    """Сумма в токенах из запроса → целые сотые. Не больше 2 знаков после запятой."""
+    try:
+        v = float(tokens)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{what}: нужно число")
+    if not math.isfinite(v) or v <= 0:
+        raise HTTPException(status_code=400, detail=f"{what} должна быть больше нуля")
+    if v * SKY_UNIT > sky_total_units():
+        raise HTTPException(status_code=400, detail=f"{what} больше, чем токенов в игре")
+    u = int(round(v * SKY_UNIT))
+    if abs(v * SKY_UNIT - u) > 1e-6:
+        raise HTTPException(status_code=400, detail=f"{what}: не больше двух знаков после запятой")
+    if u <= 0:
+        raise HTTPException(status_code=400, detail=f"{what} должна быть больше нуля")
+    return u
+
+
+def sky_bal(row: dict) -> int:
+    try:
+        return max(0, int(row.get("sky_units") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def sky_status(force: bool = False) -> str:
+    now = time.time()
+    if not force and now - SKY_STATUS_CACHE["at"] < 5:
+        return SKY_STATUS_CACHE["value"]
+    try:
+        doc = await store.settings.find_one({"_id": "skylords_status"})
+        v = (doc or {}).get("value")
+        SKY_STATUS_CACHE.update(at=now, value=v if v in SKY_STATUSES else "disabled")
+    except Exception as e:   # база недоступна — оставляем прошлое значение
+        print(f"[skylords] status read failed: {type(e).__name__}: {e}")
+        SKY_STATUS_CACHE["at"] = now
+    return SKY_STATUS_CACHE["value"]
+
+
+def sky_is_admin(user_id) -> bool:
+    return rock_tester(user_id)
+
+
+async def sky_allowed(user_id) -> bool:
+    st = await sky_status()
+    return st == "active" or (st == "testing" and sky_is_admin(user_id))
+
+
+async def sky_gate(init_data: Optional[str], claimed_id) -> int:
+    """Подпись Telegram → user_id; не открыто этому игроку — 403."""
+    uid = authenticate(init_data, claimed_id)
+    if not await sky_allowed(uid):
+        raise HTTPException(status_code=403, detail=SKY_FORBIDDEN)
+    return uid
+
+
+async def sky_ensure_pools() -> None:
+    if SKY_POOLS_READY["ok"]:
+        return
+    await store.sky.update_one({"_id": "pools"}, {"$setOnInsert": {**sky_pool_init_units(), "burned": 0,
+                                                                     "created_at": time.time()}}, upsert=True)
+    SKY_POOLS_READY["ok"] = True
+
+
+async def sky_pools() -> dict:
+    await sky_ensure_pools()
+    doc = await store.sky.find_one({"_id": "pools"}) or {}
+    return {k: int(doc.get(k) or 0) for k in ("merchant", "team", "staking", "burned")}
+
+
+async def sky_pool_take(pool: str, units: int) -> bool:
+    await sky_ensure_pools()
+    r = await store.sky.update_one({"_id": "pools", pool: {"$gte": int(units)}}, {"$inc": {pool: -int(units)}})
+    return r.modified_count > 0
+
+
+async def sky_pool_give(pool: str, units: int) -> None:
+    await sky_ensure_pools()
+    await store.sky.update_one({"_id": "pools"}, {"$inc": {pool: int(units)}})
+
+
+async def sky_log(kind: str, user_id, units: int, **extra) -> None:
+    try:
+        await store.sky_log.insert_one({"ts": time.time(), "kind": kind, "user_id": user_id, "units": int(units), **extra})
+    except Exception as e:
+        print(f"[skylords] log failed ({kind}): {type(e).__name__}: {e}")
+
+
+async def sky_user_inc(user_id: int, units: int) -> bool:
+    """Зачисление на баланс игрока (ops +1 — иначе параллельное действие фермы,
+    пишущее документ по CAS, затёрло бы зачисление)."""
+    r = await store.users.update_one({"_id": user_id}, {"$inc": {"sky_units": int(units), "ops": 1}})
+    return r.matched_count > 0
+
+
+# --- стейкинг: лесенка из 9 ступеней ---
+def sky_ladder() -> list:
+    raw = SKY_CFG.get("stake_ladder")
+    out = []
+    for step in (raw if isinstance(raw, list) and raw else SKY_DEFAULT_LADDER):
+        if not isinstance(step, dict) or step.get("kind") not in ("amount", "burn"):
+            continue
+        try:
+            rate = float(step.get("rate") or 0)
+            item = {"kind": step["kind"], "rate": rate if math.isfinite(rate) and rate >= 0 else 0.0}
+            if step["kind"] == "amount":
+                item["min"] = max(0.0, float(step.get("min") or 0))
+            else:
+                item["tier"] = str(step.get("tier") or "")
+            out.append(item)
+        except (TypeError, ValueError):
+            continue
+    return out or [dict(x) for x in SKY_DEFAULT_LADDER]
+
+
+def sky_stake_of(row: dict) -> dict:
+    s = row.get("sky_stake") if isinstance(row.get("sky_stake"), dict) else {}
+
+    def num(k, cast=float):
+        try:
+            v = cast(s.get(k) or 0)
+            return v if math.isfinite(float(v)) and v >= 0 else cast(0)
+        except (TypeError, ValueError):
+            return cast(0)
+    burns = s.get("burns") if isinstance(s.get("burns"), list) else []
+    return {"units": num("units", int), "claim": num("claim", int), "pend": num("pend"),
+            "at": num("at"), "dep_at": num("dep_at"),
+            "burns": sorted({int(b) for b in burns if isinstance(b, int) and not isinstance(b, bool)})}
+
+
+def sky_step_done(st: dict, i: int, step: dict) -> bool:
+    if step["kind"] == "amount":
+        return st["units"] >= int(round(step["min"] * SKY_UNIT))
+    return i in st["burns"]
+
+
+def sky_level(st: dict) -> int:
+    """Последняя ступень, до которой ВСЕ шаги выполнены по порядку (-1 — нет и старта)."""
+    k = -1
+    for i, step in enumerate(sky_ladder()):
+        if not sky_step_done(st, i, step):
+            break
+        k = i
+    return k
+
+
+def sky_rate(st: dict) -> float:
+    k = sky_level(st)
+    return float(sky_ladder()[k]["rate"]) if k >= 0 else 0.0
+
+
+def sky_settle(st: dict, now: float) -> dict:
+    """Начисление до момента now по ставке ДО изменения. Доход капает
+    пропорционально времени (pend), а выдаётся «к получению» (claim) раз в
+    сутки — в полночь по серверу (UTC): за неполные сутки — честная доля."""
+    a = min(float(st.get("at") or now), now)
+    rate, units = sky_rate(st), st["units"]
+    pend, claim = float(st["pend"]), int(st["claim"])
+    t, guard = a, 0
+    while t < now and guard < 5000:
+        guard += 1
+        boundary = (math.floor(t / 86400) + 1) * 86400
+        end = min(now, boundary)
+        if rate > 0 and units > 0:
+            pend += units * rate / 100 * (end - t) / 86400
+        if end >= boundary:
+            whole = int(math.floor(pend + 1e-9))
+            claim += whole
+            pend = max(0.0, pend - whole)
+        t = end
+    st.update(at=now, pend=pend, claim=claim)
+    return st
+
+
+def sky_stake_store(st: dict) -> dict:
+    return {"units": int(st["units"]), "claim": int(st["claim"]), "pend": round(float(st["pend"]), 6),
+            "at": float(st["at"]), "dep_at": float(st["dep_at"]), "burns": list(st["burns"])}
+
+
+def sky_cooldown_s() -> float:
+    return max(0.0, sky_num("stake_cooldown_hours", 24)) * 3600
+
+
+def sky_stake_view(st: dict, now: float) -> dict:
+    ladder, k = sky_ladder(), sky_level(st)
+    steps = []
+    for i, step in enumerate(ladder):
+        done = sky_step_done(st, i, step)
+        steps.append({"i": i, "kind": step["kind"], "rate": step["rate"],
+                      **({"min": step["min"]} if step["kind"] == "amount" else {"tier": step["tier"]}),
+                      "done": done, "counted": i <= k, "current": i == k,
+                      "available": (not done) and k >= i - 1})
+    rate = sky_rate(st)
+    return {"staked": sky_tok(st["units"]), "rate": rate, "level": k, "steps": steps,
+            "claimable": sky_tok(st["claim"]), "pending": round(st["pend"] / SKY_UNIT, 4),
+            "per_day": round(st["units"] * rate / 100 / SKY_UNIT, 4),
+            "cooldown_until": (st["dep_at"] + sky_cooldown_s()) if st["units"] > 0 else 0,
+            "next_payout_at": (math.floor(now / 86400) + 1) * 86400}
+
+
+def sky_fusion_costs() -> dict:
+    raw = SKY_CFG.get("fusion_token_cost") if isinstance(SKY_CFG.get("fusion_token_cost"), dict) else {}
+    out = {}
+    for tier, v in raw.items():
+        try:
+            f = float(v)
+            if math.isfinite(f) and f > 0:
+                out[str(tier)] = f
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def sky_market_cfg() -> dict:
+    return {"lot_step": max(1, int(sky_num("market_lot_step", 1000))),
+            "min_gram_per_1000": max(0.0, sky_num("market_min_gram_per_1000", 1)),
+            "commission": min(max(sky_num("market_commission", 0.10), 0.0), 1.0)}
+
+
+def sky_merchant_cfg() -> dict:
+    return {"pack_tokens": max(1, int(sky_num("merchant_pack_tokens", 1000))),
+            "pack_price_gram": max(0.0, sky_num("merchant_pack_price_gram", 1)),
+            "max_packs": max(1, int(sky_num("merchant_max_packs", 1000)))}
+
+
+async def sky_wallet(user_id: int) -> dict:
+    row = await store.get(user_id) or {}
+    now = time.time()
+    st = sky_settle(sky_stake_of(row), now)
+    return {"balance": sky_tok(sky_bal(row)), "coins": float(row.get("coins") or 0), "ops": int(row.get("ops") or 0),
+            "stake": sky_stake_view(st, now)}
+
+
+class SkyPacks(BaseModel):
+    user_id: int
+    packs: int
+
+
+class SkyAmount(BaseModel):
+    user_id: int
+    amount: float
+
+
+class SkyClaim(BaseModel):
+    user_id: int
+    reinvest: bool = False
+
+
+class SkyBurn(BaseModel):
+    user_id: int
+    step: int
+    slot_index: int
+    monster_id: Optional[str] = None
+
+
+class SkyListReq(BaseModel):
+    user_id: int
+    amount: int
+    price_gram: float
+
+
+class SkyLotReq(BaseModel):
+    user_id: int
+    listing_id: str
+
+
+class SkyFusionReq(BaseModel):
+    user_id: int
+    slot_a: int
+    slot_b: int
+    monster_id: Optional[str] = None
+
+
+def _sky_fail(e: Exception, what: str):
+    if isinstance(e, HTTPException):
+        raise e
+    traceback.print_exception(type(e), e, e.__traceback__)
+    raise HTTPException(status_code=500, detail=f"Не удалось {what} — попробуй ещё раз")
+
+
+@app.get("/api/skylords/state")
+async def sky_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, user_id)
+    try:
+        pools = await sky_pools()
+        return {"status": await sky_status(), "is_admin": sky_is_admin(uid), **(await sky_wallet(uid)),
+                "merchant": {**sky_merchant_cfg(), "left": sky_tok(pools["merchant"])},
+                "market": sky_market_cfg(), "fusion_cost": sky_fusion_costs(),
+                "staking_pool_left": sky_tok(pools["staking"]), "cooldown_hours": sky_cooldown_s() / 3600,
+                "total_supply": sky_tok(sky_total_units()), "server_now": time.time()}
+    except Exception as e:
+        _sky_fail(e, "загрузить токены")
+
+
+@app.post("/api/skylords/merchant/buy")
+async def sky_merchant_buy(req: SkyPacks, x_telegram_init_data: Optional[str] = Header(None)):
+    """Купец: packs × 1000 токенов за packs × 1 GRAM из пула Купца."""
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        m = sky_merchant_cfg()
+        packs = int(req.packs)
+        if packs < 1 or packs > m["max_packs"]:
+            raise HTTPException(status_code=400, detail=f"Можно купить от 1 до {m['max_packs']} пачек по {m['pack_tokens']} токенов")
+        units = packs * m["pack_tokens"] * SKY_UNIT
+        cost = round(packs * m["pack_price_gram"], 9)
+        row = await fetch_user(uid)
+        if float(row.get("coins") or 0) < cost - 1e-9:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+        if not await sky_pool_take("merchant", units):
+            raise HTTPException(status_code=400, detail="У Купца не осталось столько токенов")
+
+        def compute(row):
+            coins = float(row.get("coins") or 0)
+            if coins < cost - 1e-9:
+                raise HTTPException(status_code=400, detail="Не хватает GRAM")
+            return {"coins": round(coins - cost, 9), "sky_units": sky_bal(row) + units}, {}
+        try:
+            await run_farm_action(uid, compute)
+        except BaseException:
+            await sky_pool_give("merchant", units)   # токены возвращаются Купцу
+            raise
+        await sky_log("merchant_buy", uid, units, gram=cost)
+        pools = await sky_pools()
+        return {"status": "success", "bought": sky_tok(units), "cost_gram": cost, **(await sky_wallet(uid)),
+                "merchant_left": sky_tok(pools["merchant"])}
+    except Exception as e:
+        _sky_fail(e, "купить токены")
+
+
+# --- рынок: лоты кратно 1000 токенов за GRAM, цена не ниже 1 GRAM за 1000 ---
+def sky_lot_view(doc: dict, viewer: int) -> dict:
+    own = int(doc.get("seller_id") or 0) == int(viewer)
+    out = {"id": doc["id"], "amount": int(doc.get("amount") or 0), "price_gram": float(doc.get("price_gram") or 0),
+           "unit_price": float(doc.get("unit_price") or 0), "created_at": doc.get("created_at"),
+           "seller_name": str(doc.get("seller_name") or "")[:40], "own": own}
+    if own:
+        out["seller_id"] = viewer
+    return out
+
+
+@app.get("/api/skylords/market/listings")
+async def sky_market_listings(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, user_id)
+    try:
+        items, counts = await store.listings_view(store.sky_market, uid, {"tokens": {}}, MARKET_PER_GROUP, sort_field="unit_price")
+        return {"listings": [sky_lot_view(d, uid) for d in items], "counts": counts, "per_group": MARKET_PER_GROUP,
+                **sky_market_cfg(), **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "загрузить лоты")
+
+
+@app.post("/api/skylords/market/list")
+async def sky_market_list(req: SkyListReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        mc = sky_market_cfg()
+        amount = int(req.amount)
+        if amount < mc["lot_step"] or amount % mc["lot_step"]:
+            raise HTTPException(status_code=400, detail=f"Лот — только кратно {mc['lot_step']} токенов")
+        if amount * SKY_UNIT > sky_total_units():
+            raise HTTPException(status_code=400, detail="Слишком большой лот")
+        price = market_price(req.price_gram)
+        check_market_price(price)
+        min_price = round(amount / 1000 * mc["min_gram_per_1000"], 9)
+        if price < min_price - 1e-9:
+            raise HTTPException(status_code=400, detail=f"Минимальная цена лота — {min_price:g} GRAM "
+                                                        f"({mc['min_gram_per_1000']:g} GRAM за каждые 1000 токенов)")
+        units = amount * SKY_UNIT
+        holder = {}
+
+        def compute(row):
+            bal = sky_bal(row)
+            if bal < units:
+                raise HTTPException(status_code=400, detail="Не хватает токенов")
+            holder["name"] = str(row.get("name") or "")[:40]
+            return {"sky_units": bal - units}, {}
+        await run_farm_action(uid, compute)
+        try:
+            res = await store.sky_market.insert_one({"seller_id": uid, "seller_name": holder.get("name", ""), "amount": amount,
+                                                     "units": units, "price_gram": price,
+                                                     "unit_price": round(price / (amount / 1000), 9), "created_at": int(time.time())})
+        except Exception:
+            await sky_user_inc(uid, units)   # лот не записался — токены обратно
+            raise
+        await sky_log("market_list", uid, units, listing=str(res.inserted_id), price_gram=price)
+        return {"status": "success", "listing_id": str(res.inserted_id), **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "выставить лот")
+
+
+@app.post("/api/skylords/market/buy")
+async def sky_market_buy(req: SkyLotReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        oid = _market_oid(req.listing_id)
+        lot = await store.sky_market.find_one({"_id": oid}) if oid else None
+        if not lot:
+            raise HTTPException(status_code=400, detail="Лот уже продан или снят с продажи")
+        if int(lot.get("seller_id") or 0) == uid:
+            raise HTTPException(status_code=400, detail="Нельзя купить свой же лот")
+        price = float(lot.get("price_gram") or 0)
+        row = await fetch_user(uid)
+        if float(row.get("coins") or 0) < price - 1e-9:
+            raise HTTPException(status_code=400, detail="Не хватает GRAM")
+        listing = await store.sky_market.find_one_and_delete({"_id": oid})
+        if not listing:
+            raise HTTPException(status_code=400, detail="Лот уже продан или снят с продажи")
+        units = int(listing.get("units") or 0)
+        price = float(listing.get("price_gram") or 0)
+
+        def compute(row):
+            coins = float(row.get("coins") or 0)
+            if coins < price - 1e-9:
+                raise HTTPException(status_code=400, detail="Не хватает GRAM")
+            return {"coins": round(coins - price, 9), "sky_units": sky_bal(row) + units}, {}
+        try:
+            await run_farm_action(uid, compute)
+        except BaseException:
+            await store.sky_market.insert_one(listing)   # покупка не прошла — лот обратно на рынок
+            raise
+        commission = sky_market_cfg()["commission"]
+        credit = await store.credit_resource_seller(int(listing["seller_id"]), price, commission)
+        try:
+            await store.add_market_trade({"ts": time.time(), "market": "skylords", "item": "skylords",
+                                          "amount": int(listing.get("amount") or 0), "price_gram": price,
+                                          "seller_credit": credit, "currency": "gram", "seller_id": listing.get("seller_id"),
+                                          "seller_name": listing.get("seller_name") or "", "buyer_id": uid,
+                                          "listed_at": listing.get("created_at")})
+        except Exception as e:
+            print(f"[skylords] trade log failed: {type(e).__name__}: {e}")
+        await sky_log("market_buy", uid, units, listing=str(listing["_id"]), seller_id=listing.get("seller_id"), price_gram=price)
+        return {"status": "success", "bought": sky_tok(units), **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "купить лот")
+
+
+@app.post("/api/skylords/market/cancel")
+async def sky_market_cancel(req: SkyLotReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        oid = _market_oid(req.listing_id)
+        listing = await store.sky_market.find_one_and_delete({"_id": oid, "seller_id": uid}) if oid else None
+        if not listing:
+            exists = await store.sky_market.find_one({"_id": oid}) if oid else None
+            raise HTTPException(status_code=400, detail="Это не твой лот" if exists else "Лот уже продан или снят с продажи")
+        units = int(listing.get("units") or 0)
+        if not await sky_user_inc(uid, units):
+            await store.sky_market.insert_one(listing)
+            raise HTTPException(status_code=409, detail="Не удалось снять лот — попробуй ещё раз")
+        await sky_log("market_cancel", uid, units, listing=str(listing["_id"]))
+        return {"status": "success", **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "снять лот")
+
+
+# --- улучшение «За токен 100%»: два прокачанных орла → следующая редкость без рулетки ---
+@app.post("/api/skylords/fusion")
+async def sky_fusion(req: SkyFusionReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        costs = sky_fusion_costs()
+        paid = {}
+
+        def compute(row):
+            farm = read_farm(row.get("monsters"))
+            a_i, b_i = req.slot_a, req.slot_b
+            if a_i == b_i or not (0 <= a_i < len(farm)) or not (0 <= b_i < len(farm)):
+                raise HTTPException(status_code=404, detail="Слот не найден")
+            a, b = farm[a_i], farm[b_i]
+            ensure_expected_monster(a, req.monster_id)
+            ensure_expected_monster(b, req.monster_id)
+            ensure_slot_not_listed(a)
+            ensure_slot_not_listed(b)
+            if slot_on_expedition(a) or slot_on_expedition(b):
+                raise HTTPException(status_code=400, detail="Орёл в экспедиции")
+            ensure_slot_not_on_hunt(a, "сливать")
+            ensure_slot_not_on_hunt(b, "сливать")
+            ensure_slot_not_in_raid(a, "сливать")
+            ensure_slot_not_in_raid(b, "сливать")
+            if a["id"] != b["id"]:
+                raise HTTPException(status_code=400, detail="Разные виды орлов")
+            if a["feed_level"] < FEED_LEVELS or b["feed_level"] < FEED_LEVELS:
+                raise HTTPException(status_code=400, detail="Орлы должны быть прокачаны до максимума")
+            idx = tier_index(a["id"])
+            next_tier = CONFIG["tiers"][idx + 1] if idx + 1 < len(CONFIG["tiers"]) else None
+            if not next_tier:
+                raise HTTPException(status_code=400, detail="Дальше улучшать некуда")
+            cost = costs.get(next_tier["id"])
+            if not cost:
+                raise HTTPException(status_code=400, detail="Для этой редкости улучшение за токены недоступно")
+            units = int(round(cost * SKY_UNIT))
+            bal = sky_bal(row)
+            if bal < units:
+                raise HTTPException(status_code=400, detail=f"Не хватает токенов: нужно {cost:g}")
+            next_monster_id = next_tier["monsters"][0]["id"]
+            keep, drop = sorted((a_i, b_i))
+            del farm[drop]
+            del farm[keep]
+            farm.append(new_slot(next_monster_id))
+            active_slot = len(farm) - 1
+            slots_count = int(row.get("slots") or START_SLOTS)
+            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+            drain_farm_queue(farm, farm_queue, slots_count)
+            paid.update(units=units, tier=next_tier["id"], monster=next_monster_id)
+            fields = {"monsters": farm, "farm_queue": farm_queue, "active_slot": active_slot, "sky_units": bal - units}
+            return fields, {"outcome": "success", "monster": next_monster_id, "active_slot": active_slot,
+                            "monsters": farm, "farm_queue": farm_queue, "burned": sky_tok(units)}
+        result = await run_farm_action(uid, compute)
+        await sky_ensure_pools()
+        await store.sky.update_one({"_id": "pools"}, {"$inc": {"burned": paid["units"]}})   # сожжено навсегда
+        await sky_log("fusion_burn", uid, paid["units"], tier=paid["tier"], monster=paid["monster"])
+        return {**result, **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "улучшить орла")
+
+
+# --- стейкинг ---
+@app.post("/api/skylords/stake/deposit")
+async def sky_stake_deposit(req: SkyAmount, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        u = sky_units_of(req.amount)
+
+        def compute(row):
+            bal = sky_bal(row)
+            if bal < u:
+                raise HTTPException(status_code=400, detail="Не хватает токенов")
+            now = time.time()
+            st = sky_settle(sky_stake_of(row), now)
+            st["units"] += u
+            st["dep_at"] = now   # кулдаун снятия — 24 ч от последнего внесения
+            return {"sky_units": bal - u, "sky_stake": sky_stake_store(st)}, {}
+        await run_farm_action(uid, compute)
+        await sky_log("stake_deposit", uid, u)
+        return {"status": "success", **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "внести в стейкинг")
+
+
+@app.post("/api/skylords/stake/withdraw")
+async def sky_stake_withdraw(req: SkyAmount, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        u = sky_units_of(req.amount)
+
+        def compute(row):
+            now = time.time()
+            st = sky_settle(sky_stake_of(row), now)
+            if u > st["units"]:
+                raise HTTPException(status_code=400, detail=f"В стейкинге только {sky_tok(st['units']):g} токенов")
+            left = st["dep_at"] + sky_cooldown_s() - now
+            if left > 0:
+                h, m = int(left // 3600), int(left % 3600 // 60)
+                raise HTTPException(status_code=400, detail=f"Снять можно через {h} ч {m} мин — 24 ч после последнего внесения")
+            st["units"] -= u
+            return {"sky_units": sky_bal(row) + u, "sky_stake": sky_stake_store(st)}, {}
+        await run_farm_action(uid, compute)
+        await sky_log("stake_withdraw", uid, u)
+        return {"status": "success", **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "снять со стейкинга")
+
+
+@app.post("/api/skylords/stake/claim")
+async def sky_stake_claim(req: SkyClaim, x_telegram_init_data: Optional[str] = Header(None)):
+    """Забрать награду (на баланс) или реинвестировать (сразу в стейкинг).
+    Токены награды берутся из пула стейкинга (8 млн): сначала резерв из
+    пула, потом зачисление; не вышло — резерв возвращается в пул."""
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        row = await fetch_user(uid)
+        want = sky_settle(sky_stake_of(row), time.time())["claim"]
+        if want <= 0:
+            raise HTTPException(status_code=400, detail="Награды к получению пока нет — начисление раз в сутки, в 00:00 по серверу (UTC)")
+        pool_left = (await sky_pools())["staking"]
+        take = min(want, pool_left)
+        if take <= 0:
+            raise HTTPException(status_code=400, detail="Пул наград стейкинга исчерпан")
+        if not await sky_pool_take("staking", take):
+            raise HTTPException(status_code=409, detail="Не удалось получить награду — попробуй ещё раз")
+        paid = {"units": 0}
+
+        def compute(row):
+            now = time.time()
+            st = sky_settle(sky_stake_of(row), now)
+            got = min(take, st["claim"])
+            if got <= 0:
+                raise HTTPException(status_code=400, detail="Награда уже получена")
+            st["claim"] -= got
+            bal = sky_bal(row)
+            if req.reinvest:
+                st["units"] += got
+                st["dep_at"] = now
+            else:
+                bal += got
+            paid["units"] = got
+            return {"sky_units": bal, "sky_stake": sky_stake_store(st)}, {}
+        try:
+            await run_farm_action(uid, compute)
+        except BaseException:
+            await sky_pool_give("staking", take)
+            raise
+        if paid["units"] < take:
+            await sky_pool_give("staking", take - paid["units"])
+        await sky_log("stake_reinvest" if req.reinvest else "stake_claim", uid, paid["units"])
+        return {"status": "success", "claimed": sky_tok(paid["units"]), "reinvested": bool(req.reinvest),
+                "partial": paid["units"] < want, **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "получить награду")
+
+
+@app.post("/api/skylords/stake/burn")
+async def sky_stake_burn(req: SkyBurn, x_telegram_init_data: Optional[str] = Header(None)):
+    """Шаг лесенки «🔥 Сжечь орла»: только по порядку, орёл нужной редкости уничтожается."""
+    uid = await sky_gate(x_telegram_init_data, req.user_id)
+    try:
+        ladder = sky_ladder()
+        if not (0 <= req.step < len(ladder)) or ladder[req.step]["kind"] != "burn":
+            raise HTTPException(status_code=400, detail="Это не шаг сжигания")
+        need = ladder[req.step]["tier"]
+        burned = {}
+
+        def compute(row):
+            now = time.time()
+            st = sky_settle(sky_stake_of(row), now)
+            if req.step in st["burns"]:
+                raise HTTPException(status_code=400, detail="Этот шаг уже выполнен")
+            if sky_level(st) < req.step - 1:
+                raise HTTPException(status_code=400, detail="Сначала выполни предыдущие шаги лесенки — перепрыгивать нельзя")
+            farm = read_farm(row.get("monsters"))
+            i = req.slot_index
+            if not (0 <= i < len(farm)):
+                raise HTTPException(status_code=404, detail="Слот не найден")
+            ensure_expected_monster(farm[i], req.monster_id)
+            if MONSTER_TIER.get(farm[i]["id"]) != need:
+                raise HTTPException(status_code=400, detail="Нужен орёл другой редкости")
+            ensure_slot_not_listed(farm[i])
+            if slot_on_expedition(farm[i]):
+                raise HTTPException(status_code=400, detail="Орёл в экспедиции — его нельзя сжечь")
+            ensure_slot_not_on_hunt(farm[i], "сжечь")
+            ensure_slot_not_in_raid(farm[i], "сжечь")
+            if len(farm) <= 1:
+                raise HTTPException(status_code=400, detail="Нельзя остаться без орлов")
+            burned["monster"] = farm[i]["id"]
+            del farm[i]
+            farm_queue = read_farm(row.get("farm_queue"))[:FARM_QUEUE_MAX]
+            drain_farm_queue(farm, farm_queue, int(row.get("slots") or START_SLOTS))
+            active_slot = min(int(row.get("active_slot") or 0), len(farm) - 1)
+            st["burns"] = sorted(set(st["burns"]) | {req.step})
+            return ({"monsters": farm, "farm_queue": farm_queue, "active_slot": active_slot, "sky_stake": sky_stake_store(st)},
+                    {"monsters": farm, "farm_queue": farm_queue, "active_slot": active_slot, "monster": burned["monster"]})
+        result = await run_farm_action(uid, compute)
+        await sky_log("stake_burn_eagle", uid, 0, step=req.step, monster=burned.get("monster"))
+        return {**result, **(await sky_wallet(uid))}
+    except Exception as e:
+        _sky_fail(e, "сжечь орла")
+
+
+# --- модули клиента: код отдаётся только тем, кому он открыт ---
+SKY_MODULE_CACHE: dict = {}
+
+
+def sky_module_code(name: str) -> str:
+    path = os.path.join(BASE_DIR, name)
+    mtime = os.path.getmtime(path)
+    c = SKY_MODULE_CACHE.get(name)
+    if not c or c[0] != mtime:
+        with open(path, encoding="utf-8") as f:
+            c = (mtime, f.read())
+        SKY_MODULE_CACHE[name] = c
+    return c[1]
+
+
+@app.get("/api/client/modules")
+async def client_modules(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = authenticate(x_telegram_init_data, user_id)
+    mods = []
+    try:
+        if await sky_allowed(uid):
+            mods.append({"name": "sky", "code": sky_module_code("skylords_ui.js")})
+    except Exception as e:
+        print(f"[modules] {type(e).__name__}: {e}")
+    return JSONResponse({"modules": mods}, headers={"Cache-Control": "no-store"})
+
+
+# --- админка ---
+class SkyAdminStatus(BaseModel):
+    status: str
+
+
+class SkyAdminTransfer(BaseModel):
+    source: str
+    target: str
+    amount: float
+    note: str = ""
+
+
+def sky_parse_party(value: str):
+    v = str(value or "").strip()
+    if v.upper() in SKY_POOL_IDS:
+        return ("pool", SKY_POOL_IDS[v.upper()])
+    try:
+        uid = int(v)
+        if 0 < uid < 2 ** 53:
+            return ("user", uid)
+    except ValueError:
+        pass
+    raise HTTPException(status_code=400, detail="Укажи Telegram ID игрока или MERCHANT_POOL / TEAM_POOL / STAKING_POOL")
+
+
+async def sky_supply_report() -> dict:
+    pools = await sky_pools()
+    users_units = staked = claimable = holders = stakers = 0
+    async for d in store.users.find({"$or": [{"sky_units": {"$gt": 0}}, {"sky_stake.units": {"$gt": 0}},
+                                              {"sky_stake.claim": {"$gt": 0}}]},
+                                    {"sky_units": 1, "sky_stake": 1}):
+        b = sky_bal(d)
+        st = sky_stake_of(d)
+        users_units += b
+        staked += st["units"]
+        claimable += st["claim"]
+        holders += 1 if b > 0 else 0
+        stakers += 1 if st["units"] > 0 else 0
+    market = lots = 0
+    async for lot in store.sky_market.find({}, {"units": 1}):
+        market += int(lot.get("units") or 0)
+        lots += 1
+    total = users_units + staked + market + pools["merchant"] + pools["team"] + pools["staking"] + pools["burned"]
+    return {"pools": {k: sky_tok(v) for k, v in pools.items()}, "balances": sky_tok(users_units), "staked": sky_tok(staked),
+            "market": sky_tok(market), "lots": lots, "holders": holders, "stakers": stakers,
+            "claimable_promised": sky_tok(claimable), "total": sky_tok(total), "expected": sky_tok(sky_total_units()),
+            "balanced": total == sky_total_units(), "circulating": sky_tok(total - pools["burned"])}
+
+
+@app.get("/admin/api/skylords")
+async def admin_sky(_: None = Depends(require_admin)):
+    try:
+        logs = []
+        async for d in store.sky_log.find({}).sort("ts", -1).limit(60):
+            d.pop("_id", None)
+            logs.append(d)
+        return {"status": await sky_status(force=True), "admins": MAINTENANCE_WHITELIST,
+                **(await sky_supply_report()), "log": logs}
+    except Exception as e:
+        _sky_fail(e, "загрузить токены")
+
+
+@app.post("/admin/api/skylords/status")
+async def admin_sky_status(body: SkyAdminStatus, request: Request, _: None = Depends(require_admin)):
+    owner = require_owner(request)
+    if body.status not in SKY_STATUSES:
+        raise HTTPException(status_code=400, detail="Статус: disabled / testing / active")
+    try:
+        await sky_ensure_pools()
+        await store.settings.update_one({"_id": "skylords_status"}, {"$set": {"value": body.status}}, upsert=True)
+        await sky_status(force=True)
+        await sky_log("status", owner, 0, status=body.status)
+        return {"status": body.status}
+    except Exception as e:
+        _sky_fail(e, "сменить статус")
+
+
+@app.post("/admin/api/skylords/transfer")
+async def admin_sky_transfer(body: SkyAdminTransfer, request: Request, _: None = Depends(require_admin)):
+    """Ручной перевод токенов: игрок ↔ игрок ↔ пулы. Списание с проверкой
+    остатка, потом зачисление; не зачислилось — списанное возвращается.
+    Общая сумма 10 млн не меняется."""
+    owner = require_owner(request)
+    try:
+        src, dst = sky_parse_party(body.source), sky_parse_party(body.target)
+        if src == dst:
+            raise HTTPException(status_code=400, detail="Источник и получатель совпадают")
+        u = sky_units_of(body.amount)
+        if dst[0] == "user" and not await store.users.find_one({"_id": dst[1]}, {"_id": 1}):
+            raise HTTPException(status_code=400, detail="Получатель не найден")
+        if src[0] == "pool":
+            if not await sky_pool_take(src[1], u):
+                have = (await sky_pools())[src[1]]
+                raise HTTPException(status_code=400, detail=f"В пуле не хватает токенов: есть {sky_tok(have):g}")
+        else:
+            r = await store.users.update_one({"_id": src[1], "sky_units": {"$gte": u}}, {"$inc": {"sky_units": -u, "ops": 1}})
+            if r.modified_count == 0:
+                doc = await store.users.find_one({"_id": src[1]}, {"sky_units": 1})
+                if not doc:
+                    raise HTTPException(status_code=400, detail="Источник не найден")
+                raise HTTPException(status_code=400, detail=f"На балансе источника не хватает токенов: есть {sky_tok(sky_bal(doc)):g}")
+        try:
+            if dst[0] == "pool":
+                await sky_pool_give(dst[1], u)
+            elif not await sky_user_inc(dst[1], u):
+                raise HTTPException(status_code=400, detail="Получатель не найден")
+        except BaseException:
+            if src[0] == "pool":
+                await sky_pool_give(src[1], u)
+            else:
+                await sky_user_inc(src[1], u)
+            raise
+        await sky_log("admin_transfer", src[1] if src[0] == "user" else (dst[1] if dst[0] == "user" else None), u, by=owner,
+                      source=body.source, target=body.target, note=str(body.note or "")[:200])
+        return {"status": "success", "amount": sky_tok(u), **(await sky_supply_report())}
+    except Exception as e:
+        _sky_fail(e, "перевести токены")
+
+
+@app.get("/admin/api/modules")
+async def admin_modules(_: None = Depends(require_admin)):
+    try:
+        return JSONResponse({"modules": [{"name": "sky", "code": sky_module_code("skylords_admin.js")}]},
+                            headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        print(f"[modules] admin: {type(e).__name__}: {e}")
+        return JSONResponse({"modules": []}, headers={"Cache-Control": "no-store"})
+
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -14257,6 +15151,11 @@ async def startup_event():
     except Exception as e:
         print(f"[migrate] particles → gold FAILED: {type(e).__name__}: {e}")
     asyncio.create_task(ledger_maintenance())
+    try:
+        await sky_ensure_pools()   # 🪙 пулы токена создаются один раз (setOnInsert) — повторный запуск их не меняет
+        await sky_status(force=True)
+    except Exception as e:
+        print(f"[skylords] init FAILED: {type(e).__name__}: {e}")
     if BOT_TOKEN and WEB_APP_URL:
         asyncio.create_task(run_bot())
     else:

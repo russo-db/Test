@@ -690,6 +690,30 @@
       {"id": "enchant_scroll", "name": "Свиток Заточки", "cost": {"blank_enchant_scroll": 1, "rock_crystal": 10}, "cost_particles": 5}
     ]
   },
+  "skylords": {
+    "_comment": "Токен SkyLords. Включается в админке (статус disabled / testing / active). Суммы — в токенах.",
+    "total_supply": 10000000,
+    "pools": {"merchant": 1000000, "team": 1000000, "staking": 8000000},
+    "merchant_pack_tokens": 1000,
+    "merchant_pack_price_gram": 1,
+    "merchant_max_packs": 1000,
+    "market_lot_step": 1000,
+    "market_min_gram_per_1000": 1,
+    "market_commission": 0.10,
+    "fusion_token_cost": {"uncommon": 5000, "rare": 50000, "epic": 200000, "legendary": 600000, "mythical": 1100000},
+    "stake_cooldown_hours": 24,
+    "stake_ladder": [
+      {"kind": "amount", "min": 1000, "rate": 0.2},
+      {"kind": "burn", "tier": "common", "rate": 0.4},
+      {"kind": "amount", "min": 10000, "rate": 0.6},
+      {"kind": "burn", "tier": "uncommon", "rate": 1.0},
+      {"kind": "amount", "min": 30000, "rate": 1.4},
+      {"kind": "burn", "tier": "rare", "rate": 3.5},
+      {"kind": "amount", "min": 70000, "rate": 1.0},
+      {"kind": "burn", "tier": "epic", "rate": 0.5},
+      {"kind": "burn", "tier": "legendary", "rate": 0.01}
+    ]
+  },
   "eagle_rock": {
     "min_eagle_level": 7,
     "factions": [

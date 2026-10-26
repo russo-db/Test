@@ -434,6 +434,16 @@ class MongoStore:
         # при призыве) | live_assault (сам вошёл в штурм/резерв), eagles_count,
         # total_power, has_contributed, pulled_sieges [id осад, куда подтянут], updated_at.
         self.rock_ready = client[db_name]["faction_daily_readiness"]
+        # 🪙 Токен SkyLords (см. раздел ТОКЕН SKYLORDS в main.py). Все суммы —
+        # целые СОТЫЕ токена. _id "pools": merchant / team / staking — остатки
+        # пулов, burned — сожжено навсегда. Баланс игрока — users.sky_units,
+        # стейкинг — users.sky_stake. Сумма всего этого + лоты рынка = 10 млн.
+        self.sky = client[db_name]["skylords_state"]
+        # Лоты рынка токенов: {seller_id, seller_name, amount (целые токены,
+        # кратно 1000), units, price_gram, unit_price (GRAM за 1000), created_at}
+        self.sky_market = client[db_name]["skylords_listings"]
+        # Журнал всех движений токенов: {ts, kind, user_id, units, ...}
+        self.sky_log = client[db_name]["skylords_log"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -477,6 +487,10 @@ class MongoStore:
             (self.rock_calls, [("status", 1), ("created_at", 1)], {}),
             (self.rock_ready, [("faction_id", 1), ("day", 1)], {}),
             (self.rock_ready, [("user_id", 1), ("day", 1)], {}),
+            (self.sky_market, "seller_id", {}),
+            (self.sky_market, [("unit_price", 1), ("created_at", 1)], {}),
+            (self.sky_log, [("ts", -1)], {}),
+            (self.sky_log, [("user_id", 1), ("ts", -1)], {}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)
