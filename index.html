@@ -74,6 +74,28 @@
         #farm.fog-shifted { transform: translateX(100%); opacity: 0.25; pointer-events: none; }
         /* пока экран Орлов въезжает обратно, случайный тап не должен попасть в слот/кнопку */
         #farm.fog-closing { pointer-events: none; }
+        /* 🖱 Компьютер (Telegram Desktop / Web, браузер): свайпа пальцем нет — вход
+           в Скалу кнопкой у левого края (оттуда и выезжает экран), выход — кнопкой
+           у правого края экрана Скалы. На телефонах их нет. */
+        .fog-edge-btn { display: none; }
+        @media (hover: hover) and (pointer: fine) {
+            .fog-edge-btn {
+                display: flex; flex-direction: column; align-items: center; gap: 4px;
+                position: fixed; top: 50%; transform: translateY(-50%); z-index: 16;
+                padding: 12px 6px; border: 1px solid rgba(255, 255, 255, 0.22); cursor: pointer;
+                background: rgba(14, 10, 32, 0.72); color: #fff; font: 700 11px 'Poppins', sans-serif;
+                backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+            }
+            .fog-edge-btn span { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px; }
+            .fog-edge-btn b { font-size: 16px; }
+            .fog-edge-btn:hover { background: rgba(40, 28, 80, 0.85); }
+            .fog-edge-open { left: 0; border-left: none; border-radius: 0 12px 12px 0; }
+            .fog-edge-close { right: 0; border-right: none; border-radius: 12px 0 0 12px; }
+            .fog-edge-close span { transform: none; }
+            .fog-page:not(.open) .fog-edge-close { display: none; }
+            #farm.fog-shifted .fog-edge-open, #farm:not(.active) .fog-edge-open { display: none; }
+            #farm.fog-dragging-mouse, .fog-page.fog-dragging-mouse { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+        }
         .fog-page {
             position: fixed; inset: 0; z-index: 15; overflow: hidden;
             display: flex; align-items: center; justify-content: center;
@@ -1715,6 +1737,7 @@
 
         <!-- FARM TAB -->
         <div id="farm" class="content active">
+            <button class="fog-edge-btn fog-edge-open" id="fogEdgeOpen" onclick="openFogPage()" aria-label="Rock"><b>🏔</b><span data-i18n="fog.edgeOpen">Скала</span></button>
             <div class="stats-panel glass-panel" id="farmStats">
                 <div class="stat-cell">
                     <span class="stat-label" data-i18n="farm.eagles">Орлов</span>
@@ -2264,6 +2287,7 @@
 
         <!-- Скрытая вторая страница: открывается только свайпом вправо на экране Орлов -->
         <div class="fog-page" id="fogPage" aria-hidden="true">
+            <button class="fog-edge-btn fog-edge-close" id="fogEdgeClose" onclick="closeFogPage(false)" aria-label="Back"><b>🦅</b><span data-i18n="fog.edgeClose">Орлы ›</span></button>
             <div class="fog-layer l1"></div>
             <div class="fog-layer l2"></div>
             <div class="fog-title" data-i18n="fog.soon">Скоро...</div>
@@ -3027,7 +3051,7 @@
                 'clan.replayWinner': 'Победил клан {name}!', 'clan.replayHit': 'Урон: {value}{crit}',
                 'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
                 'gvip.title': '👑 Доступ к Gold Eagle VIP',
-                'fog.soon': 'Скоро...',
+                'fog.soon': 'Скоро...', 'fog.edgeOpen': 'Скала', 'fog.edgeClose': 'Орлы ›',
                 'gvip.activeSub': 'Активен · осталось {time}. Отправка и сбор золота — в 1 клик.',
                 'gvip.inactiveSub': 'Отправляй всех свободных орлов 7 ур. в экспедиции и собирай золото со всех вернувшихся — в 1 клик.',
                 'gvip.otherActive': 'Сейчас активен {name}. Gold Eagle VIP можно будет активировать после его окончания.',
@@ -3829,7 +3853,7 @@
                 'clan.replayWinner': '{name} wins!', 'clan.replayHit': 'Damage: {value}{crit}',
                 'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
                 'gvip.title': '👑 Gold Eagle VIP Access',
-                'fog.soon': 'Coming soon...',
+                'fog.soon': 'Coming soon...', 'fog.edgeOpen': 'Rock', 'fog.edgeClose': 'Eagles ›',
                 'gvip.activeSub': 'Active · {time} left. Send and collect gold in 1 tap.',
                 'gvip.inactiveSub': 'Send every free lvl 7 eagle on expeditions and collect gold from all returned ones — in 1 tap.',
                 'gvip.otherActive': '{name} is active now. Gold Eagle VIP can be activated after it ends.',
@@ -9240,9 +9264,47 @@
             }
         }
 
+        // Мышь (компьютер): тот же жест перетаскиванием — события мыши переводятся
+        // в формат касаний. После настоящего касания эмулированные браузером события
+        // мыши игнорируются. Если экран реально тянули, следующий клик гасится,
+        // чтобы отпускание кнопки не нажало орла или кнопку под курсором.
+        let fogLastTouchAt = 0;
+        function fogMouseDown(e, onFog) {
+            if (e.button !== 0 || Date.now() - fogLastTouchAt < 800) return;
+            if (e.target.closest('.fog-edge-btn, button, a, input, textarea, select, .modal-backdrop')) return;
+            fogTouchStart({ touches: [{ clientX: e.clientX, clientY: e.clientY }], target: e.target }, onFog);
+            if (!fogTouch) return;
+            const { farm, page } = fogEls();
+            const move = ev => {
+                fogTouchMove({ touches: [{ clientX: ev.clientX, clientY: ev.clientY }] });
+                if (fogTouch && fogTouch.dir === 'h') { farm.classList.add('fog-dragging-mouse'); page.classList.add('fog-dragging-mouse'); }
+            };
+            const up = () => {
+                window.removeEventListener('mousemove', move);
+                window.removeEventListener('mouseup', up);
+                farm.classList.remove('fog-dragging-mouse'); page.classList.remove('fog-dragging-mouse');
+                const dragged = fogTouch && fogTouch.dir === 'h';
+                fogTouchEnd({ type: 'touchend' });
+                if (dragged) {
+                    const block = ev => { ev.stopPropagation(); ev.preventDefault(); };
+                    window.addEventListener('click', block, { capture: true, once: true });
+                    setTimeout(() => window.removeEventListener('click', block, { capture: true }), 50);
+                }
+            };
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', up);
+        }
+
         function initFogSwipe() {
             const { farm, page } = fogEls();
             if (!farm || !page) return;
+            window.addEventListener('touchstart', () => { fogLastTouchAt = Date.now(); }, { passive: true, capture: true });
+            farm.addEventListener('mousedown', e => fogMouseDown(e, false));
+            page.addEventListener('mousedown', e => fogMouseDown(e, true));
+            // Esc на компьютере закрывает экран Скалы (если не открыто окно поверх)
+            window.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && fogOpen && !document.querySelector('.modal-backdrop.open')) closeFogPage(false);
+            });
             farm.addEventListener('touchstart', e => fogTouchStart(e, false), { passive: true });
             farm.addEventListener('touchmove', fogTouchMove, { passive: true });
             farm.addEventListener('touchend', fogTouchEnd, { passive: true });
