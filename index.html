@@ -80,6 +80,7 @@
         .fog-edge-btn { display: none; }
         /* 🎓 Обучение новичков: затемнение с «окошком» над нужным элементом и подсказка */
         .tut-layer { position: fixed; inset: 0; z-index: 9000; }
+        .tut-layer.tut-closing .tut-hole, .tut-layer.tut-closing .tut-tip { opacity: 0; transition: opacity .2s ease; pointer-events: none; }
         .tut-hole { position: fixed; border-radius: 16px; box-shadow: 0 0 0 9999px rgba(4, 2, 12, 0.74); border: 2px solid rgba(247, 181, 0, 0.9);
             transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease; pointer-events: none; }
         .tut-hole.none { left: 50% !important; top: 45% !important; width: 0 !important; height: 0 !important; border: none; }
@@ -16084,6 +16085,8 @@
                 layer.addEventListener('click', e => { e.stopPropagation(); });
                 document.body.appendChild(layer);
             }
+            clearTimeout(tut.hideTimer);
+            layer.classList.remove('tut-closing');
             layer.style.display = '';
             tutShow();
         }
@@ -16157,7 +16160,13 @@
             if (!tut.on) return;
             tut.on = false;
             const layer = document.getElementById('tutLayer');
-            if (layer) layer.style.display = 'none';
+            if (layer) {
+                // слой гаснет, но ещё полсекунды ловит касания: второй тап двойного
+                // нажатия «Пропустить» / «Начать игру!» не должен нажать игру под ним
+                layer.classList.add('tut-closing');
+                clearTimeout(tut.hideTimer);
+                tut.hideTimer = setTimeout(() => { layer.style.display = 'none'; layer.classList.remove('tut-closing'); }, 500);
+            }
             const farmEl = document.getElementById('farm'); if (farmEl) farmEl.scrollTop = 0;   // тур прокручивал ферму к ячейкам
             const wasPending = state.tutorialPending;
             state.tutorialPending = false;
