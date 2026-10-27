@@ -78,6 +78,18 @@
            в Скалу кнопкой у левого края (оттуда и выезжает экран), выход — кнопкой
            у правого края экрана Скалы. На телефонах их нет. */
         .fog-edge-btn { display: none; }
+        /* 🎓 Обучение новичков: затемнение с «окошком» над нужным элементом и подсказка */
+        .tut-layer { position: fixed; inset: 0; z-index: 9000; }
+        .tut-hole { position: fixed; border-radius: 16px; box-shadow: 0 0 0 9999px rgba(4, 2, 12, 0.74); border: 2px solid rgba(247, 181, 0, 0.9);
+            transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease; pointer-events: none; }
+        .tut-hole.none { left: 50% !important; top: 45% !important; width: 0 !important; height: 0 !important; border: none; }
+        .tut-tip { position: fixed; left: 16px; right: 16px; max-width: 420px; margin: 0 auto; z-index: 9001; padding: 14px 14px 12px; border-radius: 18px;
+            background: rgba(18, 12, 38, 0.97); border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5); color: #fff; }
+        .tut-tip p { font-size: 14px; line-height: 1.4; font-weight: 600; margin: 0 0 12px; }
+        .tut-row { display: flex; align-items: center; gap: 8px; }
+        .tut-row .tut-dots { flex: 1 1 auto; font-size: 11px; color: var(--text-muted); font-weight: 700; }
+        .tut-row button { flex: none; padding: 9px 14px; font-size: 13px; width: auto; }
+        .tut-skip { background: none; border: none; color: var(--text-muted); font-weight: 700; font-size: 12px; cursor: pointer; padding: 6px 4px; }
         @media (hover: hover) and (pointer: fine) {
             .fog-edge-btn {
                 display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -2282,6 +2294,7 @@
                     </div>
                 </div>
                 <button class="btn-action" style="width: 100%; justify-content: center; margin-top: 10px;" onclick="testSound()" data-i18n="sound.test">🔊 Проверить звук</button>
+                <button class="btn-action" id="tutReplayBtn" style="width: 100%; justify-content: center; margin-top: 10px;" onclick="startTutorial(true)" data-i18n="tut.replay">🎓 Пройти обучение заново</button>
             </div>
         </div>
 
@@ -2914,6 +2927,7 @@
                 'lang.heading': 'Язык интерфейса',
                 'sound.heading': 'Звук в игре', 'sound.effectsLabel': 'Звуковые эффекты',
                 'sound.on': 'Включены', 'sound.off': 'Выключены', 'sound.test': '🔊 Проверить звук',
+                "tut.replay": "🎓 Пройти обучение заново", "tut.next": "Далее", "tut.back": "Назад", "tut.skip": "Пропустить", "tut.done": "Начать игру!", "tut.welcome": "👋 Добро пожаловать в SkyLords GRAMM! Короткое знакомство с игрой — меньше минуты.", "tut.eagle": "🦅 Это твой орёл. Тапай по нему — он ест мясо (Meat) и растёт. 7-й уровень — полностью прокачан.", "tut.grid": "🥚 Твои орлы — в ячейках. Подросший орёл несёт яйцо: тапни, когда оно готово. Два прокачанных орла одного вида можно улучшить до следующей редкости.", "tut.balance": "💰 Твои ресурсы: GRAM, мясо (Meat) и золото.", "tut.wheel": "🎡 Колесо фортуны — призы каждый день.", "tut.side": "🏛️ Аукцион, 🛡️ Кланы и 🏹 Охота — здесь, справа от орла.", "tut.eggs": "🥚 Яйца: вскрывай — внутри мясо или новые орлы.", "tut.missions": "📋 Задания и ежедневные награды.", "tut.market": "🛒 Рынок: покупай и продавай орлов, снаряжение и ресурсы другим игрокам.", "tut.merchant": "🧔 Купец: мясо за золото и выкуп орлов.", "tut.nest": "🪺 Гнездо: Небесные Осколки, кузница снаряжения и экипировка орлов.", "tut.arena": "⚔️ Арена: бои орлов с другими игроками и сезонный рейтинг.", "tut.rock": "🏔 Свайп вправо по экрану с орлами — Орлиная Скала: фракции, штурмы и Лидеры.", "tut.rockDesk": "🏔 Эта кнопка (или перетаскивание экрана вправо) — Орлиная Скала: фракции, штурмы и Лидеры.", "tut.profile": "👤 Профиль: кошелёк TON, друзья, язык и звук. Там же можно пройти обучение заново.", "tut.final": "🚀 Готово! Корми орла, собирай яйца и расти свою стаю. Удачной охоты!",
                 'wheel.title': 'Колесо фортуны', 'wheel.spin': 'Крутить',
                 'wheel.subtitle': 'Крути сколько угодно — совсем бесплатно', 'wheel.eggsWord': 'яиц',
                 'wheel.subtitlePaid': 'Первые {cheap} в сутки — по {cheapCost} GRAM, дальше — по {expensiveCost} GRAM',
@@ -3716,6 +3730,7 @@
                 'lang.heading': 'Interface language',
                 'sound.heading': 'In-game sound', 'sound.effectsLabel': 'Sound effects',
                 'sound.on': 'On', 'sound.off': 'Off', 'sound.test': '🔊 Test sound',
+                "tut.replay": "🎓 Replay the tutorial", "tut.next": "Next", "tut.back": "Back", "tut.skip": "Skip", "tut.done": "Start playing!", "tut.welcome": "👋 Welcome to SkyLords GRAMM! A quick tour of the game — under a minute.", "tut.eagle": "🦅 This is your eagle. Tap it to feed it Meat and make it grow. Level 7 means fully grown.", "tut.grid": "🥚 Your eagles live in these slots. A grown eagle lays an egg — tap it when ready. Two fully grown eagles of the same kind can be upgraded to the next rarity.", "tut.balance": "💰 Your resources: GRAM, Meat and gold.", "tut.wheel": "🎡 Wheel of Fortune — daily prizes.", "tut.side": "🏛️ Auction, 🛡️ Clans and 🏹 Hunt are here, to the right of your eagle.", "tut.eggs": "🥚 Eggs: open them to get Meat or new eagles.", "tut.missions": "📋 Missions and daily rewards.", "tut.market": "🛒 Market: buy and sell eagles, gear and resources with other players.", "tut.merchant": "🧔 Merchant: Meat for gold and eagle buyback.", "tut.nest": "🪺 Nest: Sky Shards, the gear forge and equipping your eagles.", "tut.arena": "⚔️ Arena: eagle battles against other players and a season rating.", "tut.rock": "🏔 Swipe right on the eagles screen — the Eagle Rock: factions, assaults and Leaders.", "tut.rockDesk": "🏔 This button (or dragging the screen right) opens the Eagle Rock: factions, assaults and Leaders.", "tut.profile": "👤 Profile: TON wallet, friends, language and sound. You can replay this tutorial there.", "tut.final": "🚀 All set! Feed your eagle, collect eggs and grow your flock. Good hunting!",
                 'wheel.title': 'Wheel of fortune', 'wheel.spin': 'Spin',
                 'wheel.subtitle': 'Spin as much as you like — completely free', 'wheel.eggsWord': 'eggs',
                 'wheel.subtitlePaid': 'First {cheap} per day — {cheapCost} GRAM each, then {expensiveCost} GRAM',
@@ -13086,6 +13101,7 @@
             state.eggBoardUnlocked = Math.max(2, Math.min(16, Number(data.eggs_board_unlocked) || 2));
             state.eggQueue = normalizeEggQueue(data.eggs_queue);
             botUsername = data.bot_username || botUsername;
+            if (typeof data.tutorial === 'boolean') state.tutorialPending = data.tutorial;
             if (data.nest) {
                 state.nest.shardCooldownUntil = data.nest.shard_cooldown_until || 0;
                 state.nest.shardBoughtToday = data.nest.shard_bought_today || 0;
@@ -16012,6 +16028,137 @@
             } catch (e) { /* без модулей игра работает как обычно */ }
         }
 
+        // ---------- 🎓 Обучение новичков ----------
+        // Короткий тур только подсказками: затемнение, «окошко» над элементом,
+        // текст и «Далее». Сам запускается у новичка (сервер шлёт tutorial: true),
+        // повторить — в Профиле. Шаги с невидимой целью (выключенная Охота и т.п.) пропускаются.
+        const TUT_STEPS = [
+            { key: 'tut.welcome' },
+            { key: 'tut.eagle', sel: '#monsterStage' },
+            { key: 'tut.grid', sel: '#slotGrid' },
+            { key: 'tut.balance', sel: '.balance-bar' },
+            { key: 'tut.wheel', sel: '#wheelOpenBtn' },
+            { key: 'tut.side', sel: '.hero-side-col' },
+            { key: 'tut.eggs', sel: `.nav-item[onclick*="'collection'"]` },
+            { key: 'tut.missions', sel: `.nav-item[onclick*="'missions'"]` },
+            { key: 'tut.market', sel: `.nav-item[onclick*="'market'"]` },
+            { key: 'tut.merchant', sel: `.nav-item[onclick*="'merchant'"]` },
+            { key: 'tut.nest', sel: `.nav-item[onclick*="'nest'"]` },
+            { key: 'tut.arena', sel: `.nav-item[onclick*="'arena'"]` },
+            { key: 'tut.rockDesk', sel: '#fogEdgeOpen', only: 'desk' },
+            { key: 'tut.rock', only: 'touch' },
+            { key: 'tut.profile', sel: '.brand-title' },
+            { key: 'tut.final' },
+        ];
+        const tut = { on: false, i: 0, replay: false, steps: [] };
+        function tutVisible(el) {
+            if (!el) return false;
+            const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+            return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+        }
+        function tutIsDesk() { try { return matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) { return false; } }
+        function startTutorial(replay) {
+            if (tut.on) return;
+            haptic.select();
+            // тур идёт по экрану с орлами
+            closeFogPage(true);
+            document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
+            const farmNav = document.querySelector(`.nav-item[onclick*="'farm'"]`);
+            if (!document.getElementById('farm').classList.contains('active') && farmNav) switchTab('farm', farmNav);
+            const desk = tutIsDesk();
+            tut.steps = TUT_STEPS.filter(s => !(s.only === 'desk' && !desk) && !(s.only === 'touch' && desk));
+            Object.assign(tut, { on: true, i: 0, replay: !!replay });
+            let layer = document.getElementById('tutLayer');
+            if (!layer) {
+                layer = document.createElement('div');
+                layer.id = 'tutLayer';
+                layer.className = 'tut-layer';
+                layer.innerHTML = '<div class="tut-hole none" id="tutHole"></div><div class="tut-tip" id="tutTip"></div>';
+                // клики мимо подсказки не уходят в игру
+                layer.addEventListener('click', e => { e.stopPropagation(); });
+                document.body.appendChild(layer);
+            }
+            layer.style.display = '';
+            tutShow();
+        }
+        function tutShow(dir = 1) {
+            // пропускаем шаги, чья цель сейчас не видна
+            while (tut.i >= 0 && tut.i < tut.steps.length) {
+                const st = tut.steps[tut.i];
+                if (!st.sel || tutVisible(document.querySelector(st.sel))) break;
+                tut.i += dir;
+            }
+            if (tut.i < 0) tut.i = 0;
+            if (tut.i >= tut.steps.length) { tutFinish(false); return; }
+            const st = tut.steps[tut.i];
+            const el = st.sel ? document.querySelector(st.sel) : null;
+            if (el && el.closest('#farm')) el.scrollIntoView({ block: 'center' });
+            const last = tut.i === tut.steps.length - 1;
+            document.getElementById('tutTip').innerHTML = `
+                <p>${t(st.key)}</p>
+                <div class="tut-row">
+                    ${last ? '' : `<button class="tut-skip" onclick="tutFinish(true)">${t('tut.skip')}</button>`}
+                    <span class="tut-dots">${tut.i + 1} / ${tut.steps.length}</span>
+                    ${tut.i > 0 ? `<button class="btn-action" onclick="tutGo(-1)">${t('tut.back')}</button>` : ''}
+                    <button class="btn-primary" id="tutNextBtn" onclick="tutGo(1)">${last ? t('tut.done') : t('tut.next')}</button>
+                </div>`;
+            tutPlace();
+        }
+        function tutPlace() {
+            if (!tut.on) return;
+            const st = tut.steps[tut.i]; if (!st) return;
+            const hole = document.getElementById('tutHole'), tip = document.getElementById('tutTip');
+            const el = st.sel ? document.querySelector(st.sel) : null;
+            const H = window.innerHeight;
+            if (!el || !tutVisible(el)) {
+                hole.classList.add('none');
+                tip.style.top = Math.max(16, Math.round(H / 2 - tip.offsetHeight / 2)) + 'px';
+                return;
+            }
+            hole.classList.remove('none');
+            const rr = el.getBoundingClientRect(), pad = 6;
+            const th = tip.offsetHeight || 120;
+            // цель выше экрана (сетка ячеек на широком мониторе) — подсвечиваем её
+            // видимый верх, чтобы под ним поместилась подсказка
+            const r = { left: rr.left, right: rr.right, width: rr.width, top: Math.max(rr.top, 8), bottom: rr.bottom };
+            const fitsBelow = r.bottom + pad + 12 + th <= H - 12, fitsAbove = r.top - pad - 12 - th >= 12;
+            if (!fitsBelow && !fitsAbove) r.bottom = Math.max(r.top + 40, H - th - 24 - pad);
+            r.height = r.bottom - r.top;
+            hole.style.left = Math.round(r.left - pad) + 'px'; hole.style.top = Math.round(r.top - pad) + 'px';
+            hole.style.width = Math.round(r.width + pad * 2) + 'px'; hole.style.height = Math.round(r.height + pad * 2) + 'px';
+            // подсказка — под целью, если влезает, иначе над ней
+            let top = r.bottom + pad + 12;
+            if (top + th > H - 12) top = r.top - pad - 12 - th;
+            tip.style.top = Math.max(12, Math.min(H - th - 12, Math.round(top))) + 'px';
+        }
+        window.addEventListener('resize', () => tutPlace());
+        // таймер-страховка: элементы фермы двигаются (анимации, прокрутка, догрузка)
+        setInterval(() => { if (tut.on) tutPlace(); }, 400);
+        function tutGo(dir) {
+            if (!tut.on) return;
+            // двойной тап по «Далее» не проскакивает шаг, который игрок не успел прочитать
+            const now = Date.now();
+            if (now - (tut.lastGo || 0) < 300) return;
+            tut.lastGo = now;
+            haptic.select();
+            if (dir > 0 && tut.i >= tut.steps.length - 1) { tutFinish(false); return; }
+            tut.i += dir;
+            tutShow(dir);
+        }
+        function tutFinish(skipped) {
+            if (!tut.on) return;
+            tut.on = false;
+            const layer = document.getElementById('tutLayer');
+            if (layer) layer.style.display = 'none';
+            const farmEl = document.getElementById('farm'); if (farmEl) farmEl.scrollTop = 0;   // тур прокручивал ферму к ячейкам
+            const wasPending = state.tutorialPending;
+            state.tutorialPending = false;
+            if (!offlineOnly && state.userId && (wasPending || !tut.replay)) {
+                fetch('api/tutorial/done', { method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, skipped: !!skipped, step: tut.i }) }).catch(() => {});
+            }
+        }
+
         async function boot() {
             preloadTabBackgrounds();
             if (await checkMaintenance()) return;
@@ -16069,6 +16216,10 @@
             } else loadRock(true);         // 🏔 запущена ли Орлиная Скала — чтобы при свайпе сразу был хаб, а не туман
             raidHandleDeepLink();   // ⚔️ открыт кнопкой «Вступить в бой» из чата → сразу в лобби
             loadClientModules();
+            // 🎓 новичку — короткий тур (не поверх перехода из Великого призыва / рейда)
+            if (state.tutorialPending && !offlineOnly && !rockStartParam() && !(typeof raidStartParam === 'function' && raidStartParam())) {
+                setTimeout(() => { if (!document.querySelector('.modal-backdrop.open')) startTutorial(false); }, 900);
+            }
 
             document.getElementById('boot').style.display = 'none';
         }

@@ -2720,7 +2720,45 @@ async def load_user_data(user_id: int, request: Request, x_telegram_init_data: O
         "ton": ton_info(user_id),
         "operations": await store.recent_operations(user_id),
         "bot_username": BOT_USERNAME,
+        "tutorial": tutorial_pending(row),
     }
+
+
+# --- 🎓 Обучение новичков: короткий тур по экранам при первом входе (только
+# подсказки, без наград). Показывается тем, кто зарегистрирован не раньше
+# TUTORIAL_NEW_DAYS суток назад и ещё не прошёл/не пропустил его — старых
+# игроков не трогаем. Повторить можно в Профиле (это только клиент). ---
+TUTORIAL_NEW_DAYS = 3
+
+
+def tutorial_pending(row: dict) -> bool:
+    if row.get("tutorial_done"):
+        return False
+    try:
+        created = float(row.get("created_at") or 0)
+    except (TypeError, ValueError):
+        return False
+    return created > 0 and time.time() - created < TUTORIAL_NEW_DAYS * 86400
+
+
+class TutorialDone(BaseModel):
+    user_id: int
+    skipped: bool = False
+    step: int = 0
+
+
+@app.post("/api/tutorial/done")
+async def tutorial_done(request: TutorialDone, x_telegram_init_data: Optional[str] = Header(None)):
+    """Тур пройден или пропущен — больше сам не запускается. Повторно не перезаписывается."""
+    user_id = authenticate(x_telegram_init_data, request.user_id)
+    try:
+        await store.users.update_one({"_id": user_id, "tutorial_done": {"$exists": False}},
+                                     {"$set": {"tutorial_done": {"at": time.time(), "skipped": bool(request.skipped),
+                                                                 "step": max(0, min(100, int(request.step)))}}})
+        return {"status": "success"}
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise HTTPException(status_code=500, detail="Не удалось сохранить — попробуй ещё раз")
 
 
 @app.get("/api/referrals/{user_id}")
