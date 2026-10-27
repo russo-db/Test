@@ -12986,6 +12986,15 @@ async def rock_declare(request: RockAction, x_telegram_init_data: Optional[str] 
             await rock_do_plus(user_id, row, fid)
         except HTTPException:
             pass
+        # подтвердившие готовность заранее встают в бой сразу, с обеих сторон: раньше
+        # они ждали «Великого призыва» во время штурма, а призыв, нажатый ДО объявления
+        # штурма, уходил в кулдаун на час — и их орлы так и не выходили в бой
+        for side in (fid, defender):
+            if side:
+                try:
+                    await rock_pull_ready(side, now, reason="start")
+                except Exception as e:
+                    print(f"[rock] auto pull on declare ({side}) failed: {type(e).__name__}: {e}")
         return await rock_response(user_id)
     except HTTPException:
         raise
@@ -14020,6 +14029,10 @@ async def rock_ready_confirm(request: RockReadyRequest, x_telegram_init_data: Op
                       "total_power": round(sum(rock_power(e) for e in snap[:want]), 2), "has_contributed": True, "updated_at": now},
              "$setOnInsert": {"created_at": now, "pulled_sieges": []}},
             upsert=True)
+        try:   # штурм с участием фракции уже идёт — подтверждённые орлы сразу встают в бой
+            await rock_pull_ready(fid, now, reason="ready")
+        except Exception as e:
+            print(f"[rock] pull on confirm failed: {type(e).__name__}: {e}")
         return await rock_response(user_id)
     except HTTPException:
         raise
@@ -14028,7 +14041,7 @@ async def rock_ready_confirm(request: RockReadyRequest, x_telegram_init_data: Op
         raise HTTPException(status_code=500, detail="Не удалось подтвердить отряд — попробуй ещё раз")
 
 
-async def rock_pull_ready(fid: str, now: float) -> dict:
+async def rock_pull_ready(fid: str, now: float, reason: str = "call") -> dict:
     """Великий призыв во время идущего штурма: подтверждённые заранее орлы
     тех, кого ещё нет в бою, встают в штурмовой отряд (атака: суточный лимит
     штурма, как у «+») или в резерв гарнизона (оборона: не стоявшие на Скале
@@ -14112,8 +14125,15 @@ async def rock_pull_ready(fid: str, now: float) -> dict:
         await store.rock_ready.update_one({"_id": rock_ready_id(day, uid, ROCK_READY_PRE)}, {"$addToSet": {"pulled_sieges": sid}})
     n_e = sum(len(v) for v in added.values())
     if added:
-        await rock_feed_add([fid], f"🛡️ По призыву в бой подтянуто {n_e} орл. от {len(added)} воинов, подтвердивших готовность заранее.",
-                            f"🛡️ The Call pulled {n_e} eagles from {len(added)} warriors who confirmed readiness in advance.")
+        if reason == "ready":
+            await rock_feed_add([fid], f"🛡️ В бой встали {n_e} орл. по подтверждённой готовности.",
+                                f"🛡️ {n_e} eagles joined the battle from confirmed readiness.")
+        elif reason == "start":
+            await rock_feed_add([fid], f"🛡️ С началом штурма в бой встали {n_e} орл. от {len(added)} воинов, подтвердивших готовность заранее.",
+                                f"🛡️ As the assault began, {n_e} eagles from {len(added)} warriors who confirmed in advance joined the battle.")
+        else:
+            await rock_feed_add([fid], f"🛡️ По призыву в бой подтянуто {n_e} орл. от {len(added)} воинов, подтвердивших готовность заранее.",
+                                f"🛡️ The Call pulled {n_e} eagles from {len(added)} warriors who confirmed readiness in advance.")
     return {"players": len(added), "eagles": n_e}
 
 
@@ -14126,7 +14146,9 @@ def rock_member_status(uid: int, last_seen: float, now: float, pre: Optional[dic
     if now - last_seen > 72 * 3600:
         return "inactive"
     if pre:
-        return "pre"
+        # подтянут в бой по готовности (с началом штурма или призывом) — отличаем
+        # от тех, кто подтвердил, но в бой ещё не попал
+        return "pulled" if pre.get("pulled_sieges") else "pre"
     if battle_today and now - last_seen <= 24 * 3600:
         return "truant"
     return "idle" if now - last_seen <= 24 * 3600 else "away"

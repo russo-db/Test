@@ -227,6 +227,7 @@
         .rock-dash-name { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
         .rock-st { display: inline-block; padding: 2px 6px; border-radius: 8px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
         .rock-st.pre { background: rgba(59,130,246,0.18); color: #93c5fd; }
+        .rock-st.pulled { background: rgba(34,197,94,0.18); color: #86efac; }
         .rock-st.live { background: rgba(249,115,22,0.2); color: #fdba74; }
         .rock-st.truant { background: rgba(239,68,68,0.18); color: #fca5a5; }
         .rock-st.inactive { background: rgba(148,163,184,0.18); color: #cbd5e1; }
@@ -3305,7 +3306,7 @@
                 'rock.ready.live': '🔥 Сегодня в бою лично: {n} орл.',
                 'rock.ready.btn': '➕ Подтвердить отряд на сегодня',
                 'rock.ready.change': '✏️ Изменить отряд на сегодня',
-                'rock.ready.hint': 'Подтвердите свои войска в любое удобное время в течение дня. Если в момент штурма вы будете офлайн, Лидер все равно сможет призвать ваших Орлов в бой, а вы гарантированно получите право на вечерние награды фракции!',
+                'rock.ready.hint': 'Подтвердите свои войска в любое удобное время в течение дня. Если в момент штурма вы будете офлайн, ваши Орлы сами встанут в бой, как только Лидер объявит штурм, а вы гарантированно получите право на вечерние награды фракции!',
                 'rock.ready.pick': 'Сколько сильнейших орлов {lvl} ур. отдать в бой сегодня (доступно: {max})?',
                 'rock.ready.all': 'Все ({n})',
                 'rock.ready.confirm': '🛡️ Подтвердить',
@@ -3329,8 +3330,8 @@
                 'rock.cmd.kickText': '<b>{name}</b> будет исключён из фракции, его готовность за сегодня удалится. Вернуться к вам он сможет только через {h} ч.',
                 'rock.cmd.kickBtn': '❌ Исключить',
                 'rock.cmd.kicked': '🚪 {name} исключён из фракции',
-                'rock.cmd.hint': 'Сила 7 — сила орлов 7 ур., Войска — орлов в бою за сегодня. Прогул: штурм был, а игрок заходил в игру за сутки и не дал ни одного орла. Подтвердившие заранее встают в бой, когда ты жмёшь «📣 Великий призыв» во время штурма.',
-                'rock.st.pre': '🛡️ Подтвердил (офлайн)',
+                'rock.cmd.hint': 'Сила 7 — сила орлов 7 ур., Войска — орлов в бою за сегодня. Прогул: штурм был, а игрок заходил в игру за сутки и не дал ни одного орла. Подтвердившие заранее встают в бой сами, как только объявлен штурм; кто подтвердил позже — по «📣 Великому призыву» во время штурма.',
+                'rock.st.pre': '🛡️ Подтвердил (офлайн)', 'rock.st.pulled': '⚔️ В бою по готовности', 'rock.stShort.pulled': '⚔️ Подтянут',
                 'rock.st.live': '🔥 В бою',
                 'rock.st.truant': '❌ Прогул',
                 'rock.st.inactive': '💤 Инактив > 3 дн.',
@@ -4108,7 +4109,7 @@
                 'rock.ready.live': '🔥 In battle in person today: {n} eagles',
                 'rock.ready.btn': '➕ Confirm squad for today',
                 'rock.ready.change': '✏️ Change today\'s squad',
-                'rock.ready.hint': 'Confirm your troops at any time during the day. If you are offline when the assault starts, the Leader can still call your Eagles into battle, and you are guaranteed the right to the faction\'s evening rewards!',
+                'rock.ready.hint': 'Confirm your troops at any time during the day. If you are offline during the assault, your Eagles join the battle on their own as soon as the Leader declares it, and you are guaranteed the right to the faction\'s evening rewards!',
                 'rock.ready.pick': 'How many of your strongest level {lvl} eagles go to battle today (available: {max})?',
                 'rock.ready.all': 'All ({n})',
                 'rock.ready.confirm': '🛡️ Confirm',
@@ -4132,8 +4133,8 @@
                 'rock.cmd.kickText': '<b>{name}</b> will be removed from the faction and today\'s readiness deleted. They can rejoin your faction only after {h} h.',
                 'rock.cmd.kickBtn': '❌ Remove',
                 'rock.cmd.kicked': '🚪 {name} was removed from the faction',
-                'rock.cmd.hint': 'Pow 7 — power of level 7 eagles, Troops — eagles in battle today. Truant: there was an assault, the player was online within a day and sent no eagles. Players who confirmed in advance join the battle when you press «📣 Great Call» during an assault.',
-                'rock.st.pre': '🛡️ Confirmed (offline)',
+                'rock.cmd.hint': 'Pow 7 — power of level 7 eagles, Troops — eagles in battle today. Truant: there was an assault, the player was online within a day and sent no eagles. Players who confirmed in advance join the battle as soon as an assault is declared; later confirmations join on «📣 Great Call» during the assault.',
+                'rock.st.pre': '🛡️ Confirmed (offline)', 'rock.st.pulled': '⚔️ Fought via readiness', 'rock.stShort.pulled': '⚔️ Pulled',
                 'rock.st.live': '🔥 In battle',
                 'rock.st.truant': '❌ Truant',
                 'rock.st.inactive': '💤 Inactive > 3 d',
@@ -9823,7 +9824,7 @@
                 </div>
                 <div id="rockCmdTableSlot"></div>
                 ${d.more ? `<div class="rock-muted" style="margin-top:6px">${t('rock.rosterMore', { n: d.more })}</div>` : ''}
-                <div class="rock-muted" style="margin-top:8px; line-height:1.6">${['live', 'pre', 'truant', 'inactive', 'away', 'idle'].map(k => t('rock.st.' + k)).join(' · ')}</div>
+                <div class="rock-muted" style="margin-top:8px; line-height:1.6">${['live', 'pulled', 'pre', 'truant', 'inactive', 'away', 'idle'].map(k => t('rock.st.' + k)).join(' · ')}</div>
                 <div class="rock-muted" style="margin-top:6px">${t('rock.cmd.hint')}</div>
             </div>`;
         }
