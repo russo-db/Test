@@ -9271,15 +9271,29 @@
         // чтобы отпускание кнопки не нажало орла или кнопку под курсором.
         // Кнопка «Скала» на компьютере — на уровне главного орла: слева от него
         // свободная полоса (медали VIP стоят правее), текст и кнопки она не закрывает.
+        // У активной вкладки есть transform, поэтому fixed-кнопка внутри #farm
+        // считается от самой вкладки и прокручивается вместе с ней: высота —
+        // от верха содержимого #farm, а не от окна.
         function placeFogEdgeBtn() {
-            const btn = document.getElementById('fogEdgeOpen'), stage = document.getElementById('monsterStage');
-            if (!btn || !stage || getComputedStyle(btn).display === 'none') return;
-            const r = stage.getBoundingClientRect();
-            if (!r.height) return;
-            const top = Math.round(r.top + r.height / 2);
+            // меряем строку с орлом, а не сам орёл: он «подпрыгивает» от тапа (transform)
+            const btn = document.getElementById('fogEdgeOpen'), stage = document.querySelector('#farm .farm-hero-row');
+            const farm = document.getElementById('farm');
+            if (!btn || !stage || !farm || getComputedStyle(btn).display === 'none') return;
+            const r = stage.getBoundingClientRect(), f = farm.getBoundingClientRect();
+            if (!r.height || !f.height) return;
+            const top = Math.round(r.top - f.top + farm.scrollTop + r.height / 2);
             if (btn.style.top !== top + 'px') btn.style.top = top + 'px';
         }
         window.addEventListener('resize', () => placeFogEdgeBtn());
+        // появление вкладки (popIn) на миг масштабирует её — после анимации пересчёт
+        document.addEventListener('animationend', e => { if (e.target && e.target.id === 'farm') placeFogEdgeBtn(); });
+        // вёрстка сдвигается и без перерисовки (догрузились картинки, шрифты, баннер VIP)
+        try {
+            const ro = new ResizeObserver(() => placeFogEdgeBtn());
+            const watch = () => ['#farm .farm-area', '#farm .stats-panel'].forEach(sel => { const el = document.querySelector(sel); if (el) ro.observe(el); });
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
+        } catch (e) { /* старый браузер — хватит перерисовок */ }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => placeFogEdgeBtn()).catch(() => {});
         let fogLastTouchAt = 0;
         function fogMouseDown(e, onFog) {
             if (e.button !== 0 || Date.now() - fogLastTouchAt < 800) return;
