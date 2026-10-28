@@ -15535,6 +15535,14 @@ async def mf_hunt_of(uid: int, row: dict) -> tuple:
             return h, doc, i
     if h.get("pending") and time.time() - float(h.get("at") or 0) < 60:
         return h, None, -1   # занимает Гнездо прямо сейчас
+    if doc is not None and doc.get("pay_queue"):
+        # Гнездо уже освобождено, но выплата-«выход» ещё не доставлена: сначала
+        # доставить её — она ставит «отдых», если игрок ушёл сам, — и лишь потом
+        # снимать указатель (иначе отдых теряется)
+        await mf_flush(lord)
+        left = await store.mf.find_one({"_id": lord, "pay_queue.unhunt": h["hid"]}, {"_id": 1})
+        if left:
+            return None, None, -1   # указатель снимет сама выплата (вместе с отдыхом), а пока новое Гнездо не занять
     await store.users.update_one({"_id": uid, "mf_hunt.hid": h["hid"]}, {"$unset": {"mf_hunt": ""}, "$inc": {"ops": 1}})
     return None, None, -1
 
@@ -15760,10 +15768,15 @@ async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(N
             # сам покинул Гнездо сегодня — иначе вход/выход по кругу опустошал бы чужие Кладовые
             raise HTTPException(status_code=400, detail="Ты сегодня уже покинул Гнездо — новое можно занять с 00:00 МСК")
         hid = secrets.token_hex(8)
+        # занять можно, только если нет охоты И нет отдыха — проверка и запись одной операцией
         locked = await store.users.update_one(
-            {"_id": uid, "mf_hunt": {"$exists": False}},
+            {"_id": uid, "mf_hunt": {"$exists": False},
+             "$or": [{"mf_rest_day": {"$exists": False}}, {"mf_rest_day": None}, {"mf_rest_day": {"$lt": mf_day(now)}}]},
             {"$set": {"mf_hunt": {"hid": hid, "lord": lord, "at": now, "pending": True}}, "$inc": {"ops": 1}})
         if not locked.modified_count:
+            fresh = await fetch_user(uid)
+            if fresh.get("mf_rest_day") is not None and int(fresh["mf_rest_day"]) >= mf_day(now):
+                raise HTTPException(status_code=400, detail="Ты сегодня уже покинул Гнездо — новое можно занять с 00:00 МСК")
             raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
         name = row.get("name") or f"Игрок {uid}"
 
