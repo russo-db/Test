@@ -15373,12 +15373,12 @@ def mf_log(doc: dict, kind: str, **extra) -> None:
 
 
 def mf_pay(doc: dict, pid: str, uid: int, kind: str, gold: float = 0, obsidian: float = 0,
-           unhunt: Optional[str] = None, note: Optional[dict] = None) -> None:
+           unhunt: Optional[str] = None, note: Optional[dict] = None, rest_day: Optional[int] = None) -> None:
     q = list(doc.get("pay_queue") or [])
     if any(p.get("id") == pid for p in q):
         return
     q.append({"id": pid, "uid": int(uid), "kind": kind, "gold": gold, "obsidian": obsidian,
-              "unhunt": unhunt, "note": note})
+              "unhunt": unhunt, "note": note, "rest_day": rest_day})
     doc["pay_queue"] = q
 
 
@@ -15458,8 +15458,15 @@ async def mf_flush(lord: int) -> None:
             if float(p.get("obsidian") or 0) > 0:
                 inc["obsidian"] = float(p["obsidian"])
             update = {"$inc": inc, "$push": {"mf_paid": {"$each": [pid], "$slice": -200}}}
+            sets = {}
             if p.get("note"):
-                update["$set"] = {"mf_note": {**p["note"], "ts": time.time()}}
+                sets["mf_note"] = {**p["note"], "ts": time.time()}
+            if p.get("rest_day") is not None:
+                # «отдых» ставится раньше, чем снимается указатель охоты, — новый
+                # вход не проскочит между ними
+                sets["mf_rest_day"] = int(p["rest_day"])
+            if sets:
+                update["$set"] = sets
             with ledger_source(f"mf:{p.get('kind') or 'pay'}"):
                 await store.users.update_one({"_id": uid, "mf_paid": {"$ne": pid}}, update)
             if p.get("unhunt"):
@@ -15604,6 +15611,8 @@ async def mf_view(uid: int) -> dict:
     a, b = mf_window(today)
     return {
         "me": {"founded": bool(row.get("mf_founded")), "nests_paid": int(row.get("mf_nests") or 0),
+               "rest_until": mf_day_start(int(row["mf_rest_day"]) + 1)
+               if row.get("mf_rest_day") is not None and int(row["mf_rest_day"]) >= today else 0,
                "obsidian": float(row.get("obsidian") or 0), "gold": float(row.get("gold") or 0),
                "particles": float(row.get("nest_particles") or 0)},
         "my": my, "hunt": hunt, "note": note, "exchange": await mf_exchange(uid),
@@ -15747,6 +15756,9 @@ async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(N
         if h:
             raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
         now = time.time()
+        if row.get("mf_rest_day") is not None and int(row["mf_rest_day"]) >= mf_day(now):
+            # сам покинул Гнездо сегодня — иначе вход/выход по кругу опустошал бы чужие Кладовые
+            raise HTTPException(status_code=400, detail="Ты сегодня уже покинул Гнездо — новое можно занять с 00:00 МСК")
         hid = secrets.token_hex(8)
         locked = await store.users.update_one(
             {"_id": uid, "mf_hunt": {"$exists": False}},
@@ -15857,7 +15869,7 @@ async def mf_leave(req: MfReq, x_telegram_init_data: Optional[str] = Header(None
             if i < 0:
                 raise HTTPException(status_code=400, detail="Ты уже покинул это Гнездо")
             mf_log(doc, "leave", name=nests[i].get("hunter_name") or "", nest=i)
-            mf_pay(doc, f"out:{hid}", uid, "leave", unhunt=hid)
+            mf_pay(doc, f"out:{hid}", uid, "leave", unhunt=hid, rest_day=mf_day(time.time()))
             nests[i] = mf_new_nest()
             return {"nest": i}
         _, extra = await mf_cas(lord, mutate)
