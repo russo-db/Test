@@ -15839,6 +15839,34 @@ async def mf_return(req: MfReq, x_telegram_init_data: Optional[str] = Header(Non
         _mf_fail(e, "вернуться с Добычей")
 
 
+@app.post("/api/mf/leave")
+async def mf_leave(req: MfReq, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Покинуть Гнездо»: охотник уходит сам в любой момент. Оплаченные из
+    Кладовой сутки сгорают (как при пропуске), Добычи за них нет."""
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        row = await fetch_user(uid)
+        h, doc, _ = await mf_hunt_of(uid, row)
+        if not h or not doc:
+            raise HTTPException(status_code=400, detail="Ты сейчас не в Гнезде Охоты")
+        lord, hid = int(h["lord"]), h["hid"]
+
+        def mutate(doc):
+            nests = doc.get("nests") or []
+            i = next((k for k, n in enumerate(nests) if n.get("hid") == hid and n.get("hunter") == uid), -1)
+            if i < 0:
+                raise HTTPException(status_code=400, detail="Ты уже покинул это Гнездо")
+            mf_log(doc, "leave", name=nests[i].get("hunter_name") or "", nest=i)
+            mf_pay(doc, f"out:{hid}", uid, "leave", unhunt=hid)
+            nests[i] = mf_new_nest()
+            return {"nest": i}
+        _, extra = await mf_cas(lord, mutate)
+        await mf_flush(lord)
+        return await mf_reply(uid, left=extra)
+    except Exception as e:
+        _mf_fail(e, "покинуть Гнездо")
+
+
 async def mf_worker():
     """Раз в минуту: пропуски на смене суток (00:00 МСК) и недоставленные выплаты."""
     await asyncio.sleep(5)
