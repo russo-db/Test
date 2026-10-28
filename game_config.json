@@ -690,6 +690,22 @@
       {"id": "enchant_scroll", "name": "Свиток Заточки", "cost": {"blank_enchant_scroll": 1, "rock_crystal": 10}, "cost_particles": 5}
     ]
   },
+  "manufactory": {
+    "_comment": "⚒️ Орлиные Мануфактуры. Время — строго МСК (UTC+3). Частицы — частички снаряжения.",
+    "found_particles": 100,
+    "nest_particles": 30,
+    "max_nests": 6,
+    "hunt_gold": 10,
+    "hunt_particles": 6,
+    "return_gold": 10,
+    "lord_obsidian": 0.5,
+    "miss1_gold": 5,
+    "miss2_gold": 0,
+    "evict_after_misses": 3,
+    "return_from_hour": 9,
+    "return_to_hour": 12,
+    "craft_obsidian": 3
+  },
   "skylords": {
     "_comment": "Токен SkyLords. Включается в админке (статус disabled / testing / active). Суммы — в токенах.",
     "total_supply": 10000000,

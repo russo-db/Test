@@ -1349,6 +1349,7 @@ async def nest_state_view(row: dict) -> dict:
         "shard_bought_today": shard["bought_today"],
         "shard_daily_limit": shard["daily_limit"],
         "particles": float(row.get("nest_particles") or 0),
+        "obsidian": float(row.get("obsidian") or 0),   # ⚒️ Мануфактуры: крафт «3 Обсидиана + частички»
         "shard_count": nest_owned_shards(row),
         "last_claim": nest_last_claim_of(row, now),
         **nest_items_payload(row),
@@ -1938,6 +1939,7 @@ class BuyVip(BaseModel):
 
 class NestAction(BaseModel):
     user_id: int
+    pay: Optional[str] = None   # крафт: None — частички + золото, "obsidian" — частички + Обсидиан
 
 
 class NestUpgradeAction(BaseModel):
@@ -5648,6 +5650,27 @@ async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = 
         particles = float(row.get("nest_particles") or 0)
         if particles < NEST_CRAFT_COST_PARTICLES:
             raise HTTPException(status_code=400, detail=f"Нужно {NEST_CRAFT_COST_PARTICLES} частичек")
+        if request.pay == "obsidian":
+            # ⚒️ Второй способ: Обсидиан с Мануфактуры вместо золота. Свиток
+            # скидки на золото здесь не тратится.
+            need = mf_num("craft_obsidian")
+            obsidian = float(row.get("obsidian") or 0)
+            if obsidian < need - 1e-9:
+                raise HTTPException(status_code=400, detail=f"Нужно {need:g} Обсидиана")
+            particles -= NEST_CRAFT_COST_PARTICLES
+            obsidian = round(obsidian - need, 6)
+            item_type = random.choice(NEST_TYPE_ORDER)
+            grade = NEST_GRADES[0]
+            inventory = normalize_nest_inventory(row.get("nest_inventory"))
+            inventory[item_type][grade] += 1
+            return {"nest_particles": particles, "obsidian": obsidian, "nest_inventory": inventory}, {
+                "particles": particles, "gold": float(row.get("gold") or 0), "obsidian": obsidian,
+                "inventory": inventory, "item_type": item_type, "grade": grade,
+                "gold_cost": 0, "obsidian_cost": need, "craft_discount_used": False,
+                "buff_craft_discount": bool(row.get("buff_craft_discount")),
+            }
+        elif request.pay not in (None, "", "gold"):
+            raise HTTPException(status_code=400, detail="Неизвестный способ оплаты")
         gold = float(row.get("gold") or 0)
         # Древний Свиток Крафта (Охота): бессрочная скидка на ОДИН крафт —
         # золото HUNT_SCROLL_GOLD вместо NEST_CRAFT_COST_GOLD, частички те же.
@@ -5667,11 +5690,13 @@ async def nest_craft(request: NestAction, x_telegram_init_data: Optional[str] = 
         return fields, {
             "particles": particles, "gold": gold,
             "inventory": inventory, "item_type": item_type, "grade": grade,
-            "gold_cost": gold_cost, "craft_discount_used": discount, "buff_craft_discount": False,
+            "gold_cost": gold_cost, "obsidian": float(row.get("obsidian") or 0),
+            "craft_discount_used": discount, "buff_craft_discount": False,
         }
 
     result = await run_farm_action(user_id, compute)
-    await record_economy(gold_craft=result["gold_cost"], particles_craft=NEST_CRAFT_COST_PARTICLES, crafts=1)
+    await record_economy(gold_craft=result["gold_cost"], particles_craft=NEST_CRAFT_COST_PARTICLES, crafts=1,
+                         obsidian_craft=result.get("obsidian_cost") or 0)
     return result
 
 
@@ -10655,6 +10680,11 @@ LEDGER_LABELS = [
     ("/api/farm/expedition/collect", "Экспедиция: награда"),
     ("/api/farm/buy_slot", "Покупка слота фермы"),
     ("/api/farm/delete_eagle", "Удаление орла"),
+    ("mf:return", "⚒️ Мануфактура: возвращение с Добычей"),
+    ("mf:miss", "⚒️ Мануфактура: пропуск — часть Добычи"),
+    ("mf:", "⚒️ Мануфактуры"),
+    ("/api/mf/deposit", "⚒️ Мануфактура: пополнение Королевской Кладовой"),
+    ("/api/mf/", "⚒️ Мануфактуры"),
     ("/api/nest/shard/buy", "Покупка Небесного Осколка"),
     ("/api/nest/craft", "Крафт снаряжения"),
     ("/api/nest/upgrade", "Улучшение снаряжения"),
@@ -15235,6 +15265,599 @@ async def admin_modules(_: None = Depends(require_admin)):
         return JSONResponse({"modules": []}, headers={"Cache-Control": "no-store"})
 
 
+# =====================================================================
+# ⚒️ ОРЛИНЫЕ МАНУФАКТУРЫ
+# Лорд основывает Мануфактуру (частички), открывает до 6 Гнёзд Охоты и
+# пополняет Королевскую Кладовую золотом и частичками. Другие игроки
+# занимают свободное Гнездо («Отправиться на Охоту»): из Кладовой сразу
+# списываются сутки охоты (10 🪙 + 6 ✨). Наутро, с 09:00 до 12:00 МСК,
+# охотник «Возвращается с Добычей»: ему 10 🪙, Лорду 0.5 Обсидиана, и если
+# Кладовая потянет — сразу оплачены следующие сутки, иначе «Изгнание из
+# Гнезда». Не вернулся — в 00:00 МСК штраф: 1-й пропуск подряд — только 5 🪙
+# (остальное сгорает), 2-й — 0, 3-й — охотник покидает Гнездо. Каждые сутки
+# в Гнезде оплачиваются из Кладовой, Лорду за пропуски ничего не возвращается.
+#
+# manufactories {_id: id Лорда, lord_name, ver, nests: [{hunter, hunter_name,
+# hid, since, due_day, misses, returns, last_return}], pantry_gold,
+# pantry_particles, pay_queue [{id, uid, gold, obsidian, unhunt, note}],
+# dep_ids, log, level, free, ready, min_due}. Документ меняется только CAS
+# по ver (mf_cas). Выплаты игрокам идут через pay_queue: каждая идемпотентна
+# (её id попадает в users.mf_paid), так что сбой между записью Мануфактуры и
+# выплатой ничего не теряет и не удваивает. У игрока: mf_founded, mf_nests
+# (сколько Гнёзд оплачено), mf_hunt {hid, lord, at, pending} — в чьём он
+# Гнезде (одно на всю Биржу), mf_deps — внесения в Кладовую «в пути»,
+# obsidian, mf_note — последнее, что случилось с его охотой.
+# =====================================================================
+import copy as _copy
+
+MF_TZ = 3 * 3600   # строго Москва (UTC+3), без перехода на летнее время
+MF_TICK_SECONDS = 60
+MF_DEFAULTS = {
+    "found_particles": 100,    # основание Мануфактуры 1 уровня (0 Гнёзд)
+    "nest_particles": 30,      # каждое Гнездо (с 1-го по 6-е)
+    "max_nests": 6,
+    "hunt_gold": 10,           # из Кладовой за сутки охоты
+    "hunt_particles": 6,
+    "return_gold": 10,         # охотнику за «Вернуться с Добычей»
+    "lord_obsidian": 0.5,      # Лорду за каждое возвращение
+    "miss1_gold": 5,           # 1-й пропуск подряд
+    "miss2_gold": 0,           # 2-й пропуск подряд
+    "evict_after_misses": 3,   # 3-й пропуск подряд — Гнездо свободно
+    "return_from_hour": 9,     # окно возвращения, часы МСК
+    "return_to_hour": 12,
+    "craft_obsidian": 3,       # альтернативный крафт: Обсидиан вместо золота
+}
+
+
+def mf_num(key: str) -> float:
+    cfg = CONFIG.get("manufactory") if isinstance(CONFIG.get("manufactory"), dict) else {}
+    return _cfg_num(cfg, key, MF_DEFAULTS[key])
+
+
+def mf_max_nests() -> int:
+    return max(1, min(12, int(mf_num("max_nests"))))
+
+
+def mf_day(now: float) -> int:
+    return int((now + MF_TZ) // 86400)
+
+
+def mf_day_start(day: int) -> float:
+    return day * 86400 - MF_TZ
+
+
+def mf_window(day: int) -> tuple:
+    s = mf_day_start(day)
+    return s + mf_num("return_from_hour") * 3600, s + mf_num("return_to_hour") * 3600
+
+
+def mf_new_nest() -> dict:
+    return {"hunter": None, "hunter_name": "", "hid": None, "since": 0, "due_day": None,
+            "misses": 0, "returns": 0, "last_return": None}
+
+
+def mf_pantry_ok(doc: dict) -> bool:
+    return (float(doc.get("pantry_gold") or 0) >= mf_num("hunt_gold") - 1e-9
+            and float(doc.get("pantry_particles") or 0) >= mf_num("hunt_particles") - 1e-9)
+
+
+def mf_hunts_left(doc: dict) -> int:
+    g, p = mf_num("hunt_gold"), mf_num("hunt_particles")
+    a = int((float(doc.get("pantry_gold") or 0) + 1e-9) // g) if g > 0 else 10 ** 6
+    b = int((float(doc.get("pantry_particles") or 0) + 1e-9) // p) if p > 0 else 10 ** 6
+    return max(0, min(a, b))
+
+
+def mf_charge(doc: dict) -> bool:
+    """Сутки охоты из Кладовой: либо оба ресурса, либо ничего."""
+    if not mf_pantry_ok(doc):
+        return False
+    doc["pantry_gold"] = round(float(doc.get("pantry_gold") or 0) - mf_num("hunt_gold"), 6)
+    doc["pantry_particles"] = round(float(doc.get("pantry_particles") or 0) - mf_num("hunt_particles"), 6)
+    return True
+
+
+def mf_derive(doc: dict) -> None:
+    nests = doc.get("nests") or []
+    doc["level"] = len(nests)   # уровень = число открытых Гнёзд
+    doc["free"] = sum(1 for n in nests if not n.get("hunter"))
+    doc["ready"] = mf_pantry_ok(doc)
+    dues = [int(n["due_day"]) for n in nests if n.get("hunter") and n.get("due_day") is not None]
+    doc["min_due"] = min(dues) if dues else None
+
+
+def mf_log(doc: dict, kind: str, **extra) -> None:
+    log = list(doc.get("log") or [])
+    log.append({"ts": time.time(), "kind": kind, **extra})
+    doc["log"] = log[-30:]
+
+
+def mf_pay(doc: dict, pid: str, uid: int, kind: str, gold: float = 0, obsidian: float = 0,
+           unhunt: Optional[str] = None, note: Optional[dict] = None) -> None:
+    q = list(doc.get("pay_queue") or [])
+    if any(p.get("id") == pid for p in q):
+        return
+    q.append({"id": pid, "uid": int(uid), "kind": kind, "gold": gold, "obsidian": obsidian,
+              "unhunt": unhunt, "note": note})
+    doc["pay_queue"] = q
+
+
+def mf_evict(doc: dict, i: int, reason: str) -> None:
+    """«Изгнание из Гнезда»: место свободно, охотнику — пометка, что случилось."""
+    n = doc["nests"][i]
+    if n.get("hunter"):
+        mf_log(doc, "evict", name=n.get("hunter_name") or "", reason=reason, nest=i)
+        mf_pay(doc, f"out:{n.get('hid')}", n["hunter"], "evict", unhunt=n.get("hid"),
+               note={"kind": "evict", "reason": reason, "lord": doc["_id"], "lord_name": doc.get("lord_name") or ""})
+    doc["nests"][i] = mf_new_nest()
+
+
+def mf_settle(doc: dict, now: float) -> bool:
+    """Пропуски на смене суток (00:00 МСК): охотник не вернулся в свой день."""
+    today = mf_day(now)
+    changed = False
+    nests = doc.get("nests") or []
+    for i in range(len(nests)):
+        for _ in range(10):   # сервер мог стоять несколько суток — по дню за шаг
+            n = doc["nests"][i]
+            if not n.get("hunter") or n.get("due_day") is None or int(n["due_day"]) >= today:
+                break
+            d = int(n["due_day"])
+            misses = int(n.get("misses") or 0) + 1
+            n["misses"] = misses
+            changed = True
+            if misses >= int(mf_num("evict_after_misses")):
+                mf_evict(doc, i, "misses")
+                break
+            gold = mf_num("miss1_gold") if misses == 1 else mf_num("miss2_gold")
+            mf_log(doc, "miss", name=n.get("hunter_name") or "", nest=i, misses=misses, gold=gold, day=d)
+            if gold > 0:
+                mf_pay(doc, f"miss:{n.get('hid')}:{d}", n["hunter"], "miss", gold=gold)
+            if mf_charge(doc):
+                n["due_day"] = d + 1
+            else:
+                mf_evict(doc, i, "pantry")
+                break
+    return changed
+
+
+async def mf_cas(lord: int, mutate=None, now: Optional[float] = None) -> tuple:
+    """Читает Мануфактуру, досчитывает пропуски, зовёт mutate(doc) (может кинуть
+    HTTPException; None — сама ничего не меняла) и пишет по ver."""
+    for _ in range(8):
+        doc = await store.mf.find_one({"_id": lord})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Мануфактура не найдена")
+        ver = int(doc.get("ver") or 0)
+        new = _copy.deepcopy(doc)
+        changed = mf_settle(new, now if now is not None else time.time())
+        extra = mutate(new) if mutate else None
+        if not changed and extra is None:
+            return doc, None
+        mf_derive(new)
+        new["ver"] = ver + 1
+        new.pop("_id", None)
+        r = await store.mf.update_one({"_id": lord, "ver": ver}, {"$set": new})
+        if r.modified_count:
+            new["_id"] = lord
+            return new, extra
+    raise HTTPException(status_code=409, detail="Не удалось выполнить — попробуй ещё раз")
+
+
+async def mf_flush(lord: int) -> None:
+    """Разносит выплаты из pay_queue. Повтор безопасен: выплата с тем же id
+    второй раз не пройдёт (users.mf_paid). ops +1 — чтобы параллельное действие
+    игрока перечитало баланс, а не затёрло начисление."""
+    doc = await store.mf.find_one({"_id": lord}, {"pay_queue": 1})
+    for p in list((doc or {}).get("pay_queue") or []):
+        try:
+            uid, pid = int(p["uid"]), str(p["id"])
+            inc = {"ops": 1}
+            if float(p.get("gold") or 0) > 0:
+                inc["gold"] = float(p["gold"])
+            if float(p.get("obsidian") or 0) > 0:
+                inc["obsidian"] = float(p["obsidian"])
+            update = {"$inc": inc, "$push": {"mf_paid": {"$each": [pid], "$slice": -200}}}
+            if p.get("note"):
+                update["$set"] = {"mf_note": {**p["note"], "ts": time.time()}}
+            with ledger_source(f"mf:{p.get('kind') or 'pay'}"):
+                await store.users.update_one({"_id": uid, "mf_paid": {"$ne": pid}}, update)
+            if p.get("unhunt"):
+                await store.users.update_one({"_id": uid, "mf_hunt.hid": p["unhunt"]},
+                                             {"$unset": {"mf_hunt": ""}, "$inc": {"ops": 1}})
+            await store.mf.update_one({"_id": lord}, {"$pull": {"pay_queue": {"id": pid}}, "$inc": {"ver": 1}})
+        except Exception as e:
+            print(f"[mf] payout {p.get('id')} failed: {type(e).__name__}: {e}")
+
+
+async def mf_ensure(lord: int, name: str) -> None:
+    doc = {"lord_name": name, "created_at": time.time(), "ver": 0, "nests": [], "pantry_gold": 0.0,
+           "pantry_particles": 0.0, "pay_queue": [], "dep_ids": [], "log": [], "obsidian_total": 0.0,
+           "hunts_total": 0}
+    mf_derive(doc)
+    await store.mf.update_one({"_id": lord}, {"$setOnInsert": doc}, upsert=True)
+
+
+async def mf_sync(lord: int, paid: int) -> None:
+    """Открытых Гнёзд в Мануфактуре — ровно столько, сколько Лорд оплатил."""
+    def mutate(doc):
+        nests = list(doc.get("nests") or [])
+        if len(nests) >= paid:
+            return None
+        while len(nests) < min(paid, mf_max_nests()):
+            nests.append(mf_new_nest())
+        doc["nests"] = nests
+        return {}
+    await mf_cas(lord, mutate)
+
+
+async def mf_apply_deps(uid: int) -> None:
+    """Внесения в Кладовую: списано с игрока (users.mf_deps) → зачислено в
+    Кладовую ровно один раз (dep_ids) → снято из «в пути»."""
+    row = await fetch_user(uid)
+    deps = [d for d in (row.get("mf_deps") or []) if isinstance(d, dict) and d.get("id")]
+    if not deps:
+        return
+    await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
+    for d in deps:
+        field = "pantry_gold" if d.get("res") == "gold" else "pantry_particles"
+        await store.mf.update_one({"_id": uid, "dep_ids": {"$ne": d["id"]}},
+                                  {"$inc": {field: float(d.get("amount") or 0), "ver": 1},
+                                   "$push": {"dep_ids": {"$each": [d["id"]], "$slice": -100}}})
+    try:
+        await mf_cas(uid, lambda doc: {})   # пересчитать «Кладовая готова» (порядок на Бирже)
+    except HTTPException:
+        pass   # гонка с другим действием Лорда — оно и пересчитает; само внесение уже зачислено
+    for d in deps:
+        await store.users.update_one({"_id": uid}, {"$pull": {"mf_deps": {"id": d["id"]}}, "$inc": {"ops": 1}})
+
+
+async def mf_hunt_of(uid: int, row: dict) -> tuple:
+    """(mf_hunt, документ Мануфактуры, номер Гнезда) — где игрок охотится сейчас.
+    Указатель, которому Гнездо больше не соответствует, снимается."""
+    h = row.get("mf_hunt")
+    if not isinstance(h, dict) or not h.get("hid"):
+        return None, None, -1
+    try:
+        lord = int(h.get("lord"))
+    except (TypeError, ValueError):
+        lord = None
+    doc = await store.mf.find_one({"_id": lord}) if lord is not None else None
+    for i, n in enumerate((doc or {}).get("nests") or []):
+        if n.get("hid") == h["hid"] and n.get("hunter") == uid:
+            return h, doc, i
+    if h.get("pending") and time.time() - float(h.get("at") or 0) < 60:
+        return h, None, -1   # занимает Гнездо прямо сейчас
+    await store.users.update_one({"_id": uid, "mf_hunt.hid": h["hid"]}, {"$unset": {"mf_hunt": ""}, "$inc": {"ops": 1}})
+    return None, None, -1
+
+
+def mf_nest_view(n: dict, today: int, now: float) -> dict:
+    v = {"hunter": n.get("hunter"), "hunter_name": n.get("hunter_name") or "", "since": n.get("since") or 0,
+         "due_day": n.get("due_day"), "misses": int(n.get("misses") or 0), "returns": int(n.get("returns") or 0)}
+    if n.get("hunter") and n.get("due_day") is not None:
+        a, b = mf_window(int(n["due_day"]))
+        v.update(window_start=a, window_end=b, can_return=int(n["due_day"]) == today and a <= now < b)
+    return v
+
+
+async def mf_exchange(uid: int) -> list:
+    out = []
+    cur = store.mf.find({"free": {"$gt": 0}, "_id": {"$ne": uid}},
+                        {"lord_name": 1, "level": 1, "free": 1, "ready": 1, "pantry_gold": 1, "pantry_particles": 1})
+    async for d in cur.sort([("ready", -1), ("level", -1), ("free", -1)]).limit(60):
+        out.append({"lord_id": d["_id"], "lord_name": d.get("lord_name") or f"Лорд {d['_id']}",
+                    "level": int(d.get("level") or 0), "free": int(d.get("free") or 0),
+                    "ready": mf_pantry_ok(d), "hunts_left": mf_hunts_left(d)})
+    return out
+
+
+async def mf_view(uid: int) -> dict:
+    row = await fetch_user(uid)
+    if row.get("mf_deps"):
+        await mf_apply_deps(uid)
+        row = await fetch_user(uid)
+    now = time.time()
+    today = mf_day(now)
+    my = None
+    if row.get("mf_founded"):
+        name = row.get("name") or f"Лорд {uid}"
+        await mf_ensure(uid, name)
+        paid = min(mf_max_nests(), int(row.get("mf_nests") or 0))
+
+        def mutate(doc):
+            nests = list(doc.get("nests") or [])
+            touched = False
+            while len(nests) < paid:
+                nests.append(mf_new_nest())
+                touched = True
+            doc["nests"] = nests
+            if name and doc.get("lord_name") != name:
+                doc["lord_name"] = name
+                touched = True
+            return {} if touched else None
+        doc, _ = await mf_cas(uid, mutate, now)
+        if doc.get("pay_queue"):
+            await mf_flush(uid)
+        my = {"level": len(doc.get("nests") or []), "max_nests": mf_max_nests(),
+              "nests": [mf_nest_view(n, today, now) for n in doc.get("nests") or []],
+              "pantry_gold": float(doc.get("pantry_gold") or 0), "pantry_particles": float(doc.get("pantry_particles") or 0),
+              "hunts_left": mf_hunts_left(doc), "obsidian_total": float(doc.get("obsidian_total") or 0),
+              "hunts_total": int(doc.get("hunts_total") or 0), "log": list(reversed(doc.get("log") or []))[:15]}
+    hunt = None
+    h, hdoc, idx = await mf_hunt_of(uid, row)
+    if h and hdoc:
+        lord = int(h["lord"])
+        hdoc, _ = await mf_cas(lord, None, now)
+        if hdoc.get("pay_queue"):
+            await mf_flush(lord)
+        for i, n in enumerate(hdoc.get("nests") or []):
+            if n.get("hid") == h["hid"] and n.get("hunter") == uid:
+                hunt = {"lord_id": lord, "lord_name": hdoc.get("lord_name") or f"Лорд {lord}", "nest": i,
+                        "returned_today": n.get("last_return") == today, **mf_nest_view(n, today, now)}
+        if not hunt:   # только что изгнан (пропуски / пустая Кладовая) — указатель снят выплатой
+            row = await fetch_user(uid)
+    elif h:
+        hunt = {"pending": True, "lord_id": h.get("lord")}
+    row = await fetch_user(uid)
+    note = row.get("mf_note") if isinstance(row.get("mf_note"), dict) and now - float(row["mf_note"].get("ts") or 0) < 2 * 86400 else None
+    a, b = mf_window(today)
+    return {
+        "me": {"founded": bool(row.get("mf_founded")), "nests_paid": int(row.get("mf_nests") or 0),
+               "obsidian": float(row.get("obsidian") or 0), "gold": float(row.get("gold") or 0),
+               "particles": float(row.get("nest_particles") or 0)},
+        "my": my, "hunt": hunt, "note": note, "exchange": await mf_exchange(uid),
+        "now": now, "today": today, "window": [a, b],
+        "cfg": {k: mf_num(k) for k in MF_DEFAULTS},
+    }
+
+
+def _mf_fail(e: Exception, what: str):
+    if isinstance(e, HTTPException):
+        raise e
+    traceback.print_exception(type(e), e, e.__traceback__)
+    raise HTTPException(status_code=500, detail=f"Не удалось {what} — попробуй ещё раз")
+
+
+async def mf_reply(uid: int, **extra) -> dict:
+    view = await mf_view(uid)
+    me = view["me"]
+    return {"status": "success", "mf": view, "gold": me["gold"], "particles": me["particles"],
+            "obsidian": me["obsidian"], **extra}
+
+
+class MfReq(BaseModel):
+    user_id: int
+
+
+class MfDepositReq(BaseModel):
+    user_id: int
+    resource: str
+    amount: float
+
+
+class MfHuntReq(BaseModel):
+    user_id: int
+    lord_id: int
+
+
+@app.get("/api/mf/state")
+async def mf_state(user_id: int, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = authenticate(x_telegram_init_data, user_id)
+    try:
+        return {"status": "success", "mf": await mf_view(uid)}
+    except Exception as e:
+        _mf_fail(e, "загрузить Мануфактуры")
+
+
+@app.post("/api/mf/found")
+async def mf_found(req: MfReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        cost = mf_num("found_particles")
+
+        def compute(row):
+            if row.get("mf_founded"):
+                raise HTTPException(status_code=400, detail="Твоя Мануфактура уже основана")
+            particles = float(row.get("nest_particles") or 0)
+            if particles < cost - 1e-9:
+                raise HTTPException(status_code=400, detail=f"Нужно {cost:g} частиц снаряжения")
+            return {"nest_particles": round(particles - cost, 6), "mf_founded": True, "mf_nests": 0}, {}
+        await run_farm_action(uid, compute)
+        row = await fetch_user(uid)
+        await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
+        await record_economy(particles_mf=cost)
+        return await mf_reply(uid)
+    except Exception as e:
+        _mf_fail(e, "основать Мануфактуру")
+
+
+@app.post("/api/mf/open_nest")
+async def mf_open_nest(req: MfReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        cost = mf_num("nest_particles")
+
+        def compute(row):
+            if not row.get("mf_founded"):
+                raise HTTPException(status_code=400, detail="Сначала основай Мануфактуру")
+            paid = int(row.get("mf_nests") or 0)
+            if paid >= mf_max_nests():
+                raise HTTPException(status_code=400, detail=f"Открыты все {mf_max_nests()} Гнёзд Охоты")
+            particles = float(row.get("nest_particles") or 0)
+            if particles < cost - 1e-9:
+                raise HTTPException(status_code=400, detail=f"Нужно {cost:g} частиц снаряжения")
+            return {"nest_particles": round(particles - cost, 6), "mf_nests": paid + 1}, {"paid": paid + 1}
+        res = await run_farm_action(uid, compute)
+        row = await fetch_user(uid)
+        await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
+        await mf_sync(uid, res["paid"])
+        await record_economy(particles_mf=cost)
+        return await mf_reply(uid, opened=res["paid"])
+    except Exception as e:
+        _mf_fail(e, "открыть Гнездо")
+
+
+@app.post("/api/mf/deposit")
+async def mf_deposit(req: MfDepositReq, x_telegram_init_data: Optional[str] = Header(None)):
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        if req.resource not in ("gold", "particles"):
+            raise HTTPException(status_code=400, detail="Положить можно только Золото или Частицы")
+        try:
+            amount = float(req.amount)
+        except (TypeError, ValueError):
+            amount = 0
+        if not math.isfinite(amount) or amount < 1 or amount > 10_000_000 or abs(amount - round(amount)) > 1e-9:
+            raise HTTPException(status_code=400, detail="Укажи целое число от 1")
+        amount = int(round(amount))
+        field = "gold" if req.resource == "gold" else "nest_particles"
+        did = secrets.token_hex(8)
+
+        def compute(row):
+            if not row.get("mf_founded"):
+                raise HTTPException(status_code=400, detail="Сначала основай Мануфактуру")
+            bal = float(row.get(field) or 0)
+            if bal < amount - 1e-9:
+                raise HTTPException(status_code=400, detail="Не хватает золота" if field == "gold" else "Не хватает частиц")
+            deps = [d for d in (row.get("mf_deps") or []) if isinstance(d, dict)]
+            if len(deps) >= 20:
+                raise HTTPException(status_code=409, detail="Прошлые пополнения ещё в пути — попробуй через минуту")
+            deps.append({"id": did, "res": req.resource, "amount": amount, "at": time.time()})
+            return {field: round(bal - amount, 6), "mf_deps": deps}, {}
+        await run_farm_action(uid, compute)
+        await mf_apply_deps(uid)
+        return await mf_reply(uid, deposited={"resource": req.resource, "amount": amount})
+    except Exception as e:
+        _mf_fail(e, "пополнить Кладовую")
+
+
+@app.post("/api/mf/hunt")
+async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Отправиться на Охоту»: свободное Гнездо + сутки охоты из Кладовой Лорда."""
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        lord = int(req.lord_id)
+        if not (0 < lord < 2 ** 53):
+            raise HTTPException(status_code=404, detail="Мануфактура не найдена")
+        if lord == uid:
+            raise HTTPException(status_code=400, detail="В своей Мануфактуре охотиться нельзя — её Гнёзда для других Лордов")
+        row = await fetch_user(uid)
+        h, _, _ = await mf_hunt_of(uid, row)
+        if h:
+            raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
+        now = time.time()
+        hid = secrets.token_hex(8)
+        locked = await store.users.update_one(
+            {"_id": uid, "mf_hunt": {"$exists": False}},
+            {"$set": {"mf_hunt": {"hid": hid, "lord": lord, "at": now, "pending": True}}, "$inc": {"ops": 1}})
+        if not locked.modified_count:
+            raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
+        name = row.get("name") or f"Игрок {uid}"
+
+        def mutate(doc):
+            nests = doc.get("nests") or []
+            if not nests:
+                raise HTTPException(status_code=400, detail="У этой Мануфактуры ещё нет открытых Гнёзд")
+            free = [i for i, n in enumerate(nests) if not n.get("hunter")]
+            if not free:
+                raise HTTPException(status_code=400, detail="Все Гнёзда этой Мануфактуры заняты")
+            if not mf_charge(doc):
+                raise HTTPException(status_code=400, detail=f"В Королевской Кладовой Лорда нет {mf_num('hunt_gold'):g} 🪙 и "
+                                                            f"{mf_num('hunt_particles'):g} ✨ на сутки охоты")
+            i = free[0]
+            nests[i] = {**mf_new_nest(), "hunter": uid, "hunter_name": name, "hid": hid, "since": now,
+                        "due_day": mf_day(now) + 1}
+            doc["hunts_total"] = int(doc.get("hunts_total") or 0) + 1
+            mf_log(doc, "join", name=name, nest=i)
+            return {"nest": i}
+        try:
+            _, extra = await mf_cas(lord, mutate, now)
+        except BaseException:
+            if await store.mf.find_one({"_id": lord, "nests.hid": hid}, {"_id": 1}):
+                extra = None   # запись прошла, ответ потерялся — Гнездо наше
+            else:
+                await store.users.update_one({"_id": uid, "mf_hunt.hid": hid}, {"$unset": {"mf_hunt": ""}, "$inc": {"ops": 1}})
+                raise
+        await store.users.update_one({"_id": uid, "mf_hunt.hid": hid},
+                                     {"$set": {"mf_hunt.pending": False, "mf_hunt.nest": (extra or {}).get("nest")},
+                                      "$unset": {"mf_note": ""}, "$inc": {"ops": 1}})
+        await mf_flush(lord)
+        return await mf_reply(uid)
+    except Exception as e:
+        _mf_fail(e, "отправиться на Охоту")
+
+
+@app.post("/api/mf/return")
+async def mf_return(req: MfReq, x_telegram_init_data: Optional[str] = Header(None)):
+    """«Вернуться с Добычей» (09:00–12:00 МСК): охотнику золото, Лорду Обсидиан,
+    продление на сутки из Кладовой — или «Изгнание из Гнезда», если в ней пусто."""
+    uid = authenticate(x_telegram_init_data, req.user_id)
+    try:
+        row = await fetch_user(uid)
+        h, doc, _ = await mf_hunt_of(uid, row)
+        if not h or not doc:
+            raise HTTPException(status_code=400, detail="Ты сейчас не в Гнезде Охоты")
+        lord, hid = int(h["lord"]), h["hid"]
+        now = time.time()
+        today = mf_day(now)
+
+        def mutate(doc):
+            nests = doc.get("nests") or []
+            i = next((k for k, n in enumerate(nests) if n.get("hid") == hid and n.get("hunter") == uid), -1)
+            if i < 0:
+                raise HTTPException(status_code=400, detail="Ты уже покинул это Гнездо")
+            n = nests[i]
+            due = int(n.get("due_day") or 0)
+            if due > today:
+                if n.get("last_return") == today:
+                    raise HTTPException(status_code=400, detail="Добыча сегодня уже сдана — следующее возвращение завтра с 09:00 до 12:00 МСК")
+                raise HTTPException(status_code=400, detail="Охота только началась — вернуться с Добычей можно завтра с 09:00 до 12:00 МСК")
+            a, b = mf_window(today)
+            if now < a:
+                raise HTTPException(status_code=400, detail="Вернуться с Добычей можно с 09:00 МСК")
+            if now >= b:
+                raise HTTPException(status_code=400, detail="Окно возвращения закрылось в 12:00 МСК")
+            gold, obs = mf_num("return_gold"), mf_num("lord_obsidian")
+            mf_pay(doc, f"ret:{hid}:{due}", uid, "return", gold=gold)
+            if obs > 0:
+                mf_pay(doc, f"obs:{hid}:{due}", lord, "obsidian", obsidian=obs)
+            n["returns"] = int(n.get("returns") or 0) + 1
+            n["misses"] = 0
+            n["last_return"] = today
+            doc["obsidian_total"] = round(float(doc.get("obsidian_total") or 0) + obs, 6)
+            mf_log(doc, "return", name=n.get("hunter_name") or "", nest=i, gold=gold, obsidian=obs)
+            if mf_charge(doc):
+                n["due_day"] = due + 1
+                return {"gold": gold, "renewed": True}
+            mf_evict(doc, i, "pantry")
+            return {"gold": gold, "renewed": False}
+        _, extra = await mf_cas(lord, mutate, now)
+        await mf_flush(lord)
+        return await mf_reply(uid, returned=extra)
+    except Exception as e:
+        _mf_fail(e, "вернуться с Добычей")
+
+
+async def mf_worker():
+    """Раз в минуту: пропуски на смене суток (00:00 МСК) и недоставленные выплаты."""
+    await asyncio.sleep(5)
+    while True:
+        try:
+            today = mf_day(time.time())
+            ids = [d["_id"] async for d in store.mf.find(
+                {"$or": [{"min_due": {"$lt": today}}, {"pay_queue.0": {"$exists": True}}]}, {"_id": 1}).limit(500)]
+            for lord in ids:
+                try:
+                    await mf_cas(lord, None)
+                    await mf_flush(lord)
+                except Exception as e:
+                    print(f"[mf] settle {lord}: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"[mf] worker error: {type(e).__name__}: {e}")
+        await asyncio.sleep(MF_TICK_SECONDS)
+
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -15268,6 +15891,7 @@ async def startup_event():
     asyncio.create_task(raid_worker())
     asyncio.create_task(rock_worker())
     asyncio.create_task(rock_call_sender())
+    asyncio.create_task(mf_worker())   # ⚒️ Мануфактуры: штрафы в 00:00 МСК и выплаты
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад
     except Exception as e:

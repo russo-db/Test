@@ -444,6 +444,8 @@ class MongoStore:
         self.sky_market = client[db_name]["skylords_listings"]
         # Журнал всех движений токенов: {ts, kind, user_id, units, ...}
         self.sky_log = client[db_name]["skylords_log"]
+        # ⚒️ Орлиные Мануфактуры: _id — id Лорда (см. раздел ОРЛИНЫЕ МАНУФАКТУРЫ в main.py)
+        self.mf = client[db_name]["manufactories"]
 
     async def init(self):
         # Индексы — ускорение, а не условие работы. Построить новый индекс
@@ -491,6 +493,8 @@ class MongoStore:
             (self.sky_market, [("unit_price", 1), ("created_at", 1)], {}),
             (self.sky_log, [("ts", -1)], {}),
             (self.sky_log, [("user_id", 1), ("ts", -1)], {}),
+            (self.mf, [("free", 1), ("ready", -1), ("level", -1)], {}),
+            (self.mf, "min_due", {"sparse": True}),
         ):
             try:
                 await collection.create_index(keys, **kwargs)

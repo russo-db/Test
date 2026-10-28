@@ -74,6 +74,52 @@
         #farm.fog-shifted { transform: translateX(100%); opacity: 0.25; pointer-events: none; }
         /* пока экран Орлов въезжает обратно, случайный тап не должен попасть в слот/кнопку */
         #farm.fog-closing { pointer-events: none; }
+        /* ⚒️ Мануфактуры — третья страница: свайп ВЛЕВО, экран Орлов уезжает влево */
+        #farm.mf-shifted { transform: translateX(-100%); opacity: 0.25; pointer-events: none; }
+        .mf-page {
+            position: fixed; inset: 0; z-index: 15; overflow: hidden;
+            opacity: 0; transform: translateX(100%); pointer-events: none; visibility: hidden;
+            background: radial-gradient(90% 55% at 70% 0%, rgba(245, 158, 11, 0.16) 0%, transparent 70%),
+                        linear-gradient(180deg, #160d1f 0%, #0d0816 55%, #08050f 100%);
+        }
+        .mf-page.fog-anim { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease, visibility 0s linear 0.38s; }
+        .mf-page.fog-anim.open { transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.38s ease, visibility 0s; }
+        .mf-page.dragging, .mf-page.open { visibility: visible; }
+        .mf-page.open { opacity: 1; transform: none; pointer-events: auto; }
+        .mf-hub { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+            padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(140px + env(safe-area-inset-bottom, 0px)); text-align: left; }
+        .mf-intro { margin: 0 2px 12px; text-align: center; }
+        .mf-btn { width: 100%; margin-top: 10px; font-size: 14px; }
+        .mf-lord-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+        .mf-lord-head b { min-width: 0; overflow-wrap: anywhere; font-size: 14.5px; }
+        .mf-lvl { flex: none; font-size: 11.5px; font-weight: 800; padding: 3px 8px; border-radius: 10px; background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+        .mf-status { margin-top: 8px; font-size: 13px; line-height: 1.45; }
+        .mf-warn { color: #fca5a5; font-weight: 700; font-size: 12px; }
+        .mf-hunt { border: 1.5px solid rgba(245, 158, 11, 0.55); }
+        .mf-note { border: 1px solid rgba(248, 113, 113, 0.5); font-size: 13px; line-height: 1.45; }
+        .mf-obs { margin: 6px 0 10px; font-size: 13px; }
+        .mf-have { color: var(--text-muted); font-size: 11.5px; margin: 4px 2px 0; }
+        .mf-nests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .mf-nest { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 86px; padding: 8px 4px; border-radius: 14px;
+                   border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.05); color: var(--text-main); text-align: center; font: inherit; }
+        .mf-nest b { font-size: 11.5px; max-width: 100%; overflow-wrap: anywhere; line-height: 1.2; }
+        .mf-nest span { font-size: 10.5px; color: var(--text-muted); line-height: 1.2; }
+        .mf-nest-ic { font-size: 22px; line-height: 1; }
+        .mf-nest.busy { border-color: rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.1); }
+        .mf-nest.free { border-color: rgba(74, 222, 128, 0.45); }
+        .mf-nest.closed { opacity: 0.55; }
+        .mf-nest.closed.next { opacity: 1; cursor: pointer; border-style: dashed; border-color: rgba(245, 158, 11, 0.7); }
+        .mf-nest.closed.next:disabled { opacity: 0.5; cursor: not-allowed; }
+        .mf-pantry-row { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; margin-bottom: 4px; }
+        .mf-dep { display: flex; gap: 8px; margin-top: 10px; }
+        .mf-dep input { flex: 1 1 auto; min-width: 0; padding: 9px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18);
+                        background: rgba(0, 0, 0, 0.3); color: var(--text-main); font: inherit; font-size: 14px; }
+        .mf-dep button { flex: none; width: auto; padding: 9px 12px; font-size: 12.5px; }
+        .mf-log-row { font-size: 12px; line-height: 1.4; padding: 4px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+        .mf-log-row:first-of-type { border-top: none; }
+        .mf-log-time { color: var(--text-muted); font-size: 11px; margin-right: 4px; }
+        .mf-rules summary { cursor: pointer; font-weight: 800; font-size: 14px; }
+        .mf-rules .rock-muted { margin-top: 8px; }
         /* 🖱 Компьютер (Telegram Desktop / Web, браузер): свайпа пальцем нет — вход
            в Скалу кнопкой у левого края (оттуда и выезжает экран), выход — кнопкой
            у правого края экрана Скалы. На телефонах их нет. */
@@ -113,7 +159,13 @@
             .fog-edge-close span { transform: none; }
             .fog-page:not(.open) .fog-edge-close { display: none; }
             #farm.fog-shifted .fog-edge-open, #farm:not(.active) .fog-edge-open { display: none; }
-            #farm.fog-dragging-mouse, .fog-page.fog-dragging-mouse { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+            #farm.fog-dragging-mouse, .fog-page.fog-dragging-mouse, .mf-page.fog-dragging-mouse { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+            /* ⚒️ Мануфактуры: вход — у правого края экрана Орлов, выход — у левого края */
+            .mf-edge-open { right: 0; border-right: none; border-radius: 12px 0 0 12px; }
+            .mf-edge-open span { transform: none; }
+            .mf-edge-close { left: 0; border-left: none; border-radius: 0 12px 12px 0; }
+            .mf-page:not(.open) .mf-edge-close { display: none; }
+            #farm.fog-shifted .mf-edge-open, #farm.mf-shifted .mf-edge-open, #farm.mf-shifted .fog-edge-open, #farm:not(.active) .mf-edge-open { display: none; }
         }
         .fog-page {
             position: fixed; inset: 0; z-index: 15; overflow: hidden;
@@ -1758,6 +1810,7 @@
         <!-- FARM TAB -->
         <div id="farm" class="content active">
             <button class="fog-edge-btn fog-edge-open" id="fogEdgeOpen" onclick="openFogPage()" aria-label="Rock"><b>🏔</b><span data-i18n="fog.edgeOpen">Скала</span></button>
+            <button class="fog-edge-btn mf-edge-open" id="mfEdgeOpen" onclick="openMfPage()" aria-label="Manufactories"><b>⚒️</b><span data-i18n="mf.edgeOpen">Мануфактуры</span></button>
             <div class="stats-panel glass-panel" id="farmStats">
                 <div class="stat-cell">
                     <span class="stat-label" data-i18n="farm.eagles">Орлов</span>
@@ -1918,6 +1971,7 @@
                     <div class="stat-row"><span data-i18n="nest.particlesInInventory">Частичек в инвентаре</span><b id="nestCraftParticles">0 / 20 <img class="nest-particle-icon" src="assets/nest-particle.jpg" alt=""></b></div>
                     <div class="nest-track"><i id="nestCraftTrack" style="width:0%"></i></div>
                     <button class="btn-primary" style="margin-top:12px; width:100%" id="nestCraftBtn" onclick="nestCraft()">Скрафтить серый предмет</button>
+                    <button class="btn-action" style="margin-top:8px; width:100%; justify-content:center" id="nestCraftObsBtn" onclick="nestCraft('obsidian')" disabled>Скрафтить за Обсидиан</button>
                 </div>
 
                 <h2 class="nest-section-heading" data-i18n="nest.upgradeHeading">Улучшение снаряжения (4 → 1, успех 100%)</h2>
@@ -2313,6 +2367,12 @@
             <div class="fog-layer l2"></div>
             <div class="fog-title" data-i18n="fog.soon">Скоро...</div>
             <div class="rock-hub" id="rockHub"></div>
+        </div>
+
+        <!-- ⚒️ Орлиные Мануфактуры: открывается свайпом влево на экране Орлов -->
+        <div class="mf-page" id="mfPage" aria-hidden="true">
+            <button class="fog-edge-btn mf-edge-close" id="mfEdgeClose" onclick="closeMfPage(false)" aria-label="Back"><b>🦅</b><span data-i18n="mf.edgeClose">‹ Орлы</span></button>
+            <div class="mf-hub" id="mfHub"></div>
         </div>
 
         <!-- BOTTOM NAVIGATION -->
@@ -3074,6 +3134,44 @@
                 'clan.replayStart': 'Бой начинается…', 'clan.replayStep': 'Шаг', 'clan.replayRestart': 'Заново',
                 'gvip.title': '👑 Доступ к Gold Eagle VIP',
                 'fog.soon': 'Скоро...', 'fog.edgeOpen': 'Скала', 'fog.edgeClose': 'Орлы ›',
+                'nest.craftObsBtn': 'Скрафтить за {o} 🖤 Обсидиана + {cost}{icon} (есть {have} 🖤)',
+                'mf.edgeOpen': 'Мануфактуры', 'mf.edgeClose': '‹ Орлы', 'mf.title': '⚒️ Орлиные Мануфактуры', 'mf.loading': 'Загрузка…',
+                'mf.tabExchange': 'Биржа Гнезд', 'mf.tabMine': 'Моя Мануфактура',
+                'mf.exIntro': 'Займи свободное Гнездо Охоты у другого Лорда. Сутки охоты оплачивает его Королевская Кладовая ({hg} 🪙 + {hp} частичек). Каждое утро с {w} по Москве — «Вернуться с Добычей» и получить {g} 🪙.',
+                'mf.exEmpty': 'Свободных Гнёзд пока нет — загляни позже или основай свою Мануфактуру.',
+                'mf.level': 'Ур. {n}', 'mf.freeNests': 'Свободно Гнёзд: {n} из {of}', 'mf.pantryHunts': 'Кладовая: хватит на {n} сут.',
+                'mf.pantryEmpty': 'Кладовая пуста', 'mf.pantryEmptyBtn': '🔒 Кладовая Лорда пуста', 'mf.huntBtn': '🏹 Отправиться на Охоту',
+                'mf.alreadyHunting': 'Ты уже в Гнезде Охоты', 'mf.huntStarted': '🏹 Ты занял Гнездо! Возвращайся с Добычей завтра утром',
+                'mf.huntPending': 'Занимаем Гнездо…',
+                'mf.myHuntTitle': '🏹 Твоя Охота', 'mf.myHuntWhere': 'Гнездо №{nest} в Мануфактуре Лорда <b>{lord}</b>',
+                'mf.returnBtn': '🦅 Вернуться с Добычей +{g} 🪙',
+                'mf.windowOpen': '✅ Окно возвращения открыто ({w} МСК) — осталось {until}',
+                'mf.windowSoon': 'Возвращение сегодня с {w} МСК — через {until}',
+                'mf.windowMissed': '⏰ Окно {w} МСК закрылось. В 00:00 МСК — пропуск: {what}',
+                'mf.windowTomorrow': 'Охота идёт. Вернуться с Добычей — завтра с {w} МСК (через {until})',
+                'mf.returnedToday': '✅ Добыча сегодня сдана.',
+                'mf.missesInRow': '⚠️ Пропущено дней подряд: {n}',
+                'mf.missNextGold': 'получишь только {g} 🪙', 'mf.missNextEvict': 'Изгнание из Гнезда',
+                'mf.returned': '🦅 Добыча сдана: +{g} 🪙. Гнездо за тобой и на завтра',
+                'mf.returnedEvicted': '🦅 Добыча сдана: +{g} 🪙. Кладовая Лорда пуста — Изгнание из Гнезда',
+                'mf.noteEvictPantry': '🪺 Изгнание из Гнезда: в Королевской Кладовой Лорда <b>{lord}</b> не хватило на следующие сутки охоты. Найди новое Гнездо на Бирже.',
+                'mf.noteEvictMiss': '🪺 Ты три дня подряд не возвращался с Добычей — Гнездо у Лорда <b>{lord}</b> освобождено. Найди новое на Бирже.',
+                'mf.foundTitle': '🏰 Основать Мануфактуру',
+                'mf.foundText': 'Стань Лордом: открывай до {max} Гнёзд Охоты ({n} частичек каждое) и наполняй Королевскую Кладовую. Охотники других Лордов занимают Гнёзда — каждые сутки охоты стоят Кладовой {hg} 🪙 + {hp} частичек, а за каждое возвращение охотника с Добычей ты получаешь {o} 🖤 Обсидиана.',
+                'mf.foundBtn': 'Основать Мануфактуру ({n}{icon})', 'mf.foundConfirm': 'Основать Мануфактуру за {n} частичек?', 'mf.founded': '🏰 Мануфактура основана! Открой первое Гнездо Охоты',
+                'mf.youHave': 'У тебя:', 'mf.myTitle': '🏰 Моя Мануфактура', 'mf.myStats': 'Открыто Гнёзд: {open} из {max} · Охот всего: {hunts}',
+                'mf.obsidian': '🖤 Обсидиан', 'mf.cellNest': 'Гнездо {n}', 'mf.cellFree': 'Свободно', 'mf.cellHunting': 'На охоте',
+                'mf.cellMisses': 'Пропусков: {n}', 'mf.cellOpen': 'Открыть', 'mf.cellClosed': 'Закрыто', 'mf.nestOpened': '🪺 Открыто Гнездо Охоты №{n}',
+                'mf.pantryTitle': '👑 Королевская Кладовая', 'mf.gold': 'Золото', 'mf.particles': 'Частички',
+                'mf.pantryEnough': 'Хватит на {n} сут. охоты (сутки = {hg} 🪙 + {hp} частичек)',
+                'mf.amount': 'Сколько', 'mf.depGoldBtn': 'Положить Золото', 'mf.depParticlesBtn': 'Положить Частички',
+                'mf.depBadAmount': 'Укажи целое число от 1', 'mf.depositedGold': '👑 В Кладовую положено {n} 🪙', 'mf.depositedParticles': '👑 В Кладовую положено {n} частичек',
+                'mf.pantryOneWay': 'Кладовую можно только пополнять — забрать из неё нельзя.',
+                'mf.logTitle': '📜 Летопись Мануфактуры', 'mf.logJoin': '{name} занял Гнездо {n}', 'mf.logReturn': '{name} вернулся с Добычей — тебе +{o} 🖤',
+                'mf.logMiss': '{name} не вернулся — получил {g} 🪙', 'mf.logEvictPantry': '{name}: Изгнание из Гнезда — Кладовая пуста',
+                'mf.logEvictMiss': '{name}: Изгнание из Гнезда — 3 дня без Добычи',
+                'mf.rulesTitle': '📖 Законы Мануфактур',
+                'mf.rulesText': '• Время — строго по Москве.<br>• «Отправиться на Охоту»: из Кладовой Лорда сразу списываются сутки охоты — {hg} 🪙 + {hp} частичек. Не хватает — Гнездо не занять.<br>• Каждое утро с {w}: «Вернуться с Добычей» — тебе {g} 🪙, Лорду {o} 🖤 Обсидиана. Если в Кладовой есть ещё на сутки — Гнездо остаётся за тобой, иначе Изгнание из Гнезда.<br>• Не вернулся — в 00:00 штраф: 1-й день подряд — только {m1} 🪙 (остальное сгорает), 2-й — {m2} 🪙, {ev}-й — Гнездо освобождается. Лорду за пропуск ничего не возвращается.<br>• Охотиться можно только в одном Гнезде и не в своей Мануфактуре.',
                 'gvip.activeSub': 'Активен · осталось {time}. Отправка и сбор золота — в 1 клик.',
                 'gvip.inactiveSub': 'Отправляй всех свободных орлов 7 ур. в экспедиции и собирай золото со всех вернувшихся — в 1 клик.',
                 'gvip.otherActive': 'Сейчас активен {name}. Gold Eagle VIP можно будет активировать после его окончания.',
@@ -3877,6 +3975,44 @@
                 'clan.replayStart': 'Battle starting…', 'clan.replayStep': 'Step', 'clan.replayRestart': 'Restart',
                 'gvip.title': '👑 Gold Eagle VIP Access',
                 'fog.soon': 'Coming soon...', 'fog.edgeOpen': 'Rock', 'fog.edgeClose': 'Eagles ›',
+                'nest.craftObsBtn': 'Craft for {o} 🖤 Obsidian + {cost}{icon} (have {have} 🖤)',
+                'mf.edgeOpen': 'Manufactories', 'mf.edgeClose': '‹ Eagles', 'mf.title': '⚒️ Eagle Manufactories', 'mf.loading': 'Loading…',
+                'mf.tabExchange': 'Nest Exchange', 'mf.tabMine': 'My Manufactory',
+                'mf.exIntro': "Take a free Hunting Nest from another Lord. A day of hunting is paid by the Lord's Royal Pantry ({hg} 🪙 + {hp} particles). Every morning {w} Moscow time — «Return with Loot» for {g} 🪙.",
+                'mf.exEmpty': 'No free Nests yet — check back later or found your own Manufactory.',
+                'mf.level': 'Lv. {n}', 'mf.freeNests': 'Free Nests: {n} of {of}', 'mf.pantryHunts': 'Pantry: {n} day(s)',
+                'mf.pantryEmpty': 'Pantry is empty', 'mf.pantryEmptyBtn': "🔒 The Lord's Pantry is empty", 'mf.huntBtn': '🏹 Go Hunting',
+                'mf.alreadyHunting': 'You are already in a Nest', 'mf.huntStarted': '🏹 Nest taken! Return with Loot tomorrow morning',
+                'mf.huntPending': 'Taking the Nest…',
+                'mf.myHuntTitle': '🏹 Your Hunt', 'mf.myHuntWhere': 'Nest #{nest} in the Manufactory of Lord <b>{lord}</b>',
+                'mf.returnBtn': '🦅 Return with Loot +{g} 🪙',
+                'mf.windowOpen': '✅ The return window is open ({w} MSK) — {until} left',
+                'mf.windowSoon': 'Return today {w} MSK — in {until}',
+                'mf.windowMissed': '⏰ The {w} MSK window has closed. At 00:00 MSK — a miss: {what}',
+                'mf.windowTomorrow': 'Hunting. Return with Loot tomorrow {w} MSK (in {until})',
+                'mf.returnedToday': '✅ Loot delivered today.',
+                'mf.missesInRow': '⚠️ Days missed in a row: {n}',
+                'mf.missNextGold': 'you get only {g} 🪙', 'mf.missNextEvict': 'expulsion from the Nest',
+                'mf.returned': '🦅 Loot delivered: +{g} 🪙. The Nest stays yours tomorrow',
+                'mf.returnedEvicted': "🦅 Loot delivered: +{g} 🪙. The Lord's Pantry is empty — expelled from the Nest",
+                'mf.noteEvictPantry': "🪺 Expelled from the Nest: Lord <b>{lord}</b>'s Royal Pantry couldn't pay for the next day. Find a new Nest on the Exchange.",
+                'mf.noteEvictMiss': "🪺 You didn't return with Loot three days in a row — your Nest at Lord <b>{lord}</b> is free again. Find a new one on the Exchange.",
+                'mf.foundTitle': '🏰 Found a Manufactory',
+                'mf.foundText': 'Become a Lord: open up to {max} Hunting Nests ({n} particles each) and fill the Royal Pantry. Hunters take your Nests — each day of hunting costs the Pantry {hg} 🪙 + {hp} particles, and every return with Loot brings you {o} 🖤 Obsidian.',
+                'mf.foundBtn': 'Found a Manufactory ({n}{icon})', 'mf.foundConfirm': 'Found a Manufactory for {n} particles?', 'mf.founded': '🏰 Manufactory founded! Open your first Hunting Nest',
+                'mf.youHave': 'You have:', 'mf.myTitle': '🏰 My Manufactory', 'mf.myStats': 'Nests open: {open} of {max} · Hunts total: {hunts}',
+                'mf.obsidian': '🖤 Obsidian', 'mf.cellNest': 'Nest {n}', 'mf.cellFree': 'Free', 'mf.cellHunting': 'Hunting',
+                'mf.cellMisses': 'Misses: {n}', 'mf.cellOpen': 'Open', 'mf.cellClosed': 'Closed', 'mf.nestOpened': '🪺 Hunting Nest #{n} opened',
+                'mf.pantryTitle': '👑 Royal Pantry', 'mf.gold': 'Gold', 'mf.particles': 'Particles',
+                'mf.pantryEnough': 'Enough for {n} day(s) of hunting (a day = {hg} 🪙 + {hp} particles)',
+                'mf.amount': 'Amount', 'mf.depGoldBtn': 'Deposit Gold', 'mf.depParticlesBtn': 'Deposit Particles',
+                'mf.depBadAmount': 'Enter a whole number from 1', 'mf.depositedGold': '👑 {n} 🪙 put into the Pantry', 'mf.depositedParticles': '👑 {n} particles put into the Pantry',
+                'mf.pantryOneWay': 'The Pantry can only be filled — nothing can be taken out.',
+                'mf.logTitle': '📜 Manufactory Chronicle', 'mf.logJoin': '{name} took Nest {n}', 'mf.logReturn': '{name} returned with Loot — +{o} 🖤 for you',
+                'mf.logMiss': "{name} didn't return — got {g} 🪙", 'mf.logEvictPantry': '{name}: expelled — the Pantry is empty',
+                'mf.logEvictMiss': '{name}: expelled — 3 days without Loot',
+                'mf.rulesTitle': '📖 Laws of the Manufactories',
+                'mf.rulesText': "• Time is strictly Moscow time.<br>• «Go Hunting»: the Lord's Pantry pays a day of hunting right away — {hg} 🪙 + {hp} particles. Not enough — the Nest can't be taken.<br>• Every morning {w}: «Return with Loot» — {g} 🪙 for you, {o} 🖤 Obsidian for the Lord. If the Pantry has another day — the Nest stays yours, otherwise you are expelled.<br>• Didn't return — a penalty at 00:00: 1st day in a row — only {m1} 🪙 (the rest burns), 2nd — {m2} 🪙, on the {ev}rd the Nest is freed. The Lord gets no refund.<br>• You can hunt in one Nest only, and not in your own Manufactory.",
                 'gvip.activeSub': 'Active · {time} left. Send and collect gold in 1 tap.',
                 'gvip.inactiveSub': 'Send every free lvl 7 eagle on expeditions and collect gold from all returned ones — in 1 tap.',
                 'gvip.otherActive': '{name} is active now. Gold Eagle VIP can be activated after it ends.',
@@ -9173,6 +9309,7 @@
         function openFogPage() {
             const { farm, page } = fogEls();
             if (!farm || !page) return;
+            if (mfOpen) closeMfPage(true);
             const wasOpen = fogOpen;
             fogOpen = true;
             clearTimeout(fogClosingTimer); farm.classList.remove('fog-closing');
@@ -9222,7 +9359,10 @@
         let fogAnimTimer = null;
         function fogAnimFallback() {
             clearTimeout(fogAnimTimer);
-            fogAnimTimer = setTimeout(() => { const { farm, page } = fogEls(); farm && farm.classList.remove('fog-anim'); page && page.classList.remove('fog-anim'); }, 450);
+            fogAnimTimer = setTimeout(() => {
+                const { farm, page } = fogEls(), mp = document.getElementById('mfPage');
+                [farm, page, mp].forEach(el => el && el.classList.remove('fog-anim'));
+            }, 450);
         }
 
         function fogSnapBack() {
@@ -9233,24 +9373,30 @@
             page.classList.remove('dragging');
         }
 
-        function fogTouchStart(e, onFog) {
+        // src: false — палец на экране Орлов (вправо → Скала, влево → Мануфактуры),
+        // true — на экране Скалы, 'mf' — на экране Мануфактур
+        function fogTouchStart(e, src) {
+            const onFog = src === true, onMf = src === 'mf';
             if (e.touches.length !== 1) {
                 // второй палец — жест отменяется, экран встаёт на место
                 if (fogTouch) {
                     const st = fogTouch; fogTouch = null;
-                    if (st.dir === 'h') { if (st.onFog) openFogPage(); else fogSnapBack(); }
+                    if (st.dir === 'h') {
+                        if (st.onFog) openFogPage(); else if (st.onMf) openMfPage();
+                        else if (st.kind === 'mf') mfSnapBack(); else fogSnapBack();
+                    }
                 }
                 return;
             }
             const tch = e.touches[0];
-            if (!onFog) {
+            if (!onFog && !onMf) {
                 const farm = document.getElementById('farm');
-                if (fogOpen || !farm.classList.contains('active')) { fogTouch = null; return; }
+                if (fogOpen || mfOpen || !farm.classList.contains('active')) { fogTouch = null; return; }
                 if (tch.clientX < FOG_EDGE) { fogTouch = null; return; }
                 if (e.target.closest('input, textarea, select, [contenteditable="true"], .no-fog-swipe')) { fogTouch = null; return; }
-                if (fogInsideScroller(e.target, farm)) { fogTouch = null; return; }
-            } else if (!fogOpen) { fogTouch = null; return; }
-            fogTouch = { x: tch.clientX, y: tch.clientY, t: Date.now(), dir: null, onFog, dx: 0 };
+            } else if (onFog && !fogOpen) { fogTouch = null; return; }
+            else if (onMf && (!mfOpen || e.target.closest('input, textarea, select'))) { fogTouch = null; return; }
+            fogTouch = { x: tch.clientX, y: tch.clientY, t: Date.now(), dir: null, onFog, onMf, kind: onFog ? 'fog' : (onMf ? 'mf' : null), target: e.target, dx: 0 };
         }
 
         function fogTouchMove(e) {
@@ -9259,27 +9405,48 @@
             const dx = tch.clientX - fogTouch.x, dy = tch.clientY - fogTouch.y;
             if (!fogTouch.dir) {
                 if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-                // горизонтально и в нужную сторону: на ферме — только вправо, на тумане — только влево
+                // горизонтально и в нужную сторону: на Скале — только влево, на Мануфактурах — только вправо,
+                // на экране Орлов — вправо к Скале, влево к Мануфактурам (если ленту под пальцем
+                // ещё можно прокрутить в эту сторону — жест её)
                 const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
-                const wanted = fogTouch.onFog ? dx < 0 : dx > 0;
+                let wanted;
+                if (fogTouch.onFog) wanted = dx < 0;
+                else if (fogTouch.onMf) wanted = dx > 0;
+                else {
+                    const farm = document.getElementById('farm');
+                    fogTouch.kind = dx > 0 ? 'fog' : 'mf';
+                    wanted = dx > 0 ? !fogInsideScroller(fogTouch.target, farm) : !mfInsideScroller(fogTouch.target, farm);
+                }
                 fogTouch.dir = horizontal && wanted ? 'h' : 'skip';
-                if (fogTouch.dir === 'h') { const { farm, page } = fogEls(); farm.classList.remove('fog-anim'); page.classList.remove('fog-anim'); }
+                if (fogTouch.dir === 'h') {
+                    const { farm, page } = fogEls(), mp = document.getElementById('mfPage');
+                    [farm, page, mp].forEach(el => el && el.classList.remove('fog-anim'));
+                }
             }
             if (fogTouch.dir !== 'h') return;
             fogTouch.dx = dx;
             const w = window.innerWidth || 1;
-            fogSetDrag(fogTouch.onFog ? Math.max(0, w + dx) : Math.max(0, dx));
+            if (fogTouch.kind === 'mf') mfSetDrag(fogTouch.onMf ? Math.min(0, -w + dx) : Math.min(0, dx));
+            else fogSetDrag(fogTouch.onFog ? Math.max(0, w + dx) : Math.max(0, dx));
         }
 
         function fogTouchEnd(e) {
             if (!fogTouch) return;
             const st = fogTouch; fogTouch = null;
             if (st.dir !== 'h') return;
-            if (e && e.type === 'touchcancel') { if (st.onFog) openFogPage(); else fogSnapBack(); return; }
+            if (e && e.type === 'touchcancel') {
+                if (st.onFog) openFogPage(); else if (st.onMf) openMfPage();
+                else if (st.kind === 'mf') mfSnapBack(); else fogSnapBack();
+                return;
+            }
             const v = Math.abs(st.dx) / Math.max(1, Date.now() - st.t);   // px/ms
             const far = Math.abs(st.dx) > FOG_SWIPE_MIN || (Math.abs(st.dx) > 40 && v > 0.5);
             if (st.onFog) {
                 if (far) closeFogPage(false); else openFogPage();
+            } else if (st.onMf) {
+                if (far) closeMfPage(false); else openMfPage();
+            } else if (st.kind === 'mf') {
+                if (far) openMfPage(); else mfSnapBack();
             } else if (far) {
                 openFogPage();
             } else {
@@ -9306,6 +9473,8 @@
             if (!r.height || !f.height) return;
             const top = Math.round(r.top - f.top + farm.scrollTop + r.height / 2);
             if (btn.style.top !== top + 'px') btn.style.top = top + 'px';
+            const mfBtn = document.getElementById('mfEdgeOpen');
+            if (mfBtn && mfBtn.style.top !== top + 'px') mfBtn.style.top = top + 'px';
         }
         window.addEventListener('resize', () => placeFogEdgeBtn());
         // появление вкладки (popIn) на миг масштабирует её — после анимации пересчёт
@@ -9323,15 +9492,16 @@
             if (e.target.closest('.fog-edge-btn, button, a, input, textarea, select, .modal-backdrop')) return;
             fogTouchStart({ touches: [{ clientX: e.clientX, clientY: e.clientY }], target: e.target }, onFog);
             if (!fogTouch) return;
-            const { farm, page } = fogEls();
+            const { farm, page } = fogEls(), mp = document.getElementById('mfPage');
+            const els = [farm, page, mp].filter(Boolean);
             const move = ev => {
                 fogTouchMove({ touches: [{ clientX: ev.clientX, clientY: ev.clientY }] });
-                if (fogTouch && fogTouch.dir === 'h') { farm.classList.add('fog-dragging-mouse'); page.classList.add('fog-dragging-mouse'); }
+                if (fogTouch && fogTouch.dir === 'h') els.forEach(el => el.classList.add('fog-dragging-mouse'));
             };
             const up = () => {
                 window.removeEventListener('mousemove', move);
                 window.removeEventListener('mouseup', up);
-                farm.classList.remove('fog-dragging-mouse'); page.classList.remove('fog-dragging-mouse');
+                els.forEach(el => el.classList.remove('fog-dragging-mouse'));
                 const dragged = fogTouch && fogTouch.dir === 'h';
                 fogTouchEnd({ type: 'touchend' });
                 if (dragged) {
@@ -9350,9 +9520,20 @@
             window.addEventListener('touchstart', () => { fogLastTouchAt = Date.now(); }, { passive: true, capture: true });
             farm.addEventListener('mousedown', e => fogMouseDown(e, false));
             page.addEventListener('mousedown', e => fogMouseDown(e, true));
-            // Esc на компьютере закрывает экран Скалы (если не открыто окно поверх)
+            const mp = document.getElementById('mfPage');
+            if (mp) {
+                mp.addEventListener('mousedown', e => { if (!e.target.closest('input, textarea, select, summary, details')) fogMouseDown(e, 'mf'); });
+                mp.addEventListener('touchstart', e => fogTouchStart(e, 'mf'), { passive: true });
+                mp.addEventListener('touchmove', fogTouchMove, { passive: true });
+                mp.addEventListener('touchend', fogTouchEnd, { passive: true });
+                mp.addEventListener('touchcancel', fogTouchEnd, { passive: true });
+                ['transitionend', 'transitioncancel'].forEach(ev =>
+                    mp.addEventListener(ev, e => { if (e.target === mp) mp.classList.remove('fog-anim'); }));
+            }
+            // Esc на компьютере закрывает экран Скалы / Мануфактур (если не открыто окно поверх)
             window.addEventListener('keydown', e => {
-                if (e.key === 'Escape' && fogOpen && !document.querySelector('.modal-backdrop.open')) closeFogPage(false);
+                if (e.key !== 'Escape' || document.querySelector('.modal-backdrop.open')) return;
+                if (fogOpen) closeFogPage(false); else if (mfOpen) closeMfPage(false);
             });
             farm.addEventListener('touchstart', e => fogTouchStart(e, false), { passive: true });
             farm.addEventListener('touchmove', fogTouchMove, { passive: true });
@@ -9367,6 +9548,387 @@
             // страховкой по таймеру (под нагрузкой событие может опоздать или не прийти)
             [farm, page].forEach(el => ['transitionend', 'transitioncancel'].forEach(ev =>
                 el.addEventListener(ev, e => { if (e.target === el) el.classList.remove('fog-anim'); })));
+        }
+
+        // ---------- ⚒️ ОРЛИНЫЕ МАНУФАКТУРЫ: экран справа (свайп ВЛЕВО на экране Орлов) ----------
+        // Зеркало экрана Скалы: экран Орлов уезжает влево, Мануфактуры въезжают
+        // справа. Назад — свайп вправо, кнопка «Назад» Telegram, любая вкладка
+        // внизу, на компьютере — кнопка у левого края или Esc. Все балансы —
+        // только на сервере (/api/mf/*); здесь лишь показ и кнопки.
+        let mfOpen = false;
+        let mfData = null;
+        let mfTab = 'ex';
+        let mfPollTimer = null, mfTickTimer = null, mfLoadSeq = 0, mfClosingTimer = null, mfEdgeAt = 0;
+
+        function mfEls() { return { farm: document.getElementById('farm'), page: document.getElementById('mfPage') }; }
+
+        function mfSetDrag(dx) {   // dx <= 0: экран Орлов уезжает влево
+            const { farm, page } = mfEls();
+            const w = window.innerWidth || 1;
+            const k = Math.max(0, Math.min(1, -dx / w));
+            farm.style.transform = `translateX(${Math.min(0, dx)}px)`;
+            farm.style.opacity = String(1 - 0.75 * k);
+            if (!page.classList.contains('dragging')) mfFitTop();
+            page.classList.add('dragging');
+            page.style.transform = `translateX(${100 - k * 100}%)`;
+            page.style.opacity = String(k);
+        }
+
+        function mfClearInline() {
+            const { farm, page } = mfEls();
+            farm.style.transform = ''; farm.style.opacity = '';
+            page.style.transform = ''; page.style.opacity = '';
+        }
+
+        function openMfPage() {
+            const { farm, page } = mfEls();
+            if (!farm || !page) return;
+            if (fogOpen) closeFogPage(true);
+            const wasOpen = mfOpen;
+            mfOpen = true;
+            clearTimeout(mfClosingTimer); farm.classList.remove('fog-closing');
+            farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogAnimFallback();
+            mfClearInline();
+            farm.classList.add('mf-shifted');
+            mfFitTop();
+            page.classList.add('open'); page.classList.remove('dragging');
+            page.setAttribute('aria-hidden', 'false');
+            if (!wasOpen) {
+                haptic.impact('light');
+                if (!mfData) renderMf();
+                mfStartPolling();
+            }
+            try { if (tg.BackButton) { tg.BackButton.onClick(onMfBack); tg.BackButton.show(); } } catch (e) {}
+        }
+
+        function closeMfPage(instant) {
+            const { farm, page } = mfEls();
+            if (!farm || !page) return;
+            if (!mfOpen && !page.classList.contains('dragging')) return;
+            mfOpen = false;
+            clearTimeout(mfClosingTimer);
+            farm.classList.toggle('fog-closing', !instant);
+            if (!instant) mfClosingTimer = setTimeout(() => farm.classList.remove('fog-closing'), 420);
+            farm.classList.toggle('fog-anim', !instant); page.classList.toggle('fog-anim', !instant);
+            if (!instant) fogAnimFallback();
+            mfClearInline();
+            farm.classList.remove('mf-shifted');
+            page.classList.remove('open', 'dragging');
+            page.setAttribute('aria-hidden', 'true');
+            try { if (tg.BackButton) { tg.BackButton.offClick(onMfBack); tg.BackButton.hide(); } } catch (e) {}
+            mfStopPolling();
+        }
+
+        function onMfBack() { closeMfPage(false); }
+
+        // шапка с балансами лежит поверх боковых экранов — содержимое начинается под ней
+        function mfFitTop() {
+            const hub = document.getElementById('mfHub'), head = document.querySelector('.top-header');
+            if (!hub || !head) return;
+            const bottom = Math.max(0, Math.round(head.getBoundingClientRect().bottom));
+            const v = (bottom + 10) + 'px';
+            if (hub.style.paddingTop !== v) hub.style.paddingTop = v;
+        }
+        window.addEventListener('resize', () => { if (mfOpen) mfFitTop(); });
+
+        function mfSnapBack() {
+            const { farm, page } = mfEls();
+            farm.classList.add('fog-anim'); page.classList.add('fog-anim');
+            fogAnimFallback();
+            mfClearInline();
+            page.classList.remove('dragging');
+        }
+
+        // лента, которую ещё можно прокрутить вправо, — свайп влево принадлежит ей
+        function mfInsideScroller(target, stop) {
+            for (let el = target; el && el !== stop; el = el.parentElement) {
+                if (el.scrollWidth > el.clientWidth + 1 && el.scrollLeft + el.clientWidth < el.scrollWidth - 1) {
+                    const ox = getComputedStyle(el).overflowX;
+                    if (ox === 'auto' || ox === 'scroll') return true;
+                }
+            }
+            return false;
+        }
+
+        function mfStartPolling() {
+            mfStopPolling();
+            loadMf(true);
+            mfPollTimer = setInterval(() => loadMf(true), 20000);
+            mfTickTimer = setInterval(tickMf, 1000);
+        }
+        function mfStopPolling() {
+            clearInterval(mfPollTimer); clearInterval(mfTickTimer);
+            mfPollTimer = mfTickTimer = null;
+        }
+        function tickMf() {
+            const now = serverNow();
+            document.querySelectorAll('#mfHub [data-mf-until]').forEach(el => {
+                el.textContent = formatCountdown(Math.max(0, Number(el.dataset.mfUntil) - now));
+            });
+            // открылось/закрылось окно возвращения или наступили новые сутки — свежие данные
+            if (mfEdgeAt && now >= mfEdgeAt) { mfEdgeAt = 0; loadMf(true); }
+        }
+
+        async function loadMf(silent) {
+            if (offlineOnly || !state.userId) { renderMf(); return; }
+            const seq = ++mfLoadSeq;
+            try {
+                const response = await fetch(`api/mf/state?user_id=${state.userId}`, { headers: apiHeaders() });
+                const data = await response.json().catch(() => ({}));
+                if (seq !== mfLoadSeq) return;   // ответ старого запроса (уже пришёл результат действия)
+                if (!response.ok) { if (!silent) toast(data.detail || t('market.serverError')); return; }
+                mfApply(data);
+            } catch (e) {
+                if (!silent) toast(t('market.serverError'));
+            }
+        }
+
+        function mfApply(data) {
+            if (data && data.mf) mfData = data.mf;
+            const me = mfData && mfData.me;
+            let changed = false;
+            if (me) {
+                if (state.gold !== me.gold) { state.gold = me.gold; changed = true; }
+                if (state.nest) {
+                    if (state.nest.particles !== me.particles) { state.nest.particles = me.particles; changed = true; }
+                    if (state.nest.obsidian !== me.obsidian) { state.nest.obsidian = me.obsidian; changed = true; }
+                }
+            }
+            if (data && typeof data.ops === 'number') state.ops = data.ops;
+            renderMf();
+            if (changed) { renderAll(); saveLocally(); }
+        }
+
+        async function mfPost(key, path, body) {
+            if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return null; }
+            if (farmActionBusy.has(key)) return null;
+            farmActionBusy.add(key);
+            let ok = false;
+            try {
+                ++mfLoadSeq;   // ответ опроса, ушедшего раньше, уже устарел
+                const response = await fetch(path, {
+                    method: 'POST', headers: apiHeaders(),
+                    body: JSON.stringify({ user_id: state.userId, ...(body || {}) })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    haptic.notify('error');
+                    toast(data.detail || t('market.serverError'));
+                    loadMf(true);
+                    return null;
+                }
+                ok = true;
+                haptic.notify('success');
+                mfApply(data);
+                return data;
+            } catch (e) {
+                toast(t('market.serverError'));
+                return null;
+            } finally {
+                // повторный тап сразу после ответа не должен повторить действие
+                if (ok) setTimeout(() => farmActionBusy.delete(key), LIST_ACTION_HOLD_MS);
+                else farmActionBusy.delete(key);
+            }
+        }
+
+        let mfAskUntil = 0;
+        function mfAsk(msg) {
+            if (Date.now() < mfAskUntil) return false;   // второй клик двойного клика после закрытия окна
+            const ok = confirm(msg);
+            mfAskUntil = Date.now() + 400;
+            return ok;
+        }
+
+        async function mfFound() {
+            const c = mfData && mfData.cfg || {};
+            if (!mfAsk(t('mf.foundConfirm', { n: rockNum(c.found_particles || 100) }))) return;
+            const d = await mfPost('mf-found', 'api/mf/found');
+            if (d) toast(t('mf.founded'));
+        }
+        async function mfOpenNest() {
+            const d = await mfPost('mf-open', 'api/mf/open_nest');
+            if (d) toast(t('mf.nestOpened', { n: d.opened }));
+        }
+        async function mfDeposit(resource) {
+            const input = document.getElementById(resource === 'gold' ? 'mfDepGold' : 'mfDepParticles');
+            const amount = Math.floor(Number(input && input.value));
+            if (!(amount >= 1)) { toast(t('mf.depBadAmount')); return; }
+            const d = await mfPost('mf-dep:' + resource, 'api/mf/deposit', { resource, amount });
+            if (d) {
+                toast(t(resource === 'gold' ? 'mf.depositedGold' : 'mf.depositedParticles', { n: amount }));
+                const again = document.getElementById(resource === 'gold' ? 'mfDepGold' : 'mfDepParticles');
+                if (again) again.value = '';
+            }
+        }
+        async function mfHunt(lordId) {
+            const d = await mfPost('mf-hunt', 'api/mf/hunt', { lord_id: lordId });
+            if (d) toast(t('mf.huntStarted'));
+        }
+        async function mfReturn() {
+            const d = await mfPost('mf-return', 'api/mf/return');
+            if (d && d.returned) toast(t(d.returned.renewed ? 'mf.returned' : 'mf.returnedEvicted', { g: rockNum(d.returned.gold) }));
+        }
+        function mfSwitchTab(tab) {
+            if (mfTab === tab) return;
+            mfTab = tab;
+            haptic.select();
+            renderMf();
+            const hub = document.getElementById('mfHub');
+            if (hub) hub.scrollTop = 0;
+        }
+
+        function mfHour(h) { return String(Math.floor(Number(h) || 0)).padStart(2, '0') + ':00'; }
+        function mfWindowText(c) { return `${mfHour(c.return_from_hour)}–${mfHour(c.return_to_hour)}`; }
+        function mfUntil(ts) { return `<b data-mf-until="${Number(ts) || 0}">${formatCountdown(Math.max(0, (Number(ts) || 0) - serverNow()))}</b>`; }
+        function mfMissText(m, c) {
+            if (m + 1 >= (c.evict_after_misses || 3)) return t('mf.missNextEvict');
+            return t('mf.missNextGold', { g: rockNum(m === 0 ? c.miss1_gold : c.miss2_gold) });
+        }
+        function mfEdge(ts) { if (ts > serverNow() && (!mfEdgeAt || ts < mfEdgeAt)) mfEdgeAt = ts; }
+
+        function renderMfHunt(h, c) {
+            if (h.pending) return `<div class="glass-panel rock-card mf-hunt"><div class="rock-muted">${t('mf.huntPending')}</div></div>`;
+            const now = serverNow();
+            const today = mfData.today;
+            let status = '', btn = '';
+            const reward = t('mf.returnBtn', { g: rockNum(c.return_gold) });
+            if (h.can_return) {
+                status = t('mf.windowOpen', { until: mfUntil(h.window_end), w: mfWindowText(c) });
+                btn = `<button class="btn-primary mf-btn" id="mfReturnBtn" onclick="mfReturn()">${reward}</button>`;
+                mfEdge(h.window_end);
+            } else if (h.due_day === today && now < h.window_start) {
+                status = t('mf.windowSoon', { w: mfWindowText(c), until: mfUntil(h.window_start) });
+                btn = `<button class="btn-primary mf-btn" id="mfReturnBtn" disabled>${reward}</button>`;
+                mfEdge(h.window_start);
+            } else if (h.due_day === today) {
+                status = t('mf.windowMissed', { w: mfWindowText(c), what: mfMissText(h.misses, c) });
+                mfEdge(h.window_start - (c.return_from_hour || 9) * 3600 + 86400);
+            } else {
+                status = (h.returned_today ? t('mf.returnedToday') + ' ' : '') + t('mf.windowTomorrow', { w: mfWindowText(c), until: mfUntil(h.window_start) });
+                btn = `<button class="btn-primary mf-btn" id="mfReturnBtn" disabled>${reward}</button>`;
+                mfEdge(h.window_start);
+            }
+            const miss = h.misses > 0 ? `<div class="mf-warn">${t('mf.missesInRow', { n: h.misses })}</div>` : '';
+            return `<div class="glass-panel rock-card mf-hunt">
+                <h3>${t('mf.myHuntTitle')}</h3>
+                <div class="rock-muted">${t('mf.myHuntWhere', { nest: h.nest + 1, lord: huntEsc(h.lord_name) })}</div>
+                <div class="mf-status">${status}</div>${miss}${btn}</div>`;
+        }
+
+        function renderMfExchange(c) {
+            let html = `<div class="rock-muted mf-intro">${t('mf.exIntro', { g: rockNum(c.return_gold), w: mfWindowText(c), hg: rockNum(c.hunt_gold), hp: rockNum(c.hunt_particles) })}</div>`;
+            const hunting = !!mfData.hunt;
+            if (mfData.hunt) html += renderMfHunt(mfData.hunt, c);
+            const list = mfData.exchange || [];
+            if (!list.length) return html + `<div class="glass-panel rock-card rock-muted" style="text-align:center">${t('mf.exEmpty')}</div>`;
+            html += list.map(m => {
+                const can = m.ready && !hunting;
+                const label = hunting ? t('mf.alreadyHunting') : (m.ready ? t('mf.huntBtn') : t('mf.pantryEmptyBtn'));
+                return `<div class="glass-panel rock-card mf-lord">
+                    <div class="mf-lord-head"><b>👑 ${huntEsc(m.lord_name)}</b><span class="mf-lvl">${t('mf.level', { n: m.level })}</span></div>
+                    <div class="rock-muted">${t('mf.freeNests', { n: m.free, of: m.level })} · ${m.ready ? t('mf.pantryHunts', { n: m.hunts_left }) : t('mf.pantryEmpty')}</div>
+                    <button class="btn-primary mf-btn" data-mf-lord="${Number(m.lord_id)}" onclick="mfHunt(${Number(m.lord_id)})" ${can ? '' : 'disabled'}>${label}</button>
+                </div>`;
+            }).join('');
+            return html;
+        }
+
+        function renderMfMine(c) {
+            const me = mfData.me || {};
+            const my = mfData.my;
+            const P = NEST_PARTICLE_ICON_HTML;
+            if (!me.founded || !my) {
+                const can = (me.particles || 0) >= (c.found_particles || 100);
+                return `<div class="glass-panel rock-card mf-found">
+                    <h3>${t('mf.foundTitle')}</h3>
+                    <div class="rock-muted">${t('mf.foundText', { n: rockNum(c.nest_particles), max: c.max_nests || 6, o: rockNum(c.lord_obsidian), hg: rockNum(c.hunt_gold), hp: rockNum(c.hunt_particles) })}</div>
+                    <div class="mf-have">${t('mf.youHave')} ${fmt(me.particles || 0)}${P}</div>
+                    <button class="btn-primary mf-btn" id="mfFoundBtn" onclick="mfFound()" ${can ? '' : 'disabled'}>${t('mf.foundBtn', { n: rockNum(c.found_particles), icon: P })}</button>
+                </div>` + renderMfRules(c);
+            }
+            const max = my.max_nests || 6;
+            const cells = [];
+            for (let i = 0; i < max; i++) {
+                const n = my.nests[i];
+                if (n && n.hunter) {
+                    const st = n.misses > 0 ? `<span class="mf-warn">${t('mf.cellMisses', { n: n.misses })}</span>` : t('mf.cellHunting');
+                    cells.push(`<div class="mf-nest busy"><div class="mf-nest-ic">🦅</div><b>${huntEsc(n.hunter_name || '—')}</b><span>${st}</span></div>`);
+                } else if (n) {
+                    cells.push(`<div class="mf-nest free"><div class="mf-nest-ic">🪺</div><b>${t('mf.cellNest', { n: i + 1 })}</b><span>${t('mf.cellFree')}</span></div>`);
+                } else if (i === my.nests.length) {
+                    const can = (me.particles || 0) >= (c.nest_particles || 30);
+                    cells.push(`<button class="mf-nest closed next" id="mfOpenNestBtn" onclick="mfOpenNest()" ${can ? '' : 'disabled'}><div class="mf-nest-ic">🔓</div><b>${t('mf.cellOpen')}</b><span>${rockNum(c.nest_particles)}${P}</span></button>`);
+                } else {
+                    cells.push(`<div class="mf-nest closed"><div class="mf-nest-ic">🔒</div><b>${t('mf.cellNest', { n: i + 1 })}</b><span>${t('mf.cellClosed')}</span></div>`);
+                }
+            }
+            const log = (my.log || []).map(e => `<div class="mf-log-row">${mfLogText(e, c)}</div>`).join('');
+            return `<div class="glass-panel rock-card">
+                    <div class="mf-lord-head"><b>${t('mf.myTitle')}</b><span class="mf-lvl">${t('mf.level', { n: my.level })}</span></div>
+                    <div class="rock-muted">${t('mf.myStats', { open: my.level, max, hunts: my.hunts_total })}</div>
+                    <div class="mf-obs">${t('mf.obsidian')}: <b>${rockNum(me.obsidian || 0)}</b></div>
+                    <div class="mf-nests">${cells.join('')}</div>
+                </div>
+                <div class="glass-panel rock-card mf-pantry">
+                    <h3>${t('mf.pantryTitle')}</h3>
+                    <div class="mf-pantry-row"><span>🪙 ${t('mf.gold')}</span><b>${rockNum(my.pantry_gold)}</b></div>
+                    <div class="mf-pantry-row"><span>${P} ${t('mf.particles')}</span><b>${rockNum(my.pantry_particles)}</b></div>
+                    <div class="rock-muted">${t('mf.pantryEnough', { n: my.hunts_left, hg: rockNum(c.hunt_gold), hp: rockNum(c.hunt_particles) })}</div>
+                    <div class="mf-dep"><input id="mfDepGold" type="number" min="1" step="1" inputmode="numeric" placeholder="${t('mf.amount')}">
+                        <button class="btn-action" id="mfDepGoldBtn" onclick="mfDeposit('gold')">${t('mf.depGoldBtn')}</button></div>
+                    <div class="mf-have">${t('mf.youHave')} ${fmt(me.gold || 0)} 🪙</div>
+                    <div class="mf-dep"><input id="mfDepParticles" type="number" min="1" step="1" inputmode="numeric" placeholder="${t('mf.amount')}">
+                        <button class="btn-action" id="mfDepParticlesBtn" onclick="mfDeposit('particles')">${t('mf.depParticlesBtn')}</button></div>
+                    <div class="mf-have">${t('mf.youHave')} ${fmt(me.particles || 0)}${P}</div>
+                    <div class="rock-muted" style="margin-top:6px">${t('mf.pantryOneWay')}</div>
+                </div>
+                ${log ? `<div class="glass-panel rock-card"><h3>${t('mf.logTitle')}</h3>${log}</div>` : ''}
+                ${renderMfRules(c)}`;
+        }
+
+        function mfLogText(e, c) {
+            const name = `<b>${huntEsc(e.name || '—')}</b>`;
+            const when = rockClock(e.ts);
+            let s;
+            if (e.kind === 'join') s = t('mf.logJoin', { name, n: (e.nest || 0) + 1 });
+            else if (e.kind === 'return') s = t('mf.logReturn', { name, o: rockNum(e.obsidian) });
+            else if (e.kind === 'miss') s = t('mf.logMiss', { name, g: rockNum(e.gold) });
+            else if (e.kind === 'evict') s = t(e.reason === 'pantry' ? 'mf.logEvictPantry' : 'mf.logEvictMiss', { name });
+            else s = huntEsc(e.kind);
+            return `<span class="mf-log-time">${when}</span> ${s}`;
+        }
+
+        function renderMfRules(c) {
+            return `<details class="glass-panel rock-card mf-rules"><summary>${t('mf.rulesTitle')}</summary>
+                <div class="rock-muted">${t('mf.rulesText', { w: mfWindowText(c), g: rockNum(c.return_gold), o: rockNum(c.lord_obsidian), hg: rockNum(c.hunt_gold), hp: rockNum(c.hunt_particles), m1: rockNum(c.miss1_gold), m2: rockNum(c.miss2_gold), ev: c.evict_after_misses || 3 })}</div></details>`;
+        }
+
+        function renderMf() {
+            const hub = document.getElementById('mfHub');
+            if (!hub) return;
+            mfEdgeAt = 0;
+            const head = `<div class="rock-title">${t('mf.title')}</div>
+                <div class="rock-tabs">
+                    <button class="rock-tab ${mfTab === 'ex' ? 'active' : ''}" data-mf-tab="ex" onclick="mfSwitchTab('ex')"><span class="rock-tab-ic">🪺</span><span class="rock-tab-tx">${t('mf.tabExchange')}</span></button>
+                    <button class="rock-tab ${mfTab === 'my' ? 'active' : ''}" data-mf-tab="my" onclick="mfSwitchTab('my')"><span class="rock-tab-ic">🏰</span><span class="rock-tab-tx">${t('mf.tabMine')}</span></button>
+                </div>`;
+            if (!mfData) {
+                const msg = (offlineOnly || !state.userId) ? t('merchant.onlineOnly') : t('mf.loading');
+                setHTMLIfChanged(hub, head + `<div class="rock-muted" style="text-align:center;margin-top:20px">${msg}</div>`);
+                return;
+            }
+            const c = mfData.cfg || {};
+            let note = '';
+            if (mfData.note && mfData.note.kind === 'evict' && !mfData.hunt) {
+                note = `<div class="glass-panel rock-card mf-note">${t(mfData.note.reason === 'pantry' ? 'mf.noteEvictPantry' : 'mf.noteEvictMiss', { lord: huntEsc(mfData.note.lord_name || '') })}</div>`;
+            }
+            const body = mfTab === 'my' ? renderMfMine(c) : renderMfExchange(c);
+            // поле суммы не должно сбрасываться, пока игрок его набирает (опрос раз в 20 с)
+            const keep = {};
+            ['mfDepGold', 'mfDepParticles'].forEach(id => { const el = document.getElementById(id); if (el) keep[id] = { v: el.value, f: document.activeElement === el }; });
+            setHTMLIfChanged(hub, head + note + body);
+            Object.keys(keep).forEach(id => { const el = document.getElementById(id); if (el && el.value !== keep[id].v) { el.value = keep[id].v; if (keep[id].f) el.focus(); } });
         }
 
         // ---------- 🏔 ОРЛИНАЯ СКАЛА: хаб фракций на правом экране ----------
@@ -10032,7 +10594,7 @@
         }
 
         function switchTab(tabId, element) {
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             haptic.select();
             auctionStop();
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
@@ -10471,6 +11033,14 @@
                 craftBtn.insertAdjacentElement('afterend', discountNote);
             }
             discountNote.style.display = craftDiscount ? '' : 'none';
+            // ⚒️ Второй способ: Обсидиан с Мануфактуры + те же частички, без золота
+            const obsBtn = document.getElementById('nestCraftObsBtn');
+            if (obsBtn) {
+                const obsCost = Number(CONFIG.manufactory && CONFIG.manufactory.craft_obsidian) || 3;
+                const obs = Number(state.nest.obsidian) || 0;
+                setHTMLIfChanged(obsBtn, t('nest.craftObsBtn', { o: rockNum(obsCost), have: rockNum(obs), cost: craftCost, icon: NEST_PARTICLE_ICON_HTML }));
+                obsBtn.disabled = !(hasParticles && obs >= obsCost - 1e-9);
+            }
             discountNote.innerHTML = craftDiscount ? goldify(t('hunt.nest.discountNote', { gold: fmt(craftCostGold), full: fmt(CONFIG.nest.craft_cost_gold || 300) })) : '';
 
             const grades = CONFIG.nest.grades || [];
@@ -12089,20 +12659,22 @@
             }
         }
 
-        async function nestCraft() {
+        async function nestCraft(pay) {
             if (offlineOnly || !state.userId) { toast(t('merchant.onlineOnly')); return; }
+            pay = pay === 'obsidian' ? 'obsidian' : undefined;
             if (farmActionBusy.has('nest-craft')) return;
             farmActionBusy.add('nest-craft');
             let ok = false;
             try {
                 const response = await fetch('api/nest/craft', {
                     method: 'POST', headers: apiHeaders(),
-                    body: JSON.stringify({ user_id: state.userId })
+                    body: JSON.stringify({ user_id: state.userId, pay })
                 });
                 const data = await response.json();
                 if (!response.ok) { toast(data.detail || t('nest.craftNeedMore', { cost: CONFIG.nest.craft_cost_particles })); return; }
                 state.nest.particles = data.particles;
                 state.gold = data.gold;
+                if (typeof data.obsidian === 'number') state.nest.obsidian = data.obsidian;
                 ok = true;
                 applyNestItems(data);
                 if (data.craft_discount_used && state.huntBuffs) state.huntBuffs.craft_discount = false;
@@ -12389,7 +12961,7 @@
             haptic.select();
             arenaStopLoop();
             nftStopTimer();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('auction').classList.add('active');
             await loadAuction();
@@ -12401,7 +12973,7 @@
         function closeAuctionScreen() {
             haptic.select();
             auctionStop();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
         }
@@ -13115,6 +13687,7 @@
                 state.nest.shardBoughtToday = data.nest.shard_bought_today || 0;
                 state.nest.shardDailyLimit = data.nest.shard_daily_limit || state.nest.shardDailyLimit;
                 state.nest.particles = data.nest.particles || 0;
+                state.nest.obsidian = Number(data.nest.obsidian) || 0;   // ⚒️ Обсидиан с Мануфактуры
                 state.nest.shardCount = data.nest.shard_count || 0;
                 state.nest.lastClaim = data.nest.last_claim || 0;
                 applyNestItems(data.nest);
@@ -13703,7 +14276,7 @@
             if (!clansEnabled) { toast('Раздел кланов временно отключён'); return; }
             haptic.select();
             auctionStop();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('clans').classList.add('active');
             arenaStopLoop();
@@ -13714,7 +14287,7 @@
             haptic.select();
             clanLiveStop();
             clanBracketStopCountdown();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
         }
@@ -13821,7 +14394,7 @@
             haptic.select();
             auctionStop();
             arenaStopLoop();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('hunt').classList.add('active');
             switchHuntTab(tab || huntTab, { silent: true });
@@ -13834,7 +14407,7 @@
             if (huntTicker) { clearInterval(huntTicker); huntTicker = null; }
             raidStopPolling();
             if (raidPick) raidClosePick();
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
             document.getElementById('farm').classList.add('active');
             renderAll();
@@ -16069,7 +16642,7 @@
             if (tut.on) return;
             haptic.select();
             // тур идёт по экрану с орлами
-            closeFogPage(true);
+            closeFogPage(true); closeMfPage(true);
             document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
             const farmNav = document.querySelector(`.nav-item[onclick*="'farm'"]`);
             if (!document.getElementById('farm').classList.contains('active') && farmNav) switchTab('farm', farmNav);
