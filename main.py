@@ -15676,6 +15676,9 @@ async def mf_found(req: MfReq, x_telegram_init_data: Optional[str] = Header(None
         def compute(row):
             if row.get("mf_founded"):
                 raise HTTPException(status_code=400, detail="Твоя Мануфактура уже основана")
+            if isinstance(row.get("mf_hunt"), dict) and row["mf_hunt"].get("hid"):
+                # Лорды в чужих Гнёздах не охотятся: сначала покинуть Гнездо
+                raise HTTPException(status_code=400, detail="Сначала покинь Гнездо Охоты — Лорды не охотятся в чужих Гнёздах")
             particles = float(row.get("nest_particles") or 0)
             if particles < cost - 1e-9:
                 raise HTTPException(status_code=400, detail=f"Нужно {cost:g} частиц снаряжения")
@@ -15764,17 +15767,21 @@ async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(N
         if h:
             raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
         now = time.time()
+        if row.get("mf_founded"):
+            raise HTTPException(status_code=400, detail="Лорды не охотятся в чужих Гнёздах — твои охотники приходят к тебе")
         if row.get("mf_rest_day") is not None and int(row["mf_rest_day"]) >= mf_day(now):
             # сам покинул Гнездо сегодня — иначе вход/выход по кругу опустошал бы чужие Кладовые
             raise HTTPException(status_code=400, detail="Ты сегодня уже покинул Гнездо — новое можно занять с 00:00 МСК")
         hid = secrets.token_hex(8)
         # занять можно, только если нет охоты И нет отдыха — проверка и запись одной операцией
         locked = await store.users.update_one(
-            {"_id": uid, "mf_hunt": {"$exists": False},
+            {"_id": uid, "mf_hunt": {"$exists": False}, "mf_founded": {"$ne": True},
              "$or": [{"mf_rest_day": {"$exists": False}}, {"mf_rest_day": None}, {"mf_rest_day": {"$lt": mf_day(now)}}]},
             {"$set": {"mf_hunt": {"hid": hid, "lord": lord, "at": now, "pending": True}}, "$inc": {"ops": 1}})
         if not locked.modified_count:
             fresh = await fetch_user(uid)
+            if fresh.get("mf_founded"):
+                raise HTTPException(status_code=400, detail="Лорды не охотятся в чужих Гнёздах — твои охотники приходят к тебе")
             if fresh.get("mf_rest_day") is not None and int(fresh["mf_rest_day"]) >= mf_day(now):
                 raise HTTPException(status_code=400, detail="Ты сегодня уже покинул Гнездо — новое можно занять с 00:00 МСК")
             raise HTTPException(status_code=400, detail="Ты уже в Гнезде Охоты — занимать можно только одно")
