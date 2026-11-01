@@ -2700,7 +2700,7 @@ async function loadMfAdmin() {
         card('Изгнаны', f(t.evict_pantry + t.evict_misses), `пустая Кладовая ${f(t.evict_pantry)} · 3 пропуска ${f(t.evict_misses)}`),
     ].join('');
     document.getElementById('mfAdmObs').innerHTML = [
-        card('Выплачено Лордам', f(t.obsidian_paid), `по ${cfg.lord_obsidian} за каждое возвращение охотника`),
+        card('Выплачено Лордам', f(t.obsidian_paid), `по ${cfg.lord_obsidian} за каждые оплаченные Кладовой сутки (до этого обновления — за каждое возвращение)`),
         card('Потрачено на крафт', f(t.obsidian_crafted), `≈ ${f(t.obsidian_crafted / (cfg.craft_obsidian || 3))} предметов (по ${cfg.craft_obsidian} 🖤)`),
         card('На руках у игроков', f(t.obsidian_held), `у ${f(t.obsidian_holders)} игроков`),
     ].join('');

@@ -15299,7 +15299,7 @@ MF_DEFAULTS = {
     "hunt_gold": 10,           # из Кладовой за сутки охоты
     "hunt_particles": 6,
     "return_gold": 10,         # охотнику за «Вернуться с Добычей»
-    "lord_obsidian": 0.5,      # Лорду за каждое возвращение
+    "lord_obsidian": 0.5,      # Лорду за каждые сутки охоты, оплаченные Кладовой (вернулся охотник или нет)
     "miss1_gold": 5,           # 1-й пропуск подряд
     "miss2_gold": 0,           # 2-й пропуск подряд
     "evict_after_misses": 3,   # 3-й пропуск подряд — Гнездо свободно
@@ -15363,6 +15363,13 @@ def mf_charge(doc: dict) -> bool:
     mf_stat(doc, "charges")
     doc["pantry_gold"] = round(float(doc.get("pantry_gold") or 0) - mf_num("hunt_gold"), 6)
     doc["pantry_particles"] = round(float(doc.get("pantry_particles") or 0) - mf_num("hunt_particles"), 6)
+    # Лорду Обсидиан — за каждые оплаченные сутки, вернётся охотник или нет.
+    # Номер выплаты — порядковый номер списания этой Мануфактуры (растёт только
+    # под CAS), поэтому повтор той же выплаты невозможен.
+    obs = mf_num("lord_obsidian")
+    if obs > 0 and doc.get("_id") is not None:
+        mf_pay(doc, f"obsc:{doc['_id']}:{int(doc['stats']['charges'])}", doc["_id"], "obsidian", obsidian=obs)
+        doc["obsidian_total"] = round(float(doc.get("obsidian_total") or 0) + obs, 6)
     return True
 
 
@@ -15421,10 +15428,12 @@ def mf_settle(doc: dict, now: float) -> bool:
                 mf_evict(doc, i, "misses")
                 break
             gold = mf_num("miss1_gold") if misses == 1 else mf_num("miss2_gold")
-            mf_log(doc, "miss", name=n.get("hunter_name") or "", nest=i, misses=misses, gold=gold, day=d)
             if gold > 0:
                 mf_pay(doc, f"miss:{n.get('hid')}:{d}", n["hunter"], "miss", gold=gold)
-            if mf_charge(doc):
+            renewed = mf_charge(doc)
+            mf_log(doc, "miss", name=n.get("hunter_name") or "", nest=i, misses=misses, gold=gold, day=d,
+                   obsidian=mf_num("lord_obsidian") if renewed else 0)
+            if renewed:
                 n["due_day"] = d + 1
             else:
                 mf_evict(doc, i, "pantry")
@@ -15892,7 +15901,7 @@ async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(N
                         "due_day": mf_day(now) + 1}
             doc["hunts_total"] = int(doc.get("hunts_total") or 0) + 1
             mf_stat(doc, "joins")
-            mf_log(doc, "join", name=name, nest=i)
+            mf_log(doc, "join", name=name, nest=i, obsidian=mf_num("lord_obsidian"))
             return {"nest": i}
         try:
             _, extra = await mf_cas(lord, mutate, now)
@@ -15941,17 +15950,16 @@ async def mf_return(req: MfReq, x_telegram_init_data: Optional[str] = Header(Non
                 raise HTTPException(status_code=400, detail="Вернуться с Добычей можно с 09:00 МСК")
             if now >= b:
                 raise HTTPException(status_code=400, detail="Окно возвращения закрылось в 12:00 МСК")
-            gold, obs = mf_num("return_gold"), mf_num("lord_obsidian")
+            gold = mf_num("return_gold")
             mf_pay(doc, f"ret:{hid}:{due}", uid, "return", gold=gold)
-            if obs > 0:
-                mf_pay(doc, f"obs:{hid}:{due}", lord, "obsidian", obsidian=obs)
             n["returns"] = int(n.get("returns") or 0) + 1
             mf_stat(doc, "returns")
             n["misses"] = 0
             n["last_return"] = today
-            doc["obsidian_total"] = round(float(doc.get("obsidian_total") or 0) + obs, 6)
-            mf_log(doc, "return", name=n.get("hunter_name") or "", nest=i, gold=gold, obsidian=obs)
-            if mf_charge(doc):
+            renewed = mf_charge(doc)   # продление на завтра — Лорду Обсидиан за новые сутки
+            mf_log(doc, "return", name=n.get("hunter_name") or "", nest=i, gold=gold,
+                   obsidian=mf_num("lord_obsidian") if renewed else 0)
+            if renewed:
                 n["due_day"] = due + 1
                 return {"gold": gold, "renewed": True}
             mf_evict(doc, i, "pantry")
