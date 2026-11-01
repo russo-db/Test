@@ -15348,10 +15348,19 @@ def mf_hunts_left(doc: dict) -> int:
     return max(0, min(a, b))
 
 
+def mf_stat(doc: dict, key: str, v: float = 1) -> None:
+    """Счётчики событий Мануфактуры (stats). После записи документа их прирост
+    уходит в постоянную статистику (mf_econ) — для раздела админки."""
+    st = dict(doc.get("stats") or {})
+    st[key] = round(float(st.get(key) or 0) + v, 6)
+    doc["stats"] = st
+
+
 def mf_charge(doc: dict) -> bool:
     """Сутки охоты из Кладовой: либо оба ресурса, либо ничего."""
     if not mf_pantry_ok(doc):
         return False
+    mf_stat(doc, "charges")
     doc["pantry_gold"] = round(float(doc.get("pantry_gold") or 0) - mf_num("hunt_gold"), 6)
     doc["pantry_particles"] = round(float(doc.get("pantry_particles") or 0) - mf_num("hunt_particles"), 6)
     return True
@@ -15386,6 +15395,7 @@ def mf_evict(doc: dict, i: int, reason: str) -> None:
     """«Изгнание из Гнезда»: место свободно, охотнику — пометка, что случилось."""
     n = doc["nests"][i]
     if n.get("hunter"):
+        mf_stat(doc, "evict_" + reason)
         mf_log(doc, "evict", name=n.get("hunter_name") or "", reason=reason, nest=i)
         mf_pay(doc, f"out:{n.get('hid')}", n["hunter"], "evict", unhunt=n.get("hid"),
                note={"kind": "evict", "reason": reason, "lord": doc["_id"], "lord_name": doc.get("lord_name") or ""})
@@ -15406,6 +15416,7 @@ def mf_settle(doc: dict, now: float) -> bool:
             misses = int(n.get("misses") or 0) + 1
             n["misses"] = misses
             changed = True
+            mf_stat(doc, "misses")
             if misses >= int(mf_num("evict_after_misses")):
                 mf_evict(doc, i, "misses")
                 break
@@ -15419,6 +15430,68 @@ def mf_settle(doc: dict, now: float) -> bool:
                 mf_evict(doc, i, "pantry")
                 break
     return changed
+
+
+async def mf_econ(**amounts) -> None:
+    """Постоянная статистика Мануфактур: итог за всё время (economy_stats/total,
+    ключи mf_*) и по московским суткам (economy_stats/mfday:ГГГГ-ММ-ДД). Журнал
+    балансов хранится 90 дней, эти счётчики — всегда. Сбой записи статистики
+    не ломает действие игрока."""
+    inc = {k: float(v) for k, v in amounts.items() if v}
+    if not inc:
+        return
+    try:
+        day = time.strftime("%Y-%m-%d", time.gmtime(time.time() + MF_TZ))
+        await store.economy.update_one({"_id": "total"}, {"$inc": inc}, upsert=True)
+        await store.economy.update_one({"_id": f"mfday:{day}"}, {"$inc": inc, "$setOnInsert": {"day": day}}, upsert=True)
+    except Exception as e:
+        print(f"[mf] stats failed: {type(e).__name__}: {e}")
+
+
+async def mf_backfill_stats() -> None:
+    """Один раз при первом запуске со статистикой: восстановить её за прошлое
+    из журнала золота (внесения, выплаты — с первого дня Мануфактур, журнал
+    хранит 90 дней) и из самих Мануфактур (Кладовые, Обсидиан Лордам). Списано
+    = внесено − осталось: другого выхода у золота Кладовой нет."""
+    try:
+        await store.economy.update_one({"_id": "total"}, {"$setOnInsert": {"mf_backfilled": False}}, upsert=True)
+        mark = await store.economy.update_one({"_id": "total", "mf_backfilled": {"$ne": True}}, {"$set": {"mf_backfilled": True}})
+        if not mark.modified_count:
+            return
+        hg, hp, rg = mf_num("hunt_gold"), mf_num("hunt_particles"), mf_num("return_gold")
+        days, tot = {}, {"dep": 0.0, "ret": 0.0, "miss": 0.0}
+        async for x in store.balance_ledger.find({"source": {"$in": ["/api/mf/deposit", "mf:return", "mf:miss"]}},
+                                                 {"source": 1, "delta": 1, "ts": 1, "first_ts": 1}):
+            g = float((x.get("delta") or {}).get("gold") or 0)
+            key = {"/api/mf/deposit": "dep", "mf:return": "ret", "mf:miss": "miss"}[x["source"]]
+            v = -g if key == "dep" else g
+            tot[key] += v
+            day = time.strftime("%Y-%m-%d", time.gmtime(float(x.get("first_ts") or x.get("ts") or 0) + MF_TZ))
+            days.setdefault(day, {"dep": 0.0, "ret": 0.0, "miss": 0.0})[key] += v
+        pantry_g = pantry_p = obs = 0.0
+        joins = 0
+        async for d in store.mf.find({}, {"pantry_gold": 1, "pantry_particles": 1, "obsidian_total": 1, "hunts_total": 1}):
+            pantry_g += float(d.get("pantry_gold") or 0)
+            pantry_p += float(d.get("pantry_particles") or 0)
+            obs += float(d.get("obsidian_total") or 0)
+            joins += int(d.get("hunts_total") or 0)
+        charges = round(max(0.0, tot["dep"] - pantry_g) / hg) if hg > 0 else 0
+        inc = {"mf_dep_gold": tot["dep"], "mf_dep_particles": pantry_p + charges * hp, "mf_charges": charges,
+               "mf_charge_gold": charges * hg, "mf_charge_particles": charges * hp, "mf_ret_gold": tot["ret"],
+               "mf_miss_gold": tot["miss"], "mf_obsidian": obs, "mf_joins": joins,
+               "mf_returns": round(tot["ret"] / rg) if rg > 0 else 0}
+        inc = {k: float(v) for k, v in inc.items() if v}
+        if inc:
+            await store.economy.update_one({"_id": "total"}, {"$inc": inc})
+        for day, v in days.items():
+            r = round(v["ret"] / rg) if rg > 0 else 0
+            di = {k: float(x) for k, x in {"mf_dep_gold": v["dep"], "mf_ret_gold": v["ret"], "mf_miss_gold": v["miss"],
+                                            "mf_returns": r, "mf_obsidian": r * mf_num("lord_obsidian")}.items() if x}
+            if di:
+                await store.economy.update_one({"_id": f"mfday:{day}"}, {"$inc": di, "$setOnInsert": {"day": day}}, upsert=True)
+        print(f"[mf] статистика восстановлена из журнала: {inc}")
+    except Exception as e:
+        print(f"[mf] backfill FAILED: {type(e).__name__}: {e}")
 
 
 async def mf_cas(lord: int, mutate=None, now: Optional[float] = None) -> tuple:
@@ -15440,6 +15513,14 @@ async def mf_cas(lord: int, mutate=None, now: Optional[float] = None) -> tuple:
         r = await store.mf.update_one({"_id": lord, "ver": ver}, {"$set": new})
         if r.modified_count:
             new["_id"] = lord
+            old_st, new_st = doc.get("stats") or {}, new.get("stats") or {}
+            delta = {f"mf_{k}": float(v) - float(old_st.get(k) or 0) for k, v in new_st.items()}
+            delta = {k: v for k, v in delta.items() if v > 1e-9}
+            if delta:
+                if delta.get("mf_charges"):
+                    delta["mf_charge_gold"] = delta["mf_charges"] * mf_num("hunt_gold")
+                    delta["mf_charge_particles"] = delta["mf_charges"] * mf_num("hunt_particles")
+                await mf_econ(**delta)
             return new, extra
     raise HTTPException(status_code=409, detail="Не удалось выполнить — попробуй ещё раз")
 
@@ -15468,7 +15549,12 @@ async def mf_flush(lord: int) -> None:
             if sets:
                 update["$set"] = sets
             with ledger_source(f"mf:{p.get('kind') or 'pay'}"):
-                await store.users.update_one({"_id": uid, "mf_paid": {"$ne": pid}}, update)
+                paid = await store.users.update_one({"_id": uid, "mf_paid": {"$ne": pid}}, update)
+            if paid.modified_count:
+                kind = p.get("kind")
+                await mf_econ(mf_ret_gold=float(p.get("gold") or 0) if kind == "return" else 0,
+                              mf_miss_gold=float(p.get("gold") or 0) if kind == "miss" else 0,
+                              mf_obsidian=float(p.get("obsidian") or 0))
             if p.get("unhunt"):
                 await store.users.update_one({"_id": uid, "mf_hunt.hid": p["unhunt"]},
                                              {"$unset": {"mf_hunt": ""}, "$inc": {"ops": 1}})
@@ -15508,9 +15594,11 @@ async def mf_apply_deps(uid: int) -> None:
     await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
     for d in deps:
         field = "pantry_gold" if d.get("res") == "gold" else "pantry_particles"
-        await store.mf.update_one({"_id": uid, "dep_ids": {"$ne": d["id"]}},
-                                  {"$inc": {field: float(d.get("amount") or 0), "ver": 1},
-                                   "$push": {"dep_ids": {"$each": [d["id"]], "$slice": -100}}})
+        put = await store.mf.update_one({"_id": uid, "dep_ids": {"$ne": d["id"]}},
+                                        {"$inc": {field: float(d.get("amount") or 0), "ver": 1},
+                                         "$push": {"dep_ids": {"$each": [d["id"]], "$slice": -100}}})
+        if put.modified_count:
+            await mf_econ(**{"mf_dep_gold" if field == "pantry_gold" else "mf_dep_particles": float(d.get("amount") or 0)})
     try:
         await mf_cas(uid, lambda doc: {})   # пересчитать «Кладовая готова» (порядок на Бирже)
     except HTTPException:
@@ -15687,6 +15775,7 @@ async def mf_found(req: MfReq, x_telegram_init_data: Optional[str] = Header(None
         row = await fetch_user(uid)
         await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
         await record_economy(particles_mf=cost)
+        await mf_econ(mf_founded=1, mf_found_particles=cost)
         return await mf_reply(uid)
     except Exception as e:
         _mf_fail(e, "основать Мануфактуру")
@@ -15713,6 +15802,7 @@ async def mf_open_nest(req: MfReq, x_telegram_init_data: Optional[str] = Header(
         await mf_ensure(uid, row.get("name") or f"Лорд {uid}")
         await mf_sync(uid, res["paid"])
         await record_economy(particles_mf=cost)
+        await mf_econ(mf_nests_opened=1, mf_nest_particles=cost)
         return await mf_reply(uid, opened=res["paid"])
     except Exception as e:
         _mf_fail(e, "открыть Гнездо")
@@ -15801,6 +15891,7 @@ async def mf_hunt(req: MfHuntReq, x_telegram_init_data: Optional[str] = Header(N
             nests[i] = {**mf_new_nest(), "hunter": uid, "hunter_name": name, "hid": hid, "since": now,
                         "due_day": mf_day(now) + 1}
             doc["hunts_total"] = int(doc.get("hunts_total") or 0) + 1
+            mf_stat(doc, "joins")
             mf_log(doc, "join", name=name, nest=i)
             return {"nest": i}
         try:
@@ -15855,6 +15946,7 @@ async def mf_return(req: MfReq, x_telegram_init_data: Optional[str] = Header(Non
             if obs > 0:
                 mf_pay(doc, f"obs:{hid}:{due}", lord, "obsidian", obsidian=obs)
             n["returns"] = int(n.get("returns") or 0) + 1
+            mf_stat(doc, "returns")
             n["misses"] = 0
             n["last_return"] = today
             doc["obsidian_total"] = round(float(doc.get("obsidian_total") or 0) + obs, 6)
@@ -15889,6 +15981,7 @@ async def mf_leave(req: MfReq, x_telegram_init_data: Optional[str] = Header(None
             if i < 0:
                 raise HTTPException(status_code=400, detail="Ты уже покинул это Гнездо")
             mf_log(doc, "leave", name=nests[i].get("hunter_name") or "", nest=i)
+            mf_stat(doc, "leaves")
             mf_pay(doc, f"out:{hid}", uid, "leave", unhunt=hid, rest_day=mf_day(time.time()))
             nests[i] = mf_new_nest()
             return {"nest": i}
@@ -15897,6 +15990,82 @@ async def mf_leave(req: MfReq, x_telegram_init_data: Optional[str] = Header(None
         return await mf_reply(uid, left=extra)
     except Exception as e:
         _mf_fail(e, "покинуть Гнездо")
+
+
+@app.get("/admin/api/manufactories")
+async def admin_manufactories(_: None = Depends(require_admin)):
+    """⚒️ Итоги Мануфактур для админки: «сейчас» — по самим Мануфактурам,
+    «за всё время» и по дням (МСК) — из постоянной статистики mf_econ (её
+    прошлое один раз восстановлено из журнала золота, см. mf_backfill_stats)."""
+    try:
+        now = time.time()
+        today = mf_day(now)
+        hg, hp = mf_num("hunt_gold"), mf_num("hunt_particles")
+        cur = {"manufactories": 0, "nests_open": 0, "hunters": 0, "free": 0, "pantry_gold": 0.0, "pantry_particles": 0.0,
+               "ready": 0, "obsidian_paid": 0.0, "joins": 0, "pending_payouts": 0, "levels": {},
+               "returned_today": 0, "due_today": 0, "miss1": 0, "miss2": 0}
+        lords = []
+        async for d in store.mf.find({}):
+            nests = d.get("nests") or []
+            busy = [n for n in nests if n.get("hunter")]
+            cur["manufactories"] += 1
+            cur["nests_open"] += len(nests)
+            cur["hunters"] += len(busy)
+            cur["free"] += len(nests) - len(busy)
+            cur["pantry_gold"] += float(d.get("pantry_gold") or 0)
+            cur["pantry_particles"] += float(d.get("pantry_particles") or 0)
+            cur["ready"] += 1 if (nests and len(busy) < len(nests) and mf_pantry_ok(d)) else 0
+            cur["obsidian_paid"] += float(d.get("obsidian_total") or 0)
+            cur["joins"] += int(d.get("hunts_total") or 0)
+            cur["pending_payouts"] += len(d.get("pay_queue") or [])
+            lv = str(len(nests))
+            cur["levels"][lv] = cur["levels"].get(lv, 0) + 1
+            for n in busy:
+                if n.get("last_return") == today:
+                    cur["returned_today"] += 1
+                elif n.get("due_day") == today:
+                    cur["due_today"] += 1
+                m = int(n.get("misses") or 0)
+                if m == 1:
+                    cur["miss1"] += 1
+                elif m >= 2:
+                    cur["miss2"] += 1
+            lords.append({"lord_id": d["_id"], "name": d.get("lord_name") or "", "level": len(nests), "hunters": len(busy),
+                          "pantry_gold": float(d.get("pantry_gold") or 0), "pantry_particles": float(d.get("pantry_particles") or 0),
+                          "days_left": mf_hunts_left(d), "obsidian": float(d.get("obsidian_total") or 0),
+                          "joins": int(d.get("hunts_total") or 0), "created_at": d.get("created_at") or 0})
+        lords.sort(key=lambda x: (x["obsidian"], x["level"], x["joins"]), reverse=True)
+        econ = await store.economy.find_one({"_id": "total"}) or {}
+        ev = lambda k: float(econ.get(k) or 0)
+        daily = []
+        async for x in store.economy.find({"_id": {"$regex": "^mfday:"}}).sort("day", -1).limit(30):
+            x.pop("_id", None)
+            daily.append(x)
+        holders, held = 0, 0.0
+        async for u in store.users.find({"obsidian": {"$gt": 0}}, {"obsidian": 1}):
+            holders += 1
+            held += float(u.get("obsidian") or 0)
+        return {
+            "now": now, "cfg": {k: mf_num(k) for k in MF_DEFAULTS},
+            "current": cur,
+            "totals": {
+                "gold_deposited": ev("mf_dep_gold"), "particles_deposited": ev("mf_dep_particles"),
+                "gold_charged": ev("mf_charge_gold"), "particles_charged": ev("mf_charge_particles"), "days_paid": ev("mf_charges"),
+                "gold_paid_return": ev("mf_ret_gold"), "gold_paid_miss": ev("mf_miss_gold"),
+                # у каждого охотника в Гнезде одни оплаченные сутки ещё идут — они не сгорели и не выплачены
+                "gold_running": cur["hunters"] * hg,
+                "gold_burned": max(0.0, ev("mf_charge_gold") - ev("mf_ret_gold") - ev("mf_miss_gold") - cur["hunters"] * hg),
+                "returns": ev("mf_returns"), "misses": ev("mf_misses"), "joins": ev("mf_joins"), "leaves": ev("mf_leaves"),
+                "evict_pantry": ev("mf_evict_pantry"), "evict_misses": ev("mf_evict_misses"),
+                "particles_found_nests": float(econ.get("particles_mf") or 0),
+                "obsidian_paid": ev("mf_obsidian"), "obsidian_crafted": ev("obsidian_craft"),
+                "obsidian_held": held, "obsidian_holders": holders,
+            },
+            "daily": daily,
+            "lords": lords[:50],
+        }
+    except Exception as e:
+        _mf_fail(e, "посчитать итоги Мануфактур")
 
 
 async def mf_worker():
@@ -15951,6 +16120,7 @@ async def startup_event():
     asyncio.create_task(raid_worker())
     asyncio.create_task(rock_worker())
     asyncio.create_task(rock_call_sender())
+    await mf_backfill_stats()          # ⚒️ один раз: статистика Мануфактур за прошлое из журнала
     asyncio.create_task(mf_worker())   # ⚒️ Мануфактуры: штрафы в 00:00 МСК и выплаты
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад

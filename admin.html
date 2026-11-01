@@ -256,6 +256,7 @@
             <button class="nav-btn" data-page="retention">🔁 Удержание</button>
             <button class="nav-btn" data-page="auction">🏛️ Аукцион</button>
             <button class="nav-btn" data-page="rock">🏔 Скала</button>
+            <button class="nav-btn" data-page="mf">⚒️ Мануфактуры</button>
         </div>
         <div class="spacer"></div>
         <button id="logoutBtn">Выйти</button>
@@ -823,6 +824,33 @@
             </table></div>
         </div>
 
+        <div class="page" id="page-mf">
+            <h2>⚒️ Орлиные Мануфактуры</h2>
+            <p class="muted" style="font-size:12px;">«Сейчас» — состояние всех Мануфактур. «За всё время» и «По дням» — постоянные счётчики:
+                каждое внесение, списание суток и выплата учитываются в момент события, прошлое восстановлено из журнала золота.
+                Дни — по Москве.</p>
+            <button id="mfAdmRefresh">Обновить</button>
+            <h3 style="margin:20px 0 10px;">Сейчас</h3>
+            <div class="card-grid" id="mfAdmNow"></div>
+            <h3 style="margin:20px 0 10px;">Золото и частички за всё время</h3>
+            <div class="card-grid" id="mfAdmMoney"></div>
+            <div id="mfAdmSplit" style="margin:14px 0 4px;"></div>
+            <h3 style="margin:20px 0 10px;">🏹 Охота за всё время</h3>
+            <div class="card-grid" id="mfAdmHunt"></div>
+            <h3 style="margin:20px 0 10px;">🖤 Обсидиан</h3>
+            <div class="card-grid" id="mfAdmObs"></div>
+            <h3 style="margin:24px 0 10px;">По дням (МСК)</h3>
+            <div style="overflow-x:auto;"><table>
+                <thead><tr><th>День</th><th>Внесено, 🪙</th><th>Внесено частичек</th><th>Списано суток</th><th>За возвращения, 🪙</th><th>Возвращений</th>
+                    <th>За пропуски, 🪙</th><th>Пропусков</th><th>Входов</th><th>Ушли сами</th><th>Изгнаны</th><th>Обсидиана Лордам</th></tr></thead>
+                <tbody id="mfAdmDaily"></tbody></table></div>
+            <h3 style="margin:24px 0 10px;">Лорды (топ-50 по заработанному Обсидиану)</h3>
+            <div style="overflow-x:auto;"><table>
+                <thead><tr><th>Лорд</th><th>ID</th><th>Ур.</th><th>Охотников</th><th>Кладовая 🪙</th><th>Кладовая частичек</th>
+                    <th>Хватит на, сут.</th><th>Обсидиана заработано</th><th>Входов в Гнёзда</th><th>Основана</th></tr></thead>
+                <tbody id="mfAdmLords"></tbody></table></div>
+        </div>
+
         <div class="page" id="page-economy">
             <h2>💸 Откуда пришли балансы (журнал)</h2>
             <p class="muted" style="font-size:12px;">
@@ -1118,6 +1146,7 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
         if (btn.dataset.page === 'shares') loadSharesAdmin();
         if (btn.dataset.page === 'trades') loadTradesAdmin();
         if (btn.dataset.page === 'rock') loadRockAdmin();
+        if (btn.dataset.page === 'mf') loadMfAdmin();
         else tournamentStopCountdowns();
     };
 });
@@ -2626,6 +2655,68 @@ async function loadEconomy() {
         </tr>`).join('') : '<tr><td colspan="11" class="muted">Данных пока нет — они начнут копиться после обновления сервера.</td></tr>';
 }
 document.getElementById('economyRefreshBtn').onclick = loadEconomy;
+
+/* ---------- ⚒️ Мануфактуры ---------- */
+async function loadMfAdmin() {
+    let d;
+    try { d = await api('/admin/api/manufactories'); }
+    catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); return; }
+    const c = d.current, t = d.totals, cfg = d.cfg;
+    const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    const f = v => fmtNum(Math.round((Number(v) || 0) * 100) / 100);
+    const pct = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '—';
+    const card = (label, value, sub) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="muted" style="font-size:12px;margin-top:4px;">${sub}</div>` : ''}</div>`;
+    const levels = Object.keys(c.levels).sort((a, b) => a - b).map(k => `ур. ${k}: ${c.levels[k]}`).join(' · ') || '—';
+    document.getElementById('mfAdmNow').innerHTML = [
+        card('Мануфактур', f(c.manufactories), levels),
+        card('Гнёзд открыто', f(c.nests_open), `свободно ${f(c.free)} · готовы принять охотника: ${f(c.ready)} Мануфактур`),
+        card('Охотников в Гнёздах', f(c.hunters), `сегодня вернулись ${f(c.returned_today)} · ждут возвращения ${f(c.due_today)}`),
+        card('С пропусками', f(c.miss1 + c.miss2), `1 пропуск: ${f(c.miss1)} · 2 пропуска: ${f(c.miss2)}`),
+        card('В Кладовых сейчас', `${f(c.pantry_gold)} 🪙`, `${f(c.pantry_particles)} частичек`),
+        card('Выплаты в очереди', f(c.pending_payouts), c.pending_payouts ? 'доставятся в течение минуты' : 'все доставлены'),
+    ].join('');
+    document.getElementById('mfAdmMoney').innerHTML = [
+        card('Внесено в Кладовые', `${f(t.gold_deposited)} 🪙`, `${f(t.particles_deposited)} частичек`),
+        card('Списано за сутки охоты', `${f(t.gold_charged)} 🪙`, `${f(t.particles_charged)} частичек · ${f(t.days_paid)} оплаченных суток (сутки = ${cfg.hunt_gold} 🪙 + ${cfg.hunt_particles} частичек)`),
+        card('Выплачено охотникам', `${f(t.gold_paid_return + t.gold_paid_miss)} 🪙`, `за возвращения ${f(t.gold_paid_return)} (${f(t.returns)} раз) · за пропуски ${f(t.gold_paid_miss)}`),
+        card('Сгорело золота', `${f(t.gold_burned)} 🪙`, `${pct(t.gold_burned, t.gold_charged)} списанного: пропуски, уход из Гнезда, изгнания · ещё ${f(t.gold_running)} 🪙 — сутки, которые идут сейчас`),
+        card('Частички на основание и Гнёзда', f(t.particles_found_nests), `основание ${cfg.found_particles} · Гнездо ${cfg.nest_particles}`),
+    ].join('');
+    const parts = [
+        { label: 'Возвращения', v: t.gold_paid_return, color: '#4ade80' },
+        { label: 'Пропуски (половина)', v: t.gold_paid_miss, color: '#f0b429' },
+        { label: 'Сгорело', v: t.gold_burned, color: '#f87171' },
+        { label: 'Идут сейчас', v: t.gold_running, color: '#7cc4ff' },
+    ];
+    const tot = parts.reduce((a, p) => a + p.v, 0);
+    document.getElementById('mfAdmSplit').innerHTML = tot ? `<div class="muted" style="font-size:12px;margin-bottom:4px;">Куда ушло списанное из Кладовых золото</div>
+        <div style="display:flex;height:22px;border-radius:8px;overflow:hidden;border:1px solid #2a3350;">
+        ${parts.filter(p => p.v > 0).map(p => `<div title="${p.label}: ${f(p.v)}" style="width:${p.v / tot * 100}%;background:${p.color};"></div>`).join('')}</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:6px;">${parts.map(p => `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${p.color};margin-right:4px;"></span>${p.label} ${pct(p.v, tot)}</span>`).join('')}</div>` : '';
+    document.getElementById('mfAdmHunt').innerHTML = [
+        card('Входов в Гнёзда', f(t.joins), `вернулись с Добычей ${f(t.returns)} раз`),
+        card('Пропусков', f(t.misses), `учитываются с этого обновления`),
+        card('Ушли сами', f(t.leaves), 'кнопка «Покинуть Гнездо»'),
+        card('Изгнаны', f(t.evict_pantry + t.evict_misses), `пустая Кладовая ${f(t.evict_pantry)} · 3 пропуска ${f(t.evict_misses)}`),
+    ].join('');
+    document.getElementById('mfAdmObs').innerHTML = [
+        card('Выплачено Лордам', f(t.obsidian_paid), `по ${cfg.lord_obsidian} за каждое возвращение охотника`),
+        card('Потрачено на крафт', f(t.obsidian_crafted), `≈ ${f(t.obsidian_crafted / (cfg.craft_obsidian || 3))} предметов (по ${cfg.craft_obsidian} 🖤)`),
+        card('На руках у игроков', f(t.obsidian_held), `у ${f(t.obsidian_holders)} игроков`),
+    ].join('');
+    const rows = d.daily || [];
+    const v = (r, k) => f(r[k] || 0);
+    document.getElementById('mfAdmDaily').innerHTML = rows.length ? rows.map(r => `<tr><td>${esc(r.day)}</td><td>${v(r, 'mf_dep_gold')}</td><td>${v(r, 'mf_dep_particles')}</td>
+        <td>${v(r, 'mf_charges')}</td><td>${v(r, 'mf_ret_gold')}</td><td>${v(r, 'mf_returns')}</td><td>${v(r, 'mf_miss_gold')}</td><td>${v(r, 'mf_misses')}</td>
+        <td>${v(r, 'mf_joins')}</td><td>${v(r, 'mf_leaves')}</td><td>${f((r.mf_evict_pantry || 0) + (r.mf_evict_misses || 0))}</td><td>${v(r, 'mf_obsidian')}</td></tr>`).join('')
+        : '<tr><td colspan="12" class="muted">Движений пока нет</td></tr>';
+    const L = d.lords || [];
+    document.getElementById('mfAdmLords').innerHTML = L.length ? L.map(l => `<tr><td>${esc(l.name) || '—'}</td><td>${esc(l.lord_id)}</td><td>${l.level}</td>
+        <td>${l.hunters}</td><td>${f(l.pantry_gold)}</td><td>${f(l.pantry_particles)}</td><td>${l.days_left}</td><td>${f(l.obsidian)}</td><td>${l.joins}</td>
+        <td>${l.created_at ? new Date(l.created_at * 1000).toLocaleDateString('ru-RU') : '—'}</td></tr>`).join('')
+        : '<tr><td colspan="10" class="muted">Мануфактур пока нет</td></tr>';
+}
+document.getElementById('mfAdmRefresh').onclick = loadMfAdmin;
 
 /* ---------- купец ---------- */
 const MERCHANT_TIER_LABELS = {
