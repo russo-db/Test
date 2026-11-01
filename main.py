@@ -15503,6 +15503,56 @@ async def mf_backfill_stats() -> None:
         print(f"[mf] backfill FAILED: {type(e).__name__}: {e}")
 
 
+# Время, с которого Обсидиан Лорду начисляется за каждые оплаченные сутки
+# (раньше — при возвращении охотника). Сутки, оплаченные до этого момента, а
+# закончившиеся после, не дали Обсидиана ни по старому, ни по новому правилу —
+# их один раз компенсирует mf_obs_transition_fix.
+MF_OBS_RULE_SINCE = 1793528418
+
+
+def mf_obs_lost_days(doc: dict, since: float = MF_OBS_RULE_SINCE) -> int:
+    """Сколько Гнёзд этой Мануфактуры было занято в момент смены правила (их
+    сутки оплачены по старому правилу). По Летописи: первое событие Гнезда
+    после смены — не «занял» → там кто-то сидел; событий нет — смотрим, сидит
+    ли там сейчас охотник, пришедший до смены."""
+    if float(doc.get("created_at") or 0) >= since:
+        return 0
+    log = sorted((e for e in (doc.get("log") or []) if float(e.get("ts") or 0) >= since), key=lambda e: e.get("ts") or 0)
+    lost = 0
+    for i, n in enumerate(doc.get("nests") or []):
+        first = next((e for e in log if e.get("nest") == i), None)
+        if first is not None:
+            lost += first.get("kind") != "join"
+        elif n.get("hunter") and float(n.get("since") or 0) < since:
+            lost += 1
+    return lost
+
+
+async def mf_obs_transition_fix() -> None:
+    """Один раз на Мануфактуру (флаг obsfix в том же CAS, что и выплата)."""
+    try:
+        ids = [d["_id"] async for d in store.mf.find({"obsfix": {"$ne": True}}, {"_id": 1})]
+        paid = 0.0
+        for lord in ids:
+            def mutate(doc):
+                if doc.get("obsfix"):
+                    return None
+                doc["obsfix"] = True
+                obs = mf_obs_lost_days(doc) * mf_num("lord_obsidian")
+                if obs > 0:
+                    mf_pay(doc, f"obsfix:{doc['_id']}", doc["_id"], "obsidian", obsidian=obs)
+                    doc["obsidian_total"] = round(float(doc.get("obsidian_total") or 0) + obs, 6)
+                    mf_log(doc, "obsfix", obsidian=obs)
+                return {"obs": obs}
+            _, extra = await mf_cas(lord, mutate)
+            await mf_flush(lord)
+            paid += (extra or {}).get("obs") or 0
+        if ids:
+            print(f"[mf] компенсация Обсидиана за смену правила: Мануфактур {len(ids)}, выплачено {paid:g}")
+    except Exception as e:
+        print(f"[mf] obsfix FAILED: {type(e).__name__}: {e}")
+
+
 async def mf_cas(lord: int, mutate=None, now: Optional[float] = None) -> tuple:
     """Читает Мануфактуру, досчитывает пропуски, зовёт mutate(doc) (может кинуть
     HTTPException; None — сама ничего не меняла) и пишет по ver."""
@@ -15574,7 +15624,7 @@ async def mf_flush(lord: int) -> None:
 
 async def mf_ensure(lord: int, name: str) -> None:
     doc = {"lord_name": name, "created_at": time.time(), "ver": 0, "nests": [], "pantry_gold": 0.0,
-           "pantry_particles": 0.0, "pay_queue": [], "dep_ids": [], "log": [], "obsidian_total": 0.0,
+           "pantry_particles": 0.0, "pay_queue": [], "dep_ids": [], "log": [], "obsidian_total": 0.0, "obsfix": True,
            "hunts_total": 0}
     mf_derive(doc)
     await store.mf.update_one({"_id": lord}, {"$setOnInsert": doc}, upsert=True)
@@ -16129,6 +16179,7 @@ async def startup_event():
     asyncio.create_task(rock_worker())
     asyncio.create_task(rock_call_sender())
     await mf_backfill_stats()          # ⚒️ один раз: статистика Мануфактур за прошлое из журнала
+    await mf_obs_transition_fix()      # ⚒️ один раз: Обсидиан за сутки, оплаченные до смены правила
     asyncio.create_task(mf_worker())   # ⚒️ Мануфактуры: штрафы в 00:00 МСК и выплаты
     try:
         await migrate_particle_gram_lots()   # лоты Частичек за GRAM → частички продавцам на склад

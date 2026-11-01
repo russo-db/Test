@@ -3171,7 +3171,7 @@
                 'mf.logTitle': '📜 Летопись Мануфактуры', 'mf.logJoin': '{name} занял Гнездо {n}', 'mf.logReturnOnly': '{name} вернулся с Добычей', 'mf.logObs': ' · оплачены сутки — тебе +{o} 🖤',
                 'mf.logMiss': '{name} не вернулся — получил {g} 🪙', 'mf.logEvictPantry': '{name}: Изгнание из Гнезда — Кладовая пуста',
                 'mf.logEvictMiss': '{name}: Изгнание из Гнезда — 3 дня без Добычи',
-                'mf.logLeave': '{name} покинул Гнездо {n}', 'mf.leaveBtn': '🚪 Покинуть Гнездо',
+                'mf.logLeave': '{name} покинул Гнездо {n}', 'mf.logObsFix': '🖤 Компенсация +{o} Обсидиана за сутки охоты, оплаченные до смены правил', 'mf.leaveBtn': '🚪 Покинуть Гнездо',
                 'mf.leaveConfirm': 'Покинуть Гнездо у Лорда {lord}? Оплаченные сутки охоты сгорят — Добычи за них не будет. Новое Гнездо можно будет занять с 00:00 МСК.',
                 'mf.leaveConfirmLoot': 'Окно возвращения открыто! Если покинуть Гнездо сейчас, Добыча за сегодня сгорит, а новое Гнездо можно будет занять только с 00:00 МСК. Всё равно покинуть?',
                 'mf.left': '🚪 Ты покинул Гнездо — новое можно занять с 00:00 МСК',
@@ -4019,7 +4019,7 @@
                 'mf.logTitle': '📜 Manufactory Chronicle', 'mf.logJoin': '{name} took Nest {n}', 'mf.logReturnOnly': '{name} returned with Loot', 'mf.logObs': ' · a day paid — +{o} 🖤 for you',
                 'mf.logMiss': "{name} didn't return — got {g} 🪙", 'mf.logEvictPantry': '{name}: expelled — the Pantry is empty',
                 'mf.logEvictMiss': '{name}: expelled — 3 days without Loot',
-                'mf.logLeave': '{name} left Nest {n}', 'mf.leaveBtn': '🚪 Leave the Nest',
+                'mf.logLeave': '{name} left Nest {n}', 'mf.logObsFix': '🖤 Compensation: +{o} Obsidian for days paid before the rule change', 'mf.leaveBtn': '🚪 Leave the Nest',
                 'mf.leaveConfirm': "Leave the Nest of Lord {lord}? The paid day of hunting burns — no Loot for it. You can take a new Nest from 00:00 MSK.",
                 'mf.leaveConfirmLoot': 'The return window is open! If you leave now, today\'s Loot burns, and a new Nest is available only from 00:00 MSK. Leave anyway?',
                 'mf.left': '🚪 You left the Nest — a new one is available from 00:00 MSK',
@@ -9931,8 +9931,9 @@
             if (e.kind === 'join') s = t('mf.logJoin', { name, n: (e.nest || 0) + 1 });
             else if (e.kind === 'return') s = t('mf.logReturnOnly', { name });
             else if (e.kind === 'miss') s = t('mf.logMiss', { name, g: rockNum(e.gold) });
-            if (Number(e.obsidian) > 0 && e.kind !== 'evict') s += t('mf.logObs', { o: rockNum(e.obsidian) });
+            if (Number(e.obsidian) > 0 && e.kind !== 'evict' && e.kind !== 'obsfix') s += t('mf.logObs', { o: rockNum(e.obsidian) });
             else if (e.kind === 'leave') s = t('mf.logLeave', { name, n: (e.nest || 0) + 1 });
+            else if (e.kind === 'obsfix') s = t('mf.logObsFix', { o: rockNum(e.obsidian) });
             else if (e.kind === 'evict') s = t(e.reason === 'pantry' ? 'mf.logEvictPantry' : 'mf.logEvictMiss', { name });
             else s = huntEsc(e.kind);
             return `<span class="mf-log-time">${when}</span> ${s}`;
