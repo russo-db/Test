@@ -91,6 +91,20 @@ FIELDS = (
 # (ставится middleware в main.py) либо явная метка фонового начисления
 # (ledger_source("ton:deposit") и т.п.).
 LEDGER_FIELDS = ("coins", "mnstr", "gold")
+
+# --- ДРОБНЫЕ «ХВОСТЫ» БАЛАНСОВ ---
+# Дробные суммы в двоичной арифметике дают хвосты: 0.6 − 0.4 = 0.19999999999999996.
+# Экран показывает 0.200, а строгое сравнение с ценой 0.2 отказывало («не хватает»).
+# Поэтому: балансы при чтении игрока округляются до 9 знаков (get), а списания
+# одной операцией в базе допускают нехватку не больше BAL_EPS — микроскопический
+# минус после такого списания тут же обнуляется (_clamp_nonneg).
+BAL_EPS = 1e-9
+BALANCE_FIELDS = ("coins", "mnstr", "gold", "nest_particles", "obsidian")
+
+
+def _need(amount) -> float:
+    """Порог для фильтра {"$gte": ...}: цена минус допуск на хвост."""
+    return float(amount) - BAL_EPS
 LEDGER_SOURCE = contextvars.ContextVar("ledger_source", default="system")
 LEDGER_RETENTION_SECONDS = 90 * 24 * 3600   # записи старше 90 дней удаляются (prune_ledger)
 # Операции одного игрока из одного источника за LEDGER_BUCKET_SECONDS
@@ -524,7 +538,19 @@ class MongoStore:
             return None
         doc = dict(doc)
         doc["user_id"] = doc.pop("_id")
+        for f in BALANCE_FIELDS:
+            v = doc.get(f)
+            if isinstance(v, float):
+                doc[f] = round(v, 9)   # 0.19999999999999996 → 0.2
         return doc
+
+    async def _clamp_nonneg(self, user_id: int, *fields: str) -> None:
+        """После списания с допуском BAL_EPS баланс мог стать −0.00000000004 — обнулить."""
+        try:
+            await self.users.update_one({"_id": user_id, "$or": [{f: {"$lt": 0}} for f in fields]},
+                                        {"$max": {f: 0.0 for f in fields}})
+        except Exception as e:
+            print(f"[storage] clamp {user_id}: {type(e).__name__}: {e}")
 
     async def create(self, doc: dict) -> bool:
         payload = {key: doc.get(key) for key in FIELDS if key != "user_id"}
@@ -630,7 +656,7 @@ class MongoStore:
         # new_last_claim посчитан по документу с ops == expected_ops: если игрок
         # с тех пор что-то сделал (например, собрал частички), запись не
         # пройдёт — иначе старая точка отсчёта начислила бы частички повторно.
-        charge_filter = {"_id": user_id, "coins": {"$gte": price_gram}}
+        charge_filter = {"_id": user_id, "coins": {"$gte": _need(price_gram)}}
         if expected_ops is not None:
             charge_filter["ops"] = int(expected_ops)
         charge = await self.users.update_one(
@@ -650,9 +676,10 @@ class MongoStore:
                 {"$set": {"cooldown_until": cooldown_until, "day": stored_day, "bought_today": bought_today}},
             )
             user = await self.users.find_one({"_id": user_id}, {"coins": 1}) or {}
-            if float(user.get("coins") or 0) < price_gram:
+            if float(user.get("coins") or 0) < _need(price_gram):
                 return {"status": "insufficient_gram"}
-            return {"status": "stale"}   # документ игрока изменился — вызывающий перечитает и повторит
+            return {"status": "stale"}
+        await self._clamp_nonneg(user_id, "coins")   # документ игрока изменился — вызывающий перечитает и повторит
 
         return {"status": "ok", "cooldown_until": new_cooldown, "bought_today": bought_today + 1}
 
@@ -663,11 +690,12 @@ class MongoStore:
         в общей лавке — только статистика для админки."""
         cost = amount / rate
         charge = await self.users.update_one(
-            {"_id": user_id, "gold": {"$gte": cost}},
+            {"_id": user_id, "gold": {"$gte": _need(cost)}},
             {"$inc": {"gold": -cost, "mnstr": amount, "ops": 1}},
         )
         if charge.modified_count == 0:
             return {"status": "insufficient_gold"}
+        await self._clamp_nonneg(user_id, "gold")
         await self.merchant.update_one({"_id": "global"}, {"$inc": {"meat_bought": amount}}, upsert=True)
         return {"status": "ok", "amount": amount, "cost": cost}
 
@@ -1119,12 +1147,13 @@ class MongoStore:
 
         price = float(listing["price_gram"])
         result = await self.users.update_one(
-            {"_id": buyer_id, "coins": {"$gte": price}},
+            {"_id": buyer_id, "coins": {"$gte": _need(price)}},
             {"$inc": {"coins": -price, "ops": 1}},
         )
         if result.modified_count == 0:
             await self.equip_market.insert_one(listing)
             return "insufficient_funds"
+        await self._clamp_nonneg(buyer_id, "coins")
 
         await self._give_equip_item(buyer_id, listing)   # вместе с уровнем заточки
 
@@ -1192,7 +1221,7 @@ class MongoStore:
         if int(lot["seller_id"]) == int(buyer_id):
             return "own_listing"
         doc = await self.users.find_one({"_id": buyer_id}, {"gold": 1})
-        if not doc or float(doc.get("gold") or 0) < float(lot.get("total_price_gold") or 0):
+        if not doc or float(doc.get("gold") or 0) < _need(lot.get("total_price_gold") or 0):
             return "insufficient_funds"
 
         listing = await self.alchemy_market.find_one_and_delete({"_id": oid})
@@ -1200,12 +1229,13 @@ class MongoStore:
             return "not_found"
         price = float(listing["total_price_gold"])
         result = await self.users.update_one(
-            {"_id": buyer_id, "gold": {"$gte": price}},
+            {"_id": buyer_id, "gold": {"$gte": _need(price)}},
             {"$inc": {"gold": -price, "ops": 1}},
         )
         if result.modified_count == 0:
             await self.alchemy_market.insert_one(listing)
             return "insufficient_funds"
+        await self._clamp_nonneg(buyer_id, "gold")
         await self._give_hunt_item(buyer_id, listing["item"], listing["quantity"])
         seller_credit = round(price * (1 - commission), 9)
         await self.users.update_one(
@@ -1482,11 +1512,12 @@ class MongoStore:
         """Условие coins >= gram не даст увести больше, чем есть на балансе.
         payout — сколько TON реально уйдёт игроку после комиссии за вывод."""
         result = await self.users.update_one(
-            {"_id": user_id, "coins": {"$gte": gram}},
+            {"_id": user_id, "coins": {"$gte": _need(gram)}},
             {"$inc": {"coins": -gram, "ops": 1}},
         )
         if result.modified_count == 0:
             return False
+        await self._clamp_nonneg(user_id, "coins")
         await self.withdrawals.insert_one(
             {"user_id": user_id, "address": address, "amount": gram, "payout": payout,
              "status": "pending", "ts": ts}
@@ -1698,13 +1729,14 @@ class MongoStore:
 
         charge = await self.users.update_one(
             {"_id": user_id, "clan_id": {"$in": [None, ""]},
-             "coins": {"$gte": cost_gram}, "gold": {"$gte": cost_gold}, "mnstr": {"$gte": cost_meat}},
+             "coins": {"$gte": _need(cost_gram)}, "gold": {"$gte": _need(cost_gold)}, "mnstr": {"$gte": _need(cost_meat)}},
             {"$inc": {"coins": -cost_gram, "gold": -cost_gold, "mnstr": -cost_meat, "ops": 1},
              "$set": {"clan_id": clan_id}},
         )
         if charge.modified_count == 0:
             await self.clans.delete_one({"_id": result.inserted_id})
             return "failed", None
+        await self._clamp_nonneg(user_id, "coins", "gold", "mnstr")
 
         # Игрок теперь сам лидер — его старые заявки на вступление в чужие
         # кланы (если подавал несколько) больше не имеют смысла, чистим сразу.
@@ -2121,16 +2153,17 @@ class MongoStore:
             old_hold = float(own["bid"]) if own else None
             delta = required - (old_hold or 0.0)
 
-            user_filter = {"_id": user_id, "coins": {"$gte": delta}}
+            user_filter = {"_id": user_id, "coins": {"$gte": _need(delta)}}
             user_filter[hold_path] = old_hold if own else {"$exists": False}
             charged = await self.users.update_one(
                 user_filter, {"$inc": {"coins": -delta, "ops": 1}, "$set": {hold_path: required}},
             )
             if charged.modified_count == 0:
                 user = await self.users.find_one({"_id": user_id}) or {}
-                if float(user.get("coins") or 0) < delta:
+                if float(user.get("coins") or 0) < _need(delta):
                     return {"status": "insufficient", "required": required, "delta": delta}
                 continue   # заморозка ещё не вернулась/гонка — перечитываем лот
+            await self._clamp_nonneg(user_id, "coins")
 
             entry = {"user_id": user_id, "name": name, "bid": required, "ts": now}
             new_top = [entry] + [e for e in top if int(e["user_id"]) != user_id]
@@ -2628,12 +2661,13 @@ class MongoStore:
             return "slots_maxed"
 
         charge = await self.users.update_one(
-            {"_id": user_id, "coins": {"$gte": price_gram}},
+            {"_id": user_id, "coins": {"$gte": _need(price_gram)}},
             {"$inc": {"coins": -price_gram, "ops": 1}},
         )
         if charge.modified_count == 0:
             await self.clans.update_one({"_id": oid}, {"$inc": {"open_slots": -1}})
             return "insufficient_funds"
+        await self._clamp_nonneg(user_id, "coins")
         return "ok"
 
     async def burn_eagle_for_clan_power(self, user_id: int, monster_id: str,

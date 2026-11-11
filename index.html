@@ -4538,6 +4538,16 @@
             return value.toFixed(value >= 10 ? 2 : 3);
         }
 
+        // Баланс на экране не округляем вверх: 0.1996 золота — это «0.199», а не
+        // «0.200» (иначе игрок видит, что денег хватает, а сервер говорит «нет»).
+        // Двоичный хвост 0.19999999999999996 остаётся «0.200» (+1e-6 при отсечении).
+        function fmtBalance(value) {
+            const v = Math.max(0, Number(value) || 0);
+            if (v >= 1000) return fmt(v);
+            const d = v >= 100 ? 1 : (v >= 10 ? 2 : 3), k = Math.pow(10, d);
+            return (Math.floor(v * k + 1e-6) / k).toFixed(d);
+        }
+
         // GRAM totals are small fractions now, so keep two decimals rather than rounding 1.05 to 1.
         function plural(n, one, few, many) {
             const tens = n % 100, units = n % 10;
@@ -4852,12 +4862,12 @@
         }
 
         function renderHeader() {
-            document.getElementById('profileMnstr').innerText = fmtToken(state.mnstr);
-            document.getElementById('profileGram').innerText = fmtToken(state.coins);
-            document.getElementById('profileGold').innerText = fmtToken(state.gold || 0);
-            document.getElementById('topRightCoins').innerText = fmtToken(state.coins);
-            document.getElementById('topRightMnstr').innerText = fmtToken(state.mnstr);
-            document.getElementById('topRightGold').innerText = fmtToken(state.gold || 0);
+            document.getElementById('profileMnstr').innerText = fmtBalance(state.mnstr);
+            document.getElementById('profileGram').innerText = fmtBalance(state.coins);
+            document.getElementById('profileGold').innerText = fmtBalance(state.gold || 0);
+            document.getElementById('topRightCoins').innerText = fmtBalance(state.coins);
+            document.getElementById('topRightMnstr').innerText = fmtBalance(state.mnstr);
+            document.getElementById('topRightGold').innerText = fmtBalance(state.gold || 0);
             document.getElementById('statIncome').innerText = usedSlots();
             document.getElementById('statTokenIncome').innerText = readyEggSlots();
 
@@ -6614,7 +6624,7 @@
             if (input.value !== '' && String(amount) !== input.value) input.value = amount;
             const cost = amount / rate;
             const short = cost > (state.gold || 0) + 1e-9;
-            line.innerText = t('merchant.meatCostLine', { amount: fmtToken(cost), gold: fmtToken(state.gold || 0) })
+            line.innerText = t('merchant.meatCostLine', { amount: fmtToken(cost), gold: fmtBalance(state.gold || 0) })
                 + (short ? ' · ' + t('merchant.notEnoughGold') : '');
             line.classList.toggle('is-short', short);
         }
