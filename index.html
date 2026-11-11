@@ -4521,6 +4521,16 @@
             nest: { shardCooldownUntil: 0, shardBoughtToday: 0, shardDailyLimit: 4, particles: 0, shardCount: 0, lastClaim: 0, inventory: {}, equipped: {}, enchanted: [], equippedEnchant: {}, enchantScrolls: 0 }, // Гнездо Воинов — Небесные Осколки (общий кулдаун/суточный лимит на всех), снаряжение, экипировка. shardCount/lastClaim — непрерывное накопление частичек, см. nestPendingParticles
             clanId: null, // id клана текущего игрока, или null — см. loadClanMine
         };
+        // Дробные суммы оставляют двоичные хвосты (0.6 − 0.4 = 0.19999999999999996):
+        // баланс тогда «0.200» на экране, но проверки «хватает ли» строго говорят «нет».
+        // Как и сервер (storage.get), держим балансы округлёнными до 9 знаков — при
+        // любой записи в state, откуда бы она ни пришла.
+        ['gold', 'coins', 'mnstr'].forEach(key => {
+            let value = state[key];
+            const clean = x => (typeof x === 'number' && isFinite(x) && Math.abs(x) < 1e15) ? parseFloat(x.toFixed(9)) : x;
+            value = clean(value);
+            Object.defineProperty(state, key, { get: () => value, set: x => { value = clean(x); }, enumerable: true, configurable: true });
+        });
 
         let botUsername = '';
         let offlineOnly = false; // true when the backend is unreachable
@@ -4541,11 +4551,16 @@
         // Баланс на экране не округляем вверх: 0.1996 золота — это «0.199», а не
         // «0.200» (иначе игрок видит, что денег хватает, а сервер говорит «нет»).
         // Двоичный хвост 0.19999999999999996 остаётся «0.200» (+1e-6 при отсечении).
+        function fmtFloor(v, d) { const k = Math.pow(10, d); return (Math.floor(v * k + 1e-6) / k).toFixed(d); }
         function fmtBalance(value) {
             const v = Math.max(0, Number(value) || 0);
-            if (v >= 1000) return fmt(v);
-            const d = v >= 100 ? 1 : (v >= 10 ? 2 : 3), k = Math.pow(10, d);
-            return (Math.floor(v * k + 1e-6) / k).toFixed(d);
+            if (v >= 1000) {   // как fmt (K, M…), но тоже без округления вверх: 1999.99 — «1.99K»
+                const units = ['K', 'M', 'B', 'T', 'Qa', 'Qi'];
+                let unit = -1, x = v;
+                while (x >= 1000 && unit < units.length - 1) { x /= 1000; unit++; }
+                return fmtFloor(x, x < 10 ? 2 : 1) + units[unit];
+            }
+            return fmtFloor(v, v >= 100 ? 1 : (v >= 10 ? 2 : 3));
         }
 
         // GRAM totals are small fractions now, so keep two decimals rather than rounding 1.05 to 1.
@@ -13541,7 +13556,7 @@
             const min = TON_CFG.min_withdraw;
             document.getElementById('withdrawBody').innerHTML = `
                 <h2>${t('withdraw.title')}</h2>
-                <p>${t('withdraw.available', { amount: fmtGram(state.coins) })}</p>
+                <p>${t('withdraw.available', { amount: state.coins >= 1000 ? fmtBalance(state.coins) : fmtFloor(Math.max(0, state.coins || 0), 2) })}</p>
 
                 <div class="pay-label">${t('deposit.amountLabel')}</div>
                 <input class="pay-input" id="withdrawAmount" type="number" inputmode="decimal"
@@ -15164,9 +15179,9 @@
             const screen = document.getElementById('hunt');
             if (!screen || !screen.classList.contains('active')) return;
             setHTMLIfChanged(document.getElementById('huntWallet'), `
-                <div>${t('hunt.wallet.gold')}<b>${fmt(state.gold || 0)} 🪙</b></div>
-                <div>GRAM<b>${fmtGram(state.coins || 0)}</b></div>
-                <div>Meat<b>${fmtToken(state.mnstr || 0)} 🥩</b></div>
+                <div>${t('hunt.wallet.gold')}<b>${fmtBalance(state.gold || 0)} 🪙</b></div>
+                <div>GRAM<b>${fmtBalance(state.coins || 0)}</b></div>
+                <div>Meat<b>${fmtBalance(state.mnstr || 0)} 🥩</b></div>
                 <div>${t('hunt.wallet.particles')}<b>${fmt(state.nest.particles || 0)}</b></div>`);
             if (!huntData) {
                 ['huntSubMine', 'huntSubExpeditions', 'huntSubStorage', 'huntSubAlchemy'].forEach(id =>

@@ -887,7 +887,7 @@ class MongoStore:
             )
             if not doc:
                 return "not_found"
-            if charge and float(doc.get("coins") or 0) < charge:
+            if charge and float(doc.get("coins") or 0) < _need(charge):
                 return "insufficient_funds"
             farm = list(doc.get("monsters") or [])
             queue = list(doc.get("farm_queue") or [])
@@ -901,10 +901,12 @@ class MongoStore:
             flt = {"_id": user_id, "ops": ops}
             update = {"$set": {"monsters": farm, "farm_queue": queue, "ops": ops + 1}}
             if charge:
-                flt["coins"] = {"$gte": charge}
+                flt["coins"] = {"$gte": _need(charge)}
                 update["$inc"] = {"coins": -charge}
             result = await self.users.update_one(flt, update)
             if result.modified_count:
+                if charge:
+                    await self._clamp_nonneg(user_id, "coins")
                 return "ok"
         return "conflict"
 
@@ -947,7 +949,7 @@ class MongoStore:
         if int(lot["seller_id"]) == int(buyer_id):
             return "own_listing"
         doc = await self.users.find_one({"_id": buyer_id}, {"coins": 1, "slots": 1, "monsters": 1, "farm_queue": 1})
-        if not doc or float(doc.get("coins") or 0) < float(lot.get("price_gram") or 0):
+        if not doc or float(doc.get("coins") or 0) < _need(lot.get("price_gram") or 0):
             return "insufficient_funds"
         if queue_max is not None and len(doc.get("monsters") or []) >= int(doc.get("slots") or 0) \
                 and len(doc.get("farm_queue") or []) >= queue_max:
@@ -1317,7 +1319,7 @@ class MongoStore:
             if int(lot["seller_id"]) == int(buyer_id):
                 return "own_listing"
             doc = await self.users.find_one({"_id": buyer_id}, {"gold": 1})
-            if not doc or float(doc.get("gold") or 0) < float(lot.get("price_gold") or 0):
+            if not doc or float(doc.get("gold") or 0) < _need(lot.get("price_gold") or 0):
                 return "insufficient_funds"
         else:
             refused = await self._buy_precheck(self.resource_market, oid, buyer_id)
@@ -1332,12 +1334,13 @@ class MongoStore:
 
         field, price = resource_lot_price(listing)
         result = await self.users.update_one(
-            {"_id": buyer_id, field: {"$gte": price}},
+            {"_id": buyer_id, field: {"$gte": _need(price)}},
             {"$inc": {field: -price, "ops": 1}},
         )
         if result.modified_count == 0:
             await self.resource_market.insert_one(listing)
             return "insufficient_funds"
+        await self._clamp_nonneg(buyer_id, field)
 
         listing["id"] = str(listing.pop("_id"))
         return listing
