@@ -8752,9 +8752,14 @@
             const stage = document.getElementById('monsterStage');
             const target = document.getElementById(isToken ? 'topRightToken' : 'topRightCounter');
 
+            // Старт — от орла; если его сейчас не видно (другая вкладка, открыты
+            // Мануфактуры или Скала), — из центра экрана, а не из угла.
             const stageRect = stage.getBoundingClientRect();
-            const startX = stageRect.left + stageRect.width / 2 + (Math.random() - 0.5) * 70;
-            const startY = stageRect.top + stageRect.height / 2 + (Math.random() - 0.5) * 70;
+            const vw = window.innerWidth || 1, vh = window.innerHeight || 1;
+            let cx = stageRect.left + stageRect.width / 2, cy = stageRect.top + stageRect.height / 2;
+            if (!stageRect.width || !stageRect.height || cx < 0 || cx > vw || cy < 0 || cy > vh) { cx = vw / 2; cy = vh * 0.45; }
+            const startX = cx + (Math.random() - 0.5) * 70;
+            const startY = cy + (Math.random() - 0.5) * 70;
             const targetRect = target.getBoundingClientRect();
             const endX = targetRect.left + targetRect.width / 2;
             const endY = targetRect.top + targetRect.height / 2;
@@ -9248,7 +9253,7 @@
                 if (mission.gram) rewardParts.push(`${fmtGram(mission.gram)} GRAM`);
                 if (mission.mnstr) rewardParts.push(`${fmtToken(mission.mnstr)} Meat`);
                 toast(`Награда получена: ${rewardParts.join(' и ')}`);
-                spawnBurst(12, !mission.gram);
+                rewardBurst({ gram: mission.gram, mnstr: mission.mnstr }, 12);
                 renderAll();
             } catch (error) {
                 toast('Сервер недоступен');
