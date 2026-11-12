@@ -6017,7 +6017,6 @@
                     state.activeSlot = data.active_slot;
                     toast(`${monster.name} + ${monster.name} → ${MONSTERS[data.monster].name}!`);
                     haptic.notify('success');
-                    spawnBurst(16);
                     closeFusionModal();
                     renderAll();
                     saveLocally();
@@ -7039,7 +7038,7 @@
             toast(toQueue
                 ? t('daily.toQueue', { day, reward: dailyLabel(reward) })
                 : t('daily.claimedToast', { day, reward: dailyLabel(reward) + suffix }));
-            spawnBurst(12);
+            if (!toQueue) rewardBurst(reward, 12);
             renderAll();
             renderDaily();
         }
@@ -7347,7 +7346,7 @@
                     }
                 }
                 toast(`Колесо фортуны: ${parts.join(' и ')}`);
-                spawnBurst(reward.monster ? 14 : 10);
+                rewardBurst(reward, 10);
                 renderAll();
                 updateWheelButton();
             }, 4200);
@@ -8775,6 +8774,14 @@
             ], { duration: 620 + Math.random() * 220, easing: 'cubic-bezier(0.35, 0.9, 0.4, 1)' });
 
             animation.onfinish = () => particle.remove();
+        }
+
+        // Летят только те ресурсы, что реально пришли: синие монеты TON/GRAM — за
+        // GRAM, кусочки мяса — за Meat. Орёл, яйца, заточка, улучшение — без монет.
+        function rewardBurst(reward, count) {
+            if (!reward) return;
+            if (Number(reward.gram) > 0) spawnBurst(count, false);
+            if (Number(reward.mnstr) > 0) spawnBurst(count, true);
         }
 
         function spawnBurst(count, isToken = false) {
@@ -11421,7 +11428,7 @@
                 applyNestItems(data);
                 if (typeof data.ops === 'number') state.ops = data.ops;
                 if (data.success && data.selected) nestEnchantSel = `item:${data.selected.item_id}`;
-                if (data.success) { haptic.notify('success'); spawnBurst(10); toast(t('nest.enchant.success', { lvl: data.level, bonus: fmtPct(data.bonus) })); }
+                if (data.success) { haptic.notify('success'); toast(t('nest.enchant.success', { lvl: data.level, bonus: fmtPct(data.bonus) })); }
                 else { haptic.notify('error'); toast(t('nest.enchant.fail', { lvl: data.level })); }
                 renderAll();
                 saveLocally();

@@ -691,7 +691,6 @@
             applyWallet(r.data);
             toast(tt('fusionDone', { a: monster.name, b: MONSTERS[r.data.monster].name, n: fmt(cost) }));
             haptic.notify('success');
-            spawnBurst(16);
             closeFusionModal();
             renderAll();
             saveLocally();
